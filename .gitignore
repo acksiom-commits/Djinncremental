@@ -1,0 +1,16 @@
+# Godot-specific ignores
+.godot/                        # Essential: Ignores the massive internal cache
+*.import                       # Optional: Ignores imported asset data (regenerated automatically)
+export_presets.cfg             # Recommended: Keeps your specific export settings private
+debug.log                      # Ignores local debug logs
+
+# Windows-specific ignores
+Thumbs.db
+desktop.ini
+
+# macOS-specific ignores
+.DS_Store
+
+# Mobile/Web export ignores
+*.vsproj
+*.sln
