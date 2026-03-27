@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://b54n33mjodc1"]
+
+[node name="AutomationTierVBox" type="VBoxContainer" unique_id=439643332]
+offset_right = 40.0
+offset_bottom = 40.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="TierTitleLabel" type="Label" parent="." unique_id=1284809596]
+layout_mode = 2
+
+[node name="TierCountersVBox" type="VBoxContainer" parent="." unique_id=1917499087]
+layout_mode = 2
+
+[node name="TierAutomationVBox" type="VBoxContainer" parent="." unique_id=1653949681]
+layout_mode = 2

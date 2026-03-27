@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://ghxpihrmiisr"]
+
+[ext_resource type="Script" uid="uid://dpj74i6wsbsbu" path="res://button_label.gd" id="1_f488t"]
+
+[node name="ButtonLabelInstance" type="VBoxContainer" unique_id=72081024]
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("1_f488t")
+
+[node name="TopLabel" type="RichTextLabel" parent="." unique_id=542474393]
+layout_mode = 2
+
+[node name="BottomLabel" type="RichTextLabel" parent="." unique_id=1248530810]
+layout_mode = 2

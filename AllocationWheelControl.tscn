@@ -1,0 +1,179 @@
+[gd_scene format=3 uid="uid://c82d68kma3ec3"]
+
+[ext_resource type="Script" uid="uid://b54rukm424jpv" path="res://allocation_wheel_control.gd" id="1_wheel"]
+[ext_resource type="PackedScene" uid="uid://bdyxaobophvlu" path="res://ResourceRow.tscn" id="2_row"]
+[ext_resource type="PackedScene" uid="uid://n615m3l851vj" path="res://LabelResourceRow.tscn" id="3_label"]
+
+[node name="AllocationWheelControl" type="Control" unique_id=2094775408]
+custom_minimum_size = Vector2(375, 450)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 375.0
+offset_bottom = 400.0
+size_flags_vertical = 0
+script = ExtResource("1_wheel")
+
+[node name="CenterVBox" type="VBoxContainer" parent="." unique_id=1629460566]
+custom_minimum_size = Vector2(160, 200)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -80.0
+offset_top = -124.5
+offset_right = 80.0
+offset_bottom = 124.5
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="SelectedLabel" type="RichTextLabel" parent="CenterVBox" unique_id=1753902246]
+custom_minimum_size = Vector2(20, 0)
+layout_mode = 2
+size_flags_vertical = 0
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="HSeparator" type="HSeparator" parent="CenterVBox" unique_id=356812874]
+custom_minimum_size = Vector2(0, 2)
+layout_mode = 2
+
+[node name="UonitesRowHBox" type="HBoxContainer" parent="CenterVBox" unique_id=800019449]
+custom_minimum_size = Vector2(136, 24)
+layout_mode = 2
+
+[node name="PlusUonites" type="Button" parent="CenterVBox/UonitesRowHBox" unique_id=1803886051]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "+"
+
+[node name="UonitesLabelCounterVBox" type="VBoxContainer" parent="CenterVBox/UonitesRowHBox" unique_id=1121589063]
+layout_mode = 2
+
+[node name="RowUonitesLabelInstance" parent="CenterVBox/UonitesRowHBox/UonitesLabelCounterVBox" unique_id=509980595 instance=ExtResource("3_label")]
+layout_mode = 2
+
+[node name="LabelResource" parent="CenterVBox/UonitesRowHBox/UonitesLabelCounterVBox/RowUonitesLabelInstance" index="0" unique_id=9219547]
+text = "Uonites"
+
+[node name="RowUonitesInstance" parent="CenterVBox/UonitesRowHBox/UonitesLabelCounterVBox" unique_id=810845569 instance=ExtResource("2_row")]
+layout_mode = 2
+size_flags_horizontal = 1
+
+[node name="MinusUonites" type="Button" parent="CenterVBox/UonitesRowHBox" unique_id=1255014507]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "-"
+
+[node name="FociRowHBox" type="HBoxContainer" parent="CenterVBox" unique_id=1150539995]
+custom_minimum_size = Vector2(136, 24)
+layout_mode = 2
+
+[node name="PlusFoci" type="Button" parent="CenterVBox/FociRowHBox" unique_id=1392262450]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "+"
+
+[node name="FociLabelCounterVBox" type="VBoxContainer" parent="CenterVBox/FociRowHBox" unique_id=1955359385]
+layout_mode = 2
+
+[node name="RowFociLabelInstance" parent="CenterVBox/FociRowHBox/FociLabelCounterVBox" unique_id=480090924 instance=ExtResource("3_label")]
+layout_mode = 2
+
+[node name="LabelResource" parent="CenterVBox/FociRowHBox/FociLabelCounterVBox/RowFociLabelInstance" index="0" unique_id=9219547]
+text = "Foci"
+
+[node name="RowFociInstance" parent="CenterVBox/FociRowHBox/FociLabelCounterVBox" unique_id=561505877 instance=ExtResource("2_row")]
+layout_mode = 2
+size_flags_horizontal = 1
+
+[node name="MinusFoci" type="Button" parent="CenterVBox/FociRowHBox" unique_id=39530135]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "-"
+
+[node name="VolitionsRowHBox" type="HBoxContainer" parent="CenterVBox" unique_id=117040429]
+custom_minimum_size = Vector2(136, 24)
+layout_mode = 2
+
+[node name="PlusVolitions" type="Button" parent="CenterVBox/VolitionsRowHBox" unique_id=302603743]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "+"
+
+[node name="VolitionsLabelCounterVBox" type="VBoxContainer" parent="CenterVBox/VolitionsRowHBox" unique_id=1277269926]
+layout_mode = 2
+
+[node name="RowVolitionsLabelInstance" parent="CenterVBox/VolitionsRowHBox/VolitionsLabelCounterVBox" unique_id=723539233 instance=ExtResource("3_label")]
+layout_mode = 2
+
+[node name="LabelResource" parent="CenterVBox/VolitionsRowHBox/VolitionsLabelCounterVBox/RowVolitionsLabelInstance" index="0" unique_id=9219547]
+text = "Volitions"
+
+[node name="RowVolitionsInstance" parent="CenterVBox/VolitionsRowHBox/VolitionsLabelCounterVBox" unique_id=1889120558 instance=ExtResource("2_row")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 6
+
+[node name="MinusVolitions" type="Button" parent="CenterVBox/VolitionsRowHBox" unique_id=152336539]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "-"
+
+[node name="HSeparator2" type="HSeparator" parent="CenterVBox" unique_id=76888137]
+layout_mode = 2
+
+[node name="MultiGrid" type="GridContainer" parent="CenterVBox" unique_id=694908423]
+custom_minimum_size = Vector2(160, 75)
+layout_mode = 2
+columns = 2
+
+[node name="10XButton" type="Button" parent="CenterVBox/MultiGrid" unique_id=698121895]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "10X"
+
+[node name="100XButton" type="Button" parent="CenterVBox/MultiGrid" unique_id=668660059]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "100X"
+
+[node name="CSTMButton" type="Button" parent="CenterVBox/MultiGrid" unique_id=348842211]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "CSTM"
+
+[node name="ALLButton" type="Button" parent="CenterVBox/MultiGrid" unique_id=57180832]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "ALL"
+
+[node name="CustomInputContainerHBox" type="HBoxContainer" parent="CenterVBox" unique_id=1011984957]
+visible = false
+layout_mode = 2
+
+[node name="CustomLineEdit" type="LineEdit" parent="CenterVBox/CustomInputContainerHBox" unique_id=1856940066]
+layout_mode = 2
+
+[node name="OKButton" type="Button" parent="CenterVBox/CustomInputContainerHBox" unique_id=204326832]
+layout_mode = 2
+text = "OK"
+
+[editable path="CenterVBox/UonitesRowHBox/UonitesLabelCounterVBox/RowUonitesLabelInstance"]
+[editable path="CenterVBox/UonitesRowHBox/UonitesLabelCounterVBox/RowUonitesInstance"]
+[editable path="CenterVBox/FociRowHBox/FociLabelCounterVBox/RowFociLabelInstance"]
+[editable path="CenterVBox/FociRowHBox/FociLabelCounterVBox/RowFociInstance"]
+[editable path="CenterVBox/VolitionsRowHBox/VolitionsLabelCounterVBox/RowVolitionsLabelInstance"]
+[editable path="CenterVBox/VolitionsRowHBox/VolitionsLabelCounterVBox/RowVolitionsInstance"]

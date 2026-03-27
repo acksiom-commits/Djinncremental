@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://n615m3l851vj"]
+
+[ext_resource type="Script" uid="uid://d34qmra7tavhf" path="res://label_resource_row.gd" id="1_kyfpt"]
+
+[node name="LabelResourceHBox" type="HBoxContainer" unique_id=509980595]
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("1_kyfpt")
+
+[node name="LabelResource" type="Label" parent="." unique_id=9219547]
+layout_mode = 2
