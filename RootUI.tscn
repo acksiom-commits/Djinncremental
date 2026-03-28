@@ -15,6 +15,7 @@
 [ext_resource type="Texture2D" uid="uid://cr843n70v8kle" path="res://icons/grain.svg" id="12_ubeuf"]
 [ext_resource type="Texture2D" uid="uid://ds84s3o6aht03" path="res://icons/uonite.svg" id="13_34no1"]
 [ext_resource type="PackedScene" uid="uid://ghxpihrmiisr" path="res://ButtonLabel.tscn" id="15_8msm3"]
+[ext_resource type="PackedScene" path="res://CooldownBar.tscn" id="16_jgph3"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_hloqn"]
 shader = ExtResource("1_6fk1d")
@@ -96,13 +97,13 @@ size_flags_vertical = 3
 layout_mode = 2
 
 [node name="BarsPanelContainer" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox" unique_id=558326061]
-custom_minimum_size = Vector2(180, 0)
+custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 size_flags_vertical = 0
 theme_override_styles/panel = SubResource("StyleBoxEmpty_iovhu")
 
 [node name="BarsMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer" unique_id=1061440950]
-custom_minimum_size = Vector2(180, 0)
+custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 theme_override_constants/margin_left = 6
 theme_override_constants/margin_top = 6
@@ -110,12 +111,12 @@ theme_override_constants/margin_right = 6
 theme_override_constants/margin_bottom = 6
 
 [node name="BarsVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin" unique_id=536996152]
-custom_minimum_size = Vector2(180, 0)
+custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 theme_override_constants/separation = 2
 
 [node name="DirectReadoutsPanelContainer" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=1202056649]
-custom_minimum_size = Vector2(180, 0)
+custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 size_flags_vertical = 0
 theme_override_styles/panel = SubResource("StyleBoxEmpty_g5yj0")
@@ -129,7 +130,7 @@ theme_override_constants/margin_right = 6
 theme_override_constants/margin_bottom = 6
 
 [node name="DirectReadoutsVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin" unique_id=1897412424]
-custom_minimum_size = Vector2(180, 0)
+custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 size_flags_vertical = 0
 
@@ -540,6 +541,11 @@ theme_override_font_sizes/bold_font_size = 16
 [node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCompressButton/ButtonLabelInstance" index="1" unique_id=1248530810]
 theme_override_font_sizes/normal_font_size = 20
 
+[node name="MonadCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=100000001 instance=ExtResource("16_jgph3")]
+layout_mode = 2
+resource_key = "monad"
+operation_key = "sparks_summon"
+
 [node name="MonadCountersVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=775798078]
 custom_minimum_size = Vector2(140, 0)
 layout_mode = 2
@@ -575,6 +581,11 @@ theme_override_font_sizes/bold_font_size = 16
 [node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/IotaCompressButton/ButtonLabelInstance" index="1" unique_id=1248530810]
 theme_override_font_sizes/normal_font_size = 20
 
+[node name="IotaCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=1890166982 instance=ExtResource("16_jgph3")]
+layout_mode = 2
+resource_key = "iota"
+operation_key = "iota_compress"
+
 [node name="RowIotaInstance" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=27033557 instance=ExtResource("5_g5yj0")]
 custom_minimum_size = Vector2(140, 20)
 layout_mode = 2
@@ -599,6 +610,11 @@ theme_override_font_sizes/bold_font_size = 16
 [node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/ParticleCompressButton/ButtonLabelInstance" index="1" unique_id=1248530810]
 theme_override_font_sizes/normal_font_size = 20
 
+[node name="ParticleCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=1119047235 instance=ExtResource("16_jgph3")]
+layout_mode = 2
+resource_key = "particle"
+operation_key = "particle_compress"
+
 [node name="RowParticleInstance" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=997858997 instance=ExtResource("5_g5yj0")]
 custom_minimum_size = Vector2(140, 20)
 layout_mode = 2
@@ -622,6 +638,11 @@ theme_override_font_sizes/normal_font_size = 24
 
 [node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/CreateUoniteButton/ButtonLabelInstance" index="1" unique_id=1248530810]
 theme_override_font_sizes/normal_font_size = 24
+
+[node name="UoniteCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=819063763 instance=ExtResource("16_jgph3")]
+layout_mode = 2
+resource_key = "uonite"
+operation_key = "uonite_create"
 
 [node name="RightStackVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox" unique_id=1252689769]
 layout_mode = 2
@@ -693,6 +714,11 @@ theme_override_font_sizes/bold_font_size = 16
 
 [node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradAssembleButton/ButtonLabelInstance" index="1" unique_id=1248530810]
 theme_override_font_sizes/normal_font_size = 20
+
+[node name="TetradCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox" unique_id=2111105886 instance=ExtResource("16_jgph3")]
+layout_mode = 2
+resource_key = "tetrad"
+operation_key = "tetrad_assemble"
 
 [node name="TetradColumnsHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox" unique_id=333310698]
 layout_mode = 2
@@ -776,6 +802,11 @@ resource_key = "mote"
 [node name="TopLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleMoteGrainVBox/MoteAssembleButton/ButtonLabelInstance" index="0" unique_id=542474393]
 theme_override_font_sizes/bold_font_size = 16
 
+[node name="MoteCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleMoteGrainVBox" unique_id=1899966072 instance=ExtResource("16_jgph3")]
+layout_mode = 2
+resource_key = "mote"
+operation_key = "mote_assemble"
+
 [node name="RowMoteInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleMoteGrainVBox" unique_id=1484432392 instance=ExtResource("5_g5yj0")]
 layout_mode = 2
 
@@ -796,6 +827,11 @@ theme_override_font_sizes/bold_font_size = 16
 
 [node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleMoteGrainVBox/GrainAssembleButton/ButtonLabelInstance2" index="1" unique_id=1248530810]
 theme_override_font_sizes/normal_font_size = 20
+
+[node name="GrainCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleMoteGrainVBox" unique_id=655964790 instance=ExtResource("16_jgph3")]
+layout_mode = 2
+resource_key = "grain"
+operation_key = "grain_assemble"
 
 [node name="RowGrainInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleMoteGrainVBox" unique_id=172671712 instance=ExtResource("5_g5yj0")]
 layout_mode = 2
