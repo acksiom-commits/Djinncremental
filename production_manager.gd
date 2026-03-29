@@ -70,16 +70,22 @@ func _process(delta: float) -> void:
     if not gc or delta <= 0.0:
         return
 
+    # Prevent burst on lag spike or tab-back by clamping delta
+    var clamped_delta = min(delta, 0.1)
+
     for op in DEPENDENCY_ORDER:
         var interval: float = get_timer_intervals().get(op, 1.0)
         var assigned: BigNum = gc.get_operation_total_bignum(op)
 
         if assigned.is_zero():
+            # Reset accumulator and smoothed rate when no workers
+            _accum[op] = 0.0
+            _smoothed_rates[op] = 0.0
             gc.rates[op] = BigNum.zero()
             continue
 
         # --- ACCUMULATE TIME INTO DISCRETE ATTEMPTS ---
-        _accum[op] += (1.0 / interval) * delta
+        _accum[op] += (1.0 / interval) * clamped_delta
 
         var whole: int = int(_accum[op])
 
@@ -87,6 +93,8 @@ func _process(delta: float) -> void:
             gc.rates[op] = BigNum.zero()
             continue
 
+        # Clamp whole to prevent massive bursts (max 2x expected per-frame)
+        whole = min(whole, 3)
         _accum[op] -= float(whole)
 
         # Batch size = assignment × number of completed attempts
@@ -103,17 +111,22 @@ func _process(delta: float) -> void:
             "particle_compress": actual = _produce_particle_compress(batch)
             "grain_assemble":    actual = _produce_grain_assemble(batch)
 
-        # Convert to per-second rate
-        gc.rates[op] = actual.mul_float(1.0 / delta)
-
-    # === SMOOTHED RATES — eliminates 1-frame spikes (+199 Iota flash) ===
-    for op in gc.rates:
-        var current_f = gc.rates[op].to_float()
+        # Feed raw per-second into smoother (divide by interval, not delta)
+        var op_interval = get_timer_intervals().get(op, 1.0)
+        var raw_per_sec = actual.to_float() / op_interval
         if not _smoothed_rates.has(op):
-            _smoothed_rates[op] = current_f
+            _smoothed_rates[op] = raw_per_sec
         else:
             var alpha = 0.15
-            _smoothed_rates[op] = _smoothed_rates[op] * (1.0 - alpha) + current_f * alpha
+            _smoothed_rates[op] = lerp(_smoothed_rates[op], raw_per_sec, alpha)
+        
+        # DEBUG
+        if op == "iota_compress" or op == "mote_assemble":
+            print("DEBUG ", op, ": actual=", actual.to_float(), " raw=", raw_per_sec, " smoothed=", _smoothed_rates[op])
+
+    # === WRITE SMOOTHED RATES TO gc.rates ===
+    for op in DEPENDENCY_ORDER:
+        gc.rates[op] = BigNum.from_float(_smoothed_rates.get(op, 0.0))
 
 # ===================== PRODUCTION HELPERS (continuous) =====================
 func _produce_sparks_summon(requested: BigNum) -> BigNum:
@@ -128,7 +141,7 @@ func _produce_monad_compress(requested: BigNum) -> BigNum:
     if gc.is_locked("sparks"):
         return BigNum.zero()
 
-    var max_by_sparks = gc.sparks.mul_float(1.0 / 5.0)
+    var max_by_sparks = gc.sparks.div_int_floor(5)
     var actual = _bignum_min(requested, max_by_sparks)
     if actual.is_zero():
         return BigNum.zero()
@@ -141,8 +154,8 @@ func _produce_tetrad_assemble(requested: BigNum) -> BigNum:
     if requested.is_zero():
         return BigNum.zero()
 
-    var max_by_sparks = gc.sparks.mul_float(1.0 / 1.0)
-    var max_by_monads = gc.get_monad_unlocked_total().mul_float(1.0 / 4.0)
+    var max_by_sparks = gc.sparks
+    var max_by_monads = gc.get_monad_unlocked_total().div_int_floor(4)
     var actual = _bignum_min(requested, _bignum_min(max_by_sparks, max_by_monads))
     if actual.is_zero():
         return BigNum.zero()
@@ -154,7 +167,7 @@ func _produce_iota_compress(requested: BigNum) -> BigNum:
     if requested.is_zero():
         return BigNum.zero()
 
-    var max_by_tetrads = gc.get_tetrad_unlocked_total().mul_float(1.0 / 5.0)
+    var max_by_tetrads = gc.get_tetrad_unlocked_total().div_int_floor(5)
     var actual = _bignum_min(requested, max_by_tetrads)
     if actual.is_zero():
         return BigNum.zero()
@@ -169,9 +182,9 @@ func _produce_mote_assemble(requested: BigNum) -> BigNum:
     if gc.is_locked("sparks") or gc.is_locked("iota"):
         return BigNum.zero()
 
-    var max_by_sparks = gc.sparks.mul_float(1.0 / 5.0)
-    var max_by_monads = gc.get_monad_unlocked_total().mul_float(1.0 / 16.0)
-    var max_by_iota = gc.iota.mul_float(1.0 / 4.0)
+    var max_by_sparks = gc.sparks.div_int_floor(5)
+    var max_by_monads = gc.get_monad_unlocked_total().div_int_floor(16)
+    var max_by_iota = gc.iota.div_int_floor(4)
     var actual = _bignum_min(requested,
                        _bignum_min(max_by_sparks,
                        _bignum_min(max_by_monads, max_by_iota)))
@@ -190,7 +203,7 @@ func _produce_particle_compress(requested: BigNum) -> BigNum:
     if gc.is_locked("mote"):
         return BigNum.zero()
 
-    var max_by_mote = gc.mote.mul_float(1.0 / 5.0)
+    var max_by_mote = gc.mote.div_int_floor(5)
     var actual = _bignum_min(requested, max_by_mote)
     if actual.is_zero():
         return BigNum.zero()
@@ -205,10 +218,10 @@ func _produce_grain_assemble(requested: BigNum) -> BigNum:
     if gc.is_locked("sparks") or gc.is_locked("iota") or gc.is_locked("particle"):
         return BigNum.zero()
 
-    var max_by_sparks = gc.sparks.mul_float(1.0 / 25.0)
-    var max_by_monads = gc.get_monad_unlocked_total().mul_float(1.0 / 64.0)
-    var max_by_iota = gc.iota.mul_float(1.0 / 16.0)
-    var max_by_particle = gc.particle.mul_float(1.0 / 4.0)
+    var max_by_sparks = gc.sparks.div_int_floor(25)
+    var max_by_monads = gc.get_monad_unlocked_total().div_int_floor(64)
+    var max_by_iota = gc.iota.div_int_floor(16)
+    var max_by_particle = gc.particle.div_int_floor(4)
     var actual = _bignum_min(requested,
                          _bignum_min(max_by_sparks,
                          _bignum_min(max_by_monads,
