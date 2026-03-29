@@ -47,6 +47,8 @@ const DEPENDENCY_ORDER: Array[String] = [
 # ===================== NODE REFERENCES ====================
 var gc: Node = null
 var _smoothed_rates: Dictionary = {}   # exponential smoothing for stable UI rates
+var _accum: Dictionary = {}
+
 
 func _ready() -> void:
     gc = get_node_or_null("/root/GameContext")
@@ -55,6 +57,11 @@ func _ready() -> void:
         return
     # No timer nodes anymore — production is fully continuous.
     _smoothed_rates = {}
+
+    # --- NEW: initialize accumulators ---
+    _accum = {}
+    for op in DEPENDENCY_ORDER:
+        _accum[op] = 0.0
 
 # ==================================================
 # CONTINUOUS PRODUCTION (timerless)
@@ -71,18 +78,32 @@ func _process(delta: float) -> void:
             gc.rates[op] = BigNum.zero()
             continue
 
-        var potential: BigNum = assigned.mul_float(1.0 / interval)
+        # --- ACCUMULATE TIME INTO DISCRETE ATTEMPTS ---
+        _accum[op] += (1.0 / interval) * delta
+
+        var whole: int = int(_accum[op])
+
+        if whole <= 0:
+            gc.rates[op] = BigNum.zero()
+            continue
+
+        _accum[op] -= float(whole)
+
+        # Batch size = assignment × number of completed attempts
+        var batch: BigNum = assigned.mul_int(whole)
+
         var actual: BigNum = BigNum.zero()
 
         match op:
-            "sparks_summon":     actual = _produce_sparks_summon(potential)
-            "monad_compress":    actual = _produce_monad_compress(potential)
-            "tetrad_assemble":   actual = _produce_tetrad_assemble(potential)
-            "iota_compress":     actual = _produce_iota_compress(potential)
-            "mote_assemble":     actual = _produce_mote_assemble(potential)
-            "particle_compress": actual = _produce_particle_compress(potential)
-            "grain_assemble":    actual = _produce_grain_assemble(potential)
+            "sparks_summon":     actual = _produce_sparks_summon(batch)
+            "monad_compress":    actual = _produce_monad_compress(batch)
+            "tetrad_assemble":   actual = _produce_tetrad_assemble(batch)
+            "iota_compress":     actual = _produce_iota_compress(batch)
+            "mote_assemble":     actual = _produce_mote_assemble(batch)
+            "particle_compress": actual = _produce_particle_compress(batch)
+            "grain_assemble":    actual = _produce_grain_assemble(batch)
 
+        # Convert to per-second rate
         gc.rates[op] = actual.mul_float(1.0 / delta)
 
     # === SMOOTHED RATES — eliminates 1-frame spikes (+199 Iota flash) ===
