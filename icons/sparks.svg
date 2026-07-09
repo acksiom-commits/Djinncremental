@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-28 -28 56 56" width="48" height="48">
+  <!-- Part 4v4: White base -->
+  <polygon points="0,-22 6,-3 12,-9 8,0 12,9 6,3 0,22 -6,3 -12,9 -8,0 -12,-9 -6,-3" fill="#ffffff"/>
+  <!-- Part 3v4: Yellow diamond -->
+  <polygon points="0,-15 4,0 0,15 -4,0" fill="#ffe87a"/>
+  <!-- Part 2v6: Right yellow spike -->
+  <polygon points="4.41,0 8.91,-4.5 6.91,0 8.91,4.5" fill="#ffe87a"/>
+  <!-- Part 1v6: Left yellow spike -->
+  <polygon points="-4.41,0 -8.91,-4.5 -6.91,0 -8.91,4.5" fill="#ffe87a"/>
+</svg>

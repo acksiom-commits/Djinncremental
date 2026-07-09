@@ -1,0 +1,94 @@
+@tool
+extends MeshInstance3D
+
+@export var size: float = 0.67
+@export var rotation_speed: float = 0.8
+@export var line_color: Color = Color(0.6, 0.27, 0.93, 1.0)
+@export_range(0, 5) var ability_level: int = 0:
+    set(value):
+        ability_level = clamp(value, 0, 5)
+        if is_node_ready():
+            _rebuild_mesh()
+
+var time: float = 0.0
+
+func _ready() -> void:
+    _rebuild_mesh()
+    
+    var material := StandardMaterial3D.new()
+    material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    material.albedo_color = line_color
+    set_surface_override_material(0, material)
+
+func _rebuild_mesh() -> void:
+    var st := SurfaceTool.new()
+    st.begin(Mesh.PRIMITIVE_LINES)
+    
+    var main_h := sqrt(6.0) / 3.0 * size
+    var main_r := size / sqrt(3.0)
+    
+    # Main outer tetra
+    var v0 := Vector3(0, -main_h/2, 0)
+    var v1 := Vector3(main_r, main_h/2, 0)
+    var v2 := Vector3(-main_r/2, main_h/2,  main_r * sqrt(3.0)/2)
+    var v3 := Vector3(-main_r/2, main_h/2, -main_r * sqrt(3.0)/2)
+    add_tetra_edges(st, v0, v1, v2, v3)
+    
+    # 1. Bottom internal (unchanged - you confirmed good)
+    if ability_level >= 1:
+        var s := 0.35
+        var h := main_h * s
+        var r := main_r * s
+        var y := -main_h * 0.4
+        var b0 := Vector3(0, y, 0)
+        var b1 := Vector3(r, y + h, 0)
+        var b2 := Vector3(-r/2, y + h,  r * sqrt(3.0)/2)
+        var b3 := Vector3(-r/2, y + h, -r * sqrt(3.0)/2)
+        add_tetra_edges(st, b0, b1, b2, b3)
+    
+    # 2. Inverted central (unchanged - you confirmed good)
+    if ability_level >= 2:
+        var s := 0.35
+        var h := main_h * s
+        var r := main_r * s
+        var y := main_h * 0.4
+        var i0 := Vector3(0, y, 0)
+        var i1 := Vector3(r, y - h, 0)
+        var i2 := Vector3(-r/2, y - h,  r * sqrt(3.0)/2)
+        var i3 := Vector3(-r/2, y - h, -r * sqrt(3.0)/2)
+        add_tetra_edges(st, i0, i1, i2, i3)
+    
+    # 3-5. Three top point-down internals - EXACT same gap as bottom internal
+    if ability_level >= 3:
+        var s := 0.35
+        var h := main_h * s
+        var r := main_r * s
+        var y := main_h * 0.02                       # keeps top face fully inside
+        var angle_offset := 0.0                       # perfectly aligned with outer top vertices
+        var radial_offset := main_r * 0.38           # ← math-matched to give identical gap as bottom internal
+        
+        for i in 3:
+            if ability_level < 3 + i: break
+            var angle := i * (PI * 2.0 / 3.0) + angle_offset
+            var cx := cos(angle) * radial_offset
+            var cz := sin(angle) * radial_offset
+            
+            var s0 := Vector3(cx, y, cz)
+            var s1 := Vector3(cx + r, y + h, cz)
+            var s2 := Vector3(cx - r/2, y + h, cz + r * sqrt(3.0)/2)
+            var s3 := Vector3(cx - r/2, y + h, cz - r * sqrt(3.0)/2)
+            add_tetra_edges(st, s0, s1, s2, s3)
+    
+    mesh = st.commit()
+
+func add_tetra_edges(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3) -> void:
+    st.add_vertex(a); st.add_vertex(b)
+    st.add_vertex(a); st.add_vertex(c)
+    st.add_vertex(a); st.add_vertex(d)
+    st.add_vertex(b); st.add_vertex(c)
+    st.add_vertex(b); st.add_vertex(d)
+    st.add_vertex(c); st.add_vertex(d)
+
+func _process(delta: float) -> void:
+    time += delta
+    rotation.y = time * rotation_speed

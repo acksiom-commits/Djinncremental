@@ -1,0 +1,25 @@
+[gd_scene format=3 uid="uid://bdyxaobophvlu"]
+
+[ext_resource type="Script" uid="uid://l0f3r0fb21nh" path="res://resource_row.gd" id="1_clmax"]
+
+[node name="ResourceRow" type="HBoxContainer" unique_id=810845569]
+custom_minimum_size = Vector2(80, 20)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/separation = 0
+script = ExtResource("1_clmax")
+
+[node name="ResourceLabel" type="RichTextLabel" parent="." unique_id=1655298137]
+custom_minimum_size = Vector2(80, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+bbcode_enabled = true
+text = "test"
+fit_content = true
+scroll_active = false

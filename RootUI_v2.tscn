@@ -1,0 +1,1514 @@
+[gd_scene format=4 uid="uid://cbg8cq5mfqpey"]
+
+[ext_resource type="Shader" uid="uid://bj587btv7rvlh" path="res://starfield.gdshader" id="1_6fk1d"]
+[ext_resource type="Script" uid="uid://mbq2iec7rgyj" path="res://starfield_background.gd" id="2_gldde"]
+[ext_resource type="PackedScene" uid="uid://qp0ojyglrtk2" path="res://TickerBar.tscn" id="3_8msm3"]
+[ext_resource type="Script" uid="uid://dn1c0kpvkns31" path="res://root_ui.gd" id="4_jgph3"]
+[ext_resource type="PackedScene" uid="uid://c82d68kma3ec3" path="res://AllocationWheelControl.tscn" id="5_8msm3"]
+[ext_resource type="PackedScene" uid="uid://bdyxaobophvlu" path="res://ResourceRow.tscn" id="5_g5yj0"]
+[ext_resource type="Texture2D" uid="uid://d1aj81jxtkljn" path="res://icons/sparks.svg" id="6_aj54v"]
+[ext_resource type="Script" uid="uid://d0skh0gieda4y" path="res://constellation_panel.gd" id="6_dcit8"]
+[ext_resource type="Script" uid="uid://dq3374ogtc0sh" path="res://constellation_popout.gd" id="7_21pfi"]
+[ext_resource type="Texture2D" uid="uid://b65agx5gpvuic" path="res://icons/monad.svg" id="7_vou2s"]
+[ext_resource type="Texture2D" uid="uid://orge8vaa8xid" path="res://icons/tetrad.svg" id="8_p0m18"]
+[ext_resource type="Texture2D" uid="uid://60vft1ed0jjd" path="res://icons/iota.svg" id="9_dcit8"]
+[ext_resource type="Texture2D" uid="uid://kevx6igh4pny" path="res://icons/mote.svg" id="10_nvahd"]
+[ext_resource type="Texture2D" uid="uid://bd8si8jg10uro" path="res://icons/particle.svg" id="11_p3b26"]
+[ext_resource type="Texture2D" uid="uid://cr843n70v8kle" path="res://icons/grain.svg" id="12_ubeuf"]
+[ext_resource type="Texture2D" uid="uid://ds84s3o6aht03" path="res://icons/uonite.svg" id="13_34no1"]
+[ext_resource type="PackedScene" uid="uid://ghxpihrmiisr" path="res://ButtonLabel.tscn" id="15_8msm3"]
+[ext_resource type="Script" uid="uid://bxthxopf80lsk" path="res://archon_tetrahedron.gd" id="15_aj54v"]
+[ext_resource type="PackedScene" path="res://CooldownBar.tscn" id="16_jgph3"]
+[ext_resource type="PackedScene" uid="uid://3biuj3blqqca" path="res://UoniteIcosahedron.tscn" id="17_12345"]
+[ext_resource type="Script" uid="uid://en5fyk5h6uma" path="res://storage_display.gd" id="17_nvahd"]
+[ext_resource type="Shader" uid="uid://bwd7ediqhrse" path="res://uonite_fill.gdshader" id="19_vou2s"]
+[ext_resource type="Script" uid="uid://bjhdsykofwppd" path="res://dialogue_journal_popout.gd" id="23_p3b26"]
+[ext_resource type="Script" uid="uid://dw4xgcxeoktp8" path="res://ages_popout.gd" id="24_ubeuf"]
+[ext_resource type="PackedScene" uid="uid://0btet4jdfswa" path="res://MenuPopout.tscn" id="25_34no1"]
+[ext_resource type="Script" uid="uid://djvx7uirw5be7" path="res://constellation_overlay.gd" id="26_21pfi"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_hloqn"]
+shader = ExtResource("1_6fk1d")
+shader_parameter/spark_count = 0.0
+shader_parameter/time_offset = 0.0
+shader_parameter/view_matrix = Basis(1, 0, 0, 0, 1, 0, 0, 0, 1)
+shader_parameter/constellation_star_count = 0
+shader_parameter/constellation_star_dirs = PackedVector3Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/constellation_star_brightnesses = PackedFloat32Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+shader_parameter/viewport_size = Vector2(1920, 1080)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_3utkm"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_iovhu"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_g5yj0"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_5n8xk"]
+bg_color = Color(0.4627451, 0.57254905, 0.9607843, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qwos5"]
+bg_color = Color(0.16711542, 0.70545805, 0.4538973, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_rs03y"]
+bg_color = Color(0.4627451, 0.57254905, 0.9607843, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_1nheb"]
+bg_color = Color(0.16862746, 0.7058824, 0.45490196, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_3utkm"]
+bg_color = Color(0.4627451, 0.57254905, 0.9607843, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_iovhu"]
+bg_color = Color(0.16862746, 0.7058824, 0.45490196, 1)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_7a4xp"]
+
+[sub_resource type="ArrayMesh" id="ArrayMesh_v630r"]
+_surfaces = [{
+"aabb": AABB(-0.335, -0.27352634, -0.12894157, 0.67, 0.5470527, 0.3868247),
+"attribute_data": PackedByteArray("3qgW/wsIAf/eqBb/3qgW/96oFv/eqBb/CwgB/96oFv8LCAH/3qgW/96oFv/eqBb///8j/xENAf///yP///8j////I////yP/EQ0B////I/8RDQH///8j////I////yP///8j/xENAf///yP///8j////I////yP/EQ0B////I/8RDQH///8j////I////yP///8j/xENAf///yP///8j////I////yP/EQ0B////I/8RDQH///8j////I////yP/"),
+"format": 34359738377,
+"primitive": 1,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 48,
+"vertex_data": PackedByteArray("AAAAAKULjL5CCQS+AAAAAAAAAABCCYQ+AAAAAKULjL5CCQS+H4WrPqULjD5CCQS+AAAAAKULjL5CCQS+H4WrvqULjD5CCQS+AAAAAAAAAABCCYQ+H4WrPqULjD5CCQS+AAAAAAAAAABCCYQ+H4WrvqULjD5CCQS+H4WrPqULjD5CCQS+H4WrvqULjD5CCQS+AAAAAGlmTb6il/O9AAAAAMBhFb7gqz27AAAAAGlmTb6il/O98tLNPbxhFb2il/O9AAAAAGlmTb6il/O98tLNvbxhFb2il/O9AAAAAMBhFb7gqz278tLNPbxhFb2il/O9AAAAAMBhFb7gqz278tLNvbxhFb2il/O98tLNPbxhFb2il/O98tLNvbxhFb2il/O9kqYUvr5hFT2il/O9kqYUvtm+8j3hqz27kqYUvr5hFT2il/O9ZfQ2vWlmTT6il/O9kqYUvr5hFT2il/O9C5B7vmlmTT6il/O9kqYUvtm+8j3hqz27ZfQ2vWlmTT6il/O9kqYUvtm+8j3hqz27C5B7vmlmTT6il/O9ZfQ2vWlmTT6il/O9C5B7vmlmTT6il/O9kqYUPr5hFT2il/O9kqYUPtm+8j3hqz27kqYUPr5hFT2il/O9C5B7PmlmTT6il/O9kqYUPr5hFT2il/O9ZfQ2PWlmTT6il/O9kqYUPtm+8j3hqz27C5B7PmlmTT6il/O9kqYUPtm+8j3hqz27ZfQ2PWlmTT6il/O9C5B7PmlmTT6il/O9ZfQ2PWlmTT6il/O9")
+}]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gsnsi"]
+shading_mode = 0
+vertex_color_use_as_albedo = true
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_jgph3"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_jq48x"]
+
+[sub_resource type="ArrayMesh" id="ArrayMesh_8g3rf"]
+_surfaces = [{
+"aabb": AABB(-0.8506508, -1, -0.8944272, 1.7013016, 2, 1.7888544),
+"format": 34359742465,
+"index_count": 84,
+"index_data": PackedByteArray("AAACAAAABAAAAAYAAAAIAAAACgABAAMAAQAEAAEABgABAAkAAQALAAIABQACAAcAAgAIAAIACgADAAUAAwAHAAMACQADAAsABAAGAAQACAAEAAkABQAHAAUACAAFAAkABgAKAAYACwAHAAoABwALAAgACQAKAAsAAAAMAAEADAACAAwAAwAMAAQADAAFAAwABgAMAAcADAAIAAwACQAMAAoADAALAAwA"),
+"primitive": 1,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 13,
+"vertex_data": PackedByteArray("AAAAAAAAgD8AAIAzAAAAAC355L4u+WS/AAAAAC355D4u+WQ/AAAAAAAAgL8AAICzUJYGPy/55D5LPjm/UJYGPy/55L5LPjk/UJYGvy/55D5LPjm/UJYGvy/55L5LPjk/QMRZPy355D5pg40+QMRZPy355L5pg42+QMRZvy355D5pg40+QMRZvy355L5pg42+AAAAAAAAAAAAAAAA")
+}, {
+"aabb": AABB(-0.8506508, -1, -0.8944272, 1.7013016, 2, 1.7888544),
+"format": 34359738369,
+"primitive": 3,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 192,
+"vertex_data": PackedByteArray("AAAAAAAAgD8AAIAzAAAAAC355D4u+WQ/QMRZPy355D5pg40+AAAAAAAAAAAAAAAAAAAAAC355D4u+WQ/AAAAAAAAgD8AAIAzAAAAAAAAAAAAAAAAQMRZPy355D5pg40+AAAAAC355D4u+WQ/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIAzQMRZPy355D5pg40+AAAAAAAAgD8AAIAzQMRZvy355D5pg40+AAAAAC355D4u+WQ/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIAzAAAAAC355D4u+WQ/AAAAAAAAAAAAAAAAAAAAAC355D4u+WQ/QMRZvy355D5pg40+AAAAAAAAAAAAAAAAQMRZvy355D5pg40+AAAAAAAAgD8AAIAzAAAAAAAAgD8AAIAzUJYGPy/55D5LPjm/UJYGvy/55D5LPjm/AAAAAAAAAAAAAAAAUJYGPy/55D5LPjm/AAAAAAAAgD8AAIAzAAAAAAAAAAAAAAAAUJYGvy/55D5LPjm/UJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIAzUJYGvy/55D5LPjm/AAAAAAAAgD8AAIAzQMRZPy355D5pg40+UJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIAzUJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAUJYGPy/55D5LPjm/QMRZPy355D5pg40+AAAAAAAAAAAAAAAAQMRZPy355D5pg40+AAAAAAAAgD8AAIAzAAAAAAAAgD8AAIAzUJYGvy/55D5LPjm/QMRZvy355D5pg40+AAAAAAAAAAAAAAAAUJYGvy/55D5LPjm/AAAAAAAAgD8AAIAzAAAAAAAAAAAAAAAAQMRZvy355D5pg40+UJYGvy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIAzQMRZvy355D5pg40+AAAAAC355L4u+WS/QMRZPy355L5pg42+AAAAAAAAgL8AAICzAAAAAAAAAAAAAAAAAAAAAC355L4u+WS/AAAAAAAAgL8AAICzAAAAAAAAAAAAAAAAAAAAAAAAgL8AAICzQMRZPy355L5pg42+AAAAAAAAAAAAAAAAQMRZPy355L5pg42+AAAAAC355L4u+WS/AAAAAC355L4u+WS/AAAAAAAAgL8AAICzQMRZvy355L5pg42+AAAAAAAAAAAAAAAAAAAAAAAAgL8AAICzAAAAAC355L4u+WS/AAAAAAAAAAAAAAAAQMRZvy355L5pg42+AAAAAAAAgL8AAICzAAAAAAAAAAAAAAAAAAAAAC355L4u+WS/QMRZvy355L5pg42+AAAAAC355L4u+WS/UJYGvy/55D5LPjm/UJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAC355L4u+WS/UJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAUJYGPy/55D5LPjm/UJYGvy/55D5LPjm/AAAAAAAAAAAAAAAAUJYGvy/55D5LPjm/AAAAAC355L4u+WS/AAAAAC355L4u+WS/UJYGPy/55D5LPjm/QMRZPy355L5pg42+AAAAAAAAAAAAAAAAUJYGPy/55D5LPjm/AAAAAC355L4u+WS/AAAAAAAAAAAAAAAAQMRZPy355L5pg42+UJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAC355L4u+WS/QMRZPy355L5pg42+AAAAAC355L4u+WS/QMRZvy355L5pg42+UJYGvy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAC355L4u+WS/UJYGvy/55D5LPjm/AAAAAAAAAAAAAAAAUJYGvy/55D5LPjm/QMRZvy355L5pg42+AAAAAAAAAAAAAAAAQMRZvy355L5pg42+AAAAAC355L4u+WS/AAAAAC355D4u+WQ/UJYGvy/55L5LPjk/UJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAC355D4u+WQ/UJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAUJYGPy/55L5LPjk/UJYGvy/55L5LPjk/AAAAAAAAAAAAAAAAUJYGvy/55L5LPjk/AAAAAC355D4u+WQ/AAAAAC355D4u+WQ/UJYGPy/55L5LPjk/QMRZPy355D5pg40+AAAAAAAAAAAAAAAAUJYGPy/55L5LPjk/AAAAAC355D4u+WQ/AAAAAAAAAAAAAAAAQMRZPy355D5pg40+UJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAC355D4u+WQ/QMRZPy355D5pg40+AAAAAC355D4u+WQ/QMRZvy355D5pg40+UJYGvy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAC355D4u+WQ/UJYGvy/55L5LPjk/AAAAAAAAAAAAAAAAUJYGvy/55L5LPjk/QMRZvy355D5pg40+AAAAAAAAAAAAAAAAQMRZvy355D5pg40+AAAAAC355D4u+WQ/AAAAAAAAgL8AAICzUJYGPy/55L5LPjk/UJYGvy/55L5LPjk/AAAAAAAAAAAAAAAAUJYGPy/55L5LPjk/AAAAAAAAgL8AAICzAAAAAAAAAAAAAAAAUJYGvy/55L5LPjk/UJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAAAAgL8AAICzUJYGvy/55L5LPjk/AAAAAAAAgL8AAICzQMRZPy355L5pg42+UJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAAAAgL8AAICzUJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAUJYGPy/55L5LPjk/QMRZPy355L5pg42+AAAAAAAAAAAAAAAAQMRZPy355L5pg42+AAAAAAAAgL8AAICzAAAAAAAAgL8AAICzUJYGvy/55L5LPjk/QMRZvy355L5pg42+AAAAAAAAAAAAAAAAUJYGvy/55L5LPjk/AAAAAAAAgL8AAICzAAAAAAAAAAAAAAAAQMRZvy355L5pg42+UJYGvy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAAAAgL8AAICzQMRZvy355L5pg42+")
+}]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_bq0y0"]
+shading_mode = 0
+albedo_color = Color(0.8, 0.6, 0.1, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_wx0b7"]
+render_priority = 1
+shader = ExtResource("19_vou2s")
+shader_parameter/outer_color = Color(0.6, 0.27, 0.93, 1)
+shader_parameter/mid_color = Color(0.2, 0.85, 0.35, 1)
+shader_parameter/inner_color = Color(0.95, 0.25, 0.25, 1)
+shader_parameter/center_spark = Color(1, 1, 1, 1)
+shader_parameter/purple_size = 0.28
+shader_parameter/green_size = 0.27
+shader_parameter/transition_width = 0.02
+shader_parameter/sharpness = 3.0
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_8msm3"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_34no1"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_21pfi"]
+bg_color = Color(0.7487861, 0.7487861, 0.9367591, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_r7y65"]
+bg_color = Color(0.6081563, 0.5159011, 0.75658435, 1)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_64jby"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_xh1ac"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_constel_panel"]
+bg_color = Color(0.07, 0.05, 0.14, 0.97)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.28, 0.62, 0.9)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_qt138"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_xd4cr"]
+
+[node name="Node2D" type="Node2D" unique_id=114161711]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1814375223]
+
+[node name="ColorRect" type="ColorRect" parent="CanvasLayer" unique_id=449649230]
+material = SubResource("ShaderMaterial_hloqn")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_gldde")
+
+[node name="TickerBarPanelContainer" parent="CanvasLayer" unique_id=2141612713 instance=ExtResource("3_8msm3")]
+anchors_preset = 10
+anchor_right = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 2
+size_flags_vertical = 4
+theme_override_styles/panel = SubResource("StyleBoxEmpty_3utkm")
+
+[node name="RootUI" type="VBoxContainer" parent="CanvasLayer" unique_id=637117753]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 36.0
+offset_bottom = 60.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("4_jgph3")
+
+[node name="TopBandHBox" type="HBoxContainer" parent="CanvasLayer/RootUI" unique_id=627384374]
+custom_minimum_size = Vector2(0, 400)
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="AllocationConstellationVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox" unique_id=1368345043]
+layout_mode = 2
+
+[node name="AllocationWheelControl" parent="CanvasLayer/RootUI/TopBandHBox/AllocationConstellationVBox" unique_id=1032489317 instance=ExtResource("5_8msm3")]
+layout_mode = 2
+
+[node name="ConstellationLeftMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/AllocationConstellationVBox" unique_id=1141335201]
+layout_mode = 2
+size_flags_vertical = 0
+mouse_filter = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 0
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 4
+
+[node name="ConstellationPanel" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/AllocationConstellationVBox/ConstellationLeftMargin" unique_id=1832956487]
+custom_minimum_size = Vector2(0, 210)
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+script = ExtResource("6_dcit8")
+
+[node name="ConstellationDisplay" type="Control" parent="CanvasLayer/RootUI/TopBandHBox/AllocationConstellationVBox/ConstellationLeftMargin/ConstellationPanel" unique_id=662104733]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="ConstellationPanelBackground" type="ColorRect" parent="CanvasLayer/RootUI/TopBandHBox/AllocationConstellationVBox/ConstellationLeftMargin/ConstellationPanel/ConstellationDisplay" unique_id=253614451]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.24588895, 0.21189989, 0.34663853, 1)
+
+[node name="ConstellationArtTextureRect" type="TextureRect" parent="CanvasLayer/RootUI/TopBandHBox/AllocationConstellationVBox/ConstellationLeftMargin/ConstellationPanel/ConstellationDisplay" unique_id=1925897276]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="BarsPanelContainer" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox" unique_id=558326061]
+custom_minimum_size = Vector2(142, 0)
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_iovhu")
+
+[node name="BarsMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer" unique_id=1061440950]
+custom_minimum_size = Vector2(142, 0)
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="BarsVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin" unique_id=536996152]
+custom_minimum_size = Vector2(142, 0)
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="DirectReadoutsPanelContainer" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=1202056649]
+custom_minimum_size = Vector2(142, 0)
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_g5yj0")
+
+[node name="DirectReadoutsMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer" unique_id=1069241351]
+custom_minimum_size = Vector2(96, 0)
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 4
+
+[node name="DirectReadoutsVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin" unique_id=1897412424]
+custom_minimum_size = Vector2(142, 0)
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_constants/separation = 2
+
+[node name="RowSparksLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=810845569 instance=ExtResource("5_g5yj0")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowSparksLabelInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowSparksValueInstance" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=810736737 instance=ExtResource("5_g5yj0")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="RowUonitesLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=2017707385 instance=ExtResource("5_g5yj0")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowUonitesLabelInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowUonitesValueInstance" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=25544104 instance=ExtResource("5_g5yj0")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowUonitesValueInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowFociLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=1344321121 instance=ExtResource("5_g5yj0")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowFociLabelInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowFociValueInstance" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=1820930776 instance=ExtResource("5_g5yj0")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowFociValueInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowVolitionsLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=1569569302 instance=ExtResource("5_g5yj0")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowVolitionsLabelInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowVolitionsValueInstance" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=1172186451 instance=ExtResource("5_g5yj0")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowVolitionsValueInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="ReadoutClickVolSeparator" type="HSeparator" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=1848150296]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="GenBarsVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=1797945779]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SparksBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=1825928777]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SparksBarHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/SparksBarVBox" unique_id=1343079818]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="SparkIcon" type="TextureRect" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/SparksBarVBox/SparksBarHBox" unique_id=1202014577]
+custom_minimum_size = Vector2(26, 26)
+layout_mode = 2
+texture = ExtResource("6_aj54v")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="SparksAllocBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/SparksBarVBox/SparksBarHBox" unique_id=229390721]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+theme_override_styles/fill = SubResource("StyleBoxFlat_5n8xk")
+show_percentage = false
+
+[node name="SparksGenBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/SparksBarVBox/SparksBarHBox" unique_id=1974685784]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_qwos5")
+show_percentage = false
+
+[node name="MonadBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=1890506638]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MonadBarLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MonadBarVBox" unique_id=1748942075]
+visible = false
+layout_mode = 2
+
+[node name="MonadBarHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MonadBarVBox" unique_id=160222415]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="MonadIcon" type="TextureRect" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MonadBarVBox/MonadBarHBox" unique_id=397198403]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("7_vou2s")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="MonadAllocBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MonadBarVBox/MonadBarHBox" unique_id=1896982514]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_rs03y")
+show_percentage = false
+
+[node name="MonadGenBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MonadBarVBox/MonadBarHBox" unique_id=746954092]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_1nheb")
+show_percentage = false
+
+[node name="TetradBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=727752988]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="TetradBarLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/TetradBarVBox" unique_id=141683697]
+visible = false
+layout_mode = 2
+
+[node name="TetradBarHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/TetradBarVBox" unique_id=208443077]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="TetradIcon" type="TextureRect" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/TetradBarVBox/TetradBarHBox" unique_id=2000603553]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("8_p0m18")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="TetradAllocBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/TetradBarVBox/TetradBarHBox" unique_id=114060620]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_3utkm")
+show_percentage = false
+
+[node name="TetradGenBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/TetradBarVBox/TetradBarHBox" unique_id=1395042236]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_1nheb")
+show_percentage = false
+
+[node name="ParticleBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=904118127]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ParticleBarLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/ParticleBarVBox" unique_id=373636904]
+visible = false
+layout_mode = 2
+
+[node name="ParticleBarHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/ParticleBarVBox" unique_id=1344754055]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="ParticleIcon" type="TextureRect" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/ParticleBarVBox/ParticleBarHBox" unique_id=774027227]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("11_p3b26")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="ParticleAllocBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/ParticleBarVBox/ParticleBarHBox" unique_id=1157579965]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_3utkm")
+show_percentage = false
+
+[node name="ParticleGenBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/ParticleBarVBox/ParticleBarHBox" unique_id=1417949041]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_iovhu")
+show_percentage = false
+
+[node name="IotaBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=865147827]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="IotaBarLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/IotaBarVBox" unique_id=870910698]
+visible = false
+layout_mode = 2
+
+[node name="IotaBarHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/IotaBarVBox" unique_id=845112111]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="IotaIcon" type="TextureRect" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/IotaBarVBox/IotaBarHBox" unique_id=630518201]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("9_dcit8")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="IotaAllocBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/IotaBarVBox/IotaBarHBox" unique_id=735847672]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_3utkm")
+show_percentage = false
+
+[node name="IotaGenBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/IotaBarVBox/IotaBarHBox" unique_id=1221285983]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_1nheb")
+show_percentage = false
+
+[node name="MoteBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=1229614725]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MoteBarLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MoteBarVBox" unique_id=1417750535]
+visible = false
+layout_mode = 2
+
+[node name="MoteBarHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MoteBarVBox" unique_id=2477530]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="MoteIcon" type="TextureRect" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MoteBarVBox/MoteBarHBox" unique_id=1182280405]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("10_nvahd")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="MoteAllocBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MoteBarVBox/MoteBarHBox" unique_id=1741319935]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_3utkm")
+show_percentage = false
+
+[node name="MoteGenBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MoteBarVBox/MoteBarHBox" unique_id=2109624851]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_1nheb")
+show_percentage = false
+
+[node name="GrainBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=1221749214]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="GrainBarLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/GrainBarVBox" unique_id=1405156862]
+visible = false
+layout_mode = 2
+
+[node name="GrainBarHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/GrainBarVBox" unique_id=3728246]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="GrainIcon" type="TextureRect" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/GrainBarVBox/GrainBarHBox" unique_id=1973285088]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("12_ubeuf")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="GrainAllocBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/GrainBarVBox/GrainBarHBox" unique_id=275669620]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_3utkm")
+show_percentage = false
+
+[node name="GrainGenBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/GrainBarVBox/GrainBarHBox" unique_id=2047877113]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_1nheb")
+show_percentage = false
+
+[node name="UoniteBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=986652004]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="UoniteBarLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/UoniteBarVBox" unique_id=157736101]
+visible = false
+layout_mode = 2
+
+[node name="UoniteBarHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/UoniteBarVBox" unique_id=1713577880]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="UoniteIcon" type="TextureRect" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/UoniteBarVBox/UoniteBarHBox" unique_id=927206766]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("13_34no1")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="UoniteAllocBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/UoniteBarVBox/UoniteBarHBox" unique_id=1345484555]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_3utkm")
+show_percentage = false
+
+[node name="UoniteGenBar" type="ProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/UoniteBarVBox/UoniteBarHBox" unique_id=1628157338]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_1nheb")
+show_percentage = false
+
+[node name="ClickVolGenBarsSeparator" type="HSeparator" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=634978415]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="StorageDisplay" type="Control" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=1432948083]
+custom_minimum_size = Vector2(142, 148)
+layout_mode = 2
+script = ExtResource("17_nvahd")
+
+[node name="ClickVolAssistVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=621716216]
+layout_mode = 2
+
+[node name="ClickVolAssistLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/ClickVolAssistVBox" unique_id=1598191915]
+custom_minimum_size = Vector2(140, 24)
+layout_mode = 2
+theme_override_font_sizes/bold_font_size = 16
+bbcode_enabled = true
+text = "[b]VOLUMITION[/b]"
+scroll_active = false
+horizontal_alignment = 1
+
+[node name="ClickVolitionsHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/ClickVolAssistVBox" unique_id=731248901]
+layout_mode = 2
+alignment = 1
+
+[node name="ClickVolMinusButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/ClickVolAssistVBox/ClickVolitionsHBox" unique_id=731248902]
+custom_minimum_size = Vector2(48, 24)
+layout_mode = 2
+text = "-"
+
+[node name="ClickVolLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/ClickVolAssistVBox/ClickVolitionsHBox" unique_id=731248903]
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "x1"
+horizontal_alignment = 1
+
+[node name="ClickVolPlusButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/ClickVolAssistVBox/ClickVolitionsHBox" unique_id=731248904]
+custom_minimum_size = Vector2(48, 24)
+layout_mode = 2
+text = "+"
+
+[node name="LeftStackVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox" unique_id=505249700]
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_constants/separation = 1
+
+[node name="ClickSelectPanelContainer" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox" unique_id=505249706]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_7a4xp")
+
+[node name="ClickSelectMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer" unique_id=859423426]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 1
+
+[node name="ClickSelectVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin" unique_id=1260259331]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="ArchonGraphicPanel" type="Panel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox" unique_id=867927060]
+custom_minimum_size = Vector2(140, 140)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="ArchonTetrahedronContainer" type="SubViewportContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel" unique_id=867927061]
+custom_minimum_size = Vector2(140, 140)
+layout_mode = 0
+size_flags_horizontal = 0
+size_flags_vertical = 0
+stretch = true
+
+[node name="ArchonTetrahedronViewport" type="SubViewport" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel/ArchonTetrahedronContainer" unique_id=867927062]
+own_world_3d = true
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(140, 140)
+render_target_update_mode = 4
+
+[node name="ArchonTetrahedron" type="MeshInstance3D" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel/ArchonTetrahedronContainer/ArchonTetrahedronViewport" unique_id=1193695241]
+mesh = SubResource("ArrayMesh_v630r")
+surface_material_override/0 = SubResource("StandardMaterial3D_gsnsi")
+script = ExtResource("15_aj54v")
+
+[node name="ArchonCamera" type="Camera3D" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel/ArchonTetrahedronContainer/ArchonTetrahedronViewport" unique_id=867927064]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 5)
+projection = 1
+far = 100.0
+
+[node name="FaceController" type="Node3D" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel/ArchonTetrahedronContainer/ArchonTetrahedronViewport" unique_id=1672739925]
+transform = Transform3D(0.9999998, 0, 0, 0, 0.9999999, 0, 0, 0, 0.9999999, 0, 0, 0)
+visible = false
+
+[node name="SummonSparkButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox" unique_id=1125802846]
+custom_minimum_size = Vector2(140, 106)
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
+[node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/SummonSparkButton" unique_id=72081024 instance=ExtResource("15_8msm3")]
+layout_mode = 0
+resource_key = "spark"
+
+[node name="TopLabel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/SummonSparkButton/ButtonLabelInstance" index="0" unique_id=542474393]
+theme_override_font_sizes/normal_font_size = 20
+
+[node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/SummonSparkButton/ButtonLabelInstance" index="1" unique_id=1248530810]
+theme_override_font_sizes/normal_font_size = 20
+
+[node name="CompressPanelContainer" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox" unique_id=741097241]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_jgph3")
+
+[node name="CompressMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer" unique_id=2109716879]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 1
+theme_override_constants/margin_bottom = 6
+
+[node name="CompressVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin" unique_id=1354417604]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+
+[node name="MonadCompressButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=2021496918]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 4
+theme_override_constants/h_separation = 4
+
+[node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCompressButton" unique_id=25132746 instance=ExtResource("15_8msm3")]
+layout_mode = 0
+resource_key = "monad"
+
+[node name="TopLabel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCompressButton/ButtonLabelInstance" index="0" unique_id=542474393]
+theme_override_font_sizes/bold_font_size = 16
+
+[node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCompressButton/ButtonLabelInstance" index="1" unique_id=1248530810]
+theme_override_font_sizes/normal_font_size = 20
+
+[node name="MonadCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=100000001 instance=ExtResource("16_jgph3")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "monad"
+operation_key = "monad_compress"
+
+[node name="MonadCountersVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=775798078]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+
+[node name="RowSolidMonadInstance" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox" unique_id=1727900665 instance=ExtResource("5_g5yj0")]
+custom_minimum_size = Vector2(142, 20)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="RowLiquidMonadInstance" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox" unique_id=1604804592 instance=ExtResource("5_g5yj0")]
+custom_minimum_size = Vector2(140, 20)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="RowGasMonadInstance" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox" unique_id=1223825008 instance=ExtResource("5_g5yj0")]
+custom_minimum_size = Vector2(140, 20)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CreateUoniteButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=911312431]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 4
+
+[node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/CreateUoniteButton" unique_id=250834036 instance=ExtResource("15_8msm3")]
+layout_mode = 0
+offset_top = 59.0
+offset_right = 140.0
+offset_bottom = 63.0
+resource_key = "uonite"
+
+[node name="UoniteCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=819063763 instance=ExtResource("16_jgph3")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "uonite"
+operation_key = "uonite_create"
+
+[node name="UoniteCreationPanel" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=999999997]
+custom_minimum_size = Vector2(142, 142)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_jq48x")
+
+[node name="UoniteCreationViewport" type="SubViewportContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel" unique_id=999999995]
+custom_minimum_size = Vector2(142, 142)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
+stretch = true
+
+[node name="UoniteCreationSubViewport" type="SubViewport" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel/UoniteCreationViewport" unique_id=999999994]
+own_world_3d = true
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(142, 142)
+render_target_update_mode = 4
+
+[node name="UoniteIcosahedron" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel/UoniteCreationViewport/UoniteCreationSubViewport" unique_id=999999993 instance=ExtResource("17_12345")]
+transform = Transform3D(-0.9406201, 0, -0.33945918, 0, 1, 0, 0.33945918, 0, -0.9406201, 0, 0, 0)
+mesh = SubResource("ArrayMesh_8g3rf")
+surface_material_override/0 = SubResource("StandardMaterial3D_bq0y0")
+surface_material_override/1 = SubResource("ShaderMaterial_wx0b7")
+radius = 1.0
+rotation_speed = 0.1
+current_grains = 16
+
+[node name="UoniteCamera" type="Camera3D" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel/UoniteCreationViewport/UoniteCreationSubViewport" unique_id=999999992]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2)
+
+[node name="UoniteGrainCounterLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel" unique_id=486133986]
+custom_minimum_size = Vector2(142, 24)
+layout_mode = 2
+
+[node name="RightStackVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox" unique_id=1252689769]
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="DialoguePanelContainer" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox" unique_id=1518564737]
+custom_minimum_size = Vector2(120, 216)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 1
+theme_override_styles/panel = SubResource("StyleBoxEmpty_8msm3")
+
+[node name="DialogueMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/DialoguePanelContainer" unique_id=1361643431]
+custom_minimum_size = Vector2(0, 216)
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="DialogueVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin" unique_id=247331584]
+custom_minimum_size = Vector2(0, 216)
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ArchonDialogueRichTextLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox" unique_id=645967267]
+custom_minimum_size = Vector2(520, 238)
+layout_mode = 2
+mouse_filter = 1
+bbcode_enabled = true
+
+[node name="AssemblePanelContainer" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox" unique_id=108848983]
+clip_contents = true
+custom_minimum_size = Vector2(440, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_jq48x")
+
+[node name="AssembleMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer" unique_id=185207340]
+layout_mode = 2
+theme_override_constants/margin_left = 1
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="AssembleTopHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin" unique_id=553200586]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="AssembleTetradVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox" unique_id=1576485198]
+custom_minimum_size = Vector2(0, 350)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="TetradAssembleButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox" unique_id=1467143486]
+custom_minimum_size = Vector2(0, 55)
+layout_mode = 2
+size_flags_vertical = 8
+
+[node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradAssembleButton" unique_id=275559908 instance=ExtResource("15_8msm3")]
+layout_mode = 0
+resource_key = "tetrad"
+
+[node name="TopLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradAssembleButton/ButtonLabelInstance" index="0" unique_id=542474393]
+theme_override_font_sizes/bold_font_size = 16
+
+[node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradAssembleButton/ButtonLabelInstance" index="1" unique_id=1248530810]
+theme_override_font_sizes/normal_font_size = 20
+
+[node name="TetradCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox" unique_id=2111105886 instance=ExtResource("16_jgph3")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "tetrad"
+operation_key = "tetrad_assemble"
+
+[node name="TetradColumnsHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox" unique_id=333310698]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 20
+
+[node name="TetradLeftColumnVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox" unique_id=2019745798]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LeftTetradLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox/TetradLeftColumnVBox" unique_id=1685993120]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+
+[node name="TetradMiddleColumnVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox" unique_id=1101351119]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Medials1SymmetricsLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox/TetradMiddleColumnVBox" unique_id=164841353]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/italics_font_size = 18
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+
+[node name="SymmetricsLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox/TetradMiddleColumnVBox" unique_id=218391795]
+visible = false
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+theme_override_font_sizes/normal_font_size = 20
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+
+[node name="TetradRightColumnVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox" unique_id=1627664182]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Medials2Label" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox/TetradRightColumnVBox" unique_id=524345339]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/italics_font_size = 18
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+
+[node name="AssembleBottomHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox" unique_id=6956624]
+visible = false
+layout_mode = 2
+
+[node name="AssembleBottomLeftVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/AssembleBottomHBox" unique_id=1601800735]
+visible = false
+layout_mode = 2
+
+[node name="AssembleBottomRightVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/AssembleBottomHBox" unique_id=1482250716]
+visible = false
+layout_mode = 2
+
+[node name="ParticleIotaMoteGrainVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox" unique_id=1213510166]
+layout_mode = 2
+size_flags_vertical = 8
+
+[node name="ParticleCompressButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox" unique_id=460579751]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton" unique_id=1842479079 instance=ExtResource("15_8msm3")]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 0
+resource_key = "particle"
+
+[node name="TopLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton/ButtonLabelInstance" index="0" unique_id=542474393]
+theme_override_font_sizes/bold_font_size = 16
+
+[node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton/ButtonLabelInstance" index="1" unique_id=1248530810]
+theme_override_font_sizes/normal_font_size = 20
+
+[node name="ParticleCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox" unique_id=1890166982 instance=ExtResource("16_jgph3")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "particle"
+operation_key = "particle_compress"
+
+[node name="RowParticleInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox" unique_id=27033557 instance=ExtResource("5_g5yj0")]
+custom_minimum_size = Vector2(140, 20)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ResourceLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/RowParticleInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="IotaMoteGrainVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox" unique_id=847291063]
+layout_mode = 2
+
+[node name="IotaAssembleButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1117127443]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/IotaAssembleButton" unique_id=444689803 instance=ExtResource("15_8msm3")]
+layout_mode = 0
+offset_top = 59.0
+offset_right = 140.0
+offset_bottom = 63.0
+resource_key = "iota"
+
+[node name="IotaCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1899966072 instance=ExtResource("16_jgph3")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "iota"
+operation_key = "iota_assemble"
+
+[node name="RowIotaInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1484432392 instance=ExtResource("5_g5yj0")]
+layout_mode = 2
+
+[node name="MoteCompressButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1463771021]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/MoteCompressButton" unique_id=575405172 instance=ExtResource("15_8msm3")]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 0
+resource_key = "mote"
+
+[node name="MoteCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1119047235 instance=ExtResource("16_jgph3")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "mote"
+operation_key = "mote_compress"
+
+[node name="RowMoteInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=997858997 instance=ExtResource("5_g5yj0")]
+custom_minimum_size = Vector2(140, 20)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="GrainAssembleButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1731880581]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/GrainAssembleButton" unique_id=1684463377 instance=ExtResource("15_8msm3")]
+layout_mode = 0
+offset_top = 59.0
+offset_right = 140.0
+offset_bottom = 63.0
+resource_key = "grain"
+
+[node name="GrainCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=655964790 instance=ExtResource("16_jgph3")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "grain"
+operation_key = "grain_assemble"
+
+[node name="RowGrainInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=172671712 instance=ExtResource("5_g5yj0")]
+layout_mode = 2
+
+[node name="RightEdgePopoutsVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox" unique_id=559855176]
+custom_minimum_size = Vector2(0, 310)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="DialogueJournalPopout" type="Control" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox" unique_id=922078197]
+custom_minimum_size = Vector2(22, 200)
+layout_mode = 2
+script = ExtResource("23_p3b26")
+
+[node name="JournalTabButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout" unique_id=2087552912]
+custom_minimum_size = Vector2(22, 0)
+layout_mode = 0
+offset_right = 22.0
+offset_bottom = 142.0
+theme_override_font_sizes/font_size = 14
+text = "J
+O
+U
+R
+N
+A
+L"
+
+[node name="JournalPanel" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout" unique_id=1157988615]
+custom_minimum_size = Vector2(260, 400)
+layout_mode = 0
+offset_right = 500.0
+offset_bottom = 400.0
+
+[node name="JournalMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel" unique_id=715828781]
+layout_mode = 2
+
+[node name="JournalVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin" unique_id=675894163]
+layout_mode = 2
+
+[node name="JournalTabsHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox" unique_id=756770692]
+layout_mode = 2
+
+[node name="RefTabButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox" unique_id=1975408693]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Reference"
+
+[node name="HistoryTabButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox" unique_id=939052704]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "History"
+
+[node name="NoticesTabButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox" unique_id=1850185003]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Notices"
+
+[node name="ReferenceScroll" type="ScrollContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox" unique_id=1885641264]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ReferenceRichTextLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/ReferenceScroll" unique_id=1202360349]
+layout_mode = 2
+size_flags_horizontal = 3
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="HistoryScroll" type="ScrollContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox" unique_id=709364232]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="HistoryVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/HistoryScroll" unique_id=2015960355]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="HistoryListLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/HistoryScroll/HistoryVBox" unique_id=1030148552]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="HistorySeparator" type="HSeparator" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/HistoryScroll/HistoryVBox" unique_id=384037753]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HistoryDetailLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/HistoryScroll/HistoryVBox" unique_id=1518456134]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 1
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="NoticesScroll" type="ScrollContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox" unique_id=95371690]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="NoticesLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/NoticesScroll" unique_id=562537096]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+bbcode_enabled = true
+scroll_active = false
+autowrap_mode = 2
+
+[node name="AgesPopout" type="Control" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox" unique_id=1308942562]
+custom_minimum_size = Vector2(22, 175)
+layout_mode = 2
+script = ExtResource("24_ubeuf")
+
+[node name="AgesTabButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout" unique_id=714659488]
+custom_minimum_size = Vector2(22, 90)
+layout_mode = 0
+offset_right = 22.0
+offset_bottom = 90.0
+focus_mode = 0
+theme_override_font_sizes/font_size = 14
+text = "A
+G
+E
+S"
+
+[node name="AgesPanel" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout" unique_id=1550464865]
+layout_mode = 0
+offset_right = 200.0
+offset_bottom = 175.0
+
+[node name="AgesMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel" unique_id=1406382746]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
+[node name="AgesVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin" unique_id=1460896198]
+layout_mode = 2
+
+[node name="PrimordialButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox" unique_id=582937164]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_34no1")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_21pfi")
+theme_override_styles/hover = SubResource("StyleBoxFlat_r7y65")
+
+[node name="BtnVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/PrimordialButton" unique_id=693847251]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/PrimordialButton/BtnVBox" unique_id=714958362]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 14
+text = "PRIMORDIAL"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="FirmamentButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox" unique_id=1207811451]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_34no1")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_21pfi")
+theme_override_styles/hover = SubResource("StyleBoxFlat_r7y65")
+
+[node name="BtnVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/FirmamentButton" unique_id=1058248136]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/FirmamentButton/BtnVBox" unique_id=1529176641]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 14
+text = "FIRMAMENT"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="WorldButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox" unique_id=355505292]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_64jby")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_21pfi")
+theme_override_styles/hover = SubResource("StyleBoxFlat_r7y65")
+
+[node name="BtnVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/WorldButton" unique_id=1903159203]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/WorldButton/BtnVBox" unique_id=808864615]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 14
+text = "WORLD"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CivilizationButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox" unique_id=1921737379]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_xh1ac")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_21pfi")
+theme_override_styles/hover = SubResource("StyleBoxFlat_r7y65")
+
+[node name="BtnVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/CivilizationButton" unique_id=1413888163]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/CivilizationButton/BtnVBox" unique_id=213682923]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 14
+text = "CIVILIZATION"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="MenuPopout" parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox" unique_id=739815982 instance=ExtResource("25_34no1")]
+layout_mode = 2
+
+[node name="BottomPopoutsHBox" type="HBoxContainer" parent="CanvasLayer/RootUI" unique_id=-2094967196]
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="ConstellationPopout" type="Control" parent="CanvasLayer/RootUI/BottomPopoutsHBox" unique_id=1254843121]
+custom_minimum_size = Vector2(320, 26)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 1
+script = ExtResource("7_21pfi")
+
+[node name="ConstellationTabButton" type="Button" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout" unique_id=-2094967295]
+layout_mode = 0
+offset_right = 320.0
+offset_bottom = 26.0
+focus_mode = 0
+theme_override_colors/font_color = Color(0.68, 0.55, 0.88, 1)
+theme_override_colors/font_pressed_color = Color(1, 0.88, 0.4, 1)
+theme_override_colors/font_hover_color = Color(0.82, 0.68, 1, 1)
+theme_override_font_sizes/font_size = 13
+text = "✦  Constellations"
+
+[node name="ConstellationSelectorPanel" type="PanelContainer" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout" unique_id=-2094967294]
+visible = false
+layout_mode = 0
+offset_right = 320.0
+offset_bottom = 260.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_constel_panel")
+
+[node name="SelectorMargin" type="MarginContainer" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel" unique_id=-2094967293]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="SelectorVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin" unique_id=-2094967292]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ConstellationSlotGrid" type="GridContainer" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=-2094967291]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 4
+
+[node name="ConstellationAllocationVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=-2094967290]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FociVolHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=-2094967289]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FociLabel" type="Label" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=-2094967277]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+text = "Foci"
+vertical_alignment = 1
+
+[node name="FociMinusButton" type="Button" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=-2094967288]
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "-"
+
+[node name="FociValueLabel" type="Label" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=-2094967287]
+custom_minimum_size = Vector2(32, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="FociPlusButton" type="Button" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=-2094967286]
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "+"
+
+[node name="VolLabel" type="Label" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=-2094967276]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+text = "Vol"
+vertical_alignment = 1
+
+[node name="VolMinusButton" type="Button" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=-2094967285]
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "-"
+
+[node name="VolValueLabel" type="Label" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=-2094967284]
+custom_minimum_size = Vector2(32, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="VolPlusButton" type="Button" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=-2094967283]
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "+"
+
+[node name="FeedHBox" type="HBoxContainer" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=-2094967282]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FeedNoneButton" type="Button" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=-2094967281]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "-"
+
+[node name="FeedAutoButton" type="Button" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=-2094967280]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Auto"
+
+[node name="FeedClickButton" type="Button" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=-2094967279]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Click"
+
+[node name="FeedBothButton" type="Button" parent="CanvasLayer/RootUI/BottomPopoutsHBox/ConstellationPopout/ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=-2094967278]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Both"
+
+[node name="MidBandHBox" type="HBoxContainer" parent="CanvasLayer/RootUI" unique_id=1170553330]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ConstellationViewPanelContainer" type="PanelContainer" parent="CanvasLayer/RootUI/MidBandHBox" unique_id=856995183]
+custom_minimum_size = Vector2(334, 33)
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_qt138")
+
+[node name="MidFutureSpacePanelContainer" type="PanelContainer" parent="CanvasLayer/RootUI/MidBandHBox" unique_id=569814631]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxEmpty_xd4cr")
+
+[node name="BottomBandHBox" type="HBoxContainer" parent="CanvasLayer/RootUI" unique_id=182280126]
+visible = false
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ThemeBuilderPanel" type="Panel" parent="CanvasLayer/RootUI/BottomBandHBox" unique_id=1565863148]
+visible = false
+layout_mode = 2
+
+[node name="ConstellationOverlay" type="Control" parent="CanvasLayer" unique_id=437989955]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("26_21pfi")
+
+[editable path="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowSparksLabelInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowSparksValueInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowUonitesLabelInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowUonitesValueInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowFociLabelInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowFociValueInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowVolitionsLabelInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowVolitionsValueInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/SummonSparkButton/ButtonLabelInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCompressButton/ButtonLabelInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox/RowSolidMonadInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox/RowLiquidMonadInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox/RowGasMonadInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradAssembleButton/ButtonLabelInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton/ButtonLabelInstance"]
+[editable path="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/RowParticleInstance"]

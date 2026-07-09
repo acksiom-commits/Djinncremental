@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://chfbfcn5b6yn7"]
+
+[ext_resource type="Script" uid="uid://7x75pc76jen1" path="res://hourglass_toggle.gd" id="1_54mow"]
+
+[node name="HourglassToggle" type="Control" unique_id=1956883749]
+custom_minimum_size = Vector2(20, 26)
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_54mow")

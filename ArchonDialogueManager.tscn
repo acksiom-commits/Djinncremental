@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cfeejstump5j7"]
+
+[ext_resource type="Script" uid="uid://dflxi6nqhigu0" path="res://archon_dialogue_manager.gd" id="1_72lig"]
+
+[node name="ArchonDialogueManager" type="Node" unique_id=533902432]
+script = ExtResource("1_72lig")

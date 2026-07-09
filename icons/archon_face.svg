@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Outer triangle — dark gold fill, amber stroke, vertex down -->
+  <polygon
+    points="5,7 59,7 32,54"
+    fill="#1a0d00"
+    fill-opacity="0.92"
+    stroke="#c88010"
+    stroke-width="2.8"
+    stroke-linejoin="round"
+  />
+  <!-- Inner triangle — top left, vertex down -->
+  <polygon
+    points="10.5,11.8 28.5,11.8 19.5,27.4"
+    fill="none"
+    stroke="#f0c030"
+    stroke-width="1.9"
+    stroke-linejoin="round"
+  />
+  <!-- Inner triangle — top right, vertex down -->
+  <polygon
+    points="35.5,11.8 53.5,11.8 44.5,27.4"
+    fill="none"
+    stroke="#f0c030"
+    stroke-width="1.9"
+    stroke-linejoin="round"
+  />
+  <!-- Inner triangle — bottom centre, vertex down -->
+  <polygon
+    points="23,32.8 41,32.8 32,48.4"
+    fill="none"
+    stroke="#f0c030"
+    stroke-width="1.9"
+    stroke-linejoin="round"
+  />
+</svg>

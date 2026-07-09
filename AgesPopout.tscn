@@ -1,0 +1,271 @@
+[gd_scene format=3 uid="uid://dp4kf7wq1mxn3"]
+
+[ext_resource type="Script" uid="uid://dw4xgcxeoktp8" path="res://ages_popout.gd" id="1_ages01"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tab"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 0.0
+bg_color = Color(0.1, 0.07, 0.2, 0.94)
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.28, 0.62, 0.9)
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tab_pressed"]
+bg_color = Color(0.25, 0.18, 0.42, 1)
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.65, 0.45, 0.9, 1)
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tab_hover"]
+bg_color = Color(0.18, 0.13, 0.3, 0.96)
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.55, 0.38, 0.8, 1)
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_nofocus"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_658mv"]
+bg_color = Color(0.07058824, 0.050980393, 0.14117648, 0.96862745)
+border_width_left = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.2784314, 0.61960787, 0.9019608)
+corner_radius_top_left = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_age_normal"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0, 0, 0, 0)
+draw_center = false
+border_width_bottom = 1
+border_color = Color(0.3, 0.22, 0.45, 0.45)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_age_pressed"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.3, 0.22, 0.5, 0.9)
+border_width_bottom = 1
+border_color = Color(0.6, 0.44, 0.85, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_age_hover"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.22, 0.16, 0.36, 0.75)
+border_width_bottom = 1
+border_color = Color(0.48, 0.34, 0.72, 0.8)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_age_disabled"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0, 0, 0, 0)
+draw_center = false
+border_width_bottom = 1
+border_color = Color(0.25, 0.18, 0.36, 0.3)
+
+[node name="AgesPopout" type="Control" unique_id=660411531]
+z_index = 100
+z_as_relative = false
+custom_minimum_size = Vector2(22, 175)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 28.0
+offset_bottom = 195.0
+script = ExtResource("1_ages01")
+
+[node name="AgesTabButton" type="Button" parent="." unique_id=360294547]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 0
+offset_right = 22.0
+offset_bottom = 241.0
+tooltip_text = "Ages"
+focus_mode = 0
+theme_override_colors/font_color = Color(0.68, 0.55, 0.88, 1)
+theme_override_colors/font_pressed_color = Color(1, 0.88, 0.4, 1)
+theme_override_colors/font_hover_color = Color(0.82, 0.68, 1, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_tab")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_tab_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_tab_hover")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_tab")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+text = "A
+G
+E
+S"
+
+[node name="AgesPanel" type="PanelContainer" parent="." unique_id=1859288302]
+layout_mode = 0
+offset_left = -175.0
+offset_bottom = 241.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_658mv")
+
+[node name="AgesMargin" type="MarginContainer" parent="AgesPanel" unique_id=607310798]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="AgesVBox" type="VBoxContainer" parent="AgesPanel/AgesMargin" unique_id=186254273]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="PrimordialButton" type="Button" parent="AgesPanel/AgesMargin/AgesVBox" unique_id=1539649677]
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Mid-game: Fundament Tetrad purity required to retain resources through prestige."
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxFlat_age_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_age_hover")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_age_disabled")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+
+[node name="BtnVBox" type="VBoxContainer" parent="AgesPanel/AgesMargin/AgesVBox/PrimordialButton" unique_id=1937956788]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 1
+
+[node name="NameLabel" type="Label" parent="AgesPanel/AgesMargin/AgesVBox/PrimordialButton/BtnVBox" unique_id=1392681521]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 15
+text = "PRIMORDIAL"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SubLabel" type="Label" parent="AgesPanel/AgesMargin/AgesVBox/PrimordialButton/BtnVBox" unique_id=417944374]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+horizontal_alignment = 1
+
+[node name="FirmamentButton" type="Button" parent="AgesPanel/AgesMargin/AgesVBox" unique_id=741320317]
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Mid-game: Fundament Tetrad purity required to retain resources through prestige."
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxFlat_age_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_age_hover")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_age_disabled")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+
+[node name="BtnVBox" type="VBoxContainer" parent="AgesPanel/AgesMargin/AgesVBox/FirmamentButton" unique_id=86206650]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 1
+
+[node name="NameLabel" type="Label" parent="AgesPanel/AgesMargin/AgesVBox/FirmamentButton/BtnVBox" unique_id=715797616]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 15
+text = "FIRMAMENT"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SubLabel" type="Label" parent="AgesPanel/AgesMargin/AgesVBox/FirmamentButton/BtnVBox" unique_id=1652592518]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+horizontal_alignment = 1
+
+[node name="WorldButton" type="Button" parent="AgesPanel/AgesMargin/AgesVBox" unique_id=2130272510]
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Late-game: World layers of Earth, Water, and Air; plants, animals, and embodied Uonites."
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxFlat_age_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_age_hover")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_age_disabled")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+
+[node name="BtnVBox" type="VBoxContainer" parent="AgesPanel/AgesMargin/AgesVBox/WorldButton" unique_id=32504169]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 1
+
+[node name="NameLabel" type="Label" parent="AgesPanel/AgesMargin/AgesVBox/WorldButton/BtnVBox" unique_id=1962256190]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 15
+text = "WORLD"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SubLabel" type="Label" parent="AgesPanel/AgesMargin/AgesVBox/WorldButton/BtnVBox" unique_id=1274489935]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+horizontal_alignment = 1
+
+[node name="CivilizationButton" type="Button" parent="AgesPanel/AgesMargin/AgesVBox" unique_id=1548543838]
+custom_minimum_size = Vector2(0, 52)
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "End-game: Villages, towns, cities, and the cultural and social codes that bind them."
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxFlat_age_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_age_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_age_hover")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_age_disabled")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+
+[node name="BtnVBox" type="VBoxContainer" parent="AgesPanel/AgesMargin/AgesVBox/CivilizationButton" unique_id=1546484765]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 1
+
+[node name="NameLabel" type="Label" parent="AgesPanel/AgesMargin/AgesVBox/CivilizationButton/BtnVBox" unique_id=1679153295]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 15
+text = "CIVILIZATION"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SubLabel" type="Label" parent="AgesPanel/AgesMargin/AgesVBox/CivilizationButton/BtnVBox" unique_id=1803560176]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+horizontal_alignment = 1

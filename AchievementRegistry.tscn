@@ -1,0 +1,10 @@
+[gd_scene format=3 uid="uid://n20mdm8qackd"]
+
+[ext_resource type="Script" uid="uid://hq0ixshe7a0n" path="res://achievement_registry.gd" id="1_kb85p"]
+
+[node name="AchievementRegistry" type="Control" unique_id=1344706354]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("1_kb85p")

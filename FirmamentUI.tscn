@@ -1,0 +1,1419 @@
+[gd_scene format=4 uid="uid://d2stkbunowbq3"]
+
+[ext_resource type="Shader" uid="uid://bj587btv7rvlh" path="res://starfield.gdshader" id="1_majhm"]
+[ext_resource type="Script" uid="uid://mbq2iec7rgyj" path="res://starfield_background.gd" id="2_r1gok"]
+[ext_resource type="PackedScene" uid="uid://qp0ojyglrtk2" path="res://TickerBar.tscn" id="3_r1gok"]
+[ext_resource type="Script" uid="uid://bxthxopf80lsk" path="res://archon_tetrahedron.gd" id="4_egh4i"]
+[ext_resource type="Script" uid="uid://dn1c0kpvkns31" path="res://root_ui.gd" id="4_o3igb"]
+[ext_resource type="PackedScene" uid="uid://ghxpihrmiisr" path="res://ButtonLabel.tscn" id="5_5nn0q"]
+[ext_resource type="PackedScene" uid="uid://c82d68kma3ec3" path="res://AllocationWheelControl.tscn" id="5_xk8xy"]
+[ext_resource type="Script" uid="uid://d0skh0gieda4y" path="res://constellation_panel.gd" id="6_27xun"]
+[ext_resource type="Script" uid="uid://b1dwx1o5cc2fy" path="res://constellation_selector.gd" id="7_f5m44"]
+[ext_resource type="PackedScene" uid="uid://bdyxaobophvlu" path="res://ResourceRow.tscn" id="8_dcrs5"]
+[ext_resource type="Texture2D" uid="uid://d1aj81jxtkljn" path="res://icons/sparks.svg" id="9_pp28u"]
+[ext_resource type="Texture2D" uid="uid://b65agx5gpvuic" path="res://icons/monad.svg" id="10_uyd3g"]
+[ext_resource type="Texture2D" uid="uid://orge8vaa8xid" path="res://icons/tetrad.svg" id="11_sx1ck"]
+[ext_resource type="Texture2D" uid="uid://bd8si8jg10uro" path="res://icons/particle.svg" id="12_nvhtf"]
+[ext_resource type="Texture2D" uid="uid://60vft1ed0jjd" path="res://icons/iota.svg" id="13_af70j"]
+[ext_resource type="Texture2D" uid="uid://kevx6igh4pny" path="res://icons/mote.svg" id="14_ncxno"]
+[ext_resource type="Texture2D" uid="uid://cr843n70v8kle" path="res://icons/grain.svg" id="15_2od5b"]
+[ext_resource type="Texture2D" uid="uid://ds84s3o6aht03" path="res://icons/uonite.svg" id="16_wmix6"]
+[ext_resource type="Script" uid="uid://en5fyk5h6uma" path="res://storage_display.gd" id="17_5fr4u"]
+[ext_resource type="PackedScene" path="res://CooldownBar.tscn" id="20_du3js"]
+[ext_resource type="PackedScene" uid="uid://3biuj3blqqca" path="res://UoniteIcosahedron.tscn" id="21_vw7vn"]
+[ext_resource type="Shader" uid="uid://bwd7ediqhrse" path="res://uonite_fill.gdshader" id="22_srksv"]
+[ext_resource type="Script" uid="uid://bjhdsykofwppd" path="res://dialogue_journal_popout.gd" id="23_s8nrt"]
+[ext_resource type="Script" uid="uid://dw4xgcxeoktp8" path="res://ages_popout.gd" id="24_ion1c"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_q6d5h"]
+shader = ExtResource("1_majhm")
+shader_parameter/spark_count = 0.0
+shader_parameter/time_offset = 0.0
+shader_parameter/rotation_speed = 0.08
+shader_parameter/view_matrix = Basis(1, 0, 0, 0, 1, 0, 0, 0, 1)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_srknp"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_rynuw"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_yrqlh"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qdqfd"]
+bg_color = Color(0.4627451, 0.57254905, 0.9607843, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hbfnw"]
+bg_color = Color(0.16711542, 0.70545805, 0.4538973, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_sqykm"]
+bg_color = Color(0.4627451, 0.57254905, 0.9607843, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_kf6t6"]
+bg_color = Color(0.16862746, 0.7058824, 0.45490196, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_valhm"]
+bg_color = Color(0.4627451, 0.57254905, 0.9607843, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_pfcnf"]
+bg_color = Color(0.16862746, 0.7058824, 0.45490196, 1)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_yi0fm"]
+
+[sub_resource type="ArrayMesh" id="ArrayMesh_5l52u"]
+_surfaces = [{
+"aabb": AABB(-0.335, -0.27352634, -0.12894157, 0.67, 0.5470527, 0.3868247),
+"attribute_data": PackedByteArray("3qgW/wsIAf/eqBb/3qgW/96oFv/eqBb/CwgB/96oFv8LCAH/3qgW/96oFv/eqBb///8j/xENAf///yP///8j////I////yP/EQ0B////I/8RDQH///8j////I////yP///8j/xENAf///yP///8j////I////yP/EQ0B////I/8RDQH///8j////I////yP///8j/xENAf///yP///8j////I////yP/EQ0B////I/8RDQH///8j////I////yP/"),
+"format": 34359738377,
+"primitive": 1,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 48,
+"vertex_data": PackedByteArray("AAAAAKULjL5CCQS+AAAAAAAAAABCCYQ+AAAAAKULjL5CCQS+H4WrPqULjD5CCQS+AAAAAKULjL5CCQS+H4WrvqULjD5CCQS+AAAAAAAAAABCCYQ+H4WrPqULjD5CCQS+AAAAAAAAAABCCYQ+H4WrvqULjD5CCQS+H4WrPqULjD5CCQS+H4WrvqULjD5CCQS+AAAAAGlmTb6il/O9AAAAAMBhFb7gqz27AAAAAGlmTb6il/O98tLNPbxhFb2il/O9AAAAAGlmTb6il/O98tLNvbxhFb2il/O9AAAAAMBhFb7gqz278tLNPbxhFb2il/O9AAAAAMBhFb7gqz278tLNvbxhFb2il/O98tLNPbxhFb2il/O98tLNvbxhFb2il/O9kqYUvr5hFT2il/O9kqYUvtm+8j3hqz27kqYUvr5hFT2il/O9ZfQ2vWlmTT6il/O9kqYUvr5hFT2il/O9C5B7vmlmTT6il/O9kqYUvtm+8j3hqz27ZfQ2vWlmTT6il/O9kqYUvtm+8j3hqz27C5B7vmlmTT6il/O9ZfQ2vWlmTT6il/O9C5B7vmlmTT6il/O9kqYUPr5hFT2il/O9kqYUPtm+8j3hqz27kqYUPr5hFT2il/O9C5B7PmlmTT6il/O9kqYUPr5hFT2il/O9ZfQ2PWlmTT6il/O9kqYUPtm+8j3hqz27C5B7PmlmTT6il/O9kqYUPtm+8j3hqz27ZfQ2PWlmTT6il/O9C5B7PmlmTT6il/O9ZfQ2PWlmTT6il/O9")
+}]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_554gx"]
+shading_mode = 0
+vertex_color_use_as_albedo = true
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_b0yhc"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_m4ebn"]
+
+[sub_resource type="ArrayMesh" id="ArrayMesh_yymaq"]
+_surfaces = [{
+"aabb": AABB(-0.8506508, -1, -0.8944272, 1.7013016, 2, 1.7888544),
+"format": 34359742465,
+"index_count": 84,
+"index_data": PackedByteArray("AAACAAAABAAAAAYAAAAIAAAACgABAAMAAQAEAAEABgABAAkAAQALAAIABQACAAcAAgAIAAIACgADAAUAAwAHAAMACQADAAsABAAGAAQACAAEAAkABQAHAAUACAAFAAkABgAKAAYACwAHAAoABwALAAgACQAKAAsAAAAMAAEADAACAAwAAwAMAAQADAAFAAwABgAMAAcADAAIAAwACQAMAAoADAALAAwA"),
+"primitive": 1,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 13,
+"vertex_data": PackedByteArray("AAAAAAAAgD8AAIAzAAAAAC355L4u+WS/AAAAAC355D4u+WQ/AAAAAAAAgL8AAICzUJYGPy/55D5LPjm/UJYGPy/55L5LPjk/UJYGvy/55D5LPjm/UJYGvy/55L5LPjk/QMRZPy355D5pg40+QMRZPy355L5pg42+QMRZvy355D5pg40+QMRZvy355L5pg42+AAAAAAAAAAAAAAAA")
+}, {
+"aabb": AABB(-0.8506508, -1, -0.8944272, 1.7013016, 2, 1.7888544),
+"format": 34359738369,
+"primitive": 3,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 192,
+"vertex_data": PackedByteArray("AAAAAAAAgD8AAIAzAAAAAC355D4u+WQ/QMRZPy355D5pg40+AAAAAAAAAAAAAAAAAAAAAC355D4u+WQ/AAAAAAAAgD8AAIAzAAAAAAAAAAAAAAAAQMRZPy355D5pg40+AAAAAC355D4u+WQ/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIAzQMRZPy355D5pg40+AAAAAAAAgD8AAIAzQMRZvy355D5pg40+AAAAAC355D4u+WQ/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIAzAAAAAC355D4u+WQ/AAAAAAAAAAAAAAAAAAAAAC355D4u+WQ/QMRZvy355D5pg40+AAAAAAAAAAAAAAAAQMRZvy355D5pg40+AAAAAAAAgD8AAIAzAAAAAAAAgD8AAIAzUJYGPy/55D5LPjm/UJYGvy/55D5LPjm/AAAAAAAAAAAAAAAAUJYGPy/55D5LPjm/AAAAAAAAgD8AAIAzAAAAAAAAAAAAAAAAUJYGvy/55D5LPjm/UJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIAzUJYGvy/55D5LPjm/AAAAAAAAgD8AAIAzQMRZPy355D5pg40+UJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIAzUJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAUJYGPy/55D5LPjm/QMRZPy355D5pg40+AAAAAAAAAAAAAAAAQMRZPy355D5pg40+AAAAAAAAgD8AAIAzAAAAAAAAgD8AAIAzUJYGvy/55D5LPjm/QMRZvy355D5pg40+AAAAAAAAAAAAAAAAUJYGvy/55D5LPjm/AAAAAAAAgD8AAIAzAAAAAAAAAAAAAAAAQMRZvy355D5pg40+UJYGvy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAIAzQMRZvy355D5pg40+AAAAAC355L4u+WS/QMRZPy355L5pg42+AAAAAAAAgL8AAICzAAAAAAAAAAAAAAAAAAAAAC355L4u+WS/AAAAAAAAgL8AAICzAAAAAAAAAAAAAAAAAAAAAAAAgL8AAICzQMRZPy355L5pg42+AAAAAAAAAAAAAAAAQMRZPy355L5pg42+AAAAAC355L4u+WS/AAAAAC355L4u+WS/AAAAAAAAgL8AAICzQMRZvy355L5pg42+AAAAAAAAAAAAAAAAAAAAAAAAgL8AAICzAAAAAC355L4u+WS/AAAAAAAAAAAAAAAAQMRZvy355L5pg42+AAAAAAAAgL8AAICzAAAAAAAAAAAAAAAAAAAAAC355L4u+WS/QMRZvy355L5pg42+AAAAAC355L4u+WS/UJYGvy/55D5LPjm/UJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAC355L4u+WS/UJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAUJYGPy/55D5LPjm/UJYGvy/55D5LPjm/AAAAAAAAAAAAAAAAUJYGvy/55D5LPjm/AAAAAC355L4u+WS/AAAAAC355L4u+WS/UJYGPy/55D5LPjm/QMRZPy355L5pg42+AAAAAAAAAAAAAAAAUJYGPy/55D5LPjm/AAAAAC355L4u+WS/AAAAAAAAAAAAAAAAQMRZPy355L5pg42+UJYGPy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAC355L4u+WS/QMRZPy355L5pg42+AAAAAC355L4u+WS/QMRZvy355L5pg42+UJYGvy/55D5LPjm/AAAAAAAAAAAAAAAAAAAAAC355L4u+WS/UJYGvy/55D5LPjm/AAAAAAAAAAAAAAAAUJYGvy/55D5LPjm/QMRZvy355L5pg42+AAAAAAAAAAAAAAAAQMRZvy355L5pg42+AAAAAC355L4u+WS/AAAAAC355D4u+WQ/UJYGvy/55L5LPjk/UJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAC355D4u+WQ/UJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAUJYGPy/55L5LPjk/UJYGvy/55L5LPjk/AAAAAAAAAAAAAAAAUJYGvy/55L5LPjk/AAAAAC355D4u+WQ/AAAAAC355D4u+WQ/UJYGPy/55L5LPjk/QMRZPy355D5pg40+AAAAAAAAAAAAAAAAUJYGPy/55L5LPjk/AAAAAC355D4u+WQ/AAAAAAAAAAAAAAAAQMRZPy355D5pg40+UJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAC355D4u+WQ/QMRZPy355D5pg40+AAAAAC355D4u+WQ/QMRZvy355D5pg40+UJYGvy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAC355D4u+WQ/UJYGvy/55L5LPjk/AAAAAAAAAAAAAAAAUJYGvy/55L5LPjk/QMRZvy355D5pg40+AAAAAAAAAAAAAAAAQMRZvy355D5pg40+AAAAAC355D4u+WQ/AAAAAAAAgL8AAICzUJYGPy/55L5LPjk/UJYGvy/55L5LPjk/AAAAAAAAAAAAAAAAUJYGPy/55L5LPjk/AAAAAAAAgL8AAICzAAAAAAAAAAAAAAAAUJYGvy/55L5LPjk/UJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAAAAgL8AAICzUJYGvy/55L5LPjk/AAAAAAAAgL8AAICzQMRZPy355L5pg42+UJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAAAAgL8AAICzUJYGPy/55L5LPjk/AAAAAAAAAAAAAAAAUJYGPy/55L5LPjk/QMRZPy355L5pg42+AAAAAAAAAAAAAAAAQMRZPy355L5pg42+AAAAAAAAgL8AAICzAAAAAAAAgL8AAICzUJYGvy/55L5LPjk/QMRZvy355L5pg42+AAAAAAAAAAAAAAAAUJYGvy/55L5LPjk/AAAAAAAAgL8AAICzAAAAAAAAAAAAAAAAQMRZvy355L5pg42+UJYGvy/55L5LPjk/AAAAAAAAAAAAAAAAAAAAAAAAgL8AAICzQMRZvy355L5pg42+")
+}]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_a4agn"]
+shading_mode = 0
+albedo_color = Color(0.8, 0.6, 0.1, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_g7bfv"]
+render_priority = 1
+shader = ExtResource("22_srksv")
+shader_parameter/outer_color = Color(0.6, 0.27, 0.93, 1)
+shader_parameter/mid_color = Color(0.2, 0.85, 0.35, 1)
+shader_parameter/inner_color = Color(0.95, 0.25, 0.25, 1)
+shader_parameter/center_spark = Color(1, 1, 1, 1)
+shader_parameter/purple_size = 0.28
+shader_parameter/green_size = 0.27
+shader_parameter/transition_width = 0.02
+shader_parameter/sharpness = 3.0
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_vrd7i"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_q4tqp"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_e278o"]
+bg_color = Color(0.7487861, 0.7487861, 0.9367591, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_st0mr"]
+bg_color = Color(0.6081563, 0.5159011, 0.75658435, 1)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_8d8n1"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_xiyv0"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_35xle"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_rb64k"]
+
+[node name="FirmamentUI" type="CanvasLayer" unique_id=836303262]
+
+[node name="ColorRect" type="ColorRect" parent="." unique_id=1301114095]
+material = SubResource("ShaderMaterial_q6d5h")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_r1gok")
+
+[node name="TickerBarPanelContainer" parent="." unique_id=2141612713 instance=ExtResource("3_r1gok")]
+anchors_preset = 10
+anchor_right = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 2
+size_flags_vertical = 4
+theme_override_styles/panel = SubResource("StyleBoxEmpty_srknp")
+
+[node name="FirmRootUI" type="VBoxContainer" parent="." unique_id=1191509229]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 36.0
+offset_bottom = 60.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("4_o3igb")
+
+[node name="FirmTopBandHBox" type="HBoxContainer" parent="FirmRootUI" unique_id=442420803]
+custom_minimum_size = Vector2(0, 400)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="FirmFlowConstellationVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=328948834]
+layout_mode = 2
+
+[node name="FirmFlowWheelControl" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox" unique_id=2094775408 instance=ExtResource("5_xk8xy")]
+layout_mode = 2
+
+[node name="ConstellationLeftMargin" type="MarginContainer" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox" unique_id=795778344]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 0
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 4
+
+[node name="ConstellationPanel" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationLeftMargin" unique_id=1195210532]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+script = ExtResource("6_27xun")
+
+[node name="ConstellationDisplay" type="Control" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationLeftMargin/ConstellationPanel" unique_id=1041482108]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="ConstellationPanelBackground" type="ColorRect" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationLeftMargin/ConstellationPanel/ConstellationDisplay" unique_id=512822322]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.24588895, 0.21189989, 0.34663853, 1)
+
+[node name="ConstellationStarDrawing" type="Control" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationLeftMargin/ConstellationPanel/ConstellationDisplay" unique_id=2019651853]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="ConstellationArtTextureRect" type="TextureRect" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationLeftMargin/ConstellationPanel/ConstellationDisplay" unique_id=1817482778]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="ConstellationSlideOutTab" type="Control" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationLeftMargin/ConstellationPanel" unique_id=682817914]
+clip_children = 1
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+size_flags_vertical = 8
+
+[node name="ConstellationTabLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationLeftMargin/ConstellationPanel/ConstellationSlideOutTab" unique_id=655561700]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ConstellationSelectorVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox" unique_id=898238647]
+visible = false
+clip_contents = true
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="ConstellationSelector" type="Control" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationSelectorVBox" unique_id=1641676229]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+mouse_filter = 2
+script = ExtResource("7_f5m44")
+
+[node name="ConstellationSelectorBackground" type="ColorRect" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationSelectorVBox/ConstellationSelector" unique_id=1247012551]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.37732974, 0.3457033, 0.522091, 1)
+
+[node name="SelectorAllocationVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationSelectorVBox/ConstellationSelector" unique_id=2120893468]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="CloseConstellationButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationSelectorVBox/ConstellationSelector/SelectorAllocationVBox" unique_id=1767672953]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+text = "CLOSE"
+
+[node name="ConstellationSlotGrid" type="GridContainer" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationSelectorVBox/ConstellationSelector/SelectorAllocationVBox" unique_id=1587519973]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="ConstellationAllocationHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/FirmFlowConstellationVBox/ConstellationSelectorVBox/ConstellationSelector/SelectorAllocationVBox" unique_id=410472127]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="BarsPanelContainer" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=302576950]
+custom_minimum_size = Vector2(142, 0)
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_rynuw")
+
+[node name="BarsMargin" type="MarginContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer" unique_id=1025527836]
+custom_minimum_size = Vector2(142, 0)
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="BarsVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin" unique_id=544371082]
+custom_minimum_size = Vector2(142, 0)
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="DirectReadoutsPanelContainer" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=1559685307]
+custom_minimum_size = Vector2(142, 0)
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_yrqlh")
+
+[node name="DirectReadoutsMargin" type="MarginContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer" unique_id=5601570]
+custom_minimum_size = Vector2(96, 0)
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 4
+
+[node name="DirectReadoutsVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin" unique_id=425749229]
+custom_minimum_size = Vector2(142, 0)
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_constants/separation = 2
+
+[node name="RowSparksLabelInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=810845569 instance=ExtResource("8_dcrs5")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowSparksLabelInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowSparksValueInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=81836760 instance=ExtResource("8_dcrs5")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="RowUonitesLabelInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=1636432255 instance=ExtResource("8_dcrs5")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowUonitesLabelInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowUonitesValueInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=1705803654 instance=ExtResource("8_dcrs5")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowUonitesValueInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowFociLabelInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=895952450 instance=ExtResource("8_dcrs5")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowFociLabelInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowFociValueInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=531533210 instance=ExtResource("8_dcrs5")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowFociValueInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowVolitionsLabelInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=563932774 instance=ExtResource("8_dcrs5")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowVolitionsLabelInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="RowVolitionsValueInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=1436053014 instance=ExtResource("8_dcrs5")]
+layout_mode = 2
+size_flags_horizontal = 1
+size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowVolitionsValueInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="ReadoutClickVolSeparator" type="HSeparator" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=617134576]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="GenBarsVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=826369037]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SparksBarVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=465843600]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SparksBarHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/SparksBarVBox" unique_id=1794777021]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="SparkIcon" type="TextureRect" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/SparksBarVBox/SparksBarHBox" unique_id=136851709]
+custom_minimum_size = Vector2(26, 26)
+layout_mode = 2
+texture = ExtResource("9_pp28u")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="SparksAllocBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/SparksBarVBox/SparksBarHBox" unique_id=1195114292]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+theme_override_styles/fill = SubResource("StyleBoxFlat_qdqfd")
+show_percentage = false
+
+[node name="SparksGenBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/SparksBarVBox/SparksBarHBox" unique_id=1796081465]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_hbfnw")
+show_percentage = false
+
+[node name="MonadBarVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=1717962694]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MonadBarLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MonadBarVBox" unique_id=26813548]
+visible = false
+layout_mode = 2
+
+[node name="MonadBarHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MonadBarVBox" unique_id=843380708]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="MonadIcon" type="TextureRect" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MonadBarVBox/MonadBarHBox" unique_id=2099863958]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("10_uyd3g")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="MonadAllocBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MonadBarVBox/MonadBarHBox" unique_id=623367930]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_sqykm")
+show_percentage = false
+
+[node name="MonadGenBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MonadBarVBox/MonadBarHBox" unique_id=2427759]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_kf6t6")
+show_percentage = false
+
+[node name="TetradBarVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=1481677332]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="TetradBarLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/TetradBarVBox" unique_id=92098181]
+visible = false
+layout_mode = 2
+
+[node name="TetradBarHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/TetradBarVBox" unique_id=108325788]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="TetradIcon" type="TextureRect" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/TetradBarVBox/TetradBarHBox" unique_id=1269112207]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("11_sx1ck")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="TetradAllocBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/TetradBarVBox/TetradBarHBox" unique_id=985237865]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_valhm")
+show_percentage = false
+
+[node name="TetradGenBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/TetradBarVBox/TetradBarHBox" unique_id=1036494093]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_kf6t6")
+show_percentage = false
+
+[node name="ParticleBarVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=310033986]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ParticleBarLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/ParticleBarVBox" unique_id=1873002177]
+visible = false
+layout_mode = 2
+
+[node name="ParticleBarHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/ParticleBarVBox" unique_id=1075820036]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="ParticleIcon" type="TextureRect" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/ParticleBarVBox/ParticleBarHBox" unique_id=1436869616]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("12_nvhtf")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="ParticleAllocBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/ParticleBarVBox/ParticleBarHBox" unique_id=623812292]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_valhm")
+show_percentage = false
+
+[node name="ParticleGenBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/ParticleBarVBox/ParticleBarHBox" unique_id=1465482237]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_pfcnf")
+show_percentage = false
+
+[node name="IotaBarVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=359229219]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="IotaBarLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/IotaBarVBox" unique_id=520504256]
+visible = false
+layout_mode = 2
+
+[node name="IotaBarHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/IotaBarVBox" unique_id=1878419477]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="IotaIcon" type="TextureRect" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/IotaBarVBox/IotaBarHBox" unique_id=1703581655]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("13_af70j")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="IotaAllocBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/IotaBarVBox/IotaBarHBox" unique_id=1517511081]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_valhm")
+show_percentage = false
+
+[node name="IotaGenBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/IotaBarVBox/IotaBarHBox" unique_id=82259043]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_kf6t6")
+show_percentage = false
+
+[node name="MoteBarVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=1291597322]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MoteBarLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MoteBarVBox" unique_id=1495264435]
+visible = false
+layout_mode = 2
+
+[node name="MoteBarHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MoteBarVBox" unique_id=1382289207]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="MoteIcon" type="TextureRect" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MoteBarVBox/MoteBarHBox" unique_id=1757568397]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("14_ncxno")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="MoteAllocBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MoteBarVBox/MoteBarHBox" unique_id=1495278793]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_valhm")
+show_percentage = false
+
+[node name="MoteGenBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/MoteBarVBox/MoteBarHBox" unique_id=1309838917]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_kf6t6")
+show_percentage = false
+
+[node name="GrainBarVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=1753868395]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="GrainBarLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/GrainBarVBox" unique_id=330762225]
+visible = false
+layout_mode = 2
+
+[node name="GrainBarHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/GrainBarVBox" unique_id=1807548469]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="GrainIcon" type="TextureRect" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/GrainBarVBox/GrainBarHBox" unique_id=1818686367]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("15_2od5b")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="GrainAllocBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/GrainBarVBox/GrainBarHBox" unique_id=615185114]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_valhm")
+show_percentage = false
+
+[node name="GrainGenBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/GrainBarVBox/GrainBarHBox" unique_id=53139568]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_kf6t6")
+show_percentage = false
+
+[node name="UoniteBarVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=93062971]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="UoniteBarLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/UoniteBarVBox" unique_id=1875804826]
+visible = false
+layout_mode = 2
+
+[node name="UoniteBarHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/UoniteBarVBox" unique_id=1244943150]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+
+[node name="UoniteIcon" type="TextureRect" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/UoniteBarVBox/UoniteBarHBox" unique_id=265113307]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("16_wmix6")
+expand_mode = 3
+stretch_mode = 5
+
+[node name="UoniteAllocBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/UoniteBarVBox/UoniteBarHBox" unique_id=536754940]
+visible = false
+custom_minimum_size = Vector2(25, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_valhm")
+show_percentage = false
+
+[node name="UoniteGenBar" type="ProgressBar" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox/UoniteBarVBox/UoniteBarHBox" unique_id=363475215]
+custom_minimum_size = Vector2(25, 24)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/fill = SubResource("StyleBoxFlat_kf6t6")
+show_percentage = false
+
+[node name="ClickVolGenBarsSeparator" type="HSeparator" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=1667504410]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="StorageDisplay" type="Control" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=2075123104]
+custom_minimum_size = Vector2(142, 148)
+layout_mode = 2
+script = ExtResource("17_5fr4u")
+
+[node name="ClickVolAssistVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=158558242]
+layout_mode = 2
+
+[node name="ClickVolAssistLabel" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/ClickVolAssistVBox" unique_id=1564551531]
+custom_minimum_size = Vector2(140, 24)
+layout_mode = 2
+theme_override_font_sizes/bold_font_size = 16
+bbcode_enabled = true
+text = "[b]VOLUMITION[/b]"
+scroll_active = false
+horizontal_alignment = 1
+
+[node name="ClickVolitionsHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/ClickVolAssistVBox" unique_id=508656566]
+layout_mode = 2
+alignment = 1
+
+[node name="ClickVolMinusButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/ClickVolAssistVBox/ClickVolitionsHBox" unique_id=16420160]
+custom_minimum_size = Vector2(48, 24)
+layout_mode = 2
+text = "-"
+
+[node name="ClickVolLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/ClickVolAssistVBox/ClickVolitionsHBox" unique_id=1675300848]
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "x1"
+horizontal_alignment = 1
+
+[node name="ClickVolPlusButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/ClickVolAssistVBox/ClickVolitionsHBox" unique_id=429099657]
+custom_minimum_size = Vector2(48, 24)
+layout_mode = 2
+text = "+"
+
+[node name="LeftStackVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=370189387]
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_constants/separation = 1
+
+[node name="ClickSelectPanelContainer" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox" unique_id=1523805683]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_yi0fm")
+
+[node name="ClickSelectMargin" type="MarginContainer" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer" unique_id=47420822]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 1
+
+[node name="ClickSelectVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin" unique_id=1404125177]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="ArchonGraphicPanel" type="Panel" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox" unique_id=947285846]
+custom_minimum_size = Vector2(140, 140)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="ArchonTetrahedronContainer" type="SubViewportContainer" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel" unique_id=1221486243]
+custom_minimum_size = Vector2(140, 140)
+layout_mode = 0
+size_flags_horizontal = 0
+size_flags_vertical = 0
+stretch = true
+
+[node name="ArchonTetrahedronViewport" type="SubViewport" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel/ArchonTetrahedronContainer" unique_id=1772681153]
+own_world_3d = true
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(140, 140)
+render_target_update_mode = 4
+
+[node name="ArchonTetrahedron" type="MeshInstance3D" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel/ArchonTetrahedronContainer/ArchonTetrahedronViewport" unique_id=1422340698]
+mesh = SubResource("ArrayMesh_5l52u")
+surface_material_override/0 = SubResource("StandardMaterial3D_554gx")
+script = ExtResource("4_egh4i")
+
+[node name="ArchonCamera" type="Camera3D" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel/ArchonTetrahedronContainer/ArchonTetrahedronViewport" unique_id=17640620]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 5)
+projection = 1
+far = 100.0
+
+[node name="FaceController" type="Node3D" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel/ArchonTetrahedronContainer/ArchonTetrahedronViewport" unique_id=268459467]
+transform = Transform3D(0.9999998, 0, 0, 0, 0.9999999, 0, 0, 0, 0.9999999, 0, 0, 0)
+visible = false
+
+[node name="FuseGrainButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox" unique_id=1108445780]
+custom_minimum_size = Vector2(140, 106)
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
+[node name="ButtonLabelInstance" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/FuseGrainButton" unique_id=72081024 instance=ExtResource("5_5nn0q")]
+layout_mode = 0
+resource_key = "spark"
+
+[node name="TopLabel" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/FuseGrainButton/ButtonLabelInstance" index="0" unique_id=542474393]
+theme_override_font_sizes/normal_font_size = 20
+
+[node name="BottomLabel" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/FuseGrainButton/ButtonLabelInstance" index="1" unique_id=1248530810]
+theme_override_font_sizes/normal_font_size = 20
+
+[node name="CompressPanelContainer" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox" unique_id=1336368296]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_b0yhc")
+
+[node name="CompressMargin" type="MarginContainer" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer" unique_id=1357624415]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 1
+theme_override_constants/margin_bottom = 6
+
+[node name="CompressVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin" unique_id=1098281748]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+
+[node name="MonadCompressButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=137807308]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 4
+theme_override_constants/h_separation = 4
+
+[node name="ButtonLabelInstance" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCompressButton" unique_id=1580953771 instance=ExtResource("5_5nn0q")]
+layout_mode = 0
+resource_key = "monad"
+
+[node name="TopLabel" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCompressButton/ButtonLabelInstance" index="0" unique_id=542474393]
+theme_override_font_sizes/bold_font_size = 16
+
+[node name="BottomLabel" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCompressButton/ButtonLabelInstance" index="1" unique_id=1248530810]
+theme_override_font_sizes/normal_font_size = 20
+
+[node name="MonadCooldownBar" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=100000001 instance=ExtResource("20_du3js")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "monad"
+operation_key = "monad_compress"
+
+[node name="MonadCountersVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=625567813]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 2
+
+[node name="RowSolidMonadInstance" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox" unique_id=1995473048 instance=ExtResource("8_dcrs5")]
+custom_minimum_size = Vector2(142, 20)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="RowLiquidMonadInstance" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox" unique_id=296898289 instance=ExtResource("8_dcrs5")]
+custom_minimum_size = Vector2(140, 20)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="RowGasMonadInstance" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox" unique_id=673009744 instance=ExtResource("8_dcrs5")]
+custom_minimum_size = Vector2(140, 20)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CreateUoniteButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=1789443261]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 4
+
+[node name="ButtonLabelInstance" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/CreateUoniteButton" unique_id=1548675694 instance=ExtResource("5_5nn0q")]
+layout_mode = 0
+offset_top = 59.0
+offset_right = 140.0
+offset_bottom = 63.0
+resource_key = "uonite"
+
+[node name="UoniteCooldownBar" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=842234466 instance=ExtResource("20_du3js")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "uonite"
+operation_key = "uonite_create"
+
+[node name="UoniteCreationPanel" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=2103643435]
+custom_minimum_size = Vector2(142, 142)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_m4ebn")
+
+[node name="UoniteCreationViewport" type="SubViewportContainer" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel" unique_id=910333697]
+custom_minimum_size = Vector2(142, 142)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
+stretch = true
+
+[node name="UoniteCreationSubViewport" type="SubViewport" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel/UoniteCreationViewport" unique_id=1270629087]
+own_world_3d = true
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(142, 142)
+render_target_update_mode = 4
+
+[node name="UoniteIcosahedron" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel/UoniteCreationViewport/UoniteCreationSubViewport" unique_id=530703912 instance=ExtResource("21_vw7vn")]
+transform = Transform3D(0.05978601, 0, 0.9982108, 0, 1, 0, -0.9982108, 0, 0.05978601, 0, 0, 0)
+mesh = SubResource("ArrayMesh_yymaq")
+surface_material_override/0 = SubResource("StandardMaterial3D_a4agn")
+surface_material_override/1 = SubResource("ShaderMaterial_g7bfv")
+radius = 1.0
+rotation_speed = 0.1
+current_grains = 16
+
+[node name="UoniteCamera" type="Camera3D" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel/UoniteCreationViewport/UoniteCreationSubViewport" unique_id=36149139]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2)
+
+[node name="UoniteGrainCounterLabel" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel" unique_id=464934504]
+custom_minimum_size = Vector2(142, 24)
+layout_mode = 2
+
+[node name="RightStackVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=1334964516]
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="DialoguePanelContainer" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox" unique_id=570774122]
+custom_minimum_size = Vector2(120, 216)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 1
+theme_override_styles/panel = SubResource("StyleBoxEmpty_vrd7i")
+
+[node name="DialogueMargin" type="MarginContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/DialoguePanelContainer" unique_id=63205657]
+custom_minimum_size = Vector2(0, 216)
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="DialogueVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin" unique_id=185990458]
+custom_minimum_size = Vector2(0, 216)
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ArchonDialogueRichTextLabel" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox" unique_id=471658917]
+custom_minimum_size = Vector2(520, 238)
+layout_mode = 2
+mouse_filter = 1
+bbcode_enabled = true
+
+[node name="AssemblePanelContainer" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox" unique_id=102500141]
+clip_contents = true
+custom_minimum_size = Vector2(440, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_m4ebn")
+
+[node name="AssembleMargin" type="MarginContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer" unique_id=1470960608]
+layout_mode = 2
+theme_override_constants/margin_left = 1
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="AssembleTopHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin" unique_id=2135464172]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="AssembleTetradVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox" unique_id=586173914]
+custom_minimum_size = Vector2(0, 350)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="TetradAssembleButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox" unique_id=2092799001]
+custom_minimum_size = Vector2(0, 55)
+layout_mode = 2
+size_flags_vertical = 8
+
+[node name="ButtonLabelInstance" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradAssembleButton" unique_id=1777633252 instance=ExtResource("5_5nn0q")]
+layout_mode = 0
+resource_key = "tetrad"
+
+[node name="TopLabel" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradAssembleButton/ButtonLabelInstance" index="0" unique_id=542474393]
+theme_override_font_sizes/bold_font_size = 16
+
+[node name="BottomLabel" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradAssembleButton/ButtonLabelInstance" index="1" unique_id=1248530810]
+theme_override_font_sizes/normal_font_size = 20
+
+[node name="TetradCooldownBar" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox" unique_id=313097386 instance=ExtResource("20_du3js")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "tetrad"
+operation_key = "tetrad_assemble"
+
+[node name="TetradColumnsHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox" unique_id=1636494310]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 20
+
+[node name="TetradLeftColumnVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox" unique_id=1220652990]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LeftTetradLabel" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox/TetradLeftColumnVBox" unique_id=428949087]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+
+[node name="TetradMiddleColumnVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox" unique_id=9605172]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Medials1SymmetricsLabel" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox/TetradMiddleColumnVBox" unique_id=1318087416]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/italics_font_size = 18
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+
+[node name="SymmetricsLabel" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox/TetradMiddleColumnVBox" unique_id=1189747464]
+visible = false
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+theme_override_font_sizes/normal_font_size = 20
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+
+[node name="TetradRightColumnVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox" unique_id=550835106]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Medials2Label" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradColumnsHBox/TetradRightColumnVBox" unique_id=418190865]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/italics_font_size = 18
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 0
+
+[node name="AssembleBottomHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox" unique_id=1831045239]
+visible = false
+layout_mode = 2
+
+[node name="AssembleBottomLeftVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/AssembleBottomHBox" unique_id=823181583]
+visible = false
+layout_mode = 2
+
+[node name="AssembleBottomRightVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/AssembleBottomHBox" unique_id=500069812]
+visible = false
+layout_mode = 2
+
+[node name="ParticleIotaMoteGrainVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox" unique_id=1212965162]
+layout_mode = 2
+size_flags_vertical = 8
+
+[node name="ParticleCompressButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox" unique_id=1891526410]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="ButtonLabelInstance" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton" unique_id=1488808872 instance=ExtResource("5_5nn0q")]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 0
+resource_key = "particle"
+
+[node name="TopLabel" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton/ButtonLabelInstance" index="0" unique_id=542474393]
+theme_override_font_sizes/bold_font_size = 16
+
+[node name="BottomLabel" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton/ButtonLabelInstance" index="1" unique_id=1248530810]
+theme_override_font_sizes/normal_font_size = 20
+
+[node name="ParticleCooldownBar" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox" unique_id=725412671 instance=ExtResource("20_du3js")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "particle"
+operation_key = "particle_compress"
+
+[node name="RowParticleInstance" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox" unique_id=493170731 instance=ExtResource("8_dcrs5")]
+custom_minimum_size = Vector2(140, 20)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/RowParticleInstance" index="0" unique_id=1655298137]
+theme_override_font_sizes/normal_font_size = 18
+
+[node name="IotaMoteGrainVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox" unique_id=1590648094]
+layout_mode = 2
+
+[node name="IotaAssembleButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1103606319]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="ButtonLabelInstance" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/IotaAssembleButton" unique_id=1852134273 instance=ExtResource("5_5nn0q")]
+layout_mode = 0
+offset_top = 59.0
+offset_right = 140.0
+offset_bottom = 63.0
+resource_key = "iota"
+
+[node name="IotaCooldownBar" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=502252432 instance=ExtResource("20_du3js")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "iota"
+operation_key = "iota_assemble"
+
+[node name="RowIotaInstance" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=575647451 instance=ExtResource("8_dcrs5")]
+layout_mode = 2
+
+[node name="MoteCompressButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1335248300]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="ButtonLabelInstance" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/MoteCompressButton" unique_id=360740357 instance=ExtResource("5_5nn0q")]
+custom_minimum_size = Vector2(140, 0)
+layout_mode = 0
+resource_key = "mote"
+
+[node name="MoteCooldownBar" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=290524816 instance=ExtResource("20_du3js")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "mote"
+operation_key = "mote_compress"
+
+[node name="RowMoteInstance" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1824357652 instance=ExtResource("8_dcrs5")]
+custom_minimum_size = Vector2(140, 20)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="GrainAssembleButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=610291564]
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="ButtonLabelInstance" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/GrainAssembleButton" unique_id=709301290 instance=ExtResource("5_5nn0q")]
+layout_mode = 0
+offset_top = 59.0
+offset_right = 140.0
+offset_bottom = 63.0
+resource_key = "grain"
+
+[node name="GrainCooldownBar" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1746419587 instance=ExtResource("20_du3js")]
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+resource_key = "grain"
+operation_key = "grain_assemble"
+
+[node name="RowGrainInstance" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=458219463 instance=ExtResource("8_dcrs5")]
+layout_mode = 2
+
+[node name="RightEdgePopoutsVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=22592688]
+custom_minimum_size = Vector2(0, 310)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="DialogueJournalPopout" type="Control" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox" unique_id=1043567902]
+custom_minimum_size = Vector2(22, 200)
+layout_mode = 2
+script = ExtResource("23_s8nrt")
+
+[node name="JournalTabButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout" unique_id=1882214032]
+custom_minimum_size = Vector2(22, 0)
+layout_mode = 0
+offset_right = 22.0
+offset_bottom = 142.0
+theme_override_font_sizes/font_size = 14
+text = "J
+O
+U
+R
+N
+A
+L"
+
+[node name="JournalPanel" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout" unique_id=1204216803]
+custom_minimum_size = Vector2(260, 400)
+layout_mode = 0
+offset_right = 500.0
+offset_bottom = 400.0
+
+[node name="JournalMargin" type="MarginContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel" unique_id=1831291892]
+layout_mode = 2
+
+[node name="JournalVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin" unique_id=1804614533]
+layout_mode = 2
+
+[node name="JournalTabsHBox" type="HBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox" unique_id=621293965]
+layout_mode = 2
+
+[node name="RefTabButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox" unique_id=1049239876]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Reference"
+
+[node name="HistoryTabButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox" unique_id=1705622203]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "History"
+
+[node name="NoticesTabButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox" unique_id=368814236]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Notices"
+
+[node name="ReferenceScroll" type="ScrollContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox" unique_id=1746529352]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ReferenceRichTextLabel" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/ReferenceScroll" unique_id=43796560]
+layout_mode = 2
+size_flags_horizontal = 3
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="HistoryScroll" type="ScrollContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox" unique_id=1588886354]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="HistoryVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/HistoryScroll" unique_id=955924834]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="HistoryListLabel" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/HistoryScroll/HistoryVBox" unique_id=2016932267]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="HistorySeparator" type="HSeparator" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/HistoryScroll/HistoryVBox" unique_id=1783935939]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HistoryDetailLabel" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/HistoryScroll/HistoryVBox" unique_id=955280235]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 1
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="NoticesScroll" type="ScrollContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox" unique_id=1498019250]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="NoticesLabel" type="RichTextLabel" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/DialogueJournalPopout/JournalPanel/JournalMargin/JournalVBox/NoticesScroll" unique_id=1553773701]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+bbcode_enabled = true
+scroll_active = false
+autowrap_mode = 2
+
+[node name="AgesPopout" type="Control" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox" unique_id=1783331080]
+custom_minimum_size = Vector2(22, 175)
+layout_mode = 2
+script = ExtResource("24_ion1c")
+
+[node name="AgesTabButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout" unique_id=1181003744]
+custom_minimum_size = Vector2(22, 90)
+layout_mode = 0
+offset_right = 22.0
+offset_bottom = 90.0
+focus_mode = 0
+theme_override_font_sizes/font_size = 14
+text = "A
+G
+E
+S"
+
+[node name="AgesPanel" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout" unique_id=1708100491]
+layout_mode = 0
+offset_right = 200.0
+offset_bottom = 175.0
+
+[node name="AgesMargin" type="MarginContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel" unique_id=680946471]
+layout_mode = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
+[node name="AgesVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin" unique_id=1902199900]
+layout_mode = 2
+
+[node name="PrimordialButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox" unique_id=1312277274]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_q4tqp")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_e278o")
+theme_override_styles/hover = SubResource("StyleBoxFlat_st0mr")
+
+[node name="BtnVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/PrimordialButton" unique_id=479864442]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/PrimordialButton/BtnVBox" unique_id=1687829364]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 14
+text = "PRIMORDIAL"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="FirmamentButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox" unique_id=2112570738]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_q4tqp")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_e278o")
+theme_override_styles/hover = SubResource("StyleBoxFlat_st0mr")
+
+[node name="BtnVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/FirmamentButton" unique_id=31839461]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/FirmamentButton/BtnVBox" unique_id=1002288876]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 14
+text = "FIRMAMENT"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="WorldButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox" unique_id=153900299]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_8d8n1")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_e278o")
+theme_override_styles/hover = SubResource("StyleBoxFlat_st0mr")
+
+[node name="BtnVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/WorldButton" unique_id=1345215238]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/WorldButton/BtnVBox" unique_id=933264686]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 14
+text = "WORLD"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="CivilizationButton" type="Button" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox" unique_id=835926118]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/normal = SubResource("StyleBoxEmpty_xiyv0")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_e278o")
+theme_override_styles/hover = SubResource("StyleBoxFlat_st0mr")
+
+[node name="BtnVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/CivilizationButton" unique_id=1259235508]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/CivilizationButton/BtnVBox" unique_id=302627507]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 14
+text = "CIVILIZATION"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="MidBandHBox" type="HBoxContainer" parent="FirmRootUI" unique_id=1141493760]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ConstellationViewPanelContainer" type="PanelContainer" parent="FirmRootUI/MidBandHBox" unique_id=177449482]
+custom_minimum_size = Vector2(334, 33)
+layout_mode = 2
+size_flags_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_35xle")
+
+[node name="MidFutureSpacePanelContainer" type="PanelContainer" parent="FirmRootUI/MidBandHBox" unique_id=1205255657]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxEmpty_rb64k")
+
+[node name="BottomBandHBox" type="HBoxContainer" parent="FirmRootUI" unique_id=868414808]
+visible = false
+custom_minimum_size = Vector2(0, 60)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ThemeBuilderPanel" type="Panel" parent="FirmRootUI/BottomBandHBox" unique_id=2045741082]
+visible = false
+layout_mode = 2
+
+[editable path="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowSparksLabelInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowSparksValueInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowUonitesLabelInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowUonitesValueInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowFociLabelInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowFociValueInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowVolitionsLabelInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowVolitionsValueInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/FuseGrainButton/ButtonLabelInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCompressButton/ButtonLabelInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox/RowSolidMonadInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox/RowLiquidMonadInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/MonadCountersVBox/RowGasMonadInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/AssembleTetradVBox/TetradAssembleButton/ButtonLabelInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton/ButtonLabelInstance"]
+[editable path="FirmRootUI/FirmTopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/RowParticleInstance"]

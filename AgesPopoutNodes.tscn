@@ -1,0 +1,282 @@
+; ============================================================
+; AGES POPOUT — RootUI.tscn additions
+; ============================================================
+; Two things to do in RootUI.tscn:
+;
+; 1) Find the existing AgesPopout node entry and add these
+;    two properties to it (the stub probably has none yet):
+;
+;       visible = false
+;       custom_minimum_size = Vector2(22, 175)
+;       size_flags_vertical = 0
+;       script = ExtResource("...ages_popout_id...")
+;
+;    Add ages_popout.gd as an ext_resource at the top of
+;    RootUI.tscn alongside the other script resources, e.g.:
+;
+;       [ext_resource type="Script"
+;        path="res://ages_popout.gd" id="19_ages01"]
+;
+;    Then reference it in the AgesPopout node entry:
+;
+;       script = ExtResource("19_ages01")
+;
+; 2) Paste the node blocks below into RootUI.tscn directly
+;    after the AgesPopout node entry. The parent paths all
+;    start with the correct VBox path — just match whatever
+;    your actual RightEdgePopoutsVBox parent path is.
+;    (Adjust unique_id values to unused numbers in your scene.)
+;
+; PARENT PATH used below:
+;   CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout
+; ============================================================
+
+
+; ---- StyleBoxes (add to the sub_resource block at top of RootUI.tscn) ---
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ages_panel"]
+bg_color = Color(0.07, 0.05, 0.14, 0.97)
+border_color = Color(0.40, 0.28, 0.60, 0.85)
+border_width_left = 1
+border_width_top = 1
+border_width_bottom = 1
+corner_radius_top_left = 5
+corner_radius_bottom_left = 5
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ages_btn_hover"]
+bg_color = Color(0.20, 0.14, 0.33, 0.70)
+border_color = Color(0.45, 0.32, 0.68, 0.80)
+border_width_bottom = 1
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ages_btn_pressed"]
+bg_color = Color(0.28, 0.20, 0.46, 0.90)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_ages_normal"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_ages_focus"]
+
+
+; ---- AgesTabButton -------------------------------------------------------
+; Fills the 22×175 AgesPopout Control. Text "A" is centered; at 22 px
+; it reads cleanly. Tooltip explains the panel to first-time openers.
+
+[node name="AgesTabButton" type="Button"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout"
+ unique_id=2200000001]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.65, 0.52, 0.85, 1.00)
+theme_override_colors/font_hover_color = Color(0.82, 0.68, 1.00, 1.00)
+theme_override_colors/font_pressed_color = Color(1.00, 0.88, 0.40, 1.00)
+theme_override_styles/focus = SubResource("StyleBoxEmpty_ages_focus")
+text = "A"
+tooltip_text = "Ages"
+
+
+; ---- AgesPanel -----------------------------------------------------------
+; layout_mode = 0 (free) so position:x can be Tweened.
+; Starts at x=0 (off-screen right, behind the screen edge).
+; Tweens to x=-200 to slide into view.
+
+[node name="AgesPanel" type="PanelContainer"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout"
+ unique_id=2200000002]
+visible = false
+layout_mode = 0
+offset_right = 200.0
+offset_bottom = 175.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_ages_panel")
+
+
+[node name="AgesMargin" type="MarginContainer"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel"
+ unique_id=2200000003]
+layout_mode = 2
+theme_override_constants/margin_left   = 8
+theme_override_constants/margin_top    = 8
+theme_override_constants/margin_right  = 8
+theme_override_constants/margin_bottom = 8
+
+
+[node name="AgesVBox" type="VBoxContainer"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin"
+ unique_id=2200000004]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+
+; ---- FirmamentButton -----------------------------------------------------
+
+[node name="FirmamentButton" type="Button"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox"
+ unique_id=2200000005]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_styles/normal   = SubResource("StyleBoxEmpty_ages_normal")
+theme_override_styles/hover    = SubResource("StyleBoxFlat_ages_btn_hover")
+theme_override_styles/pressed  = SubResource("StyleBoxFlat_ages_btn_pressed")
+theme_override_styles/disabled = SubResource("StyleBoxEmpty_ages_normal")
+theme_override_styles/focus    = SubResource("StyleBoxEmpty_ages_focus")
+tooltip_text = "Mid-game: Fundament Tetrad % required to retain resources through prestige."
+
+[node name="BtnVBox" type="VBoxContainer"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/FirmamentButton"
+ unique_id=2200000006]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/FirmamentButton/BtnVBox"
+ unique_id=2200000007]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "FIRMAMENT"
+theme_override_font_sizes/font_size = 14
+
+[node name="SubLabel" type="Label"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/FirmamentButton/BtnVBox"
+ unique_id=2200000008]
+layout_mode = 2
+mouse_filter = 2
+horizontal_alignment = 1
+text = "Purity · Retention"
+theme_override_font_sizes/font_size = 11
+
+
+; ---- WorldButton ---------------------------------------------------------
+
+[node name="WorldButton" type="Button"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox"
+ unique_id=2200000009]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_styles/normal   = SubResource("StyleBoxEmpty_ages_normal")
+theme_override_styles/hover    = SubResource("StyleBoxFlat_ages_btn_hover")
+theme_override_styles/pressed  = SubResource("StyleBoxFlat_ages_btn_pressed")
+theme_override_styles/disabled = SubResource("StyleBoxEmpty_ages_normal")
+theme_override_styles/focus    = SubResource("StyleBoxEmpty_ages_focus")
+tooltip_text = "Late-game: World layers of Earth, Water, Air; plants, animals, embodied Uonites."
+
+[node name="BtnVBox" type="VBoxContainer"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/WorldButton"
+ unique_id=2200000010]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/WorldButton/BtnVBox"
+ unique_id=2200000011]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "WORLD"
+theme_override_font_sizes/font_size = 14
+
+[node name="SubLabel" type="Label"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/WorldButton/BtnVBox"
+ unique_id=2200000009]
+layout_mode = 2
+mouse_filter = 2
+horizontal_alignment = 1
+text = "Layers · Life · Uonites"
+theme_override_font_sizes/font_size = 11
+
+
+; ---- CivilizationButton --------------------------------------------------
+
+[node name="CivilizationButton" type="Button"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox"
+ unique_id=2200000013]
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_styles/normal   = SubResource("StyleBoxEmpty_ages_normal")
+theme_override_styles/hover    = SubResource("StyleBoxFlat_ages_btn_hover")
+theme_override_styles/pressed  = SubResource("StyleBoxFlat_ages_btn_pressed")
+theme_override_styles/disabled = SubResource("StyleBoxEmpty_ages_normal")
+theme_override_styles/focus    = SubResource("StyleBoxEmpty_ages_focus")
+tooltip_text = "End-game: Villages, towns, cities, and the cultural and social codes that bind them."
+
+[node name="BtnVBox" type="VBoxContainer"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/CivilizationButton"
+ unique_id=2200000014]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 2
+
+[node name="NameLabel" type="Label"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/CivilizationButton/BtnVBox"
+ unique_id=2200000015]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "CIVILIZATION"
+theme_override_font_sizes/font_size = 14
+
+[node name="SubLabel" type="Label"
+ parent="CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/AgesPopout/AgesPanel/AgesMargin/AgesVBox/CivilizationButton/BtnVBox"
+ unique_id=2200000016]
+layout_mode = 2
+mouse_filter = 2
+horizontal_alignment = 1
+text = "Cities · Culture · Codes"
+theme_override_font_sizes/font_size = 11
+
+
+; ============================================================
+; root_ui.gd addition — in _ready(), alongside the journal:
+;
+;     _ages_popout = find_child("AgesPopout", true, false)
+;     if not _ages_popout:
+;         push_warning("RootUI: AgesPopout not found")
+;
+; To wire an age_selected signal handler:
+;
+;     if _ages_popout:
+;         _ages_popout.age_selected.connect(_on_age_selected)
+;
+; func _on_age_selected(key: String) -> void:
+;     pass  # route to game_data / game_context as needed
+;
+; To reveal and unlock at the appropriate milestone:
+;
+;     if _ages_popout:
+;         _ages_popout.reveal()
+;         _ages_popout.unlock_age("firmament")
+;         _ages_popout.set_active_age("firmament")
+; ============================================================

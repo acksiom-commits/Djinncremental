@@ -1,0 +1,244 @@
+[gd_scene format=3 uid="uid://07ufmjn6n2o1"]
+
+[ext_resource type="Script" uid="uid://58y2j4f13756" path="res://settings_popout.gd" id="1_dpxvn"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tab"]
+bg_color = Color(0.1, 0.07, 0.2, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.28, 0.62, 0.9)
+corner_radius_top_left = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tab_pressed"]
+bg_color = Color(0.25, 0.18, 0.42, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.65, 0.45, 0.9, 1)
+corner_radius_top_left = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tab_hover"]
+bg_color = Color(0.18, 0.13, 0.3, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.55, 0.38, 0.8, 1)
+corner_radius_top_left = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_nofocus"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.07, 0.05, 0.14, 0.97)
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.28, 0.62, 0.9)
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_item_normal"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0, 0, 0, 0)
+draw_center = false
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_item_pressed"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.3, 0.22, 0.5, 0.9)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_item_hover"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.22, 0.16, 0.36, 0.75)
+border_width_bottom = 1
+border_color = Color(0.48, 0.34, 0.72, 0.8)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_quit_normal"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0, 0, 0, 0)
+draw_center = false
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_quit_pressed"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.55, 0.12, 0.12, 0.9)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_quit_hover"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.36, 0.1, 0.1, 0.75)
+
+[node name="SettingsPopout" type="Control" unique_id=353190247]
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -22.0
+offset_bottom = 274.0
+grow_horizontal = 0
+script = ExtResource("1_dpxvn")
+
+[node name="SettingsTabButton" type="Button" parent="." unique_id=1982517284]
+layout_mode = 0
+offset_right = 22.0
+offset_bottom = 274.0
+tooltip_text = "Menu"
+focus_mode = 0
+theme_override_colors/font_color = Color(0.68, 0.55, 0.88, 1)
+theme_override_colors/font_pressed_color = Color(1, 0.88, 0.4, 1)
+theme_override_colors/font_hover_color = Color(0.82, 0.68, 1, 1)
+theme_override_font_sizes/font_size = 13
+theme_override_styles/normal = SubResource("StyleBoxFlat_tab")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_tab_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_tab_hover")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+text = "S
+E
+T
+T
+I
+N
+G
+S"
+
+[node name="SettingsPanel" type="PanelContainer" parent="." unique_id=1454182817]
+layout_mode = 0
+offset_left = 22.0
+offset_right = 204.0
+offset_bottom = 274.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="SettingsMargin" type="MarginContainer" parent="SettingsPanel" unique_id=1669102196]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="SettingsVBox" type="VBoxContainer" parent="SettingsPanel/SettingsMargin" unique_id=1031167385]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SaveButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=792410756]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_colors/font_color = Color(0.82, 0.82, 0.95, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("StyleBoxFlat_item_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_item_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_item_hover")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+text = "Save Game"
+
+[node name="LoadButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=599140719]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_colors/font_color = Color(0.82, 0.82, 0.95, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("StyleBoxFlat_item_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_item_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_item_hover")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+text = "Load Game"
+
+[node name="ResetButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=112233445]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_colors/font_color = Color(0.9, 0.5, 0.5, 1)
+theme_override_colors/font_hover_color = Color(1, 0.7, 0.7, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("StyleBoxFlat_quit_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_quit_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_quit_hover")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+text = "Reset Save"
+
+[node name="SettingsSep1" type="HSeparator" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=528834736]
+layout_mode = 2
+
+[node name="TooltipsToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1584456983]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_colors/font_color = Color(0.75, 0.75, 0.9, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+button_pressed = true
+text = "Tooltips"
+
+[node name="BgLockToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1428439225]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_colors/font_color = Color(0.75, 0.75, 0.9, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+text = "Lock Background"
+
+[node name="ConstellationToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=585899716]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_colors/font_color = Color(0.75, 0.75, 0.9, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+text = "Constellation"
+
+[node name="UiMinimalToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1058032927]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_colors/font_color = Color(0.75, 0.75, 0.9, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+text = "Hide UI"
+
+[node name="SettingsSep2" type="HSeparator" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1333982729]
+layout_mode = 2
+
+[node name="QuitButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=945245960]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_colors/font_color = Color(0.9, 0.5, 0.5, 1)
+theme_override_colors/font_hover_color = Color(1, 0.7, 0.7, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("StyleBoxFlat_quit_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_quit_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_quit_hover")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+text = "Quit"
+
+[node name="ResetConfirmDialog" type="ConfirmationDialog" parent="." unique_id=279580529]
+ok_button_text = "RESET"
+dialog_text = "Delete all save data and restart?
+This cannot be undone."
+cancel_button_text = "CANCEL"

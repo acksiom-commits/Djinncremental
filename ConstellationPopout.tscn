@@ -1,0 +1,297 @@
+[gd_scene format=3 uid="uid://blyfmxqnpq42f"]
+
+[ext_resource type="Script" uid="uid://dq3374ogtc0sh" path="res://constellation_popout.gd" id="1_2nped"]
+[ext_resource type="Script" uid="uid://dt3crnggd56ga" path="res://concave_notch.gd" id="2_1vh35"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tab_btn"]
+bg_color = Color(0.1, 0.05, 0.2, 1)
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.28, 0.62, 0.9)
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_constel_panel"]
+bg_color = Color(0.07, 0.05, 0.14, 0.97)
+border_width_left = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.28, 0.62, 0.9)
+corner_radius_top_left = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_6voa3"]
+color = Color(0.2509804, 0.21960784, 0.38039216, 0.5019608)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_d58y2"]
+bg_color = Color(0.05882353, 0.050980393, 0.101960786, 0.8)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_xasap"]
+bg_color = Color(0.34901962, 0.3019608, 0.6, 0.9019608)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[node name="ConstellationPopout" type="Control" unique_id=645500053]
+z_index = 100
+z_as_relative = false
+custom_minimum_size = Vector2(22, 195)
+layout_mode = 3
+anchors_preset = 0
+size_flags_horizontal = 2
+size_flags_vertical = 0
+script = ExtResource("1_2nped")
+
+[node name="ConstellationTabButton" type="Button" parent="." unique_id=891082135]
+z_index = 1
+layout_mode = 0
+offset_right = 22.0
+offset_bottom = 380.0
+focus_mode = 0
+theme_override_colors/font_color = Color(0.68, 0.55, 0.88, 1)
+theme_override_colors/font_pressed_color = Color(1, 0.88, 0.4, 1)
+theme_override_colors/font_hover_color = Color(0.82, 0.68, 1, 1)
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("StyleBoxFlat_tab_btn")
+text = "✦
+C
+O
+N
+S
+T
+E
+L
+L
+A
+T
+I
+O
+N
+S"
+
+[node name="ConstellationSelectorPanel" type="PanelContainer" parent="." unique_id=1111720651]
+z_index = 1
+clip_contents = true
+layout_mode = 0
+offset_left = -320.0
+offset_bottom = 380.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_constel_panel")
+
+[node name="SelectorMargin" type="MarginContainer" parent="ConstellationSelectorPanel" unique_id=517662895]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="SelectorVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin" unique_id=2092798952]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ConstellationTitleLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=1113072290]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92156863, 0.8784314, 0.78039217, 1)
+theme_override_font_sizes/font_size = 18
+text = "The Constellation"
+horizontal_alignment = 1
+
+[node name="OctantSpinBox" type="SpinBox" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=964039551]
+visible = false
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+min_value = 1.0
+max_value = 8.0
+value = 1.0
+allow_greater = true
+allow_lesser = true
+alignment = 1
+prefix = "Octant "
+
+[node name="ConstellationSlotGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=839711079]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 4
+
+[node name="ConstellationInfoVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=923674052]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="InfoNameLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=393684865]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_color = Color(0.92156863, 0.88235295, 0.78039217, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="InfoLoreLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=1051990319]
+visible = false
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+size_flags_vertical = 1
+theme_override_colors/font_color = Color(0.6, 0.5803922, 0.7019608, 1)
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 3
+
+[node name="InfoSeparator" type="HSeparator" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=2023678069]
+visible = false
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_6voa3")
+
+[node name="InfoBonusLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=1650318082]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_color = Color(0.92156863, 0.88235295, 0.78039217, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="InfoProgressBar" type="ProgressBar" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=678443787]
+visible = false
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+theme_override_styles/background = SubResource("StyleBoxFlat_d58y2")
+theme_override_styles/fill = SubResource("StyleBoxFlat_xasap")
+show_percentage = false
+
+[node name="InfoTierLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=684991224]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_color = Color(0.92156863, 0.88235295, 0.78039217, 1)
+theme_override_font_sizes/font_size = 16
+
+[node name="ConstellationAllocationVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=776079631]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SparkCounterLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=1593436465]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.72156864, 0.6784314, 0.8509804, 1)
+horizontal_alignment = 1
+
+[node name="FociVolHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=124535324]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FociLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1107157594]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+text = "Foci"
+vertical_alignment = 1
+
+[node name="FociMinusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1558482017]
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "-"
+
+[node name="FociValueLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1938319047]
+custom_minimum_size = Vector2(32, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="FociPlusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1344612662]
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "+"
+
+[node name="VolLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=567283045]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+text = "Vol"
+vertical_alignment = 1
+
+[node name="VolMinusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=658570894]
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "-"
+
+[node name="VolValueLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=130815419]
+custom_minimum_size = Vector2(32, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="VolPlusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=57319347]
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "+"
+
+[node name="FeedHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=684217624]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FeedNoneButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=1802907835]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "IGNORE"
+
+[node name="FeedAutoButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=406610988]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "ENDOW"
+
+[node name="FeedClickButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=142796401]
+visible = false
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Click"
+
+[node name="FeedBothButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=376002486]
+visible = false
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Both"
+
+[node name="MultiGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=1758693413]
+custom_minimum_size = Vector2(160, 75)
+layout_mode = 2
+columns = 2
+
+[node name="10XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiGrid" unique_id=967275612]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "10X"
+
+[node name="100XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiGrid" unique_id=1920818803]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "100X"
+
+[node name="CSTMButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiGrid" unique_id=783236587]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "CSTM"
+
+[node name="ALLButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiGrid" unique_id=806143499]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "ALL"
+
+[node name="NotchCorner" type="Control" parent="." unique_id=947652492]
+visible = false
+anchors_preset = 0
+offset_top = 195.0
+offset_right = 7.0
+offset_bottom = 380.0
+mouse_filter = 2
+script = ExtResource("2_1vh35")

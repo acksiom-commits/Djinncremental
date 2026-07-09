@@ -1,0 +1,48 @@
+AllocationWheelControl.tscn - Scene Tree Structure
+===================================================
+
+AllocationWheelControl (Control)
+└── CenterVBox (VBoxContainer)
+    ├── SelectedLabel (RichTextLabel)
+    ├── HSeparator
+    ├── UonitesRowHBox (HBoxContainer)
+    │   ├── PlusUonites (Button)
+    │   ├── UonitesLabelCounterVBox (VBoxContainer)
+    │   │   ├── RowUonitesLabelInstance (LabelResourceRow)
+    │   │   │   └── LabelResource
+    │   │   └── RowUonitesInstance (ResourceRow)
+    │   └── MinusUonites (Button)
+    │
+    ├── FociRowHBox (HBoxContainer)
+    │   ├── PlusFoci (Button)
+    │   ├── FociLabelCounterVBox (VBoxContainer)
+    │   │   ├── RowFociLabelInstance (LabelResourceRow)
+    │   │   │   └── LabelResource
+    │   │   └── RowFociInstance (ResourceRow)
+    │   └── MinusFoci (Button)
+    │
+    ├── VolitionsRowHBox (HBoxContainer)
+    │   ├── PlusVolitions (Button)
+    │   ├── VolitionsLabelCounterVBox (VBoxContainer)
+    │   │   ├── RowVolitionsLabelInstance (LabelResourceRow)
+    │   │   │   └── LabelResource
+    │   │   └── RowVolitionsInstance (ResourceRow)
+    │   └── MinusVolitions (Button)
+    │
+    ├── HSeparator2
+    │
+    ├── MultiGrid (GridContainer)
+    │   ├── 10XButton (Button)
+    │   ├── 100XButton (Button)
+    │   ├── CSTMButton (Button)
+    │   └── ALLButton (Button)
+    │
+    └── CustomInputContainerHBox (HBoxContainer, hidden)
+        ├── CustomLineEdit (LineEdit)
+        └── OKButton (Button)
+
+
+External Resources Used:
+- allocation_wheel_control.gd
+- ResourceRow.tscn
+- LabelResourceRow.tscn

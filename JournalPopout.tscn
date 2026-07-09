@@ -1,0 +1,205 @@
+[gd_scene format=3 uid="uid://bss27h236t4pj"]
+
+[ext_resource type="Script" uid="uid://28melt7ee4d2" path="res://journal_popout.gd" id="1_fch12"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_edu6p"]
+bg_color = Color(0.101960786, 0.050980393, 0.2, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.2784314, 0.61960787, 0.9019608)
+corner_radius_top_left = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_iph7k"]
+bg_color = Color(0.2509804, 0.18039216, 0.41960785, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.6509804, 0.4509804, 0.9019608, 1)
+corner_radius_top_left = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_yt238"]
+bg_color = Color(0.18039216, 0.12941177, 0.3019608, 0.9607843)
+border_width_left = 1
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.54901963, 0.38039216, 0.8, 1)
+corner_radius_top_left = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_io8sl"]
+bg_color = Color(0.07058824, 0.050980393, 0.14117648, 0.96862745)
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.2784314, 0.61960787, 0.9019608)
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+
+[node name="JournalPopout" type="Control" unique_id=634488649]
+custom_minimum_size = Vector2(22, 200)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 22.0
+offset_bottom = 396.0
+script = ExtResource("1_fch12")
+
+[node name="JournalTabButton" type="Button" parent="." unique_id=445886936]
+custom_minimum_size = Vector2(22, 396)
+layout_mode = 0
+offset_right = 22.0
+offset_bottom = 395.0
+theme_override_font_sizes/font_size = 14
+theme_override_styles/normal = SubResource("StyleBoxFlat_edu6p")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_iph7k")
+theme_override_styles/hover = SubResource("StyleBoxFlat_yt238")
+text = "J
+O
+U
+R
+N
+A
+L"
+
+[node name="JournalPanel" type="PanelContainer" parent="." unique_id=1460375736]
+custom_minimum_size = Vector2(260, 396)
+layout_mode = 0
+offset_left = 22.0
+offset_right = 522.0
+offset_bottom = 395.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_io8sl")
+
+[node name="JournalMargin" type="MarginContainer" parent="JournalPanel" unique_id=1888041172]
+layout_mode = 2
+
+[node name="JournalVBox" type="VBoxContainer" parent="JournalPanel/JournalMargin" unique_id=1530022769]
+layout_mode = 2
+
+[node name="JournalTabsHBox" type="HBoxContainer" parent="JournalPanel/JournalMargin/JournalVBox" unique_id=2083223523]
+layout_mode = 2
+
+[node name="RefTabButton" type="Button" parent="JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox" unique_id=1960190850]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Reference"
+
+[node name="HistoryTabButton" type="Button" parent="JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox" unique_id=1417668829]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "History"
+
+[node name="NoticesTabButton" type="Button" parent="JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox" unique_id=1850185003]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Notices"
+
+[node name="JournalTabsHBox2" type="HBoxContainer" parent="JournalPanel/JournalMargin/JournalVBox" unique_id=1205232325]
+layout_mode = 2
+
+[node name="BonusesTabButton" type="Button" parent="JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox2" unique_id=1789149962]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Bonuses"
+
+[node name="AchievementsTabButton" type="Button" parent="JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox2" unique_id=1229924538]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Achievements"
+
+[node name="PlaceholderTabButton" type="Button" parent="JournalPanel/JournalMargin/JournalVBox/JournalTabsHBox2" unique_id=1241582142]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Placeholder"
+
+[node name="ReferenceScroll" type="ScrollContainer" parent="JournalPanel/JournalMargin/JournalVBox" unique_id=602125638]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ReferenceRichTextLabel" type="RichTextLabel" parent="JournalPanel/JournalMargin/JournalVBox/ReferenceScroll" unique_id=1250797211]
+layout_mode = 2
+size_flags_horizontal = 3
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="HistoryScroll" type="ScrollContainer" parent="JournalPanel/JournalMargin/JournalVBox" unique_id=637319558]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="HistoryVBox" type="VBoxContainer" parent="JournalPanel/JournalMargin/JournalVBox/HistoryScroll" unique_id=876696386]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="HistoryListLabel" type="RichTextLabel" parent="JournalPanel/JournalMargin/JournalVBox/HistoryScroll/HistoryVBox" unique_id=715010157]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="HistorySeparator" type="HSeparator" parent="JournalPanel/JournalMargin/JournalVBox/HistoryScroll/HistoryVBox" unique_id=628245863]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HistoryDetailLabel" type="RichTextLabel" parent="JournalPanel/JournalMargin/JournalVBox/HistoryScroll/HistoryVBox" unique_id=1509324959]
+custom_minimum_size = Vector2(0, 200)
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 1
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="NoticesScroll" type="ScrollContainer" parent="JournalPanel/JournalMargin/JournalVBox" unique_id=95371690]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="NoticesLabel" type="RichTextLabel" parent="JournalPanel/JournalMargin/JournalVBox/NoticesScroll" unique_id=562537096]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+bbcode_enabled = true
+text = "Notices"
+scroll_active = false
+autowrap_mode = 2
+
+[node name="BonusesScroll" type="ScrollContainer" parent="JournalPanel/JournalMargin/JournalVBox" unique_id=2090361804]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="BonusesLabel" type="RichTextLabel" parent="JournalPanel/JournalMargin/JournalVBox/BonusesScroll" unique_id=544074531]
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="AchievementsScroll" type="ScrollContainer" parent="JournalPanel/JournalMargin/JournalVBox" unique_id=709330824]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="AchievementsLabel" type="RichTextLabel" parent="JournalPanel/JournalMargin/JournalVBox/AchievementsScroll" unique_id=1437048409]
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2
+
+[node name="PlaceholderScroll" type="ScrollContainer" parent="JournalPanel/JournalMargin/JournalVBox" unique_id=2077247303]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PlaceholderLabel" type="RichTextLabel" parent="JournalPanel/JournalMargin/JournalVBox/PlaceholderScroll" unique_id=1493882246]
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+autowrap_mode = 2

@@ -1,0 +1,16 @@
+# Godot-specific ignores
+.godot/
+*.import
+export_presets.cfg
+debug.log
+
+# Windows-specific ignores
+Thumbs.db
+desktop.ini
+
+# macOS-specific ignores
+.DS_Store
+
+# Mobile/Web export ignores
+*.vsproj
+*.sln

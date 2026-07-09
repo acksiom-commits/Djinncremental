@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="PuzzleSequenceResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://puzzle_sequence_resource.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+tempo_bpm = 360.0
+time_sig_top = 6
+time_sig_bottom = 8
+melody_timbre = "brass"
+bass_timbre = "trombone"
+perc_timbre = "trombone"
+melody = [{"note": "F5", "beats": 2.0, "vel": 0.8}, {"note": "E5", "beats": 1.0, "vel": 0.77}, {"note": "D5", "beats": 2.0, "vel": 0.76}, {"note": "C#5", "beats": 1.0, "vel": 0.73}, {"note": "C5", "beats": 2.0, "vel": 0.76}, {"note": "B4", "beats": 1.0, "vel": 0.72}, {"note": "Bb4", "beats": 2.0, "vel": 0.76}, {"note": "A4", "beats": 1.0, "vel": 0.76}, {"note": "G4", "beats": 1.0, "vel": 0.78}, {"note": "A4", "beats": 1.0, "vel": 0.76}, {"note": "Bb4", "beats": 1.0, "vel": 0.72}, {"note": "A4", "beats": 1.0, "vel": 0.72}, {"note": "rest", "beats": 1.0}, {"note": "G4", "beats": 1.0, "vel": 0.81}, {"note": "C5", "beats": 2.0, "vel": 0.85}, {"note": "rest", "beats": 3.0}, {"note": "C6", "beats": 1.0, "vel": 0.47}]
+bass = [{"note": "F4", "beats": 2.0, "vel": 0.75}, {"note": "E4", "beats": 1.0, "vel": 0.73}, {"note": "D4", "beats": 2.0, "vel": 0.76}, {"note": "C#4", "beats": 1.0, "vel": 0.76}, {"note": "C4", "beats": 2.0, "vel": 0.8}, {"note": "B3", "beats": 1.0, "vel": 0.76}, {"note": "Bb3", "beats": 2.0, "vel": 0.77}, {"note": "A3", "beats": 1.0, "vel": 0.73}, {"note": "G3", "beats": 1.0, "vel": 0.79}, {"note": "A3", "beats": 1.0, "vel": 0.76}, {"note": "Bb3", "beats": 1.0, "vel": 0.72}, {"note": "A3", "beats": 1.0, "vel": 0.76}, {"note": "rest", "beats": 1.0}, {"note": "G3", "beats": 1.0, "vel": 0.69}, {"note": "C3", "beats": 2.0, "vel": 0.81}, {"note": "rest", "beats": 4.0}, {"note": "C4", "beats": 1.0, "vel": 0.38}]
+perc = [{"note": "F3", "beats": 2.0, "vel": 0.79}, {"note": "E3", "beats": 1.0, "vel": 0.79}, {"note": "D3", "beats": 2.0, "vel": 0.79}, {"note": "C#3", "beats": 1.0, "vel": 0.76}, {"note": "C3", "beats": 2.0, "vel": 0.8}, {"note": "B2", "beats": 1.0, "vel": 0.77}, {"note": "Bb2", "beats": 2.0, "vel": 0.79}, {"note": "A2", "beats": 1.0, "vel": 0.73}, {"note": "G2", "beats": 1.0, "vel": 0.77}, {"note": "A2", "beats": 1.0, "vel": 0.76}, {"note": "Bb2", "beats": 1.0, "vel": 0.71}, {"note": "A2", "beats": 1.0, "vel": 0.81}, {"note": "rest", "beats": 1.0}, {"note": "G2", "beats": 1.0, "vel": 0.73}, {"note": "C2", "beats": 2.0, "vel": 0.8}, {"note": "rest", "beats": 4.0}, {"note": "F2", "beats": 1.0, "vel": 0.4}]

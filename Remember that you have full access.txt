@@ -1,0 +1,39 @@
+Remember that you have full access to all Project Files and double-check them yourself before assuming your internal record of them is correct, and before asking me to provide any excerpts from them.
+
+
+This has been a consistent problem with your assistance - you do not check the existing Project Files before providing new versions which often do not include previous updates to those Project Files.
+
+
+Also review your Project Instructions and compare them to your output before making any suggestions or providing updated files.
+
+
+Begin sessions under the stricture that you are to provide me with code snippets and explicit identification of where they should go instead of complete files. If I get tired enough I will ask for complete files at that point.
+
+
+
+
+Remember that you have full access to all Project Files and can view them yourself before asking me to post anything from them.
+
+
+
+Review your Project Instructions and compare them to your output before making any suggestions.
+
+
+
+OK, the Alpha playtesting for the Primordial Age has shown me I need to make a few adjustments.
+
+
+
+1st, the Percentage filled display for the Stoctagon (the storage area display) needs to be larger and brighter, and should be moved into the lower right triangle of the square around the Stoctagon itself, like the Volition switch above it on the upper right of that square.
+
+
+
+2nd, the Volition logic for the Stoctagon needs to be changed to allow multiple production overrides depending on the number of Volitions assigned. That means that two Volitions assigned in the early game will allow two production logics to fire at once when the Stoctagon is full, starting from the highest production tier resource possible and continuing on down.
+
+
+
+
+
+
+
+5th, I need to add a click-adding logic for Volitions that increases the effects of clicking by the player to compress, assemble, summon, or create a resource. So in the early game, players who are click-happy can get two or three production resources made per click, contingent obviously on the resources actually being available. I intend to put this "[-][counter][+]" display between the bottom of the Summon Spark button and the top of the Generation Bars. There should be just enough space left at the bottom of that column under the twenty-sided rotating Uonite display to make it feasible.

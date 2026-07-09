@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cua1aqap5evlb"]
+
+[ext_resource type="Script" uid="uid://c5qqfqi28a71t" path="res://purity_lock_manager.gd" id="1_bg835"]
+
+[node name="PurityLockManager" type="Node" unique_id=365663643]
+script = ExtResource("1_bg835")
