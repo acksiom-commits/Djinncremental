@@ -528,7 +528,9 @@ func _add_resource(key: String, amount: BigNum) -> void:
     match key:
         "particle": gc.particle = gc.particle.add(amount)
         "iota":     gc.iota     = gc.iota.add(amount)
-        "mote":     gc.mote     = gc.mote.add(amount)
+        "mote":
+            gc.mote = gc.mote.add(amount)
+            gc.motes_this_cycle = mini(gc.motes_this_cycle + amount.to_int(), 20)
         "grain":
             gc.grain = gc.grain.add(amount)
             gc.grains_this_cycle = mini(gc.grains_this_cycle + amount.to_int(), 20)
@@ -1029,27 +1031,28 @@ func dev_inject_ten_grains() -> void:
 
 
 func manual_create_uonite() -> bool:
-    # Guard: need at least 20 grain, 1 spark, and headroom in the cycle cap.
-    if gc.grain.is_less_than(BigNum.from_int(20)): return false
+    # TEST (grains-out-experiment): requirement changed from 20 grain to 20 mote.
+    # Guard: need at least 20 mote, 1 spark, and headroom in the cycle cap.
+    if gc.mote.is_less_than(BigNum.from_int(20)): return false
     if gc.sparks.is_less_than(BigNum.from_int(1)):  return false
     var headroom: int = gc.get_uonite_cycle_cap() - gc.uonites_this_cycle
     if headroom <= 0: return false
-    # Batch: create as many uonites as grain, sparks, and cap headroom allow.
-    var possible_by_grain:  int = gc.grain.div_int_floor(20).to_int()
+    # Batch: create as many uonites as mote, sparks, and cap headroom allow.
+    var possible_by_mote:   int = gc.mote.div_int_floor(20).to_int()
     var possible_by_sparks: int = gc.sparks.to_int()
-    var count: int = mini(possible_by_grain, mini(possible_by_sparks, headroom))
-    print("[UONITE] grain=", gc.grain.to_int(), " sparks=", gc.sparks.to_int(),
+    var count: int = mini(possible_by_mote, mini(possible_by_sparks, headroom))
+    print("[UONITE-TEST] mote=", gc.mote.to_int(), " sparks=", gc.sparks.to_int(),
           " cap=", gc.get_uonite_cycle_cap(), " this_cycle=", gc.uonites_this_cycle,
-          " headroom=", headroom, " by_grain=", possible_by_grain,
+          " headroom=", headroom, " by_mote=", possible_by_mote,
           " by_sparks=", possible_by_sparks, " count=", count)
     if count <= 0: return false
-    gc.grain  = gc.grain.sub(BigNum.from_int(count * 20))
+    gc.mote   = gc.mote.sub(BigNum.from_int(count * 20))
     gc.sparks = gc.sparks.sub(BigNum.from_int(count))
     gc.uonite = gc.uonite.add(BigNum.from_int(count))
     gc.add_to_total("uonite", BigNum.from_int(count))
     gc.uonites_this_cycle    += count
     gc.refinements_completed += count
-    gc.grains_this_cycle      = 0
+    gc.motes_this_cycle       = 0
     return true
 
 

@@ -2325,7 +2325,7 @@ func _update_counters() -> void:
                     _fmt(game_context.grain),
                     " 🔒" if locked else ""])
         if _uonite_icosa and game_context.ui_unlocks.get("uonite_creation", false):
-            var grain_target: int = game_context.grains_this_cycle
+            var grain_target: int = game_context.motes_this_cycle
             if grain_target < _icosa_grain_display:
                 _icosa_grain_display = grain_target
             elif grain_target > _icosa_grain_display:

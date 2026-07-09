@@ -96,6 +96,7 @@ var archon_foci_spent:     int = 0
 var volitions_spent:       int = 0
 var _last_bonus_volition_grant: int = 0
 var grains_this_cycle:     int = 0
+var motes_this_cycle:      int = 0   # TEST: mirrors grains_this_cycle, drives Uonite gauge for grains-out experiment
 var uonites_this_cycle:    int = 0
 var archon_reward_flags:   Dictionary = {}
 
