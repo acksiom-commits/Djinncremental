@@ -1360,7 +1360,7 @@ func _check_totals_milestones() -> void:
     if not game_context or not archon_dialogue_manager:
         return
     # --- Individual keys already in totals_created ---
-    for key in game_context.totals_created:
+    for key in game_context.totals_created.keys().filter(func(k): return k != "sparks_summoned"):
         var total: BigNum = game_context.totals_created[key]
         if total.is_zero():
             continue
