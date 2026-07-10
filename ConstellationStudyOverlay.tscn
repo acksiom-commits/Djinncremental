@@ -187,7 +187,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_font_sizes/font_size = 16
-text = "Name"
+text = "MATCHES"
 
 [node name="MarkerTabSep" type="Panel" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=1186065417]
 custom_minimum_size = Vector2(0, 1)

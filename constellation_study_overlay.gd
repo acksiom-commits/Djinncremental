@@ -93,6 +93,8 @@ var _name_color_states:        Dictionary = {}  # name_str -> {color_idx(int): s
 var _name_pitch_states:        Dictionary = {}  # name_str -> {note_name(String): state(int)}
 var _name_pitch_carousel_idx:  Dictionary = {}  # name_str -> int, transient UI position, not persisted
 var _matches_sort_mode:    int = -1       # -1=manual/unsorted, 0=Name,1=Sequence,2=Color,3=Pitch
+var _name_range_lo:        Dictionary = {}  # name_str -> int (0 = unset), per-name Sequence hypothesis
+var _name_range_hi:        Dictionary = {}  # name_str -> int (0 = unset)       # -1=manual/unsorted, 0=Name,1=Sequence,2=Color,3=Pitch
 var _final_clues_cache:     Array = []     # cached final_clues dicts
 var _distance_flavor_cache: Array = []     # cached distance flavor texts
 var _between_flavor_cache:  Array = []     # cached between flavor texts
@@ -330,6 +332,15 @@ func _load_constellation_data() -> void:
         _name_pitch_states[str(k)] = inner_p
 
     _name_pitch_carousel_idx.clear()
+
+    _name_range_lo.clear()
+    _name_range_hi.clear()
+    var raw_name_range_lo: Dictionary = notes.get("name_range_lo", {})
+    var raw_name_range_hi: Dictionary = notes.get("name_range_hi", {})
+    for k in raw_name_range_lo:
+        _name_range_lo[str(k)] = int(raw_name_range_lo[k])
+    for k in raw_name_range_hi:
+        _name_range_hi[str(k)] = int(raw_name_range_hi[k])
 
     # Sequence position + clue text caches (for Markers Panel display).
     _pitch_rank_solution = []
@@ -804,6 +815,8 @@ func _save_puzzle_notes() -> void:
     notes["name_tab_order"] = _name_tab_order.duplicate()
     notes["name_color_states"] = _name_color_states.duplicate(true)
     notes["name_pitch_states"] = _name_pitch_states.duplicate(true)
+    notes["name_range_lo"] = _name_range_lo.duplicate()
+    notes["name_range_hi"] = _name_range_hi.duplicate()
     _cd.set_player_puzzle_notes(_constellation_id, notes)
 
 
@@ -1076,7 +1089,7 @@ func _populate_name_markers() -> void:
             var unknown_col := Color(0.55, 0.50, 0.65, 1)
             name_lbl.add_theme_color_override("font_color", Color(0.65, 0.60, 0.75, 1))
             facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(name_str), unknown_col))
-            facts_vbox.add_child(_make_fact_line("Sequence: ?", unknown_col))
+            facts_vbox.add_child(_make_fact_row("Sequence:", _make_name_sequence_range_row(name_str, unknown_col), unknown_col))
             facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row(name_str), unknown_col))
             facts_vbox.add_child(_make_fact_line("Adjacent: ?", unknown_col))
         else:
@@ -1546,6 +1559,50 @@ func _make_sequence_range_row(star_idx: int, star_color: Color) -> HBoxContainer
     return row
 
 
+func _make_name_sequence_range_row(name_str: String, row_color: Color) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 3)
+
+    var lbl_gt := Label.new()
+    lbl_gt.text = ">"
+    lbl_gt.add_theme_font_size_override("font_size", 14)
+    lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+    row.add_child(lbl_gt)
+
+    var edit_lo := LineEdit.new()
+    edit_lo.custom_minimum_size = Vector2(34, 24)
+    edit_lo.max_length = 2
+    edit_lo.placeholder_text = "\u2013"
+    var lo_val: int = int(_name_range_lo.get(name_str, 0))
+    edit_lo.text = str(lo_val) if lo_val > 0 else ""
+    edit_lo.add_theme_font_size_override("font_size", 13)
+    _style_range_edit(edit_lo, row_color)
+    row.add_child(edit_lo)
+
+    var lbl_lt := Label.new()
+    lbl_lt.text = "<"
+    lbl_lt.add_theme_font_size_override("font_size", 14)
+    lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+    row.add_child(lbl_lt)
+
+    var edit_hi := LineEdit.new()
+    edit_hi.custom_minimum_size = Vector2(34, 24)
+    edit_hi.max_length = 2
+    edit_hi.placeholder_text = "\u2013"
+    var hi_val: int = int(_name_range_hi.get(name_str, 0))
+    edit_hi.text = str(hi_val) if hi_val > 0 else ""
+    edit_hi.add_theme_font_size_override("font_size", 13)
+    _style_range_edit(edit_hi, row_color)
+    row.add_child(edit_hi)
+
+    edit_lo.text_submitted.connect(func(_t): _on_name_range_committed(name_str, edit_lo, edit_hi))
+    edit_lo.focus_exited.connect(func(): _on_name_range_committed(name_str, edit_lo, edit_hi))
+    edit_hi.text_submitted.connect(func(_t): _on_name_range_committed(name_str, edit_lo, edit_hi))
+    edit_hi.focus_exited.connect(func(): _on_name_range_committed(name_str, edit_lo, edit_hi))
+
+    return row
+
+
 func _confirmed_name_for_star(star_idx: int) -> String:
     if star_idx < 0 or star_idx >= _name_states.size():
         return ""
@@ -1788,7 +1845,16 @@ func _on_name_x(star_idx: int, star_name: String,
 
 
 func _propagate_name_confirmed(confirmed_star: int, star_name: String, color_idx: int) -> void:
-    # Cross-star: this name can no longer belong to any other same-color star.
+    if confirmed_star < _star_range_lo.size() and confirmed_star < _star_range_hi.size():
+        if _star_range_lo[confirmed_star] == 0 and _star_range_hi[confirmed_star] == 0:
+            var guess_lo: int = int(_name_range_lo.get(star_name, 0))
+            var guess_hi: int = int(_name_range_hi.get(star_name, 0))
+            if guess_lo > 0 or guess_hi > 0:
+                _star_range_lo[confirmed_star] = guess_lo
+                _star_range_hi[confirmed_star] = guess_hi
+    _name_range_lo.erase(star_name)
+    _name_range_hi.erase(star_name)
+
     for j in _star_count:
         if j == confirmed_star:
             continue
@@ -1801,8 +1867,6 @@ func _propagate_name_confirmed(confirmed_star: int, star_name: String, color_idx
         if cur_j != 2:
             _name_states[j][star_name] = 2
 
-    # Within-star: confirming one name rules out every other same-color
-    # candidate name for THIS star — a star can only have one name.
     if confirmed_star < _name_states.size():
         for j in _star_count:
             var jcol2: int = _star_colors[j] if j < _star_colors.size() else 1
@@ -1859,6 +1923,30 @@ func _on_range_committed(star_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) ->
         _populate_markers_panel()
     if _active_marker_tab == 3:
         _populate_markers_panel()
+
+
+func _on_name_range_committed(name_str: String, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
+    var raw_lo: String = lo_edit.text.strip_edges()
+    var raw_hi: String = hi_edit.text.strip_edges()
+
+    var lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
+    var hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
+
+    if lo < 1 or lo > _star_count: lo = 0
+    if hi < 1 or hi > _star_count: hi = 0
+
+    if lo > 0 and hi > 0 and lo > hi:
+        var tmp := lo; lo = hi; hi = tmp
+
+    if lo > 0: _name_range_lo[name_str] = lo
+    else: _name_range_lo.erase(name_str)
+    if hi > 0: _name_range_hi[name_str] = hi
+    else: _name_range_hi.erase(name_str)
+
+    lo_edit.text = str(lo) if lo > 0 else ""
+    hi_edit.text = str(hi) if hi > 0 else ""
+
+    _save_puzzle_notes()
 
 
 func _propagate_range_exact(confirmed_star: int, exact_pos: int) -> void:
