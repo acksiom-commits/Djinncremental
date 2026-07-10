@@ -75,6 +75,9 @@ const DRAG_SCROLL_SPEED: float = 240.0   # px/sec scrolled while pointer sits in
 
 # ── STATE ────────────────────────────────────────────────────────────
 var _constellation_id:    int   = -1
+
+func get_current_constellation_id() -> int:
+    return _constellation_id
 var _selected_star:       int   = -1
 var _star_screen_pos:     Array = []     # Array[Vector2], map-space
 var _star_names:          Array = []     # Array[String] from cache

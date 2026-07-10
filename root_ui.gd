@@ -916,6 +916,11 @@ func _on_puzzle_generation_complete(constellation_id: int,
     if not cd:
         return
     cd.set_puzzle_cache(constellation_id, puzzle.to_cache_dict())
+    var study := get_node_or_null("/root/Node2D/CanvasLayer/ConstellationStudyOverlay")
+    if study and study.visible and study.has_method("show_for_constellation") \
+            and study.has_method("get_current_constellation_id") \
+            and study.get_current_constellation_id() == constellation_id:
+        study.show_for_constellation(constellation_id)
 
 
 func _dev_recompute_archon_puzzle() -> void:
@@ -1009,12 +1014,14 @@ func _on_age_selected(key: String) -> void:
 func _on_game_loaded(offline_seconds: float) -> void:
     _sync_trigger_flags_from_loaded_state()
     _apply_unlock_visibility()
-    # Bootstrap Archon puzzle (id 0) if not cached or if player seed changed.
+    # Bootstrap Archon puzzle (id 0) if not cached, version mismatch, or player seed changed.
     var cd_boot = get_node_or_null("/root/ConstellationData")
     if cd_boot:
         var cached_boot: Dictionary = cd_boot.get_puzzle_cache(0)
         var seed_matches: bool = cached_boot.get("player_seed_used", -1) == cd_boot.player_seed
-        if cached_boot.is_empty() or not seed_matches:
+        var version_matches: bool = cached_boot.get("version", 0) == 3
+        if cached_boot.is_empty() or not seed_matches or not version_matches:
+            cd_boot.clear_puzzle_cache(0)
             _start_puzzle_generation(0)
     var now: float = Time.get_unix_time_from_system()
     if game_context and game_context.archon_lockdown_end_time > now:
