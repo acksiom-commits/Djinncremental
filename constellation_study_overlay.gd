@@ -89,6 +89,9 @@ var _adjacency_states:    Dictionary = {}
 var _pitch_rank_solution:   Array = []     # Array[int], melody step per star
 var _star_pitch_index:      Array = []     # Array[int], raw note index per star (ConstellationData)
 var _pitch_freqs:           Array = []     # Array[float], frequency table for this constellation
+var _name_color_states:        Dictionary = {}  # name_str -> {color_idx(int): state(int)} 0=neutral,1=confirmed,2=eliminated
+var _name_pitch_states:        Dictionary = {}  # name_str -> {note_name(String): state(int)}
+var _name_pitch_carousel_idx:  Dictionary = {}  # name_str -> int, transient UI position, not persisted
 var _final_clues_cache:     Array = []     # cached final_clues dicts
 var _distance_flavor_cache: Array = []     # cached distance flavor texts
 var _between_flavor_cache:  Array = []     # cached between flavor texts
@@ -308,6 +311,24 @@ func _load_constellation_data() -> void:
     var raw_adj: Dictionary = notes.get("adjacency_states", {})
     for k in raw_adj:
         _adjacency_states[str(k)] = int(raw_adj[k])
+
+    _name_color_states.clear()
+    var raw_name_colors: Dictionary = notes.get("name_color_states", {})
+    for k in raw_name_colors:
+        var inner: Dictionary = {}
+        for ck in raw_name_colors[k]:
+            inner[int(ck)] = int(raw_name_colors[k][ck])
+        _name_color_states[str(k)] = inner
+
+    _name_pitch_states.clear()
+    var raw_name_pitch: Dictionary = notes.get("name_pitch_states", {})
+    for k in raw_name_pitch:
+        var inner_p: Dictionary = {}
+        for pk in raw_name_pitch[k]:
+            inner_p[str(pk)] = int(raw_name_pitch[k][pk])
+        _name_pitch_states[str(k)] = inner_p
+
+    _name_pitch_carousel_idx.clear()
 
     # Sequence position + clue text caches (for Markers Panel display).
     _pitch_rank_solution = []
@@ -780,6 +801,8 @@ func _save_puzzle_notes() -> void:
         }
     notes["adjacency_states"] = _adjacency_states.duplicate()
     notes["name_tab_order"] = _name_tab_order.duplicate()
+    notes["name_color_states"] = _name_color_states.duplicate(true)
+    notes["name_pitch_states"] = _name_pitch_states.duplicate(true)
     _cd.set_player_puzzle_notes(_constellation_id, notes)
 
 
@@ -984,17 +1007,17 @@ func _populate_name_markers() -> void:
         if confirmed_star < 0:
             var unknown_col := Color(0.55, 0.50, 0.65, 1)
             name_lbl.add_theme_color_override("font_color", Color(0.65, 0.60, 0.75, 1))
-            facts_vbox.add_child(_make_fact_line("Color: ?", unknown_col))
+            facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(name_str), unknown_col))
             facts_vbox.add_child(_make_fact_line("Sequence: ?", unknown_col))
-            facts_vbox.add_child(_make_fact_line("Pitch: ?", unknown_col))
+            facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row(name_str), unknown_col))
             facts_vbox.add_child(_make_fact_line("Adjacent: ?", unknown_col))
         else:
             var ci: int = clamp(_star_colors[confirmed_star] if confirmed_star < _star_colors.size() else 1, 0, 3)
             var col: Color = STAR_COLORS_BY_IDX[ci]
             name_lbl.add_theme_color_override("font_color", col)
-            facts_vbox.add_child(_make_fact_line("Color: %s" % COLOR_NAME_LABELS[ci], col))
-            facts_vbox.add_child(_make_fact_line("Sequence: %s" % _ordinal_str(_confirmed_sequence_str(confirmed_star)), col))
-            facts_vbox.add_child(_make_fact_line("Pitch: %s" % _note_name_for_star(confirmed_star), col))
+            facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(name_str), col))
+            facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row(confirmed_star, col), col))
+            facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row(name_str), col))
             facts_vbox.add_child(_make_fact_line("Adjacent: %s" % _describe_neighbors(confirmed_star), col))
 
         if _name_drag_idx >= 0 and _name_drag_idx < _name_tab_order.size() and _name_tab_order[_name_drag_idx] == name_str:
@@ -1266,6 +1289,172 @@ func _note_name_for_star(star_idx: int) -> String:
     if p < 0 or p >= _pitch_freqs.size():
         return "?"
     return ConstellationLogicPuzzle.note_name_for_freq(_pitch_freqs[p])
+
+
+func _distinct_note_names() -> Array[String]:
+    var uniq_freqs: Array = []
+    for f in _pitch_freqs:
+        if not uniq_freqs.has(f):
+            uniq_freqs.append(f)
+    uniq_freqs.sort()
+    var names: Array[String] = []
+    for f in uniq_freqs:
+        names.append(ConstellationLogicPuzzle.note_name_for_freq(f))
+    return names
+
+
+func _make_color_toggle_row(name_str: String) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 3)
+    for ci in COLOR_NAME_LABELS.size():
+        var btn := Button.new()
+        btn.custom_minimum_size = Vector2(26, 24)
+        btn.focus_mode = Control.FOCUS_NONE
+        btn.add_theme_font_size_override("font_size", 13)
+        var cidx := ci
+        btn.pressed.connect(func(): _on_name_color_toggle(name_str, cidx, btn))
+        _style_color_toggle_btn(btn, cidx, int(_name_color_states.get(name_str, {}).get(cidx, 0)))
+        row.add_child(btn)
+    return row
+
+
+func _style_color_toggle_btn(btn: Button, color_idx: int, state: int) -> void:
+    var base_col: Color = STAR_COLORS_BY_IDX[color_idx]
+    var letter: String = COLOR_NAME_LABELS[color_idx].substr(0, 1)
+    match state:
+        1:  # confirmed
+            btn.modulate = Color(base_col.r, base_col.g, base_col.b, 1.0)
+            btn.text = letter + "\u2713"
+        2:  # eliminated
+            btn.modulate = Color(base_col.r, base_col.g, base_col.b, 0.3)
+            btn.text = letter + "\u2717"
+        _:  # neutral
+            btn.modulate = Color(base_col.r, base_col.g, base_col.b, 0.6)
+            btn.text = letter
+
+
+func _on_name_color_toggle(name_str: String, color_idx: int, btn: Button) -> void:
+    if not _name_color_states.has(name_str):
+        _name_color_states[name_str] = {}
+    var cur: int = int(_name_color_states[name_str].get(color_idx, 0))
+    var new_state: int = (cur + 1) % 3
+    _name_color_states[name_str][color_idx] = new_state
+    _style_color_toggle_btn(btn, color_idx, new_state)
+    _save_puzzle_notes()
+
+
+func _make_pitch_carousel_row(name_str: String) -> HBoxContainer:
+    var notes_list: Array[String] = _distinct_note_names()
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 4)
+    if notes_list.is_empty():
+        var empty_lbl := Label.new()
+        empty_lbl.text = "?"
+        row.add_child(empty_lbl)
+        return row
+
+    var btn_prev := Button.new()
+    btn_prev.text = "\u25c0"
+    btn_prev.custom_minimum_size = Vector2(24, 24)
+    btn_prev.focus_mode = Control.FOCUS_NONE
+    row.add_child(btn_prev)
+
+    var note_lbl := Label.new()
+    note_lbl.custom_minimum_size = Vector2(36, 0)
+    note_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    note_lbl.add_theme_font_size_override("font_size", 14)
+    row.add_child(note_lbl)
+
+    var btn_next := Button.new()
+    btn_next.text = "\u25b6"
+    btn_next.custom_minimum_size = Vector2(24, 24)
+    btn_next.focus_mode = Control.FOCUS_NONE
+    row.add_child(btn_next)
+
+    var btn_mark := Button.new()
+    btn_mark.custom_minimum_size = Vector2(28, 24)
+    btn_mark.focus_mode = Control.FOCUS_NONE
+    btn_mark.add_theme_font_size_override("font_size", 13)
+    row.add_child(btn_mark)
+
+    var refresh_carousel := func():
+        var i: int = int(_name_pitch_carousel_idx.get(name_str, 0)) % notes_list.size()
+        var note: String = notes_list[i]
+        var state: int = int(_name_pitch_states.get(name_str, {}).get(note, 0))
+        note_lbl.text = note
+        match state:
+            1:
+                note_lbl.add_theme_color_override("font_color", Color(0.3, 1.0, 0.4, 1.0))
+                btn_mark.text = "\u2713"
+            2:
+                note_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25, 1.0))
+                btn_mark.text = "\u2717"
+            _:
+                note_lbl.add_theme_color_override("font_color", Color(0.85, 0.8, 0.95, 1.0))
+                btn_mark.text = "\u2022"
+
+    btn_prev.pressed.connect(func():
+        var i: int = int(_name_pitch_carousel_idx.get(name_str, 0))
+        _name_pitch_carousel_idx[name_str] = (i - 1 + notes_list.size()) % notes_list.size()
+        refresh_carousel.call())
+    btn_next.pressed.connect(func():
+        var i: int = int(_name_pitch_carousel_idx.get(name_str, 0))
+        _name_pitch_carousel_idx[name_str] = (i + 1) % notes_list.size()
+        refresh_carousel.call())
+    btn_mark.pressed.connect(func():
+        var i: int = int(_name_pitch_carousel_idx.get(name_str, 0)) % notes_list.size()
+        var note: String = notes_list[i]
+        if not _name_pitch_states.has(name_str):
+            _name_pitch_states[name_str] = {}
+        var cur: int = int(_name_pitch_states[name_str].get(note, 0))
+        _name_pitch_states[name_str][note] = (cur + 1) % 3
+        _save_puzzle_notes()
+        refresh_carousel.call())
+
+    refresh_carousel.call()
+    return row
+
+
+func _make_sequence_range_row(star_idx: int, star_color: Color) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 3)
+
+    var lbl_gt := Label.new()
+    lbl_gt.text = ">"
+    lbl_gt.add_theme_font_size_override("font_size", 14)
+    lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+    row.add_child(lbl_gt)
+
+    var edit_lo := LineEdit.new()
+    edit_lo.custom_minimum_size = Vector2(34, 24)
+    edit_lo.max_length = 2
+    edit_lo.placeholder_text = "\u2013"
+    edit_lo.text = str(_star_range_lo[star_idx]) if star_idx < _star_range_lo.size() and _star_range_lo[star_idx] > 0 else ""
+    edit_lo.add_theme_font_size_override("font_size", 13)
+    _style_range_edit(edit_lo, star_color)
+    row.add_child(edit_lo)
+
+    var lbl_lt := Label.new()
+    lbl_lt.text = "<"
+    lbl_lt.add_theme_font_size_override("font_size", 14)
+    lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+    row.add_child(lbl_lt)
+
+    var edit_hi := LineEdit.new()
+    edit_hi.custom_minimum_size = Vector2(34, 24)
+    edit_hi.max_length = 2
+    edit_hi.placeholder_text = "\u2013"
+    edit_hi.text = str(_star_range_hi[star_idx]) if star_idx < _star_range_hi.size() and _star_range_hi[star_idx] > 0 else ""
+    edit_hi.add_theme_font_size_override("font_size", 13)
+    _style_range_edit(edit_hi, star_color)
+    row.add_child(edit_hi)
+
+    edit_lo.text_submitted.connect(func(_t): _on_range_committed(star_idx, edit_lo, edit_hi))
+    edit_lo.focus_exited.connect(func(): _on_range_committed(star_idx, edit_lo, edit_hi))
+    edit_hi.text_submitted.connect(func(_t): _on_range_committed(star_idx, edit_lo, edit_hi))
+    edit_hi.focus_exited.connect(func(): _on_range_committed(star_idx, edit_lo, edit_hi))
+
+    return row
 
 
 func _confirmed_name_for_star(star_idx: int) -> String:
@@ -1579,6 +1768,8 @@ func _on_range_committed(star_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) ->
     _build_star_tags()
     if _active_marker_tab == 1:
         _populate_markers_panel()
+    if _active_marker_tab == 3:
+        _populate_markers_panel()
 
 
 func _propagate_range_exact(confirmed_star: int, exact_pos: int) -> void:
@@ -1658,6 +1849,18 @@ func _make_clue_label(text: String, _color: Color) -> PanelContainer:
     rtl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     pc.add_child(rtl)
     return pc
+
+
+func _make_fact_row(label_text: String, control: Control, color: Color) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 4)
+    var lbl := Label.new()
+    lbl.text = label_text
+    lbl.add_theme_font_size_override("font_size", 13)
+    lbl.add_theme_color_override("font_color", Color(color.r, color.g, color.b, 0.75))
+    row.add_child(lbl)
+    row.add_child(control)
+    return row
 
 
 func _make_fact_line(text: String, color: Color) -> Label:

@@ -299,35 +299,35 @@ func _draw() -> void:
 # INPUT
 # ==================================================
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_Q:
-			_debug_play_sequence()
-			return
-		if event.keycode == KEY_P:
-			_debug_solve_puzzle()
-			return
-	if _study_overlay and is_instance_valid(_study_overlay) and _study_overlay.visible:
-		return
-	if _puzzle_state != PuzzleState.ACTIVE or not _constellations_visible or _replay_active:
-		return
-	if not event is InputEventMouseButton:
-		return
-	var mbe := event as InputEventMouseButton
-	if not mbe.pressed or mbe.button_index != MOUSE_BUTTON_LEFT:
-		return
-	if not _projected_positions.has(_puzzle_target_id):
-		return
-	var positions:  Array = _projected_positions[_puzzle_target_id]
-	var best_idx:   int   = -1
-	var best_dist:  float = HIT_RADIUS
-	for i in positions.size():
-		var d: float = mbe.position.distance_to(positions[i])
-		if d < best_dist:
-			best_dist = d
-			best_idx  = i
-	if best_idx >= 0:
-		_on_star_clicked(best_idx)
-		get_viewport().set_input_as_handled()
+    if event is InputEventKey and event.pressed and not event.echo:
+        if event.keycode == KEY_Q:
+            _debug_play_sequence()
+            return
+        if event.keycode == KEY_P:
+            _debug_solve_puzzle()
+            return
+    if _study_overlay and is_instance_valid(_study_overlay) and _study_overlay.visible:
+        return
+    if _puzzle_state != PuzzleState.ACTIVE or not _constellations_visible or _replay_active:
+        return
+    if not event is InputEventMouseButton:
+        return
+    var mbe := event as InputEventMouseButton
+    if not mbe.pressed or mbe.button_index != MOUSE_BUTTON_LEFT:
+        return
+    if not _projected_positions.has(_puzzle_target_id):
+        return
+    var positions:  Array = _projected_positions[_puzzle_target_id]
+    var best_idx:   int   = -1
+    var best_dist:  float = HIT_RADIUS
+    for i in positions.size():
+        var d: float = mbe.position.distance_to(positions[i])
+        if d < best_dist:
+            best_dist = d
+            best_idx  = i
+    if best_idx >= 0:
+        _on_star_clicked(best_idx)
+        get_viewport().set_input_as_handled()
 
 # ==================================================
 # PUZZLE — AVAILABILITY
