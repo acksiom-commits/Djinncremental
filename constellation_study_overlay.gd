@@ -1542,16 +1542,18 @@ func _propagate_range_exact(confirmed_star: int, exact_pos: int) -> void:
 # CLUE LIST
 # ==================================================
 
-const _COLOR_KEYWORDS: Array = [
-    "Blue star", "White star", "Yellow-Orange star", "Red star"
-]
+var _color_regexes: Array = []
 
 func _bbcode_for_clue_text(text: String) -> String:
+    if _color_regexes.is_empty():
+        for name in COLOR_NAME_LABELS:
+            var re := RegEx.new()
+            re.compile("(?i)\\b%s\\b" % name.replace("-", "\\-"))
+            _color_regexes.append(re)
     var bb: String = text
-    for i in _COLOR_KEYWORDS.size():
-        var kw: String = _COLOR_KEYWORDS[i]
+    for i in _color_regexes.size():
         var col_hex: String = STAR_COLORS_BY_IDX[i].to_html()
-        bb = bb.replace(kw, "[color=#%s]%s[/color]" % [col_hex, kw])
+        bb = (_color_regexes[i] as RegEx).sub(bb, "[color=#%s]$0[/color]" % col_hex, true)
     return bb
 
 
