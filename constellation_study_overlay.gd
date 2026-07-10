@@ -1078,20 +1078,19 @@ func _build_star_widgets() -> void:
         edit_hi.focus_exited.connect(func(): _on_range_committed(si, lo_ref, hi_ref))
 
         # ── Name checklist ─────────────────────────────────────────
-        # Only list names that share this star's color.
-        var same_color_names: Array[String] = []
+        # List every star name — color is one of the facts to deduce,
+        # so the checklist must not pre-filter by it.
+        var all_star_names: Array[String] = []
         for j in _star_count:
-            var jcol: int = _star_colors[j] if j < _star_colors.size() else 1
-            if jcol == color_idx:
-                same_color_names.append(_star_names[j] if j < _star_names.size() else "?")
+            all_star_names.append(_star_names[j] if j < _star_names.size() else "?")
 
-        if not same_color_names.is_empty():
+        if not all_star_names.is_empty():
             var scroll := ScrollContainer.new()
             scroll.custom_minimum_size = Vector2(0, 0)
             scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
             # Height capped at WIDGET_NAME_MAX_H but shrinks if fewer names.
             var row_h: float = 30.0
-            var natural_h: float = same_color_names.size() * row_h
+            var natural_h: float = all_star_names.size() * row_h
             scroll.custom_minimum_size = Vector2(160, minf(natural_h, WIDGET_NAME_MAX_H))
             scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
             root.add_child(scroll)
@@ -1100,7 +1099,7 @@ func _build_star_widgets() -> void:
             name_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
             scroll.add_child(name_vbox)
 
-            for name_str in same_color_names:
+            for name_str in all_star_names:
                 var row := HBoxContainer.new()
                 row.mouse_filter = Control.MOUSE_FILTER_PASS
                 row.add_theme_constant_override("separation", 3)
@@ -1135,7 +1134,7 @@ func _build_star_widgets() -> void:
                 btn_x.pressed.connect(func(): _on_name_x(si, captured_name, name_lbl, btn_check, btn_x))
 
             # Apply saved state to name rows immediately.
-            _refresh_name_widget(i, name_vbox, same_color_names, star_color)
+            _refresh_name_widget(i, name_vbox, all_star_names, star_color)
 
     _reposition_star_widgets()
 
@@ -1357,19 +1356,19 @@ func _reposition_star_tags() -> void:
 
 
 func _refresh_name_widget(star_idx: int, name_vbox: VBoxContainer,
-        same_color_names: Array[String], star_color: Color) -> void:
+        all_star_names: Array[String], star_color: Color) -> void:
     if star_idx >= _name_states.size():
         return
     var states: Dictionary = _name_states[star_idx]
     var rows: Array = name_vbox.get_children()
     for ri in rows.size():
-        if ri >= same_color_names.size():
+        if ri >= all_star_names.size():
             break
         var row: HBoxContainer = rows[ri]
         var name_lbl: Label = row.get_child(0)
         var btn_check: Button = row.get_child(1)
         var btn_x: Button = row.get_child(2)
-        var captured_name: String = same_color_names[ri]
+        var captured_name: String = all_star_names[ri]
         var state: int = int(states.get(captured_name, 0))
         _apply_name_row_visual(state, name_lbl, btn_check, btn_x, star_color)
 
