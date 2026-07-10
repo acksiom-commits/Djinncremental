@@ -87,6 +87,8 @@ var _active_marker_tab:   int   = 0      # 0=Color 1=Sequence 2=Adjacency 3=Name
 # Adjacency marker states: key = "a:b" (a<b), value = int 0=neutral 1=✓ 2=✗
 var _adjacency_states:    Dictionary = {}
 var _pitch_rank_solution:   Array = []     # Array[int], melody step per star
+var _star_pitch_index:      Array = []     # Array[int], raw note index per star (ConstellationData)
+var _pitch_freqs:           Array = []     # Array[float], frequency table for this constellation
 var _final_clues_cache:     Array = []     # cached final_clues dicts
 var _distance_flavor_cache: Array = []     # cached distance flavor texts
 var _between_flavor_cache:  Array = []     # cached between flavor texts
@@ -311,6 +313,11 @@ func _load_constellation_data() -> void:
     _pitch_rank_solution = []
     for v in cache.get("pitch_rank_solution", []):
         _pitch_rank_solution.append(int(v))
+
+    _star_pitch_index = []
+    for v in _cd.get_note_assignment(_constellation_id):
+        _star_pitch_index.append(int(v))
+    _pitch_freqs = _cd.get_note_freqs(_constellation_id)
 
     _final_clues_cache = cache.get("final_clues", []).duplicate(true)
     _distance_flavor_cache = cache.get("distance_flavor_texts", []).duplicate()
@@ -882,10 +889,65 @@ func _populate_adjacency_markers() -> void:
         _markers_content.add_child(lbl)
 
 
+func _sort_matches(mode: int) -> void:
+    match mode:
+        0:  # Alphabetical Name
+            _name_tab_order.sort_custom(func(a, b): return a.nocasecmp_to(b) < 0)
+        1:  # Ordinal Sequence
+            _name_tab_order.sort_custom(func(a, b):
+                var sa: int = _find_star_for_confirmed_name(a)
+                var sb: int = _find_star_for_confirmed_name(b)
+                if sa < 0 and sb < 0: return a.nocasecmp_to(b) < 0
+                if sa < 0: return false
+                if sb < 0: return true
+                return _sequence_number(sa) < _sequence_number(sb))
+        2:  # Alphabetical Color
+            _name_tab_order.sort_custom(func(a, b):
+                var sa: int = _find_star_for_confirmed_name(a)
+                var sb: int = _find_star_for_confirmed_name(b)
+                if sa < 0 and sb < 0: return a.nocasecmp_to(b) < 0
+                if sa < 0: return false
+                if sb < 0: return true
+                var ca: String = COLOR_NAME_LABELS[clamp(_star_colors[sa] if sa < _star_colors.size() else 1, 0, 3)]
+                var cb: String = COLOR_NAME_LABELS[clamp(_star_colors[sb] if sb < _star_colors.size() else 1, 0, 3)]
+                if ca == cb: return a.nocasecmp_to(b) < 0
+                return ca.nocasecmp_to(cb) < 0)
+        3:  # High-Low Pitch
+            _name_tab_order.sort_custom(func(a, b):
+                var sa: int = _find_star_for_confirmed_name(a)
+                var sb: int = _find_star_for_confirmed_name(b)
+                if sa < 0 and sb < 0: return a.nocasecmp_to(b) < 0
+                if sa < 0: return false
+                if sb < 0: return true
+                var pa: int = _star_pitch_index[sa] if sa < _star_pitch_index.size() else -1
+                var pb: int = _star_pitch_index[sb] if sb < _star_pitch_index.size() else -1
+                var fa: float = _pitch_freqs[pa] if pa >= 0 and pa < _pitch_freqs.size() else 0.0
+                var fb: float = _pitch_freqs[pb] if pb >= 0 and pb < _pitch_freqs.size() else 0.0
+                if fa == fb: return a.nocasecmp_to(b) < 0
+                return fa < fb)
+    _save_puzzle_notes()
+    _populate_name_markers()
+
+
 func _populate_name_markers() -> void:
     for child in _markers_content.get_children():
         child.queue_free()
     _name_row_controls.clear()
+
+    var sort_row := HBoxContainer.new()
+    sort_row.add_theme_constant_override("separation", 4)
+    sort_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    var sort_labels: Array = ["Name", "Sequence", "Color", "Pitch"]
+    for i in sort_labels.size():
+        var btn := Button.new()
+        btn.text = "Sort: %s" % sort_labels[i]
+        btn.add_theme_font_size_override("font_size", 12)
+        btn.focus_mode = Control.FOCUS_NONE
+        var mode := i
+        btn.pressed.connect(func(): _sort_matches(mode))
+        sort_row.add_child(btn)
+    _markers_content.add_child(sort_row)
+    _markers_content.add_child(HSeparator.new())
 
     for name_str in _name_tab_order:
         var confirmed_star: int = _find_star_for_confirmed_name(name_str)
@@ -924,6 +986,7 @@ func _populate_name_markers() -> void:
             name_lbl.add_theme_color_override("font_color", Color(0.65, 0.60, 0.75, 1))
             facts_vbox.add_child(_make_fact_line("Color: ?", unknown_col))
             facts_vbox.add_child(_make_fact_line("Sequence: ?", unknown_col))
+            facts_vbox.add_child(_make_fact_line("Pitch: ?", unknown_col))
             facts_vbox.add_child(_make_fact_line("Adjacent: ?", unknown_col))
         else:
             var ci: int = clamp(_star_colors[confirmed_star] if confirmed_star < _star_colors.size() else 1, 0, 3)
@@ -931,6 +994,7 @@ func _populate_name_markers() -> void:
             name_lbl.add_theme_color_override("font_color", col)
             facts_vbox.add_child(_make_fact_line("Color: %s" % COLOR_NAME_LABELS[ci], col))
             facts_vbox.add_child(_make_fact_line("Sequence: %s" % _ordinal_str(_confirmed_sequence_str(confirmed_star)), col))
+            facts_vbox.add_child(_make_fact_line("Pitch: %s" % _note_name_for_star(confirmed_star), col))
             facts_vbox.add_child(_make_fact_line("Adjacent: %s" % _describe_neighbors(confirmed_star), col))
 
         if _name_drag_idx >= 0 and _name_drag_idx < _name_tab_order.size() and _name_tab_order[_name_drag_idx] == name_str:
@@ -1193,6 +1257,15 @@ func _find_star_for_confirmed_name(name_str: String) -> int:
         if i < _name_states.size() and int(_name_states[i].get(name_str, 0)) == 1:
             return i
     return -1
+
+
+func _note_name_for_star(star_idx: int) -> String:
+    if star_idx < 0 or star_idx >= _star_pitch_index.size():
+        return "?"
+    var p: int = _star_pitch_index[star_idx]
+    if p < 0 or p >= _pitch_freqs.size():
+        return "?"
+    return ConstellationLogicPuzzle.note_name_for_freq(_pitch_freqs[p])
 
 
 func _confirmed_name_for_star(star_idx: int) -> String:
