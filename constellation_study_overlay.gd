@@ -1575,6 +1575,8 @@ func _make_clue_label(text: String, _color: Color) -> PanelContainer:
     pc.add_theme_stylebox_override("panel", sb)
     var rtl := RichTextLabel.new()
     rtl.bbcode_enabled = true
+    rtl.fit_content = true
+    rtl.scroll_active = false
     rtl.text = _bbcode_for_clue_text(text)
     rtl.add_theme_color_override("default_color", Color(0.2, 0.9, 0.2, 1))
     rtl.add_theme_font_size_override("normal_font_size", 18)
