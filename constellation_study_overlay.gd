@@ -92,6 +92,7 @@ var _pitch_freqs:           Array = []     # Array[float], frequency table for t
 var _name_color_states:        Dictionary = {}  # name_str -> {color_idx(int): state(int)} 0=neutral,1=confirmed,2=eliminated
 var _name_pitch_states:        Dictionary = {}  # name_str -> {note_name(String): state(int)}
 var _name_pitch_carousel_idx:  Dictionary = {}  # name_str -> int, transient UI position, not persisted
+var _matches_sort_mode:    int = -1       # -1=manual/unsorted, 0=Name,1=Sequence,2=Color,3=Pitch
 var _final_clues_cache:     Array = []     # cached final_clues dicts
 var _distance_flavor_cache: Array = []     # cached distance flavor texts
 var _between_flavor_cache:  Array = []     # cached between flavor texts
@@ -913,6 +914,7 @@ func _populate_adjacency_markers() -> void:
 
 
 func _sort_matches(mode: int) -> void:
+    _matches_sort_mode = mode
     match mode:
         0:  # Alphabetical Name
             _name_tab_order.sort_custom(func(a, b): return a.nocasecmp_to(b) < 0)
@@ -952,6 +954,68 @@ func _sort_matches(mode: int) -> void:
     _populate_name_markers()
 
 
+func _populate_sequence_ordinal_rows() -> void:
+    var header_row := HBoxContainer.new()
+    var spacer := Control.new()
+    spacer.custom_minimum_size = Vector2(58, 0)
+    header_row.add_child(spacer)
+    var names_heading := Label.new()
+    names_heading.text = "Names"
+    names_heading.add_theme_font_size_override("font_size", 14)
+    names_heading.add_theme_color_override("font_color", Color(0.75, 0.7, 0.9, 0.9))
+    header_row.add_child(names_heading)
+    _markers_content.add_child(header_row)
+    _markers_content.add_child(HSeparator.new())
+
+    for slot in range(1, _star_count + 1):
+        var star_idx: int = _star_for_exact_sequence(slot)
+        var confirmed_name: String = _confirmed_name_for_star(star_idx) if star_idx >= 0 else ""
+
+        var row := HBoxContainer.new()
+        row.add_theme_constant_override("separation", 8)
+        row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        _markers_content.add_child(row)
+
+        var ord_lbl := Label.new()
+        ord_lbl.text = _ordinal(slot)
+        ord_lbl.custom_minimum_size = Vector2(50, 0)
+        ord_lbl.add_theme_font_size_override("font_size", 18)
+        row.add_child(ord_lbl)
+
+        var name_edit := LineEdit.new()
+        name_edit.custom_minimum_size = Vector2(110, 0)
+        name_edit.editable = star_idx >= 0
+        name_edit.placeholder_text = "pin sequence first" if star_idx < 0 else "type a name"
+        name_edit.text = confirmed_name
+        row.add_child(name_edit)
+
+        var facts_vbox := VBoxContainer.new()
+        facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        facts_vbox.add_theme_constant_override("separation", 1)
+        row.add_child(facts_vbox)
+
+        if star_idx < 0 or confirmed_name.is_empty():
+            var unknown_col := Color(0.55, 0.50, 0.65, 1)
+            ord_lbl.add_theme_color_override("font_color", Color(0.65, 0.60, 0.75, 1))
+            facts_vbox.add_child(_make_fact_line("Color: ?", unknown_col))
+            facts_vbox.add_child(_make_fact_line("Pitch: ?", unknown_col))
+            facts_vbox.add_child(_make_fact_line("Adjacent: ?", unknown_col))
+        else:
+            var ci: int = clamp(_star_colors[star_idx] if star_idx < _star_colors.size() else 1, 0, 3)
+            var col: Color = STAR_COLORS_BY_IDX[ci]
+            ord_lbl.add_theme_color_override("font_color", col)
+            facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(confirmed_name), col))
+            facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row(confirmed_name), col))
+            facts_vbox.add_child(_make_fact_line("Adjacent: %s" % _describe_neighbors(star_idx), col))
+
+        var si := star_idx
+        var edit_ref := name_edit
+        name_edit.text_submitted.connect(func(_t): _on_ordinal_name_committed(si, edit_ref))
+        name_edit.focus_exited.connect(func(): _on_ordinal_name_committed(si, edit_ref))
+
+        _markers_content.add_child(HSeparator.new())
+
+
 func _populate_name_markers() -> void:
     for child in _markers_content.get_children():
         child.queue_free()
@@ -971,6 +1035,10 @@ func _populate_name_markers() -> void:
         sort_row.add_child(btn)
     _markers_content.add_child(sort_row)
     _markers_content.add_child(HSeparator.new())
+
+    if _matches_sort_mode == 1:
+        _populate_sequence_ordinal_rows()
+        return
 
     for name_str in _name_tab_order:
         var confirmed_star: int = _find_star_for_confirmed_name(name_str)
@@ -1301,6 +1369,27 @@ func _distinct_note_names() -> Array[String]:
     for f in uniq_freqs:
         names.append(ConstellationLogicPuzzle.note_name_for_freq(f))
     return names
+
+
+func _star_for_exact_sequence(slot: int) -> int:
+    for i in _star_count:
+        if i < _star_range_lo.size() and i < _star_range_hi.size():
+            if _star_range_lo[i] == slot and _star_range_hi[i] == slot:
+                return i
+    return -1
+
+
+func _on_ordinal_name_committed(star_idx: int, name_edit: LineEdit) -> void:
+    if star_idx < 0:
+        return
+    var entered: String = name_edit.text.strip_edges()
+    if entered.is_empty() or not _star_names.has(entered):
+        return
+    if star_idx >= _name_states.size():
+        return
+    var color_idx: int = _star_colors[star_idx] if star_idx < _star_colors.size() else 1
+    _name_states[star_idx][entered] = 1
+    _propagate_name_confirmed(star_idx, entered, color_idx)
 
 
 func _make_color_toggle_row(name_str: String) -> HBoxContainer:
