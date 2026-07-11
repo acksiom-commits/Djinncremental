@@ -1036,6 +1036,10 @@ func _build_unified_star_row(star_idx: int) -> void:
         if event is InputEventMouseButton and (event as InputEventMouseButton).pressed and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
             _on_star_row_pressed(row_idx))
 
+    var name_edit := LineEdit.new()
+    name_edit.placeholder_text = "type a name"
+    name_edit.text = _confirmed_name_for_star(star_idx)
+
     match _matches_sort_mode:
         1:
             var lo: int = _star_range_lo[star_idx] if star_idx < _star_range_lo.size() else 0
@@ -1061,17 +1065,18 @@ func _build_unified_star_row(star_idx: int) -> void:
             pitch_lbl.add_theme_font_size_override("font_size", 16)
             pitch_lbl.add_theme_color_override("font_color", row_color)
             row.add_child(pitch_lbl)
+        _:
+            name_edit.custom_minimum_size = Vector2(90, 0)
+            row.add_child(name_edit)
 
     var facts_vbox := VBoxContainer.new()
     facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     facts_vbox.add_theme_constant_override("separation", 1)
     row.add_child(facts_vbox)
 
-    var name_edit := LineEdit.new()
-    name_edit.custom_minimum_size = Vector2(100, 0)
-    name_edit.placeholder_text = "type a name"
-    name_edit.text = _confirmed_name_for_star(star_idx)
-    facts_vbox.add_child(_make_fact_row("Name:", name_edit, row_color))
+    if _matches_sort_mode == 1 or _matches_sort_mode == 2 or _matches_sort_mode == 3:
+        name_edit.custom_minimum_size = Vector2(100, 0)
+        facts_vbox.add_child(_make_fact_row("Name:", name_edit, row_color))
 
     if _matches_sort_mode != 2:
         facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(star_idx), row_color))
