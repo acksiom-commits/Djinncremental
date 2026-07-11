@@ -92,6 +92,8 @@ var _pitch_freqs:           Array = []     # Array[float], frequency table for t
 var _name_color_states:        Dictionary = {}  # name_str -> {color_idx(int): state(int)} 0=neutral,1=confirmed,2=eliminated
 var _name_pitch_states:        Dictionary = {}  # name_str -> {note_name(String): state(int)}
 var _name_pitch_carousel_idx:  Dictionary = {}  # name_str -> int, transient UI position, not persisted
+var _name_range_lo:            Dictionary = {}  # name_str -> int (0 = unset)
+var _name_range_hi:            Dictionary = {}  # name_str -> int (0 = unset)
 var _matches_sort_mode:    int = -1       # -1/0=Name,1=Sequence,2=Color,3=Pitch,4=Adjacency
 
 # Star-indexed hypothesis states (unified model).
@@ -349,6 +351,15 @@ func _load_constellation_data() -> void:
         _name_pitch_states[str(k)] = inner_p
 
     _name_pitch_carousel_idx.clear()
+
+    _name_range_lo.clear()
+    _name_range_hi.clear()
+    var raw_name_lo: Dictionary = notes.get("name_range_lo", {})
+    var raw_name_hi: Dictionary = notes.get("name_range_hi", {})
+    for k in raw_name_lo:
+        _name_range_lo[str(k)] = int(raw_name_lo[k])
+    for k in raw_name_hi:
+        _name_range_hi[str(k)] = int(raw_name_hi[k])
 
     # Sequence position + clue text caches (for Markers Panel display).
     _pitch_rank_solution = []
@@ -832,6 +843,8 @@ func _save_puzzle_notes() -> void:
     notes["manual_order_by_mode"] = orders_out
     notes["name_color_states"] = _name_color_states.duplicate(true)
     notes["name_pitch_states"] = _name_pitch_states.duplicate(true)
+    notes["name_range_lo"] = _name_range_lo.duplicate()
+    notes["name_range_hi"] = _name_range_hi.duplicate()
     _cd.set_player_puzzle_notes(_constellation_id, notes)
 
 
@@ -1011,6 +1024,183 @@ func _display_color_for_star(star_idx: int) -> Color:
     return Color(0.2, 0.9, 0.2, 1)
 
 
+func _display_color_for_name(name_str: String) -> Color:
+    var s: Dictionary = _name_color_states.get(name_str, {})
+    for ck in s:
+        if int(s[ck]) == 1:
+            return STAR_COLORS_BY_IDX[int(ck)]
+    return Color(0.2, 0.9, 0.2, 1)
+
+
+func _make_color_toggle_row_for_name(name_str: String) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 3)
+    for ci in COLOR_NAME_LABELS.size():
+        var btn := Button.new()
+        btn.custom_minimum_size = Vector2(26, 24)
+        btn.focus_mode = Control.FOCUS_NONE
+        btn.add_theme_font_size_override("font_size", 13)
+        var cidx := ci
+        var n := name_str
+        btn.pressed.connect(func(): _on_name_color_toggle(n, cidx, btn))
+        var cur_state: int = int(_name_color_states.get(name_str, {}).get(ci, 0))
+        _style_color_toggle_btn(btn, ci, cur_state)
+        row.add_child(btn)
+    return row
+
+
+func _on_name_color_toggle(name_str: String, color_idx: int, btn: Button) -> void:
+    if not _name_color_states.has(name_str):
+        _name_color_states[name_str] = {}
+    var cur: int = int(_name_color_states[name_str].get(color_idx, 0))
+    var new_state: int = (cur + 1) % 3
+    _name_color_states[name_str][color_idx] = new_state
+    _style_color_toggle_btn(btn, color_idx, new_state)
+    _save_puzzle_notes()
+
+
+func _make_pitch_carousel_row_for_name(name_str: String) -> HBoxContainer:
+    var notes_list: Array[String] = _distinct_note_names()
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 4)
+    if notes_list.is_empty():
+        var empty_lbl := Label.new()
+        empty_lbl.text = "?"
+        row.add_child(empty_lbl)
+        return row
+
+    var btn_prev := Button.new()
+    btn_prev.text = "\u25c0"
+    btn_prev.custom_minimum_size = Vector2(24, 24)
+    btn_prev.focus_mode = Control.FOCUS_NONE
+    row.add_child(btn_prev)
+
+    var note_lbl := Label.new()
+    note_lbl.custom_minimum_size = Vector2(36, 0)
+    note_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    note_lbl.add_theme_font_size_override("font_size", 14)
+    row.add_child(note_lbl)
+
+    var btn_next := Button.new()
+    btn_next.text = "\u25b6"
+    btn_next.custom_minimum_size = Vector2(24, 24)
+    btn_next.focus_mode = Control.FOCUS_NONE
+    row.add_child(btn_next)
+
+    var btn_mark := Button.new()
+    btn_mark.custom_minimum_size = Vector2(28, 24)
+    btn_mark.focus_mode = Control.FOCUS_NONE
+    btn_mark.add_theme_font_size_override("font_size", 13)
+    row.add_child(btn_mark)
+
+    var n := name_str
+
+    var refresh_carousel := func():
+        var i: int = int(_name_pitch_carousel_idx.get(n, 0)) % notes_list.size()
+        var note: String = notes_list[i]
+        var state: int = int(_name_pitch_states.get(n, {}).get(note, 0))
+        note_lbl.text = note
+        match state:
+            1:
+                note_lbl.add_theme_color_override("font_color", Color(0.3, 1.0, 0.4, 1.0))
+                btn_mark.text = "\u2713"
+            2:
+                note_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25, 1.0))
+                btn_mark.text = "\u2717"
+            _:
+                note_lbl.add_theme_color_override("font_color", Color(0.85, 0.8, 0.95, 1.0))
+                btn_mark.text = "\u2022"
+
+    btn_prev.pressed.connect(func():
+        var i: int = int(_name_pitch_carousel_idx.get(n, 0))
+        _name_pitch_carousel_idx[n] = (i - 1 + notes_list.size()) % notes_list.size()
+        refresh_carousel.call())
+    btn_next.pressed.connect(func():
+        var i: int = int(_name_pitch_carousel_idx.get(n, 0))
+        _name_pitch_carousel_idx[n] = (i + 1) % notes_list.size()
+        refresh_carousel.call())
+    btn_mark.pressed.connect(func():
+        var i: int = int(_name_pitch_carousel_idx.get(n, 0)) % notes_list.size()
+        var note: String = notes_list[i]
+        if not _name_pitch_states.has(n):
+            _name_pitch_states[n] = {}
+        var cur: int = int(_name_pitch_states[n].get(note, 0))
+        _name_pitch_states[n][note] = (cur + 1) % 3
+        _save_puzzle_notes()
+        refresh_carousel.call())
+
+    refresh_carousel.call()
+    return row
+
+
+func _make_sequence_range_row_for_name(name_str: String, row_color: Color) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 3)
+
+    var lbl_gt := Label.new()
+    lbl_gt.text = ">"
+    lbl_gt.add_theme_font_size_override("font_size", 14)
+    lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+    row.add_child(lbl_gt)
+
+    var edit_lo := LineEdit.new()
+    edit_lo.custom_minimum_size = Vector2(34, 24)
+    edit_lo.max_length = 2
+    edit_lo.placeholder_text = "\u2013"
+    var lo_val: int = int(_name_range_lo.get(name_str, 0))
+    edit_lo.text = str(lo_val) if lo_val > 0 else ""
+    edit_lo.add_theme_font_size_override("font_size", 13)
+    _style_range_edit(edit_lo, row_color)
+    row.add_child(edit_lo)
+
+    var lbl_lt := Label.new()
+    lbl_lt.text = "<"
+    lbl_lt.add_theme_font_size_override("font_size", 14)
+    lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+    row.add_child(lbl_lt)
+
+    var edit_hi := LineEdit.new()
+    edit_hi.custom_minimum_size = Vector2(34, 24)
+    edit_hi.max_length = 2
+    edit_hi.placeholder_text = "\u2013"
+    var hi_val: int = int(_name_range_hi.get(name_str, 0))
+    edit_hi.text = str(hi_val) if hi_val > 0 else ""
+    edit_hi.add_theme_font_size_override("font_size", 13)
+    _style_range_edit(edit_hi, row_color)
+    row.add_child(edit_hi)
+
+    edit_lo.text_submitted.connect(func(_t): _on_name_range_committed(name_str, edit_lo, edit_hi))
+    edit_lo.focus_exited.connect(func(): _on_name_range_committed(name_str, edit_lo, edit_hi))
+    edit_hi.text_submitted.connect(func(_t): _on_name_range_committed(name_str, edit_lo, edit_hi))
+    edit_hi.focus_exited.connect(func(): _on_name_range_committed(name_str, edit_lo, edit_hi))
+
+    return row
+
+
+func _on_name_range_committed(name_str: String, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
+    var raw_lo: String = lo_edit.text.strip_edges()
+    var raw_hi: String = hi_edit.text.strip_edges()
+
+    var lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
+    var hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
+
+    if lo < 1 or lo > _star_count: lo = 0
+    if hi < 1 or hi > _star_count: hi = 0
+
+    if lo > 0 and hi > 0 and lo > hi:
+        var tmp := lo; lo = hi; hi = tmp
+
+    if lo > 0: _name_range_lo[name_str] = lo
+    else: _name_range_lo.erase(name_str)
+    if hi > 0: _name_range_hi[name_str] = hi
+    else: _name_range_hi.erase(name_str)
+
+    lo_edit.text = str(lo) if lo > 0 else ""
+    hi_edit.text = str(hi) if hi > 0 else ""
+
+    _save_puzzle_notes()
+
+
 func _build_unified_star_row(star_idx: int) -> void:
     var row_color: Color = _display_color_for_star(star_idx)
 
@@ -1056,7 +1246,7 @@ func _build_unified_star_row(star_idx: int) -> void:
             color_lbl.text = COLOR_NAME_LABELS[ci]
             color_lbl.custom_minimum_size = Vector2(64, 0)
             color_lbl.add_theme_font_size_override("font_size", 16)
-            color_lbl.add_theme_color_override("font_color", row_color)
+            color_lbl.add_theme_color_override("font_color", STAR_COLORS_BY_IDX[ci])
             row.add_child(color_lbl)
         3:
             var pitch_lbl := Label.new()
@@ -1066,17 +1256,22 @@ func _build_unified_star_row(star_idx: int) -> void:
             pitch_lbl.add_theme_color_override("font_color", row_color)
             row.add_child(pitch_lbl)
         _:
-            name_edit.custom_minimum_size = Vector2(90, 0)
-            row.add_child(name_edit)
+            var name_lbl := Label.new()
+            var confirmed: String = _confirmed_name_for_star(star_idx)
+            name_lbl.text = confirmed if not confirmed.is_empty() else "?"
+            name_lbl.custom_minimum_size = Vector2(80, 0)
+            name_lbl.clip_text = true
+            name_lbl.add_theme_font_size_override("font_size", 16)
+            name_lbl.add_theme_color_override("font_color", row_color)
+            row.add_child(name_lbl)
 
     var facts_vbox := VBoxContainer.new()
     facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     facts_vbox.add_theme_constant_override("separation", 1)
     row.add_child(facts_vbox)
 
-    if _matches_sort_mode == 1 or _matches_sort_mode == 2 or _matches_sort_mode == 3:
-        name_edit.custom_minimum_size = Vector2(100, 0)
-        facts_vbox.add_child(_make_fact_row("Name:", name_edit, row_color))
+    name_edit.custom_minimum_size = Vector2(100, 0)
+    facts_vbox.add_child(_make_fact_row("Name:", name_edit, row_color))
 
     if _matches_sort_mode != 2:
         facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(star_idx), row_color))
@@ -1114,6 +1309,12 @@ func _populate_name_markers() -> void:
     _markers_content.add_child(sort_row)
     _markers_content.add_child(HSeparator.new())
 
+    if _matches_sort_mode == 1:
+        _populate_sequence_slot_rows()
+        return
+    if _matches_sort_mode <= 0:
+        _populate_name_rows()
+        return
     for si in _ordered_star_indices():
         _build_unified_star_row(si)
 
@@ -1825,12 +2026,42 @@ func _propagate_name_confirmed(confirmed_star: int, star_name: String, color_idx
                 continue
             _name_states[confirmed_star][other_name] = 2
 
+    if confirmed_star < _star_color_states.size() and _name_color_states.has(star_name):
+        for ck in _name_color_states[star_name]:
+            if not _star_color_states[confirmed_star].has(ck):
+                _star_color_states[confirmed_star][ck] = _name_color_states[star_name][ck]
+        _name_color_states.erase(star_name)
+
+    if confirmed_star < _star_pitch_hyp_states.size() and _name_pitch_states.has(star_name):
+        for pk in _name_pitch_states[star_name]:
+            if not _star_pitch_hyp_states[confirmed_star].has(pk):
+                _star_pitch_hyp_states[confirmed_star][pk] = _name_pitch_states[star_name][pk]
+        _name_pitch_states.erase(star_name)
+    _name_pitch_carousel_idx.erase(star_name)
+
+    if (_name_range_lo.has(star_name) or _name_range_hi.has(star_name)) and confirmed_star < _star_range_lo.size():
+        if _star_range_lo[confirmed_star] == 0 and _star_range_hi[confirmed_star] == 0:
+            var glo: int = int(_name_range_lo.get(star_name, 0))
+            var ghi: int = int(_name_range_hi.get(star_name, 0))
+            if glo > 0 or ghi > 0:
+                _star_range_lo[confirmed_star] = glo
+                _star_range_hi[confirmed_star] = ghi
+        _name_range_lo.erase(star_name)
+        _name_range_hi.erase(star_name)
+
     _save_puzzle_notes()
 
     call_deferred("_build_star_widgets")
     call_deferred("_build_star_tags")
     if _active_marker_tab == 3:
         call_deferred("_populate_markers_panel")
+
+
+func _find_star_for_confirmed_name(name_str: String) -> int:
+    for i in _star_count:
+        if i < _name_states.size() and int(_name_states[i].get(name_str, 0)) == 1:
+            return i
+    return -1
 
 
 # ==================================================
@@ -2063,3 +2294,95 @@ func _update_star_drag_hover(global_mouse_y: float) -> void:
 func _end_star_drag() -> void:
     _drag_idx = -1
     _save_puzzle_notes()
+
+
+func _build_sequence_slot_row(slot: int) -> void:
+    var star_idx: int = -1
+    for i in _star_count:
+        if _sequence_number(i) == slot:
+            star_idx = i
+            break
+
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 8)
+    row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _markers_content.add_child(row)
+
+    var row_color: Color = _display_color_for_star(star_idx)
+
+    var seq_lbl := Label.new()
+    seq_lbl.text = _ordinal(slot)
+    seq_lbl.custom_minimum_size = Vector2(64, 0)
+    seq_lbl.add_theme_font_size_override("font_size", 16)
+    seq_lbl.add_theme_color_override("font_color", row_color)
+    row.add_child(seq_lbl)
+
+    var name_edit := LineEdit.new()
+    name_edit.custom_minimum_size = Vector2(100, 0)
+    name_edit.placeholder_text = "type a name"
+    name_edit.text = _confirmed_name_for_star(star_idx)
+
+    var facts_vbox := VBoxContainer.new()
+    facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    facts_vbox.add_theme_constant_override("separation", 1)
+    row.add_child(facts_vbox)
+
+    facts_vbox.add_child(_make_fact_row("Name:", name_edit, row_color))
+    facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(star_idx), row_color))
+    facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row(star_idx), row_color))
+    facts_vbox.add_child(_make_fact_line("Adjacent: %s" % _describe_neighbors(star_idx), row_color))
+
+    var si := star_idx
+    var edit_ref := name_edit
+    name_edit.text_submitted.connect(func(_t): _on_star_name_committed(si, edit_ref))
+    name_edit.focus_exited.connect(func(): _on_star_name_committed(si, edit_ref))
+
+    _markers_content.add_child(HSeparator.new())
+
+
+func _populate_sequence_slot_rows() -> void:
+    for slot in range(1, _star_count + 1):
+        _build_sequence_slot_row(slot)
+
+
+func _build_name_row(name_str: String) -> void:
+    var star_idx: int = _find_star_for_confirmed_name(name_str)
+    var row_color: Color = _display_color_for_star(star_idx) if star_idx >= 0 else _display_color_for_name(name_str)
+
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 8)
+    row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _markers_content.add_child(row)
+
+    var name_lbl := Label.new()
+    name_lbl.text = name_str
+    name_lbl.custom_minimum_size = Vector2(90, 0)
+    name_lbl.clip_text = true
+    name_lbl.add_theme_font_size_override("font_size", 16)
+    name_lbl.add_theme_color_override("font_color", row_color)
+    row.add_child(name_lbl)
+
+    var facts_vbox := VBoxContainer.new()
+    facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    facts_vbox.add_theme_constant_override("separation", 1)
+    row.add_child(facts_vbox)
+
+    if star_idx < 0:
+        facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_name(name_str), row_color))
+        facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row_for_name(name_str, row_color), row_color))
+        facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row_for_name(name_str), row_color))
+        facts_vbox.add_child(_make_fact_line("Adjacent: ?", row_color))
+    else:
+        facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(star_idx), row_color))
+        facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row(star_idx, row_color), row_color))
+        facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row(star_idx), row_color))
+        facts_vbox.add_child(_make_fact_line("Adjacent: %s" % _describe_neighbors(star_idx), row_color))
+
+    _markers_content.add_child(HSeparator.new())
+
+
+func _populate_name_rows() -> void:
+    var names_sorted: Array = _star_names.duplicate()
+    names_sorted.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
+    for n in names_sorted:
+        _build_name_row(String(n))
