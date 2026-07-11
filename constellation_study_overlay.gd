@@ -92,9 +92,18 @@ var _pitch_freqs:           Array = []     # Array[float], frequency table for t
 var _name_color_states:        Dictionary = {}  # name_str -> {color_idx(int): state(int)} 0=neutral,1=confirmed,2=eliminated
 var _name_pitch_states:        Dictionary = {}  # name_str -> {note_name(String): state(int)}
 var _name_pitch_carousel_idx:  Dictionary = {}  # name_str -> int, transient UI position, not persisted
-var _matches_sort_mode:    int = -1       # -1=manual/unsorted, 0=Name,1=Sequence,2=Color,3=Pitch
+var _matches_sort_mode:    int = -1       # -1/0=Name,1=Sequence,2=Color,3=Pitch,4=Manual
 var _name_range_lo:        Dictionary = {}  # name_str -> int (0 = unset), per-name Sequence hypothesis
-var _name_range_hi:        Dictionary = {}  # name_str -> int (0 = unset)       # -1=manual/unsorted, 0=Name,1=Sequence,2=Color,3=Pitch
+var _name_range_hi:        Dictionary = {}  # name_str -> int (0 = unset)
+
+# Star-indexed hypothesis states (unified model).
+var _star_color_states:        Array = []   # index=star_idx, value=Dictionary{color_idx(int): state(int)}
+var _star_pitch_hyp_states:    Array = []   # index=star_idx, value=Dictionary{note_name(String): state(int)}
+var _star_pitch_carousel_idx:  Array = []   # index=star_idx, value=int, transient, not persisted
+var _manual_star_order:        Array[int] = []  # player-arranged order, star indices; used when _matches_sort_mode == 4
+var _star_row_controls:        Array = []   # HBoxContainer rows, only populated in Manual mode, for drag hit-testing
+var _drag_idx:                 int = -1     # index into _star_row_controls currently being dragged, -1 = none
+var _drag_mouse_y:              float = 0.0
 var _final_clues_cache:     Array = []     # cached final_clues dicts
 var _distance_flavor_cache: Array = []     # cached distance flavor texts
 var _between_flavor_cache:  Array = []     # cached between flavor texts
@@ -112,10 +121,6 @@ var _name_states: Array = []
 # Floating widget nodes, one Control per star.
 var _star_widgets: Array = []
 var _star_tags: Array = []
-var _name_tab_order:    Array[String] = []   # player-deduced display order, Name tab
-var _name_row_controls: Array = []           # HBoxContainer rows, parallel to _name_tab_order
-var _name_drag_idx:     int = -1             # index currently being dragged, -1 = none
-var _name_drag_mouse_y: float = 0.0    # last known global mouse Y while dragging, polled by _process
 var _star_count: int = 0
 var _gc: Node = null
 
@@ -196,12 +201,12 @@ func _process(delta: float) -> void:
                 _fork_replay_step += 1
             _star_map_control.queue_redraw()
 
-    if _name_drag_idx < 0:
+    if _drag_idx < 0:
         return
     var scroll_rect: Rect2 = _markers_scroll.get_global_rect()
-    if _name_drag_mouse_y < scroll_rect.position.y + DRAG_SCROLL_EDGE:
+    if _drag_mouse_y < scroll_rect.position.y + DRAG_SCROLL_EDGE:
         _markers_scroll.scroll_vertical -= int(DRAG_SCROLL_SPEED * delta)
-    elif _name_drag_mouse_y > scroll_rect.position.y + scroll_rect.size.y - DRAG_SCROLL_EDGE:
+    elif _drag_mouse_y > scroll_rect.position.y + scroll_rect.size.y - DRAG_SCROLL_EDGE:
         _markers_scroll.scroll_vertical += int(DRAG_SCROLL_SPEED * delta)
 
 
@@ -288,26 +293,39 @@ func _load_constellation_data() -> void:
         _star_range_hi.append(int(slot.get("hi", 0)))
         _name_states.append(slot.get("name_states", {}).duplicate())
 
-    # Name tab manual sort order — persisted, reconciled against current names.
-    var raw_order: Array = notes.get("name_tab_order", [])
-    _name_tab_order = []
-    for v in raw_order:
-        _name_tab_order.append(str(v))
-    var all_names: Array = []
+    # Manual star order — persisted, reconciled against star count.
+    _manual_star_order = []
+    var raw_manual_order: Array = notes.get("manual_star_order", [])
+    for v in raw_manual_order:
+        var iv: int = int(v)
+        if iv >= 0 and iv < _star_count and not _manual_star_order.has(iv):
+            _manual_star_order.append(iv)
     for i in _star_count:
-        all_names.append(_star_names[i] if i < _star_names.size() else "Star %d" % (i + 1))
-    var missing: Array = []
-    for n in all_names:
-        if not _name_tab_order.has(n):
-            missing.append(n)
-    missing.sort()
-    for n in missing:
-        _name_tab_order.append(n)
-    var order_i: int = _name_tab_order.size() - 1
-    while order_i >= 0:
-        if not all_names.has(_name_tab_order[order_i]):
-            _name_tab_order.remove_at(order_i)
-        order_i -= 1
+        if not _manual_star_order.has(i):
+            _manual_star_order.append(i)
+
+    # Star-indexed hypothesis states.
+    _star_color_states.clear()
+    var raw_star_colors_state: Dictionary = notes.get("star_color_states", {})
+    for i in _star_count:
+        var inner: Dictionary = {}
+        var raw_inner: Dictionary = raw_star_colors_state.get(str(i), {})
+        for ck in raw_inner:
+            inner[int(ck)] = int(raw_inner[ck])
+        _star_color_states.append(inner)
+
+    _star_pitch_hyp_states.clear()
+    var raw_star_pitch_state: Dictionary = notes.get("star_pitch_hyp_states", {})
+    for i in _star_count:
+        var inner_p: Dictionary = {}
+        var raw_inner_p: Dictionary = raw_star_pitch_state.get(str(i), {})
+        for pk in raw_inner_p:
+            inner_p[str(pk)] = int(raw_inner_p[pk])
+        _star_pitch_hyp_states.append(inner_p)
+
+    _star_pitch_carousel_idx.clear()
+    for i in _star_count:
+        _star_pitch_carousel_idx.append(0)
 
     # Adjacency states
     _adjacency_states.clear()
@@ -805,14 +823,20 @@ func _save_puzzle_notes() -> void:
     if not _cd or _constellation_id < 0:
         return
     var notes: Dictionary = {}
+    var star_colors_out: Dictionary = {}
+    var star_pitch_out: Dictionary = {}
     for i in _star_count:
         notes[str(i)] = {
             "lo": _star_range_lo[i] if i < _star_range_lo.size() else 0,
             "hi": _star_range_hi[i] if i < _star_range_hi.size() else 0,
             "name_states": (_name_states[i] if i < _name_states.size() else {}).duplicate(),
         }
+        star_colors_out[str(i)] = (_star_color_states[i] if i < _star_color_states.size() else {}).duplicate()
+        star_pitch_out[str(i)] = (_star_pitch_hyp_states[i] if i < _star_pitch_hyp_states.size() else {}).duplicate()
     notes["adjacency_states"] = _adjacency_states.duplicate()
-    notes["name_tab_order"] = _name_tab_order.duplicate()
+    notes["star_color_states"] = star_colors_out
+    notes["star_pitch_hyp_states"] = star_pitch_out
+    notes["manual_star_order"] = _manual_star_order.duplicate()
     notes["name_color_states"] = _name_color_states.duplicate(true)
     notes["name_pitch_states"] = _name_pitch_states.duplicate(true)
     notes["name_range_lo"] = _name_range_lo.duplicate()
@@ -928,116 +952,116 @@ func _populate_adjacency_markers() -> void:
 
 func _sort_matches(mode: int) -> void:
     _matches_sort_mode = mode
-    match mode:
-        0:  # Alphabetical Name
-            _name_tab_order.sort_custom(func(a, b): return a.nocasecmp_to(b) < 0)
-        1:  # Ordinal Sequence
-            _name_tab_order.sort_custom(func(a, b):
-                var sa: int = _find_star_for_confirmed_name(a)
-                var sb: int = _find_star_for_confirmed_name(b)
-                if sa < 0 and sb < 0: return a.nocasecmp_to(b) < 0
-                if sa < 0: return false
-                if sb < 0: return true
-                return _sequence_number(sa) < _sequence_number(sb))
-        2:  # Alphabetical Color
-            _name_tab_order.sort_custom(func(a, b):
-                var sa: int = _find_star_for_confirmed_name(a)
-                var sb: int = _find_star_for_confirmed_name(b)
-                if sa < 0 and sb < 0: return a.nocasecmp_to(b) < 0
-                if sa < 0: return false
-                if sb < 0: return true
-                var ca: String = COLOR_NAME_LABELS[clamp(_star_colors[sa] if sa < _star_colors.size() else 1, 0, 3)]
-                var cb: String = COLOR_NAME_LABELS[clamp(_star_colors[sb] if sb < _star_colors.size() else 1, 0, 3)]
-                if ca == cb: return a.nocasecmp_to(b) < 0
-                return ca.nocasecmp_to(cb) < 0)
-        3:  # High-Low Pitch
-            _name_tab_order.sort_custom(func(a, b):
-                var sa: int = _find_star_for_confirmed_name(a)
-                var sb: int = _find_star_for_confirmed_name(b)
-                if sa < 0 and sb < 0: return a.nocasecmp_to(b) < 0
-                if sa < 0: return false
-                if sb < 0: return true
-                var pa: int = _star_pitch_index[sa] if sa < _star_pitch_index.size() else -1
-                var pb: int = _star_pitch_index[sb] if sb < _star_pitch_index.size() else -1
-                var fa: float = _pitch_freqs[pa] if pa >= 0 and pa < _pitch_freqs.size() else 0.0
-                var fb: float = _pitch_freqs[pb] if pb >= 0 and pb < _pitch_freqs.size() else 0.0
-                if fa == fb: return a.nocasecmp_to(b) < 0
-                return fa < fb)
-    _save_puzzle_notes()
     _populate_name_markers()
 
 
-func _populate_sequence_ordinal_rows() -> void:
-    var header_row := HBoxContainer.new()
-    var spacer := Control.new()
-    spacer.custom_minimum_size = Vector2(58, 0)
-    header_row.add_child(spacer)
-    var names_heading := Label.new()
-    names_heading.text = "Names"
-    names_heading.add_theme_font_size_override("font_size", 14)
-    names_heading.add_theme_color_override("font_color", Color(0.75, 0.7, 0.9, 0.9))
-    header_row.add_child(names_heading)
-    _markers_content.add_child(header_row)
+func _star_sort_key_name(star_idx: int) -> String:
+    var n: String = _confirmed_name_for_star(star_idx)
+    return n if not n.is_empty() else "\uffff" + str(star_idx)
+
+
+func _star_sort_key_sequence(star_idx: int) -> int:
+    if star_idx < _star_range_lo.size() and star_idx < _star_range_hi.size():
+        var lo: int = _star_range_lo[star_idx]
+        var hi: int = _star_range_hi[star_idx]
+        if lo > 0 and lo == hi:
+            return lo
+    return 9999 + star_idx
+
+
+func _ordered_star_indices() -> Array[int]:
+    var arr: Array[int] = []
+    for i in _star_count:
+        arr.append(i)
+    match _matches_sort_mode:
+        1:
+            arr.sort_custom(func(a, b): return _star_sort_key_sequence(a) < _star_sort_key_sequence(b))
+        2:
+            arr.sort_custom(func(a, b):
+                var ca: int = clamp(_star_colors[a] if a < _star_colors.size() else 1, 0, 3)
+                var cb: int = clamp(_star_colors[b] if b < _star_colors.size() else 1, 0, 3)
+                if ca == cb: return a < b
+                return ca < cb)
+        3:
+            arr.sort_custom(func(a, b):
+                var fa: float = _pitch_freqs[_star_pitch_index[a]] if a < _star_pitch_index.size() and _star_pitch_index[a] < _pitch_freqs.size() else 0.0
+                var fb: float = _pitch_freqs[_star_pitch_index[b]] if b < _star_pitch_index.size() and _star_pitch_index[b] < _pitch_freqs.size() else 0.0
+                if fa == fb: return a < b
+                return fa < fb)
+        4:
+            arr = []
+            for v in _manual_star_order:
+                if v >= 0 and v < _star_count and not arr.has(v):
+                    arr.append(v)
+            for i in _star_count:
+                if not arr.has(i):
+                    arr.append(i)
+        _:
+            arr.sort_custom(func(a, b): return _star_sort_key_name(a).nocasecmp_to(_star_sort_key_name(b)) < 0)
+    return arr
+
+
+func _build_unified_star_row(star_idx: int) -> void:
+    var ci: int = clamp(_star_colors[star_idx] if star_idx < _star_colors.size() else 1, 0, 3)
+    var row_color: Color = STAR_COLORS_BY_IDX[ci]
+
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 8)
+    row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _markers_content.add_child(row)
+
+    if _matches_sort_mode == 4:
+        row.mouse_filter = Control.MOUSE_FILTER_STOP
+        var grip_lbl := Label.new()
+        grip_lbl.text = "\u2261"
+        grip_lbl.custom_minimum_size = Vector2(18, 0)
+        grip_lbl.add_theme_font_size_override("font_size", 16)
+        grip_lbl.add_theme_color_override("font_color", Color(0.5, 0.45, 0.65, 0.7))
+        grip_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        row.add_child(grip_lbl)
+
+        if _drag_idx >= 0 and _drag_idx < _manual_star_order.size() and _manual_star_order[_drag_idx] == star_idx:
+            row.modulate = Color(1, 1, 1, 0.55)
+
+        _star_row_controls.append(row)
+        var row_idx := _star_row_controls.size() - 1
+        row.gui_input.connect(func(event):
+            if event is InputEventMouseButton and (event as InputEventMouseButton).pressed and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+                _on_star_row_pressed(row_idx))
+
+    var name_edit := LineEdit.new()
+    name_edit.custom_minimum_size = Vector2(100, 0)
+    name_edit.placeholder_text = "type a name"
+    name_edit.text = _confirmed_name_for_star(star_idx)
+    row.add_child(name_edit)
+
+    var facts_vbox := VBoxContainer.new()
+    facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    facts_vbox.add_theme_constant_override("separation", 1)
+    row.add_child(facts_vbox)
+
+    facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(star_idx), row_color))
+    facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row(star_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row(star_idx), row_color))
+    facts_vbox.add_child(_make_fact_line("Adjacent: %s" % _describe_neighbors(star_idx), row_color))
+
+    var si := star_idx
+    var edit_ref := name_edit
+    name_edit.text_submitted.connect(func(_t): _on_star_name_committed(si, edit_ref))
+    name_edit.focus_exited.connect(func(): _on_star_name_committed(si, edit_ref))
+
     _markers_content.add_child(HSeparator.new())
-
-    for slot in range(1, _star_count + 1):
-        var star_idx: int = _star_for_exact_sequence(slot)
-        var confirmed_name: String = _confirmed_name_for_star(star_idx) if star_idx >= 0 else ""
-
-        var row := HBoxContainer.new()
-        row.add_theme_constant_override("separation", 8)
-        row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        _markers_content.add_child(row)
-
-        var ord_lbl := Label.new()
-        ord_lbl.text = _ordinal(slot)
-        ord_lbl.custom_minimum_size = Vector2(50, 0)
-        ord_lbl.add_theme_font_size_override("font_size", 18)
-        row.add_child(ord_lbl)
-
-        var name_edit := LineEdit.new()
-        name_edit.custom_minimum_size = Vector2(110, 0)
-        name_edit.editable = star_idx >= 0
-        name_edit.placeholder_text = "pin sequence first" if star_idx < 0 else "type a name"
-        name_edit.text = confirmed_name
-        row.add_child(name_edit)
-
-        var facts_vbox := VBoxContainer.new()
-        facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        facts_vbox.add_theme_constant_override("separation", 1)
-        row.add_child(facts_vbox)
-
-        if star_idx < 0 or confirmed_name.is_empty():
-            var unknown_col := Color(0.55, 0.50, 0.65, 1)
-            ord_lbl.add_theme_color_override("font_color", Color(0.65, 0.60, 0.75, 1))
-            facts_vbox.add_child(_make_fact_line("Color: ?", unknown_col))
-            facts_vbox.add_child(_make_fact_line("Pitch: ?", unknown_col))
-            facts_vbox.add_child(_make_fact_line("Adjacent: ?", unknown_col))
-        else:
-            var ci: int = clamp(_star_colors[star_idx] if star_idx < _star_colors.size() else 1, 0, 3)
-            var col: Color = STAR_COLORS_BY_IDX[ci]
-            ord_lbl.add_theme_color_override("font_color", col)
-            facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(confirmed_name), col))
-            facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row(confirmed_name), col))
-            facts_vbox.add_child(_make_fact_line("Adjacent: %s" % _describe_neighbors(star_idx), col))
-
-        var si := star_idx
-        var edit_ref := name_edit
-        name_edit.text_submitted.connect(func(_t): _on_ordinal_name_committed(si, edit_ref))
-        name_edit.focus_exited.connect(func(): _on_ordinal_name_committed(si, edit_ref))
-
-        _markers_content.add_child(HSeparator.new())
 
 
 func _populate_name_markers() -> void:
     for child in _markers_content.get_children():
         child.queue_free()
-    _name_row_controls.clear()
+    _star_row_controls.clear()
 
     var sort_row := HBoxContainer.new()
     sort_row.add_theme_constant_override("separation", 4)
     sort_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    var sort_labels: Array = ["Name", "Sequence", "Color", "Pitch"]
+    var sort_labels: Array = ["Name", "Sequence", "Color", "Pitch", "Manual"]
     for i in sort_labels.size():
         var btn := Button.new()
         btn.text = "Sort: %s" % sort_labels[i]
@@ -1049,67 +1073,35 @@ func _populate_name_markers() -> void:
     _markers_content.add_child(sort_row)
     _markers_content.add_child(HSeparator.new())
 
-    if _matches_sort_mode == 1:
-        _populate_sequence_ordinal_rows()
-        return
+    var ordered: Array[int] = _ordered_star_indices()
 
-    for name_str in _name_tab_order:
-        var confirmed_star: int = _find_star_for_confirmed_name(name_str)
-
-        var row := HBoxContainer.new()
-        row.add_theme_constant_override("separation", 8)
-        row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        row.mouse_filter = Control.MOUSE_FILTER_STOP
-        _markers_content.add_child(row)
-        _name_row_controls.append(row)
-
-        var grip_lbl := Label.new()
-        grip_lbl.text = "\u2261"
-        grip_lbl.custom_minimum_size = Vector2(18, 0)
-        grip_lbl.add_theme_font_size_override("font_size", 16)
-        grip_lbl.add_theme_color_override("font_color", Color(0.5, 0.45, 0.65, 0.7))
-        grip_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        row.add_child(grip_lbl)
-
-        var name_lbl := Label.new()
-        name_lbl.text = name_str
-        name_lbl.custom_minimum_size = Vector2(90, 0)
-        name_lbl.add_theme_font_size_override("font_size", 18)
-        name_lbl.clip_text = true
-        name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        row.add_child(name_lbl)
-
-        var facts_vbox := VBoxContainer.new()
-        facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        facts_vbox.add_theme_constant_override("separation", 1)
-        facts_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        row.add_child(facts_vbox)
-
-        if confirmed_star < 0:
-            var unknown_col := Color(0.55, 0.50, 0.65, 1)
-            name_lbl.add_theme_color_override("font_color", Color(0.65, 0.60, 0.75, 1))
-            facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(name_str), unknown_col))
-            facts_vbox.add_child(_make_fact_row("Sequence:", _make_name_sequence_range_row(name_str, unknown_col), unknown_col))
-            facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row(name_str), unknown_col))
-            facts_vbox.add_child(_make_fact_line("Adjacent: ?", unknown_col))
-        else:
-            var ci: int = clamp(_star_colors[confirmed_star] if confirmed_star < _star_colors.size() else 1, 0, 3)
-            var col: Color = STAR_COLORS_BY_IDX[ci]
-            name_lbl.add_theme_color_override("font_color", col)
-            facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(name_str), col))
-            facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row(confirmed_star, col), col))
-            facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row(name_str), col))
-            facts_vbox.add_child(_make_fact_line("Adjacent: %s" % _describe_neighbors(confirmed_star), col))
-
-        if _name_drag_idx >= 0 and _name_drag_idx < _name_tab_order.size() and _name_tab_order[_name_drag_idx] == name_str:
-            row.modulate = Color(1, 1, 1, 0.55)
-
-        var row_idx := _name_row_controls.size() - 1
-        row.gui_input.connect(func(event):
-            if event is InputEventMouseButton and (event as InputEventMouseButton).pressed and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
-                _on_name_row_pressed(row_idx))
-
-        _markers_content.add_child(HSeparator.new())
+    if _matches_sort_mode == 2:
+        var last_ci: int = -1
+        for si in ordered:
+            var ci: int = clamp(_star_colors[si] if si < _star_colors.size() else 1, 0, 3)
+            if ci != last_ci:
+                last_ci = ci
+                var header := Label.new()
+                header.text = COLOR_NAME_LABELS[ci]
+                header.add_theme_font_size_override("font_size", 16)
+                header.add_theme_color_override("font_color", STAR_COLORS_BY_IDX[ci])
+                _markers_content.add_child(header)
+            _build_unified_star_row(si)
+    elif _matches_sort_mode == 3:
+        var last_note: String = ""
+        for si in ordered:
+            var note: String = _note_name_for_star(si)
+            if note != last_note:
+                last_note = note
+                var header := Label.new()
+                header.text = note
+                header.add_theme_font_size_override("font_size", 16)
+                header.add_theme_color_override("font_color", Color(0.85, 0.8, 0.95, 1.0))
+                _markers_content.add_child(header)
+            _build_unified_star_row(si)
+    else:
+        for si in ordered:
+            _build_unified_star_row(si)
 
 
 func _populate_pitch_markers() -> void:
@@ -1356,13 +1348,6 @@ func _ordinal_str(raw: String) -> String:
     return _ordinal(int(raw))
 
 
-func _find_star_for_confirmed_name(name_str: String) -> int:
-    for i in _star_count:
-        if i < _name_states.size() and int(_name_states[i].get(name_str, 0)) == 1:
-            return i
-    return -1
-
-
 func _note_name_for_star(star_idx: int) -> String:
     if star_idx < 0 or star_idx >= _star_pitch_index.size():
         return "?"
@@ -1384,15 +1369,7 @@ func _distinct_note_names() -> Array[String]:
     return names
 
 
-func _star_for_exact_sequence(slot: int) -> int:
-    for i in _star_count:
-        if i < _star_range_lo.size() and i < _star_range_hi.size():
-            if _star_range_lo[i] == slot and _star_range_hi[i] == slot:
-                return i
-    return -1
-
-
-func _on_ordinal_name_committed(star_idx: int, name_edit: LineEdit) -> void:
+func _on_star_name_committed(star_idx: int, name_edit: LineEdit) -> void:
     if star_idx < 0:
         return
     var entered: String = name_edit.text.strip_edges()
@@ -1405,7 +1382,7 @@ func _on_ordinal_name_committed(star_idx: int, name_edit: LineEdit) -> void:
     _propagate_name_confirmed(star_idx, entered, color_idx)
 
 
-func _make_color_toggle_row(name_str: String) -> HBoxContainer:
+func _make_color_toggle_row(star_idx: int) -> HBoxContainer:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 3)
     for ci in COLOR_NAME_LABELS.size():
@@ -1414,10 +1391,24 @@ func _make_color_toggle_row(name_str: String) -> HBoxContainer:
         btn.focus_mode = Control.FOCUS_NONE
         btn.add_theme_font_size_override("font_size", 13)
         var cidx := ci
-        btn.pressed.connect(func(): _on_name_color_toggle(name_str, cidx, btn))
-        _style_color_toggle_btn(btn, cidx, int(_name_color_states.get(name_str, {}).get(cidx, 0)))
+        var si := star_idx
+        btn.pressed.connect(func(): _on_star_color_toggle(si, cidx, btn))
+        var cur_state: int = 0
+        if star_idx < _star_color_states.size():
+            cur_state = int(_star_color_states[star_idx].get(ci, 0))
+        _style_color_toggle_btn(btn, ci, cur_state)
         row.add_child(btn)
     return row
+
+
+func _on_star_color_toggle(star_idx: int, color_idx: int, btn: Button) -> void:
+    if star_idx >= _star_color_states.size():
+        return
+    var cur: int = int(_star_color_states[star_idx].get(color_idx, 0))
+    var new_state: int = (cur + 1) % 3
+    _star_color_states[star_idx][color_idx] = new_state
+    _style_color_toggle_btn(btn, color_idx, new_state)
+    _save_puzzle_notes()
 
 
 func _style_color_toggle_btn(btn: Button, color_idx: int, state: int) -> void:
@@ -1435,17 +1426,7 @@ func _style_color_toggle_btn(btn: Button, color_idx: int, state: int) -> void:
             btn.text = letter
 
 
-func _on_name_color_toggle(name_str: String, color_idx: int, btn: Button) -> void:
-    if not _name_color_states.has(name_str):
-        _name_color_states[name_str] = {}
-    var cur: int = int(_name_color_states[name_str].get(color_idx, 0))
-    var new_state: int = (cur + 1) % 3
-    _name_color_states[name_str][color_idx] = new_state
-    _style_color_toggle_btn(btn, color_idx, new_state)
-    _save_puzzle_notes()
-
-
-func _make_pitch_carousel_row(name_str: String) -> HBoxContainer:
+func _make_pitch_carousel_row(star_idx: int) -> HBoxContainer:
     var notes_list: Array[String] = _distinct_note_names()
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 4)
@@ -1479,10 +1460,16 @@ func _make_pitch_carousel_row(name_str: String) -> HBoxContainer:
     btn_mark.add_theme_font_size_override("font_size", 13)
     row.add_child(btn_mark)
 
+    var si := star_idx
+
     var refresh_carousel := func():
-        var i: int = int(_name_pitch_carousel_idx.get(name_str, 0)) % notes_list.size()
+        if si >= _star_pitch_carousel_idx.size():
+            return
+        var i: int = int(_star_pitch_carousel_idx[si]) % notes_list.size()
         var note: String = notes_list[i]
-        var state: int = int(_name_pitch_states.get(name_str, {}).get(note, 0))
+        var state: int = 0
+        if si < _star_pitch_hyp_states.size():
+            state = int(_star_pitch_hyp_states[si].get(note, 0))
         note_lbl.text = note
         match state:
             1:
@@ -1496,20 +1483,21 @@ func _make_pitch_carousel_row(name_str: String) -> HBoxContainer:
                 btn_mark.text = "\u2022"
 
     btn_prev.pressed.connect(func():
-        var i: int = int(_name_pitch_carousel_idx.get(name_str, 0))
-        _name_pitch_carousel_idx[name_str] = (i - 1 + notes_list.size()) % notes_list.size()
+        if si >= _star_pitch_carousel_idx.size(): return
+        var i: int = int(_star_pitch_carousel_idx[si])
+        _star_pitch_carousel_idx[si] = (i - 1 + notes_list.size()) % notes_list.size()
         refresh_carousel.call())
     btn_next.pressed.connect(func():
-        var i: int = int(_name_pitch_carousel_idx.get(name_str, 0))
-        _name_pitch_carousel_idx[name_str] = (i + 1) % notes_list.size()
+        if si >= _star_pitch_carousel_idx.size(): return
+        var i: int = int(_star_pitch_carousel_idx[si])
+        _star_pitch_carousel_idx[si] = (i + 1) % notes_list.size()
         refresh_carousel.call())
     btn_mark.pressed.connect(func():
-        var i: int = int(_name_pitch_carousel_idx.get(name_str, 0)) % notes_list.size()
+        if si >= _star_pitch_carousel_idx.size() or si >= _star_pitch_hyp_states.size(): return
+        var i: int = int(_star_pitch_carousel_idx[si]) % notes_list.size()
         var note: String = notes_list[i]
-        if not _name_pitch_states.has(name_str):
-            _name_pitch_states[name_str] = {}
-        var cur: int = int(_name_pitch_states[name_str].get(note, 0))
-        _name_pitch_states[name_str][note] = (cur + 1) % 3
+        var cur: int = int(_star_pitch_hyp_states[si].get(note, 0))
+        _star_pitch_hyp_states[si][note] = (cur + 1) % 3
         _save_puzzle_notes()
         refresh_carousel.call())
 
@@ -1555,50 +1543,6 @@ func _make_sequence_range_row(star_idx: int, star_color: Color) -> HBoxContainer
     edit_lo.focus_exited.connect(func(): _on_range_committed(star_idx, edit_lo, edit_hi))
     edit_hi.text_submitted.connect(func(_t): _on_range_committed(star_idx, edit_lo, edit_hi))
     edit_hi.focus_exited.connect(func(): _on_range_committed(star_idx, edit_lo, edit_hi))
-
-    return row
-
-
-func _make_name_sequence_range_row(name_str: String, row_color: Color) -> HBoxContainer:
-    var row := HBoxContainer.new()
-    row.add_theme_constant_override("separation", 3)
-
-    var lbl_gt := Label.new()
-    lbl_gt.text = ">"
-    lbl_gt.add_theme_font_size_override("font_size", 14)
-    lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
-    row.add_child(lbl_gt)
-
-    var edit_lo := LineEdit.new()
-    edit_lo.custom_minimum_size = Vector2(34, 24)
-    edit_lo.max_length = 2
-    edit_lo.placeholder_text = "\u2013"
-    var lo_val: int = int(_name_range_lo.get(name_str, 0))
-    edit_lo.text = str(lo_val) if lo_val > 0 else ""
-    edit_lo.add_theme_font_size_override("font_size", 13)
-    _style_range_edit(edit_lo, row_color)
-    row.add_child(edit_lo)
-
-    var lbl_lt := Label.new()
-    lbl_lt.text = "<"
-    lbl_lt.add_theme_font_size_override("font_size", 14)
-    lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
-    row.add_child(lbl_lt)
-
-    var edit_hi := LineEdit.new()
-    edit_hi.custom_minimum_size = Vector2(34, 24)
-    edit_hi.max_length = 2
-    edit_hi.placeholder_text = "\u2013"
-    var hi_val: int = int(_name_range_hi.get(name_str, 0))
-    edit_hi.text = str(hi_val) if hi_val > 0 else ""
-    edit_hi.add_theme_font_size_override("font_size", 13)
-    _style_range_edit(edit_hi, row_color)
-    row.add_child(edit_hi)
-
-    edit_lo.text_submitted.connect(func(_t): _on_name_range_committed(name_str, edit_lo, edit_hi))
-    edit_lo.focus_exited.connect(func(): _on_name_range_committed(name_str, edit_lo, edit_hi))
-    edit_hi.text_submitted.connect(func(_t): _on_name_range_committed(name_str, edit_lo, edit_hi))
-    edit_hi.focus_exited.connect(func(): _on_name_range_committed(name_str, edit_lo, edit_hi))
 
     return row
 
@@ -1845,16 +1789,6 @@ func _on_name_x(star_idx: int, star_name: String,
 
 
 func _propagate_name_confirmed(confirmed_star: int, star_name: String, color_idx: int) -> void:
-    if confirmed_star < _star_range_lo.size() and confirmed_star < _star_range_hi.size():
-        if _star_range_lo[confirmed_star] == 0 and _star_range_hi[confirmed_star] == 0:
-            var guess_lo: int = int(_name_range_lo.get(star_name, 0))
-            var guess_hi: int = int(_name_range_hi.get(star_name, 0))
-            if guess_lo > 0 or guess_hi > 0:
-                _star_range_lo[confirmed_star] = guess_lo
-                _star_range_hi[confirmed_star] = guess_hi
-    _name_range_lo.erase(star_name)
-    _name_range_hi.erase(star_name)
-
     for j in _star_count:
         if j == confirmed_star:
             continue
@@ -1923,30 +1857,6 @@ func _on_range_committed(star_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) ->
         _populate_markers_panel()
     if _active_marker_tab == 3:
         _populate_markers_panel()
-
-
-func _on_name_range_committed(name_str: String, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
-    var raw_lo: String = lo_edit.text.strip_edges()
-    var raw_hi: String = hi_edit.text.strip_edges()
-
-    var lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
-    var hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
-
-    if lo < 1 or lo > _star_count: lo = 0
-    if hi < 1 or hi > _star_count: hi = 0
-
-    if lo > 0 and hi > 0 and lo > hi:
-        var tmp := lo; lo = hi; hi = tmp
-
-    if lo > 0: _name_range_lo[name_str] = lo
-    else: _name_range_lo.erase(name_str)
-    if hi > 0: _name_range_hi[name_str] = hi
-    else: _name_range_hi.erase(name_str)
-
-    lo_edit.text = str(lo) if lo > 0 else ""
-    hi_edit.text = str(hi) if hi > 0 else ""
-
-    _save_puzzle_notes()
 
 
 func _propagate_range_exact(confirmed_star: int, exact_pos: int) -> void:
@@ -2077,16 +1987,16 @@ func _input(event: InputEvent) -> void:
     if not visible:
         return
 
-    if _name_drag_idx >= 0:
+    if _drag_idx >= 0:
         if event is InputEventMouseMotion:
-            _name_drag_mouse_y = (event as InputEventMouseMotion).global_position.y
-            _update_name_drag_hover(_name_drag_mouse_y)
+            _drag_mouse_y = (event as InputEventMouseMotion).global_position.y
+            _update_star_drag_hover(_drag_mouse_y)
             get_viewport().set_input_as_handled()
             return
         elif event is InputEventMouseButton:
             var mbe_drag := event as InputEventMouseButton
             if mbe_drag.button_index == MOUSE_BUTTON_LEFT and not mbe_drag.pressed:
-                _end_name_drag()
+                _end_star_drag()
                 get_viewport().set_input_as_handled()
                 return
 
@@ -2106,33 +2016,36 @@ func _input(event: InputEvent) -> void:
             get_viewport().set_input_as_handled()
 
 
-func _on_name_row_pressed(row_idx: int) -> void:
-    _name_drag_idx = row_idx
-    _name_drag_mouse_y = get_viewport().get_mouse_position().y
+func _on_star_row_pressed(row_idx: int) -> void:
+    _drag_idx = row_idx
+    _drag_mouse_y = get_viewport().get_mouse_position().y
 
 
-func _update_name_drag_hover(global_mouse_y: float) -> void:
-    if _name_drag_idx < 0 or _name_drag_idx >= _name_row_controls.size():
+func _update_star_drag_hover(global_mouse_y: float) -> void:
+    if _drag_idx < 0 or _drag_idx >= _star_row_controls.size():
         return
     var hover_idx: int = -1
-    for i in _name_row_controls.size():
-        var row: Control = _name_row_controls[i]
+    for i in _star_row_controls.size():
+        var row: Control = _star_row_controls[i]
         if not is_instance_valid(row):
             continue
         var r: Rect2 = row.get_global_rect()
         if global_mouse_y >= r.position.y and global_mouse_y <= r.position.y + r.size.y:
             hover_idx = i
             break
-    if hover_idx < 0 or hover_idx == _name_drag_idx:
+    if hover_idx < 0 or hover_idx == _drag_idx:
         return
-    var moved_name: String = _name_tab_order[_name_drag_idx]
-    _name_tab_order.remove_at(_name_drag_idx)
-    _name_tab_order.insert(hover_idx, moved_name)
-    _name_drag_idx = hover_idx
+    var current_order: Array[int] = _ordered_star_indices()
+    if _drag_idx >= current_order.size():
+        return
+    var moved_star: int = current_order[_drag_idx]
+    current_order.remove_at(_drag_idx)
+    current_order.insert(hover_idx, moved_star)
+    _manual_star_order = current_order
+    _drag_idx = hover_idx
     _populate_name_markers()
 
 
-func _end_name_drag() -> void:
-    _name_drag_idx = -1
+func _end_star_drag() -> void:
+    _drag_idx = -1
     _save_puzzle_notes()
-    _populate_name_markers()
