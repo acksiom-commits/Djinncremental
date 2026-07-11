@@ -1003,9 +1003,16 @@ func _ordered_star_indices() -> Array[int]:
     return _default_order_for_mode(_matches_sort_mode)
 
 
+func _display_color_for_star(star_idx: int) -> Color:
+    if star_idx < _star_color_states.size():
+        for ck in _star_color_states[star_idx]:
+            if int(_star_color_states[star_idx][ck]) == 1:
+                return STAR_COLORS_BY_IDX[int(ck)]
+    return Color(0.2, 0.9, 0.2, 1)
+
+
 func _build_unified_star_row(star_idx: int) -> void:
-    var ci: int = clamp(_star_colors[star_idx] if star_idx < _star_colors.size() else 1, 0, 3)
-    var row_color: Color = STAR_COLORS_BY_IDX[ci]
+    var row_color: Color = _display_color_for_star(star_idx)
 
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 8)
@@ -1040,6 +1047,7 @@ func _build_unified_star_row(star_idx: int) -> void:
             seq_lbl.add_theme_color_override("font_color", row_color)
             row.add_child(seq_lbl)
         2:
+            var ci: int = clamp(_star_colors[star_idx] if star_idx < _star_colors.size() else 1, 0, 3)
             var color_lbl := Label.new()
             color_lbl.text = COLOR_NAME_LABELS[ci]
             color_lbl.custom_minimum_size = Vector2(64, 0)
@@ -1054,16 +1062,16 @@ func _build_unified_star_row(star_idx: int) -> void:
             pitch_lbl.add_theme_color_override("font_color", row_color)
             row.add_child(pitch_lbl)
 
-    var name_edit := LineEdit.new()
-    name_edit.custom_minimum_size = Vector2(100, 0)
-    name_edit.placeholder_text = "type a name"
-    name_edit.text = _confirmed_name_for_star(star_idx)
-    row.add_child(name_edit)
-
     var facts_vbox := VBoxContainer.new()
     facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     facts_vbox.add_theme_constant_override("separation", 1)
     row.add_child(facts_vbox)
+
+    var name_edit := LineEdit.new()
+    name_edit.custom_minimum_size = Vector2(100, 0)
+    name_edit.placeholder_text = "type a name"
+    name_edit.text = _confirmed_name_for_star(star_idx)
+    facts_vbox.add_child(_make_fact_row("Name:", name_edit, row_color))
 
     if _matches_sort_mode != 2:
         facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row(star_idx), row_color))
