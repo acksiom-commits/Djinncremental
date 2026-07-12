@@ -1558,7 +1558,7 @@ func _input(event: InputEvent) -> void:
                         cd.set_active_constellation(0, 0)
                         game_context.constellation_spark_totals["0"] = cd.get_spark_cap(0) * 0.15
                     cd.active_constellation_changed.emit(0, cd.active_per_octant[0])
-        if event.keycode == KEY_P:
+        if event.keycode == KEY_U:
             _dev_recompute_archon_puzzle()
             get_viewport().set_input_as_handled()
         if event.keycode == KEY_G and production_manager:

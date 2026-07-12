@@ -55,6 +55,27 @@ const SEQ_WORD_EARLIER      := "earlier"
 const SEQ_WORD_LATER        := "later"
 const FRAME_BUDGET_MSEC     := 2       # max ms of work per frame during async gen
 const MAX_COLOR_PAIRS_PER_DIR := 3     # color-comparison pool cap per direction
+# ── Single-match clue rationing, per characteristic ──────────────────────
+# Each characteristic (sequence, adjacency, ...) gets its OWN independent
+# positive-single-match budget and negative-single-match budget, each
+# floor(star_count / CHARACTERISTIC_DIVISOR). Multiple clue kinds describing
+# the same characteristic (e.g. "exact" and "adj_seq" both pin a Sequence
+# position) draw from the SAME budget rather than each getting their own —
+# that's what caught adj_seq flooding unchecked last pass despite exact
+# being capped. To add a characteristic or reclassify a kind, edit the two
+# dictionaries below only; no other code changes needed.
+const CHARACTERISTIC_DIVISOR := 4
+const POS_SINGLE_MATCH_KINDS_BY_CHARACTERISTIC: Dictionary = {
+    "sequence":             ["exact", "adj_seq"],
+    "relative_order":       ["cmp"],
+    "pitch":                ["pitch_exact"],
+    "pitch_relative_order": ["pitch_cmp"],
+}
+const NEG_SINGLE_MATCH_KINDS_BY_CHARACTERISTIC: Dictionary = {
+    "sequence":  ["neg_exact"],
+    "adjacency": ["neg_adjacent"],
+    "pitch":     ["pitch_neg"],
+}
 const NOTE_LETTER_NAMES: Array[String] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
 ]
@@ -105,11 +126,14 @@ var _generation_complete: bool = false
 var star_pitch_index: Array[int] = []     # star_pitch_index[i] = pitch-table index for star i
 var _pitch_freqs: Array[float] = []       # this constellation's Hz table, indexed by pitch index
 var _distances: Array[Array] = []         # _distances[a][b] = shortest graph-hop count, -1 if unreachable
-var _pitch_flavor_texts: Array[String] = []
-var _distance_flavor_texts: Array[String] = []
-var _between_flavor_texts: Array[String] = []
+var _final_identity_clues: Array[Dictionary] = []   # promoted dist_color/between identity anchors
 var _color_negation_texts: Array[Dictionary] = []   # [{"s":int, "text":String}, ...]
-var _pitch_negation_texts: Array[Dictionary] = []   # [{"s":int, "text":String}, ...]
+
+# ── Pitch CSP domain — parallel to the Sequence-rank domain above, but NOT
+# alldiff: multiple stars can legitimately share a pitch class. ──────────
+var pitch_count: int = 0                # distinct pitch classes = _pitch_freqs.size()
+var _pitch_freq_rank: Array[int] = []   # pitch_index -> ascending-frequency rank, ties share a rank
+var _final_pitch_clues: Array[Dictionary] = []
 
 var _rng := RandomNumberGenerator.new()
 
@@ -126,6 +150,8 @@ func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
     player_seed_used = p_player_seed
     _generation_complete = false
     _final_clues.clear()
+    _final_pitch_clues.clear()
+    _final_identity_clues.clear()
 
     # Offset seed so color assignment never shares RNG stream with
     # get_note_assignment() or ConstellationStarNamer.
@@ -144,6 +170,27 @@ func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
     _pitch_freqs = []
     for v in p_pitch_freqs:
         _pitch_freqs.append(float(v))
+
+    # Pitch CSP domain setup: distinct pitch-class count and a stable
+    # ascending-frequency rank per pitch index (ties share a rank), used by
+    # the pitch propagator for bound-consistency the same way star ranks are
+    # used by the Sequence propagator.
+    pitch_count = _pitch_freqs.size()
+    _compute_pitch_freq_rank()
+
+
+func _compute_pitch_freq_rank() -> void:
+    _pitch_freq_rank = []
+    _pitch_freq_rank.resize(pitch_count)
+    var order: Array = []
+    for p in pitch_count:
+        order.append(p)
+    order.sort_custom(func(a, b): return _pitch_freqs[a] < _pitch_freqs[b])
+    var rank: int = 0
+    for i in order.size():
+        if i > 0 and not is_equal_approx(_pitch_freqs[order[i]], _pitch_freqs[order[i - 1]]):
+            rank += 1
+        _pitch_freq_rank[order[i]] = rank
 
 
 func _compute_distances() -> void:
@@ -270,8 +317,18 @@ func _expand_clues_to_cmp(clues: Array[Dictionary]) -> Array[Dictionary]:
     var expanded: Array[Dictionary] = []
     for clue in clues:
         match clue["kind"]:
-            "cmp", "cmp_dist":
+            "cmp":
                 expanded.append({"a": clue["a"], "b": clue["b"], "a_gt_b": clue["a_gt_b"]})
+            "group_cmp":
+                # One clause, one arc per same-colored target star: the color
+                # CATEGORY multiplies the constraint, not the sentence length.
+                var gs: int = clue["s"]
+                var s_first: bool = clue["s_first"]
+                for t in clue["targets"]:
+                    if s_first:
+                        expanded.append({"a": int(t), "b": gs, "a_gt_b": true})
+                    else:
+                        expanded.append({"a": gs, "b": int(t), "a_gt_b": true})
             "extreme":
                 var s: int = clue["s"]
                 var want_lowest: bool = clue["want_lowest"]
@@ -283,7 +340,8 @@ func _expand_clues_to_cmp(clues: Array[Dictionary]) -> Array[Dictionary]:
     return expanded
 
 
-func _propagate(possible: Array, cmp_clues: Array[Dictionary], adj_clues: Array[Dictionary]) -> bool:
+func _propagate(possible: Array, cmp_clues: Array[Dictionary], adj_clues: Array[Dictionary],
+        count_clues: Array[Dictionary]) -> bool:
     # Arc-consistency fixed-point pass. Mutates `possible` in place.
     # Returns false immediately on contradiction (a star with zero remaining ranks).
     var changed: bool = true
@@ -343,6 +401,81 @@ func _propagate(possible: Array, cmp_clues: Array[Dictionary], adj_clues: Array[
                     if not supported2:
                         possible[b2][r] = false
                         changed = true
+
+        # --- Cardinality arcs (count_before): exactly k of s's neighbors fire
+        # before s. Two directions: (a) prune ranks of s where the achievable
+        # before-count can't hit k; (b) once s is pinned, force or forbid the
+        # straddling neighbors as the count demands. ---
+        for clue in count_clues:
+            var s3: int = clue["s"]
+            var k3: int = clue["k"]
+            var nbrs: Array = clue["neighbors"]
+
+            for r in star_count:
+                if not possible[s3][r]:
+                    continue
+                var must_before: int = 0
+                var can_before: int = 0
+                for n in nbrs:
+                    var mn: int = star_count
+                    var mx: int = -1
+                    for rr in star_count:
+                        if possible[int(n)][rr]:
+                            if rr < mn:
+                                mn = rr
+                            if rr > mx:
+                                mx = rr
+                    if mx == -1:
+                        return false
+                    if mx < r:
+                        must_before += 1
+                        can_before += 1
+                    elif mn < r:
+                        can_before += 1
+                if must_before > k3 or can_before < k3:
+                    possible[s3][r] = false
+                    changed = true
+
+            var s_count: int = 0
+            var s_rank: int = -1
+            for r in star_count:
+                if possible[s3][r]:
+                    s_count += 1
+                    s_rank = r
+            if s_count == 0:
+                return false
+            if s_count == 1:
+                var must_before2: int = 0
+                var straddlers: Array = []
+                for n in nbrs:
+                    var mn2: int = star_count
+                    var mx2: int = -1
+                    for rr in star_count:
+                        if possible[int(n)][rr]:
+                            if rr < mn2:
+                                mn2 = rr
+                            if rr > mx2:
+                                mx2 = rr
+                    if mx2 == -1:
+                        return false
+                    if mx2 < s_rank:
+                        must_before2 += 1
+                    elif mn2 < s_rank and mx2 >= s_rank:
+                        straddlers.append(int(n))
+                if must_before2 > k3 or must_before2 + straddlers.size() < k3:
+                    return false
+                if must_before2 == k3:
+                    for n2 in straddlers:
+                        for rr in s_rank:
+                            if possible[n2][rr]:
+                                possible[n2][rr] = false
+                                changed = true
+                elif must_before2 + straddlers.size() == k3:
+                    for n2 in straddlers:
+                        for rr in range(s_rank, star_count):
+                            if possible[n2][rr]:
+                                possible[n2][rr] = false
+                                changed = true
 
         # --- Alldiff / uniqueness projection: a singleton star claims its rank exclusively. ---
         for i in star_count:
@@ -441,24 +574,66 @@ func _apply_negative_clues(possible: Array, clues: Array[Dictionary]) -> bool:
     return true
 
 
+func _apply_range_clues(possible: Array, clues: Array[Dictionary]) -> bool:
+    for clue in clues:
+        if clue["kind"] != "range":
+            continue
+        var s: int = clue["s"]
+        var lo: int = clue["lo"]
+        var hi: int = clue["hi"]
+        for r in star_count:
+            if r < lo or r > hi:
+                possible[s][r] = false
+    for i in star_count:
+        var any_left: bool = false
+        for r in star_count:
+            if possible[i][r]:
+                any_left = true
+                break
+        if not any_left:
+            return false
+    return true
+
+
+func _validate_count_clues(solution: Array, count_clues: Array[Dictionary]) -> bool:
+    for clue in count_clues:
+        var s: int = clue["s"]
+        var k: int = clue["k"]
+        var before: int = 0
+        for n in clue["neighbors"]:
+            if int(solution[int(n)]) < int(solution[s]):
+                before += 1
+        if before != k:
+            return false
+    return true
+
+
 func _solve(clues: Array[Dictionary], cap: int = 2) -> Array:
     var expanded_cmp: Array[Dictionary] = _expand_clues_to_cmp(clues)
     var adj_clues: Array[Dictionary] = []
+    var count_clues: Array[Dictionary] = []
     for clue in clues:
         if clue["kind"] == "adj_seq":
             adj_clues.append(clue)
+        elif clue["kind"] == "count_before":
+            count_clues.append(clue)
 
     var possible: Array = _init_possibility_grid()
     if not _apply_exact_clues(possible, clues):
         return []
     if not _apply_negative_clues(possible, clues):
         return []
-    var consistent: bool = _propagate(possible, expanded_cmp, adj_clues)
+    if not _apply_range_clues(possible, clues):
+        return []
+    var consistent: bool = _propagate(possible, expanded_cmp, adj_clues, count_clues)
     if not consistent:
         return []
 
     if _all_singleton(possible):
-        return [_extract_singleton_solution(possible)]
+        var sol: Array = _extract_singleton_solution(possible)
+        if not _validate_count_clues(sol, count_clues):
+            return []
+        return [sol]
 
     var solutions: Array = []
     var assignment: Array = []
@@ -467,13 +642,13 @@ func _solve(clues: Array[Dictionary], cap: int = 2) -> Array:
         assignment[i] = -1
 
     var init_domains: Array = _possible_to_domains(possible)
-    _backtrack_fc(assignment, init_domains, expanded_cmp, adj_clues, solutions, cap)
+    _backtrack_fc(assignment, init_domains, expanded_cmp, adj_clues, count_clues, solutions, cap)
     return solutions
 
 
 func _backtrack_fc(assignment: Array, domains: Array,
         cmp_clues: Array[Dictionary], adj_clues: Array[Dictionary],
-        solutions: Array, cap: int) -> void:
+        count_clues: Array[Dictionary], solutions: Array, cap: int) -> void:
     if solutions.size() >= cap:
         return
 
@@ -487,14 +662,18 @@ func _backtrack_fc(assignment: Array, domains: Array,
                 var_idx = i
 
     if var_idx == -1:
-        solutions.append(assignment.duplicate())
+        # Leaf: forward checking doesn't track cardinality constraints, so
+        # every complete assignment must pass count validation here before
+        # it counts as a solution.
+        if _validate_count_clues(assignment, count_clues):
+            solutions.append(assignment.duplicate())
         return
 
     for val in domains[var_idx]:
         assignment[var_idx] = val
         var new_doms_result = _forward_check(var_idx, val, domains, cmp_clues, adj_clues)
         if new_doms_result != null:
-            _backtrack_fc(assignment, new_doms_result, cmp_clues, adj_clues, solutions, cap)
+            _backtrack_fc(assignment, new_doms_result, cmp_clues, adj_clues, count_clues, solutions, cap)
         assignment[var_idx] = -1
         if solutions.size() >= cap:
             return
@@ -568,18 +747,315 @@ func _forward_check(var_idx: int, val: int, domains: Array,
 
 
 # ==================================================
+# PITCH SOLVER — parallel CSP domain, NOT alldiff (pitch values may repeat)
+# ==================================================
+
+func _init_pitch_possibility_grid() -> Array:
+    var grid: Array = []
+    for i in star_count:
+        var row: Array = []
+        row.resize(pitch_count)
+        for p in pitch_count:
+            row[p] = true
+        grid.append(row)
+    return grid
+
+
+func _apply_pitch_exact_clues(possible: Array, clues: Array[Dictionary]) -> bool:
+    for clue in clues:
+        if clue["kind"] != "pitch_exact":
+            continue
+        var s: int = clue["s"]
+        var p: int = clue["p"]
+        if not possible[s][p]:
+            return false
+        for pp in pitch_count:
+            if pp != p:
+                possible[s][pp] = false
+    return true
+
+
+func _apply_pitch_negative_clues(possible: Array, clues: Array[Dictionary]) -> bool:
+    for clue in clues:
+        if clue["kind"] != "pitch_neg":
+            continue
+        var s: int = clue["s"]
+        for p in clue.get("p_list", []):
+            possible[s][int(p)] = false
+    for i in star_count:
+        var any_possible: bool = false
+        for p in pitch_count:
+            if possible[i][p]:
+                any_possible = true
+                break
+        if not any_possible:
+            return false
+    return true
+
+
+func _expand_pitch_clues_to_cmp(clues: Array[Dictionary]) -> Array[Dictionary]:
+    var expanded: Array[Dictionary] = []
+    for clue in clues:
+        match clue["kind"]:
+            "pitch_cmp":
+                expanded.append({"a": clue["a"], "b": clue["b"], "rel": clue["rel"]})
+            "pitch_group_eq":
+                # Chain of equality arcs; transitivity through propagation
+                # makes the full group equal.
+                var stars: Array = clue["stars"]
+                for i in range(stars.size() - 1):
+                    expanded.append({"a": int(stars[i]), "b": int(stars[i + 1]), "rel": "eq"})
+            "pitch_extreme":
+                var s: int = clue["s"]
+                var rel: String = "lt" if clue["want_lowest"] else "gt"
+                for n in clue["neighbors"]:
+                    expanded.append({"a": s, "b": int(n), "rel": rel})
+            "pitch_group_cmp":
+                var s2: int = clue["s"]
+                var rel2: String = "lt" if clue["s_lower"] else "gt"
+                for t in clue["targets"]:
+                    expanded.append({"a": s2, "b": int(t), "rel": rel2})
+    return expanded
+
+
+func _propagate_pitch(possible: Array, cmp_clues: Array[Dictionary]) -> bool:
+    # Arc-consistency for the Pitch domain. Unlike Sequence, pitch values are
+    # NOT alldiff — multiple stars can legitimately share a pitch class — so
+    # there is no singleton-claims-exclusivity projection step here. Equality
+    # arcs ("plays the same note as") are a real constraint shape the
+    # Sequence propagator never needs, since rank never ties.
+    var changed: bool = true
+    while changed:
+        changed = false
+
+        for clue in cmp_clues:
+            var a: int = clue["a"]
+            var b: int = clue["b"]
+            var rel: String = clue["rel"]
+
+            if rel == "eq":
+                for p in pitch_count:
+                    if possible[a][p] and not possible[b][p]:
+                        possible[a][p] = false
+                        changed = true
+                for p in pitch_count:
+                    if possible[b][p] and not possible[a][p]:
+                        possible[b][p] = false
+                        changed = true
+                continue
+
+            var hi: int = a if rel == "gt" else b
+            var lo: int = b if rel == "gt" else a
+
+            var min_lo_rank: int = -1
+            for p in pitch_count:
+                if possible[lo][p]:
+                    var fr: int = _pitch_freq_rank[p]
+                    if min_lo_rank == -1 or fr < min_lo_rank:
+                        min_lo_rank = fr
+            if min_lo_rank == -1:
+                return false
+            for p in pitch_count:
+                if possible[hi][p] and _pitch_freq_rank[p] <= min_lo_rank:
+                    possible[hi][p] = false
+                    changed = true
+
+            var max_hi_rank: int = -1
+            for p in pitch_count:
+                if possible[hi][p]:
+                    var fr2: int = _pitch_freq_rank[p]
+                    if fr2 > max_hi_rank:
+                        max_hi_rank = fr2
+            if max_hi_rank == -1:
+                return false
+            for p in pitch_count:
+                if possible[lo][p] and _pitch_freq_rank[p] >= max_hi_rank:
+                    possible[lo][p] = false
+                    changed = true
+
+    return true
+
+
+func _all_pitch_singleton(possible: Array) -> bool:
+    for i in star_count:
+        var count_i: int = 0
+        for p in pitch_count:
+            if possible[i][p]:
+                count_i += 1
+        if count_i != 1:
+            return false
+    return true
+
+
+func _extract_pitch_singleton_solution(possible: Array) -> Array:
+    var solution: Array = []
+    solution.resize(star_count)
+    for i in star_count:
+        for p in pitch_count:
+            if possible[i][p]:
+                solution[i] = p
+                break
+    return solution
+
+
+func _pitch_possible_to_domains(possible: Array) -> Array:
+    var domains: Array = []
+    for i in star_count:
+        var d: Array = []
+        for p in pitch_count:
+            if possible[i][p]:
+                d.append(p)
+        domains.append(d)
+    return domains
+
+
+func _solve_pitch(clues: Array[Dictionary], cap: int = 2) -> Array:
+    var expanded_cmp: Array[Dictionary] = _expand_pitch_clues_to_cmp(clues)
+
+    var possible: Array = _init_pitch_possibility_grid()
+    if not _apply_pitch_exact_clues(possible, clues):
+        return []
+    if not _apply_pitch_negative_clues(possible, clues):
+        return []
+    var consistent: bool = _propagate_pitch(possible, expanded_cmp)
+    if not consistent:
+        return []
+
+    if _all_pitch_singleton(possible):
+        return [_extract_pitch_singleton_solution(possible)]
+
+    var solutions: Array = []
+    var assignment: Array = []
+    assignment.resize(star_count)
+    for i in star_count:
+        assignment[i] = -1
+
+    var init_domains: Array = _pitch_possible_to_domains(possible)
+    _backtrack_fc_pitch(assignment, init_domains, expanded_cmp, solutions, cap)
+    return solutions
+
+
+func _backtrack_fc_pitch(assignment: Array, domains: Array,
+        cmp_clues: Array[Dictionary], solutions: Array, cap: int) -> void:
+    if solutions.size() >= cap:
+        return
+
+    var var_idx: int = -1
+    var best_size: int = pitch_count + 1
+    for i in star_count:
+        if assignment[i] == -1:
+            var sz: int = domains[i].size()
+            if sz < best_size:
+                best_size = sz
+                var_idx = i
+
+    if var_idx == -1:
+        solutions.append(assignment.duplicate())
+        return
+
+    for val in domains[var_idx]:
+        assignment[var_idx] = val
+        var new_doms_result = _forward_check_pitch(var_idx, val, domains, cmp_clues)
+        if new_doms_result != null:
+            _backtrack_fc_pitch(assignment, new_doms_result, cmp_clues, solutions, cap)
+        assignment[var_idx] = -1
+        if solutions.size() >= cap:
+            return
+
+
+func _forward_check_pitch(var_idx: int, val: int, domains: Array,
+        cmp_clues: Array[Dictionary]):
+    # Returns a new domains Array with propagated reductions, or null on
+    # wipeout. No alldiff step — pitch values may legitimately repeat.
+    var nd: Array = []
+    for i in star_count:
+        nd.append(domains[i].duplicate())
+    nd[var_idx] = [val]
+
+    for clue in cmp_clues:
+        var a: int = clue["a"]
+        var b: int = clue["b"]
+        var rel: String = clue["rel"]
+        var val_rank: int = _pitch_freq_rank[val]
+
+        if rel == "eq":
+            if a == var_idx:
+                var new_b: Array = []
+                for v in nd[b]:
+                    if is_equal_approx(_pitch_freqs[v], _pitch_freqs[val]):
+                        new_b.append(v)
+                if new_b.is_empty():
+                    return null
+                nd[b] = new_b
+            elif b == var_idx:
+                var new_a: Array = []
+                for v in nd[a]:
+                    if is_equal_approx(_pitch_freqs[v], _pitch_freqs[val]):
+                        new_a.append(v)
+                if new_a.is_empty():
+                    return null
+                nd[a] = new_a
+            continue
+
+        if a == var_idx:
+            var new_b2: Array = []
+            for v in nd[b]:
+                var vr: int = _pitch_freq_rank[v]
+                if rel == "gt" and vr < val_rank:
+                    new_b2.append(v)
+                elif rel == "lt" and vr > val_rank:
+                    new_b2.append(v)
+            if new_b2.is_empty():
+                return null
+            nd[b] = new_b2
+        elif b == var_idx:
+            var new_a2: Array = []
+            for v in nd[a]:
+                var vr2: int = _pitch_freq_rank[v]
+                if rel == "gt" and vr2 > val_rank:
+                    new_a2.append(v)
+                elif rel == "lt" and vr2 < val_rank:
+                    new_a2.append(v)
+            if new_a2.is_empty():
+                return null
+            nd[a] = new_a2
+
+    return nd
+
+
+func _score_pitch_clue_difficulty(clue: Dictionary) -> float:
+    match clue.get("kind", ""):
+        "pitch_exact":
+            return 10.0
+        "pitch_extreme":
+            return 7.0
+        "pitch_neg":
+            return 6.0
+        "pitch_group_eq":
+            return 5.0 + (float(clue.get("stars", []).size()) * 0.5)
+        "pitch_group_cmp":
+            return 4.0 + (float(clue.get("targets", []).size()) * 0.8)
+        "pitch_cmp":
+            var a2: int = clue.get("a", 0)
+            var b2: int = clue.get("b", 0)
+            var gap2: int = abs(_pitch_freq_rank[star_pitch_index[a2]] - _pitch_freq_rank[star_pitch_index[b2]])
+            return 2.0 + (float(gap2) * 0.5)
+    return 1.0
+
+
+# ==================================================
 # CLUE TEXT BUILDERS
 # ==================================================
 
 func _build_cmp_clue(a: int, b: int) -> Dictionary:
     var a_gt_b: bool = pitch_rank_solution[a] > pitch_rank_solution[b]
     var word: String = SEQ_WORD_LATER if a_gt_b else SEQ_WORD_EARLIER
-    var text: String = "The %s fires %s than the %s." % [_ordinal(pitch_rank_solution[a] + 1), word, _ordinal(pitch_rank_solution[b] + 1)]
+    var text: String = "%s fires %s than %s." % [star_names[a], word, star_names[b]]
     return {"kind": "cmp", "a": a, "b": b, "a_gt_b": a_gt_b, "text": text}
 
 
 func _build_adj_seq_clue(a: int, b: int) -> Dictionary:
-    var text: String = "The %s fires immediately after the %s." % [_ordinal(pitch_rank_solution[a] + 1), _ordinal(pitch_rank_solution[b] + 1)]
+    var text: String = "%s fires immediately after %s." % [star_names[a], star_names[b]]
     return {"kind": "adj_seq", "a": a, "b": b, "text": text}
 
 
@@ -605,11 +1081,6 @@ func _build_extreme_clue(s: int) -> Dictionary:
             "want_lowest": is_lowest, "text": text}
 
 
-func _build_flavor_clue(s: int) -> Dictionary:
-    var text: String = "%s shines %s." % [star_names[s], COLOR_NAMES[star_colors[s]]]
-    return {"kind": "flavor", "text": text}
-
-
 func _freq_for_star(s: int) -> float:
     if s < 0 or s >= star_pitch_index.size():
         return 0.0
@@ -626,20 +1097,6 @@ func _build_pitch_cmp_text(a: int, b: int) -> String:
         return "%s plays the same note as %s." % [star_names[a], star_names[b]]
     var word: String = "higher" if fa > fb else "lower"
     return "%s plays a %s note than %s." % [star_names[a], word, star_names[b]]
-
-
-func _join_names(names: Array) -> String:
-    if names.size() == 1:
-        return str(names[0])
-    if names.size() == 2:
-        return "%s and %s" % [names[0], names[1]]
-    var result: String = ""
-    for i in range(names.size() - 1):
-        result += str(names[i])
-        if i < names.size() - 2:
-            result += ", "
-    result += ", and %s" % names[names.size() - 1]
-    return result
 
 
 # ==================================================
@@ -737,43 +1194,73 @@ func _build_exact_pool() -> Array[Dictionary]:
                     continue
                 var text: String = "The %s is connected to %s and a %s star." % [
                     _ordinal(pitch_rank_solution[s] + 1), star_names[int(n1)], COLOR_NAMES[color_c].to_lower()]
-                pool.append({"kind": "exact", "s": s, "r": pitch_rank_solution[s], "text": text})
+                pool.append({"kind": "exact", "s": s, "r": pitch_rank_solution[s], "n": int(n1), "text": text})
                 found = true
                 break
     return pool
 
 
-func _build_cmp_dist_pool() -> Array[Dictionary]:
+func _build_range_pool() -> Array[Dictionary]:
+    const MIN_WIDTH := 3
     var pool: Array[Dictionary] = []
-    var pairs: Array = []
-    for a in star_count:
-        for b in star_count:
-            if a != b:
-                pairs.append([a, b])
-    _shuffle_array(pairs)
-    var cap: int = maxi(2, int(star_count / 3.0))
-    var count: int = 0
-    for pair in pairs:
-        if count >= cap:
-            break
-        var a: int = pair[0]
-        var b: int = pair[1]
-        var third_candidates: Array = []
-        for c in star_count:
-            if c != a and c != b and _distances[a][c] > 0:
-                third_candidates.append(c)
-        if third_candidates.is_empty():
+    for s in star_count:
+        var r: int = pitch_rank_solution[s]
+        var first_k: int = maxi(MIN_WIDTH, r + 1)
+        var last_k: int = maxi(MIN_WIDTH, star_count - r)
+        if first_k <= last_k and first_k < star_count:
+            pool.append({"kind": "range", "s": s, "lo": 0, "hi": first_k - 1,
+                "text": "%s fires among the first %d notes." % [star_names[s], first_k]})
+        elif last_k < first_k and last_k < star_count:
+            pool.append({"kind": "range", "s": s, "lo": star_count - last_k, "hi": star_count - 1,
+                "text": "%s fires among the last %d notes." % [star_names[s], last_k]})
+    return pool
+
+
+func _build_group_cmp_pool() -> Array[Dictionary]:
+    var pool: Array[Dictionary] = []
+    for s in star_count:
+        for c in 4:
+            if c == star_colors[s]:
+                continue
+            var targets: Array = []
+            for t in star_count:
+                if t != s and star_colors[t] == c:
+                    targets.append(t)
+            if targets.size() < 2:
+                continue
+            var before_all: bool = true
+            var after_all: bool = true
+            for t in targets:
+                if pitch_rank_solution[s] > pitch_rank_solution[int(t)]:
+                    before_all = false
+                else:
+                    after_all = false
+            if before_all:
+                pool.append({"kind": "group_cmp", "s": s, "targets": targets.duplicate(), "s_first": true,
+                    "text": "%s fires before every %s star." % [star_names[s], COLOR_NAMES[c].to_lower()]})
+            elif after_all:
+                pool.append({"kind": "group_cmp", "s": s, "targets": targets.duplicate(), "s_first": false,
+                    "text": "%s fires after every %s star." % [star_names[s], COLOR_NAMES[c].to_lower()]})
+    return pool
+
+
+func _build_count_before_pool() -> Array[Dictionary]:
+    var pool: Array[Dictionary] = []
+    for s in star_count:
+        var nbrs: Array = adjacency[s]
+        if nbrs.size() < 2:
             continue
-        var c: int = third_candidates[_rng.randi_range(0, third_candidates.size() - 1)]
-        var d: int = _distances[a][c]
-        var base: Dictionary = _build_cmp_clue(a, b)
-        var word: String = "star" if d == 1 else "stars"
-        var ref_text: String = _describe_star_reference(a, c, d)
-        var text: String = "%s and is %d %s away from %s." % [
-            String(base["text"]).trim_suffix("."), d, word, ref_text]
-        pool.append({"kind": "cmp_dist", "a": a, "b": b, "a_gt_b": base["a_gt_b"],
-                     "c": c, "dist": d, "text": text})
-        count += 1
+        var k: int = 0
+        for n in nbrs:
+            if pitch_rank_solution[int(n)] < pitch_rank_solution[s]:
+                k += 1
+        if k == 0 or k == nbrs.size():
+            continue
+        var nb_copy: Array = []
+        for n in nbrs:
+            nb_copy.append(int(n))
+        pool.append({"kind": "count_before", "s": s, "neighbors": nb_copy, "k": k,
+            "text": "Exactly %d of %s's connected stars fire before it." % [k, star_names[s]]})
     return pool
 
 
@@ -873,12 +1360,24 @@ func _attach_neighbor_fragment(base_text: String, subject: int, verb: String) ->
     return {"text": text, "c": n}
 
 
-func _build_neg_pitch_pool() -> Array[Dictionary]:
+func _build_pitch_exact_pool() -> Array[Dictionary]:
+    # Direct given: names are always visible, so no indirect neighbor/color
+    # identification is needed the way "exact" needs it for Sequence — this
+    # is a straight pin, rationed under the "pitch" positive characteristic.
+    var pool: Array[Dictionary] = []
+    for s in star_count:
+        var p: int = star_pitch_index[s] if s < star_pitch_index.size() else 0
+        var text: String = "%s plays %s." % [star_names[s], _describe_pitch_fragment(s)]
+        pool.append({"kind": "pitch_exact", "s": s, "p": p, "text": text})
+    return pool
+
+
+func _build_pitch_neg_pool() -> Array[Dictionary]:
     var pool: Array[Dictionary] = []
     for s in star_count:
         var true_pitch: int = star_pitch_index[s] if s < star_pitch_index.size() else 0
         var others: Array = []
-        for p in _pitch_freqs.size():
+        for p in pitch_count:
             if p != true_pitch:
                 others.append(p)
         if others.is_empty():
@@ -896,85 +1395,169 @@ func _build_neg_pitch_pool() -> Array[Dictionary]:
             text = "%s does not play %s." % [star_names[s], names[0]]
         else:
             text = "%s plays neither %s nor %s." % [star_names[s], names[0], names[1]]
-        pool.append({"s": s, "text": text})
+        var p_list: Array = []
+        for p in excluded:
+            p_list.append(int(p))
+        pool.append({"kind": "pitch_neg", "s": s, "p_list": p_list, "text": text})
     return pool
 
 
-func _build_pitch_flavor_pool() -> Array[String]:
-    var texts: Array[String] = []
-
-    var by_pitch: Dictionary = {}
-    for s in star_count:
-        var pidx: int = star_pitch_index[s] if s < star_pitch_index.size() else -1
-        if pidx < 0:
-            continue
-        if not by_pitch.has(pidx):
-            by_pitch[pidx] = []
-        by_pitch[pidx].append(s)
-    var pitch_keys: Array = by_pitch.keys()
-    _shuffle_array(pitch_keys)
-    for pidx in pitch_keys:
-        var group: Array = by_pitch[pidx]
-        if group.size() < 2:
-            continue
-        var names: Array = []
-        for s in group:
-            names.append(star_names[s])
-        texts.append("%s all play the same note." % _join_names(names))
-
-    var pairs: Array = []
-    for s1 in star_count:
-        for s2 in star_count:
-            if s1 < s2 and not is_equal_approx(_freq_for_star(s1), _freq_for_star(s2)):
-                pairs.append([s1, s2])
-    _shuffle_array(pairs)
-    var cap: int = maxi(2, int(star_count / 4.0))
-    var count: int = 0
-    for pair in pairs:
-        if count >= cap:
-            break
-        texts.append(_build_pitch_cmp_text(pair[0], pair[1]))
-        count += 1
-    return texts
-
-
-func _describe_star_reference(from_star: int, target_star: int, dist: int) -> String:
-    if _rng.randf() < 0.4:
-        var color_idx: int = star_colors[target_star]
-        var matches: Array = []
-        for s in star_count:
-            if s != from_star and star_colors[s] == color_idx and _distances[from_star][s] == dist:
-                matches.append(s)
-        if matches.size() == 1:
-            return "a %s star" % COLOR_NAMES[color_idx].to_lower()
-    return star_names[target_star]
-
-
-func _build_distance_flavor_pool() -> Array[String]:
-    var texts: Array[String] = []
+func _build_pitch_cmp_pool() -> Array[Dictionary]:
+    var pool: Array[Dictionary] = []
     var pairs: Array = []
     for a in star_count:
         for b in star_count:
-            if a < b and _distances[a][b] > 0:
+            if a != b:
                 pairs.append([a, b])
     _shuffle_array(pairs)
-    var cap: int = maxi(2, int(star_count / 4.0))
+    var cap: int = star_count * 2
     var count: int = 0
     for pair in pairs:
         if count >= cap:
             break
         var a: int = pair[0]
         var b: int = pair[1]
-        var d: int = _distances[a][b]
-        var word: String = "star" if d == 1 else "stars"
-        var target_text: String = _describe_star_reference(a, b, d)
-        texts.append("%s is %d %s away from %s." % [star_names[a], d, word, target_text])
+        var fa: float = _freq_for_star(a)
+        var fb: float = _freq_for_star(b)
+        var rel: String = "eq"
+        if not is_equal_approx(fa, fb):
+            rel = "gt" if fa > fb else "lt"
+        var text: String = _build_pitch_cmp_text(a, b)
+        pool.append({"kind": "pitch_cmp", "a": a, "b": b, "rel": rel, "text": text})
         count += 1
-    return texts
+    return pool
 
 
-func _build_between_flavor_pool() -> Array[String]:
-    var texts: Array[String] = []
+func _build_pitch_group_eq_pool() -> Array[Dictionary]:
+    var pool: Array[Dictionary] = []
+    var by_pitch: Dictionary = {}
+    for s in star_count:
+        var p: int = star_pitch_index[s] if s < star_pitch_index.size() else 0
+        if not by_pitch.has(p):
+            by_pitch[p] = []
+        by_pitch[p].append(s)
+    for p in by_pitch.keys():
+        var group: Array = by_pitch[p]
+        if group.size() < 2:
+            continue
+        var names: Array = []
+        for s in group:
+            names.append(star_names[s])
+        var text: String
+        if group.size() == 2:
+            text = "%s and %s play the same note." % [names[0], names[1]]
+        else:
+            var head: String = ", ".join(names.slice(0, names.size() - 1))
+            text = "%s, and %s all play the same note." % [head, names[names.size() - 1]]
+        pool.append({"kind": "pitch_group_eq", "stars": group.duplicate(), "text": text})
+    return pool
+
+
+func _build_pitch_extreme_pool() -> Array[Dictionary]:
+    var pool: Array[Dictionary] = []
+    for s in star_count:
+        var nbrs: Array = adjacency[s]
+        if nbrs.size() < 2:
+            continue
+        var sp: int = star_pitch_index[s] if s < star_pitch_index.size() else 0
+        var s_rank: int = _pitch_freq_rank[sp]
+        var strictly_lowest: bool = true
+        var strictly_highest: bool = true
+        for n in nbrs:
+            var np: int = star_pitch_index[int(n)] if int(n) < star_pitch_index.size() else 0
+            var nr: int = _pitch_freq_rank[np]
+            if nr <= s_rank:
+                strictly_lowest = false
+            if nr >= s_rank:
+                strictly_highest = false
+        var nb_copy: Array = []
+        for n in nbrs:
+            nb_copy.append(int(n))
+        if strictly_lowest:
+            pool.append({"kind": "pitch_extreme", "s": s, "neighbors": nb_copy, "want_lowest": true,
+                "text": "%s plays the lowest note among the stars it connects to." % star_names[s]})
+        elif strictly_highest:
+            pool.append({"kind": "pitch_extreme", "s": s, "neighbors": nb_copy, "want_lowest": false,
+                "text": "%s plays the highest note among the stars it connects to." % star_names[s]})
+    return pool
+
+
+func _build_pitch_group_cmp_pool() -> Array[Dictionary]:
+    var pool: Array[Dictionary] = []
+    for s in star_count:
+        var sp: int = star_pitch_index[s] if s < star_pitch_index.size() else 0
+        var s_rank: int = _pitch_freq_rank[sp]
+        for c in 4:
+            if c == star_colors[s]:
+                continue
+            var targets: Array = []
+            for t in star_count:
+                if t != s and star_colors[t] == c:
+                    targets.append(t)
+            if targets.size() < 2:
+                continue
+            var lower_all: bool = true
+            var higher_all: bool = true
+            for t in targets:
+                var tp: int = star_pitch_index[int(t)] if int(t) < star_pitch_index.size() else 0
+                var tr: int = _pitch_freq_rank[tp]
+                if s_rank >= tr:
+                    lower_all = false
+                if s_rank <= tr:
+                    higher_all = false
+            if lower_all:
+                pool.append({"kind": "pitch_group_cmp", "s": s, "targets": targets.duplicate(), "s_lower": true,
+                    "text": "%s plays a lower note than every %s star." % [star_names[s], COLOR_NAMES[c].to_lower()]})
+            elif higher_all:
+                pool.append({"kind": "pitch_group_cmp", "s": s, "targets": targets.duplicate(), "s_lower": false,
+                    "text": "%s plays a higher note than every %s star." % [star_names[s], COLOR_NAMES[c].to_lower()]})
+    return pool
+
+
+func _build_dist_color_pool() -> Array[Dictionary]:
+    var pool: Array[Dictionary] = []
+    for s in star_count:
+        var seen_pairs: Dictionary = {}
+        var candidates: Array = []
+        for other in star_count:
+            if other == s:
+                continue
+            var d: int = _distances[s][other]
+            if d <= 0:
+                continue
+            var c: int = star_colors[other]
+            var key: String = "%d_%d" % [c, d]
+            if seen_pairs.has(key):
+                continue
+            seen_pairs[key] = true
+            candidates.append([c, d])
+        _shuffle_array(candidates)
+        for cand in candidates:
+            var c: int = cand[0]
+            var d: int = cand[1]
+            var unique_s: bool = true
+            for other_s in star_count:
+                if other_s == s:
+                    continue
+                for other2 in star_count:
+                    if other2 == other_s:
+                        continue
+                    if _distances[other_s][other2] == d and star_colors[other2] == c:
+                        unique_s = false
+                        break
+                if not unique_s:
+                    break
+            if unique_s:
+                var word: String = "star" if d == 1 else "stars"
+                var text: String = "%s is %d %s away from a %s star." % [
+                    star_names[s], d, word, COLOR_NAMES[c].to_lower()]
+                pool.append({"kind": "dist_color", "s": s, "c": c, "dist": d, "text": text})
+                break
+    return pool
+
+
+func _build_between_pool() -> Array[Dictionary]:
+    var pool: Array[Dictionary] = []
     var candidates: Array = []
     for mid in star_count:
         for a in star_count:
@@ -997,14 +1580,10 @@ func _build_between_flavor_pool() -> Array[String]:
                 if unique_mid:
                     candidates.append([mid, a, b])
     _shuffle_array(candidates)
-    var cap: int = maxi(1, int(star_count / 6.0))
-    var count: int = 0
     for c in candidates:
-        if count >= cap:
-            break
-        texts.append("%s lies between %s and %s." % [star_names[c[0]], star_names[c[1]], star_names[c[2]]])
-        count += 1
-    return texts
+        var text: String = "%s lies between %s and %s." % [star_names[c[0]], star_names[c[1]], star_names[c[2]]]
+        pool.append({"kind": "between", "mid": c[0], "a": c[1], "b": c[2], "text": text})
+    return pool
 
 
 func _shuffle_array(arr: Array) -> void:
@@ -1035,20 +1614,17 @@ func is_generation_complete() -> bool:
     return _generation_complete
 
 
-func get_clue_texts(include_flavor: bool = true) -> Array[String]:
+func get_clue_texts(_include_flavor: bool = true) -> Array[String]:
+    # v2.3.0: flavor is fully retired — every line returned is either a
+    # solver-validated deduction clue or an identity anchor. The parameter
+    # is kept only for call-site compatibility and is ignored.
     var texts: Array[String] = []
-    if include_flavor:
-        for s in star_count:
-            texts.append(_build_flavor_clue(s)["text"])
-        for t in _pitch_flavor_texts:
-            texts.append(t)
-        for t in _distance_flavor_texts:
-            texts.append(t)
-        for t in _between_flavor_texts:
-            texts.append(t)
+    for iclue in _final_identity_clues:
+        texts.append(str(iclue.get("text", "")))
     for clue in _final_clues:
-        if clue["kind"] != "flavor":
-            texts.append(clue["text"])
+        texts.append(str(clue.get("text", "")))
+    for pclue in _final_pitch_clues:
+        texts.append(str(pclue.get("text", "")))
     return texts
 
 
@@ -1058,17 +1634,19 @@ func _score_clue_difficulty(clue: Dictionary, solution: Array[int]) -> float:
             return 10.0
         "adj_seq":
             return 8.0
+        "count_before":
+            return 7.5
         "extreme":
             return 7.0
         "neg_exact":
             return 6.0
+        "range":
+            var width: int = int(clue.get("hi", star_count - 1)) - int(clue.get("lo", 0)) + 1
+            return 5.0 + (float(star_count - width) * 0.25)
         "neg_adjacent":
             return 5.0
-        "cmp_dist":
-            var star_a: int = clue.get("a", 0)
-            var star_b: int = clue.get("b", 0)
-            var gap: int = abs(solution[star_a] - solution[star_b])
-            return 2.5 + (float(gap) * 0.5)
+        "group_cmp":
+            return 4.0 + (float(clue.get("targets", []).size()) * 0.8)
         "cmp":
             var star_a2: int = clue.get("a", 0)
             var star_b2: int = clue.get("b", 0)
@@ -1080,6 +1658,8 @@ func _score_clue_difficulty(clue: Dictionary, solution: Array[int]) -> float:
 func generate_clues_async(_manual_clue_count: int = -1) -> void:
     _generation_complete = false
     _final_clues.clear()
+    _final_pitch_clues.clear()
+    _final_identity_clues.clear()
 
     var t_total_start: float = Time.get_ticks_msec()
 
@@ -1088,7 +1668,9 @@ func generate_clues_async(_manual_clue_count: int = -1) -> void:
     var color_pool: Array[Dictionary] = _build_color_pool()
     var adjseq_pool: Array[Dictionary] = _build_adj_seq_pool()
     var exact_pool: Array[Dictionary] = _build_exact_pool()
-    var cmp_dist_pool: Array[Dictionary] = _build_cmp_dist_pool()
+    var range_pool: Array[Dictionary] = _build_range_pool()
+    var group_cmp_pool: Array[Dictionary] = _build_group_cmp_pool()
+    var count_before_pool: Array[Dictionary] = _build_count_before_pool()
     var neg_exact_pool: Array[Dictionary] = _build_neg_exact_pool()
     var neg_adjacent_pool: Array[Dictionary] = _build_neg_adjacent_pool()
 
@@ -1097,45 +1679,63 @@ func generate_clues_async(_manual_clue_count: int = -1) -> void:
     _shuffle_dict_array(color_pool)
     _shuffle_dict_array(adjseq_pool)
     _shuffle_dict_array(exact_pool)
-    _shuffle_dict_array(cmp_dist_pool)
+    _shuffle_dict_array(range_pool)
+    _shuffle_dict_array(group_cmp_pool)
+    _shuffle_dict_array(count_before_pool)
     _shuffle_dict_array(neg_exact_pool)
     _shuffle_dict_array(neg_adjacent_pool)
 
     _color_negation_texts = _build_neg_color_pool()
-    _pitch_negation_texts = _build_neg_pitch_pool()
 
-    print("[PUZZLE_TIMING %d] pools: adj=%d extreme=%d color=%d adjseq=%d exact=%d cmp_dist=%d neg_exact=%d neg_adj=%d" % [
+    print("[PUZZLE_TIMING %d] pools: adj=%d extreme=%d color=%d adjseq=%d exact=%d range=%d group_cmp=%d count_before=%d neg_exact=%d neg_adj=%d" % [
         constellation_id, adj_pool.size(), extreme_pool.size(),
-        color_pool.size(), adjseq_pool.size(), exact_pool.size(), cmp_dist_pool.size(),
+        color_pool.size(), adjseq_pool.size(), exact_pool.size(), range_pool.size(),
+        group_cmp_pool.size(), count_before_pool.size(),
         neg_exact_pool.size(), neg_adjacent_pool.size()])
 
-    # Phase 1: seed with adjacency + extreme clues — small set, propagate best.
-    var chosen: Array[Dictionary] = []
-    for c in adj_pool:
-        chosen.append(c)
-    for c in extreme_pool:
-        chosen.append(c)
+    var char_pos_cap: Dictionary = {}
+    var char_pos_used: Dictionary = {}
+    var kind_to_pos_characteristic: Dictionary = {}
+    for characteristic in POS_SINGLE_MATCH_KINDS_BY_CHARACTERISTIC.keys():
+        char_pos_cap[characteristic] = int(floor(float(star_count) / float(CHARACTERISTIC_DIVISOR)))
+        char_pos_used[characteristic] = 0
+        for k in POS_SINGLE_MATCH_KINDS_BY_CHARACTERISTIC[characteristic]:
+            kind_to_pos_characteristic[k] = characteristic
 
-    # Phase 2 candidates: color + adj-seq clues merged into one pool, sorted
-    # highest-information-first. Single-clue injection stops the instant
-    # uniqueness is reached, so low-value clues are often never added at all —
-    # not just trimmed later.
+    var char_neg_cap: Dictionary = {}
+    var char_neg_used: Dictionary = {}
+    var kind_to_neg_characteristic: Dictionary = {}
+    for characteristic2 in NEG_SINGLE_MATCH_KINDS_BY_CHARACTERISTIC.keys():
+        char_neg_cap[characteristic2] = int(floor(float(star_count) / float(CHARACTERISTIC_DIVISOR)))
+        char_neg_used[characteristic2] = 0
+        for k2 in NEG_SINGLE_MATCH_KINDS_BY_CHARACTERISTIC[characteristic2]:
+            kind_to_neg_characteristic[k2] = characteristic2
+
+    # ==================================================
+    # PHASE 2/3 — SEQUENCE axis
+    # ==================================================
     var candidate_pool: Array[Dictionary] = []
     candidate_pool.append_array(exact_pool)
-    candidate_pool.append_array(cmp_dist_pool)
+    candidate_pool.append_array(adjseq_pool)
+    candidate_pool.append_array(count_before_pool)
+    candidate_pool.append_array(extreme_pool)
+    candidate_pool.append_array(range_pool)
+    candidate_pool.append_array(group_cmp_pool)
     candidate_pool.append_array(neg_exact_pool)
     candidate_pool.append_array(neg_adjacent_pool)
+    candidate_pool.append_array(adj_pool)
     candidate_pool.append_array(color_pool)
-    candidate_pool.append_array(adjseq_pool)
     candidate_pool.sort_custom(func(clue_a, clue_b):
         return _score_clue_difficulty(clue_a, pitch_rank_solution) > _score_clue_difficulty(clue_b, pitch_rank_solution))
 
+    var chosen: Array[Dictionary] = []
     var pool_idx: int = 0
     var frame_timer: float = Time.get_ticks_msec()
 
     var solve_call_count: int = 0
     var solve_total_msec: float = 0.0
     var solve_max_msec: float = 0.0
+    var skipped_cands: Array[Dictionary] = []
 
     var safety_cap: int = candidate_pool.size() + 10
     var safety_counter: int = 0
@@ -1161,24 +1761,61 @@ func generate_clues_async(_manual_clue_count: int = -1) -> void:
             unique = true
             break
 
-        if pool_idx < candidate_pool.size():
-            chosen.append(candidate_pool[pool_idx])
+        var injected: bool = false
+        while pool_idx < candidate_pool.size():
+            var cand: Dictionary = candidate_pool[pool_idx]
             pool_idx += 1
-        else:
-            push_warning("ConstellationLogicPuzzle [%d]: pool exhausted before unique solution." % constellation_id)
+            var kind: String = str(cand.get("kind", ""))
+            if kind_to_pos_characteristic.has(kind):
+                var pch: String = kind_to_pos_characteristic[kind]
+                if int(char_pos_used[pch]) >= int(char_pos_cap[pch]):
+                    skipped_cands.append(cand)
+                    continue
+                char_pos_used[pch] = int(char_pos_used[pch]) + 1
+            elif kind_to_neg_characteristic.has(kind):
+                var nch: String = kind_to_neg_characteristic[kind]
+                if int(char_neg_used[nch]) >= int(char_neg_cap[nch]):
+                    skipped_cands.append(cand)
+                    continue
+                char_neg_used[nch] = int(char_neg_used[nch]) + 1
+            chosen.append(cand)
+            injected = true
+            break
+
+        if not injected:
             break
 
         if Time.get_ticks_msec() - frame_timer >= FRAME_BUDGET_MSEC:
             await Engine.get_main_loop().process_frame
             frame_timer = Time.get_ticks_msec()
 
-    var phase2_dt: float = Time.get_ticks_msec() - t_phase2_start
-    print("[PUZZLE_TIMING %d] PHASE2 (gen): %.0fms, %d solve calls, total_solve=%.0fms, max_single_solve=%.0fms, clues=%d" % [
-        constellation_id, phase2_dt, solve_call_count, solve_total_msec, solve_max_msec, chosen.size()])
+    # Necessity override: caps are a preference, uniqueness is a REQUIREMENT.
+    # If the capped pool couldn't close uniqueness, lift the caps and inject
+    # the strongest skipped candidates until it does.
+    var override_injected: int = 0
+    if not unique and not skipped_cands.is_empty():
+        push_warning("ConstellationLogicPuzzle [%d]: caps insufficient for uniqueness — necessity override engaged." % constellation_id)
+        var ov_idx: int = 0
+        while not unique and ov_idx < skipped_cands.size():
+            chosen.append(skipped_cands[ov_idx])
+            ov_idx += 1
+            override_injected += 1
+            var ov_solutions: Array = _solve(chosen, 2)
+            solve_call_count += 1
+            if ov_solutions.size() == 1:
+                unique = true
+            if Time.get_ticks_msec() - frame_timer >= FRAME_BUDGET_MSEC:
+                await Engine.get_main_loop().process_frame
+                frame_timer = Time.get_ticks_msec()
 
-    # Phase 3: tiered trim. Sort ascending (weakest clues first) and trim
-    # forward from index 0, so simple/redundant clues get tested for removal
-    # before high-value ones — biasing the final set toward the interesting clues.
+    if not unique:
+        push_error("ConstellationLogicPuzzle [%d]: SEQUENCE STILL NOT UNIQUE after full pool — puzzle unsolvable as configured." % constellation_id)
+
+    var phase2_dt: float = Time.get_ticks_msec() - t_phase2_start
+    print("[PUZZLE_TIMING %d] PHASE2 (seq gen): %.0fms, %d solve calls, total_solve=%.0fms, max_single_solve=%.0fms, clues=%d, cap-skipped=%d, override-injected=%d, unique=%s" % [
+        constellation_id, phase2_dt, solve_call_count, solve_total_msec, solve_max_msec,
+        chosen.size(), skipped_cands.size(), override_injected, str(unique)])
+
     var t_phase3_start: float = Time.get_ticks_msec()
     var trim_solve_count: int = 0
     var trim_solve_max: float = 0.0
@@ -1212,16 +1849,244 @@ func generate_clues_async(_manual_clue_count: int = -1) -> void:
             frame_timer = Time.get_ticks_msec()
 
     var phase3_dt: float = Time.get_ticks_msec() - t_phase3_start
-    print("[PUZZLE_TIMING %d] PHASE3 (trim): %.0fms wall, %d solve calls, max_single_solve=%.0fms, final_clues=%d" % [
+    print("[PUZZLE_TIMING %d] PHASE3 (seq trim): %.0fms wall, %d solve calls, max_single_solve=%.0fms, final_clues=%d" % [
         constellation_id, phase3_dt, trim_solve_count, trim_solve_max, chosen.size()])
 
     _final_clues = chosen
 
-    # Flavor pools built once, after real clues are locked in, then cached
-    # as plain text so they don't re-randomize on every from_cache_dict load.
-    _pitch_flavor_texts = _build_pitch_flavor_pool()
-    _distance_flavor_texts = _build_distance_flavor_pool()
-    _between_flavor_texts = _build_between_flavor_pool()
+    # ==================================================
+    # PHASE 4/5 — PITCH axis
+    # ==================================================
+    var pitch_chosen: Array[Dictionary] = []
+
+    if pitch_count > 0:
+        var pitch_exact_pool: Array[Dictionary] = _build_pitch_exact_pool()
+        var pitch_neg_pool: Array[Dictionary] = _build_pitch_neg_pool()
+        var pitch_cmp_pool: Array[Dictionary] = _build_pitch_cmp_pool()
+        var pitch_group_eq_pool: Array[Dictionary] = _build_pitch_group_eq_pool()
+        var pitch_extreme_pool: Array[Dictionary] = _build_pitch_extreme_pool()
+        var pitch_group_cmp_pool: Array[Dictionary] = _build_pitch_group_cmp_pool()
+
+        _shuffle_dict_array(pitch_exact_pool)
+        _shuffle_dict_array(pitch_neg_pool)
+        _shuffle_dict_array(pitch_cmp_pool)
+        _shuffle_dict_array(pitch_group_eq_pool)
+        _shuffle_dict_array(pitch_extreme_pool)
+        _shuffle_dict_array(pitch_group_cmp_pool)
+
+        print("[PUZZLE_TIMING %d] pitch pools: exact=%d neg=%d cmp=%d group_eq=%d extreme=%d group_cmp=%d" % [
+            constellation_id, pitch_exact_pool.size(), pitch_neg_pool.size(),
+            pitch_cmp_pool.size(), pitch_group_eq_pool.size(), pitch_extreme_pool.size(),
+            pitch_group_cmp_pool.size()])
+
+        var pitch_candidate_pool: Array[Dictionary] = []
+        pitch_candidate_pool.append_array(pitch_exact_pool)
+        pitch_candidate_pool.append_array(pitch_extreme_pool)
+        pitch_candidate_pool.append_array(pitch_group_eq_pool)
+        pitch_candidate_pool.append_array(pitch_group_cmp_pool)
+        pitch_candidate_pool.append_array(pitch_neg_pool)
+        pitch_candidate_pool.append_array(pitch_cmp_pool)
+        pitch_candidate_pool.sort_custom(func(clue_a, clue_b):
+            return _score_pitch_clue_difficulty(clue_a) > _score_pitch_clue_difficulty(clue_b))
+
+        var p_pool_idx: int = 0
+        var p_solve_call_count: int = 0
+        var p_solve_total_msec: float = 0.0
+        var p_solve_max_msec: float = 0.0
+        var p_skipped_cands: Array[Dictionary] = []
+        var p_safety_cap: int = pitch_candidate_pool.size() + 10
+        var p_safety_counter: int = 0
+        var p_unique: bool = false
+
+        var t_phase4_start: float = Time.get_ticks_msec()
+
+        while not p_unique:
+            p_safety_counter += 1
+            if p_safety_counter > p_safety_cap:
+                push_warning("ConstellationLogicPuzzle [%d]: pitch safety cap hit during generation." % constellation_id)
+                break
+
+            var pt_solve: float = Time.get_ticks_msec()
+            var p_solutions: Array = _solve_pitch(pitch_chosen, 2)
+            var p_solve_dt: float = Time.get_ticks_msec() - pt_solve
+            p_solve_call_count += 1
+            p_solve_total_msec += p_solve_dt
+            if p_solve_dt > p_solve_max_msec:
+                p_solve_max_msec = p_solve_dt
+
+            if p_solutions.size() == 1:
+                p_unique = true
+                break
+
+            var p_injected: bool = false
+            while p_pool_idx < pitch_candidate_pool.size():
+                var p_cand: Dictionary = pitch_candidate_pool[p_pool_idx]
+                p_pool_idx += 1
+                var p_kind: String = str(p_cand.get("kind", ""))
+                if kind_to_pos_characteristic.has(p_kind):
+                    var p_pch: String = kind_to_pos_characteristic[p_kind]
+                    if int(char_pos_used[p_pch]) >= int(char_pos_cap[p_pch]):
+                        p_skipped_cands.append(p_cand)
+                        continue
+                    char_pos_used[p_pch] = int(char_pos_used[p_pch]) + 1
+                elif kind_to_neg_characteristic.has(p_kind):
+                    var p_nch: String = kind_to_neg_characteristic[p_kind]
+                    if int(char_neg_used[p_nch]) >= int(char_neg_cap[p_nch]):
+                        p_skipped_cands.append(p_cand)
+                        continue
+                    char_neg_used[p_nch] = int(char_neg_used[p_nch]) + 1
+                pitch_chosen.append(p_cand)
+                p_injected = true
+                break
+
+            if not p_injected:
+                break
+
+            if Time.get_ticks_msec() - frame_timer >= FRAME_BUDGET_MSEC:
+                await Engine.get_main_loop().process_frame
+                frame_timer = Time.get_ticks_msec()
+
+        var p_override_injected: int = 0
+        if not p_unique and not p_skipped_cands.is_empty():
+            push_warning("ConstellationLogicPuzzle [%d]: pitch caps insufficient for uniqueness — necessity override engaged." % constellation_id)
+            var p_ov_idx: int = 0
+            while not p_unique and p_ov_idx < p_skipped_cands.size():
+                pitch_chosen.append(p_skipped_cands[p_ov_idx])
+                p_ov_idx += 1
+                p_override_injected += 1
+                var p_ov_solutions: Array = _solve_pitch(pitch_chosen, 2)
+                p_solve_call_count += 1
+                if p_ov_solutions.size() == 1:
+                    p_unique = true
+                if Time.get_ticks_msec() - frame_timer >= FRAME_BUDGET_MSEC:
+                    await Engine.get_main_loop().process_frame
+                    frame_timer = Time.get_ticks_msec()
+
+        if not p_unique:
+            push_error("ConstellationLogicPuzzle [%d]: PITCH STILL NOT UNIQUE after full pool — puzzle unsolvable as configured." % constellation_id)
+
+        var phase4_dt: float = Time.get_ticks_msec() - t_phase4_start
+        print("[PUZZLE_TIMING %d] PHASE4 (pitch gen): %.0fms, %d solve calls, total_solve=%.0fms, max_single_solve=%.0fms, clues=%d, cap-skipped=%d, override-injected=%d, unique=%s" % [
+            constellation_id, phase4_dt, p_solve_call_count, p_solve_total_msec, p_solve_max_msec,
+            pitch_chosen.size(), p_skipped_cands.size(), p_override_injected, str(p_unique)])
+
+        var t_phase5_start: float = Time.get_ticks_msec()
+        var p_trim_solve_count: int = 0
+        var p_trim_solve_max: float = 0.0
+
+        pitch_chosen.sort_custom(func(clue_a, clue_b):
+            return _score_pitch_clue_difficulty(clue_a) < _score_pitch_clue_difficulty(clue_b))
+
+        var p_trim_idx: int = 0
+        while p_trim_idx < pitch_chosen.size():
+            if pitch_chosen.size() <= 1:
+                break
+
+            var p_trial_clue: Dictionary = pitch_chosen[p_trim_idx]
+            pitch_chosen.remove_at(p_trim_idx)
+
+            var pt_trim_solve: float = Time.get_ticks_msec()
+            var p_trial_solutions: Array = _solve_pitch(pitch_chosen, 2)
+            var p_trim_dt: float = Time.get_ticks_msec() - pt_trim_solve
+            p_trim_solve_count += 1
+            if p_trim_dt > p_trim_solve_max:
+                p_trim_solve_max = p_trim_dt
+
+            if p_trial_solutions.size() == 1:
+                pass
+            else:
+                pitch_chosen.insert(p_trim_idx, p_trial_clue)
+                p_trim_idx += 1
+
+            if Time.get_ticks_msec() - frame_timer >= FRAME_BUDGET_MSEC:
+                await Engine.get_main_loop().process_frame
+                frame_timer = Time.get_ticks_msec()
+
+        var phase5_dt: float = Time.get_ticks_msec() - t_phase5_start
+        print("[PUZZLE_TIMING %d] PHASE5 (pitch trim): %.0fms wall, %d solve calls, max_single_solve=%.0fms, final_pitch_clues=%d" % [
+            constellation_id, phase5_dt, p_trim_solve_count, p_trim_solve_max, pitch_chosen.size()])
+    else:
+        print("[PUZZLE_TIMING %d] pitch_count=0, skipping Pitch CSP phases." % constellation_id)
+
+    _final_pitch_clues = pitch_chosen
+
+    var kind_counts: Dictionary = {}
+    for clue in chosen:
+        var kc: String = str(clue.get("kind", ""))
+        kind_counts[kc] = int(kind_counts.get(kc, 0)) + 1
+    print("[PUZZLE_TIMING %d] final sequence composition: %s" % [constellation_id, str(kind_counts)])
+
+    var pitch_kind_counts: Dictionary = {}
+    for pclue in pitch_chosen:
+        var pkc: String = str(pclue.get("kind", ""))
+        pitch_kind_counts[pkc] = int(pitch_kind_counts.get(pkc, 0)) + 1
+    print("[PUZZLE_TIMING %d] final pitch composition: %s" % [constellation_id, str(pitch_kind_counts)])
+
+    # ==================================================
+    # PHASE 6 — IDENTITY ANCHORS, minimal coverage only. Coverage targets are
+    # exactly the stars referenced BY NAME in the final clue sets — nothing
+    # more. A between anchor names two additional stars, so choosing one adds
+    # those names to the obligation list (worklist). dist_color anchors are
+    # self-contained and preferred. No filler beyond coverage: a clue that
+    # isn't needed doesn't ship.
+    # ==================================================
+    var needed: Dictionary = {}
+    for clue in chosen:
+        match str(clue.get("kind", "")):
+            "cmp", "adj_seq":
+                needed[int(clue["a"])] = true
+                needed[int(clue["b"])] = true
+            "exact":
+                needed[int(clue.get("n", -1))] = true
+            "neg_exact", "neg_adjacent", "range", "group_cmp", "count_before":
+                needed[int(clue["s"])] = true
+    for pclue in pitch_chosen:
+        match str(pclue.get("kind", "")):
+            "pitch_cmp":
+                needed[int(pclue["a"])] = true
+                needed[int(pclue["b"])] = true
+            "pitch_exact", "pitch_neg", "pitch_extreme", "pitch_group_cmp":
+                needed[int(pclue["s"])] = true
+            "pitch_group_eq":
+                for st in pclue["stars"]:
+                    needed[int(st)] = true
+    needed.erase(-1)
+
+    var dist_color_pool: Array[Dictionary] = _build_dist_color_pool()
+    var between_pool: Array[Dictionary] = _build_between_pool()
+    var dist_color_by_star: Dictionary = {}
+    for dc in dist_color_pool:
+        dist_color_by_star[int(dc["s"])] = dc
+    var between_by_mid: Dictionary = {}
+    for bt in between_pool:
+        var m: int = int(bt["mid"])
+        if not between_by_mid.has(m):
+            between_by_mid[m] = []
+        between_by_mid[m].append(bt)
+
+    var identity_chosen: Array[Dictionary] = []
+    var handled: Dictionary = {}
+    var uncoverable: Array = []
+    var queue: Array = needed.keys()
+    while not queue.is_empty():
+        var sq: int = int(queue.pop_back())
+        if handled.has(sq):
+            continue
+        handled[sq] = true
+        if dist_color_by_star.has(sq):
+            identity_chosen.append(dist_color_by_star[sq])
+        elif between_by_mid.has(sq):
+            var bt2: Dictionary = between_by_mid[sq][0]
+            identity_chosen.append(bt2)
+            for extra in [int(bt2["a"]), int(bt2["b"])]:
+                if not handled.has(extra):
+                    queue.push_back(extra)
+        else:
+            uncoverable.append(star_names[sq] if sq < star_names.size() else str(sq))
+
+    _final_identity_clues = identity_chosen
+    print("[PUZZLE_TIMING %d] identity anchors: needed=%d chosen=%d uncoverable=%s (uncovered names resolve by elimination)" % [
+        constellation_id, needed.size(), identity_chosen.size(), str(uncoverable)])
 
     var total_dt: float = Time.get_ticks_msec() - t_total_start
     print("[PUZZLE_TIMING %d] TOTAL wall time: %.0fms" % [constellation_id, total_dt])
@@ -1238,7 +2103,7 @@ func generate_clues_async(_manual_clue_count: int = -1) -> void:
 
 func to_cache_dict() -> Dictionary:
     return {
-        "version":          3,
+        "version":          6,
         "constellation_id": constellation_id,
         "player_seed_used": player_seed_used,
         "star_count":       star_count,
@@ -1246,17 +2111,17 @@ func to_cache_dict() -> Dictionary:
         "star_names":       star_names.duplicate(),
         "pitch_rank_solution": pitch_rank_solution.duplicate(),
         "final_clues":      _final_clues.duplicate(true),
-        "pitch_flavor_texts":    _pitch_flavor_texts.duplicate(),
-        "distance_flavor_texts": _distance_flavor_texts.duplicate(),
-        "between_flavor_texts":  _between_flavor_texts.duplicate(),
         "color_negation_texts": _color_negation_texts.duplicate(true),
-        "pitch_negation_texts": _pitch_negation_texts.duplicate(true),
         "generation_complete": _generation_complete,
+        "pitch_count":      pitch_count,
+        "pitch_freq_rank":  _pitch_freq_rank.duplicate(),
+        "final_pitch_clues": _final_pitch_clues.duplicate(true),
+        "final_identity_clues": _final_identity_clues.duplicate(true),
     }
 
 
 func from_cache_dict(data: Dictionary) -> bool:
-    if data.get("version", 0) != 3:
+    if data.get("version", 0) != 6:
         push_warning("ConstellationLogicPuzzle: cache version mismatch, ignoring cached data.")
         return false
     constellation_id     = int(data.get("constellation_id", -1))
@@ -1276,26 +2141,15 @@ func from_cache_dict(data: Dictionary) -> bool:
     for v in data.get("pitch_rank_solution", []):
         pitch_rank_solution.append(int(v))
 
-    _pitch_flavor_texts = []
-    for v in data.get("pitch_flavor_texts", []):
-        _pitch_flavor_texts.append(str(v))
-
-    _distance_flavor_texts = []
-    for v in data.get("distance_flavor_texts", []):
-        _distance_flavor_texts.append(str(v))
-
-    _between_flavor_texts = []
-    for v in data.get("between_flavor_texts", []):
-        _between_flavor_texts.append(str(v))
-
     _color_negation_texts = []
     for v in data.get("color_negation_texts", []):
         var entry: Dictionary = v as Dictionary
         _color_negation_texts.append({"s": int(entry.get("s", 0)), "text": str(entry.get("text", ""))})
-    _pitch_negation_texts = []
-    for v2 in data.get("pitch_negation_texts", []):
-        var entry2: Dictionary = v2 as Dictionary
-        _pitch_negation_texts.append({"s": int(entry2.get("s", 0)), "text": str(entry2.get("text", ""))})
+
+    pitch_count = int(data.get("pitch_count", 0))
+    _pitch_freq_rank = []
+    for v3 in data.get("pitch_freq_rank", []):
+        _pitch_freq_rank.append(int(v3))
 
     _final_clues = []
     for raw_clue in data.get("final_clues", []):
@@ -1321,12 +2175,25 @@ func from_cache_dict(data: Dictionary) -> bool:
             "exact":
                 clue["s"] = int(raw_clue.get("s", 0))
                 clue["r"] = int(raw_clue.get("r", 0))
-            "cmp_dist":
-                clue["a"]      = int(raw_clue.get("a", 0))
-                clue["b"]      = int(raw_clue.get("b", 0))
-                clue["a_gt_b"] = bool(raw_clue.get("a_gt_b", false))
-                clue["c"]      = int(raw_clue.get("c", 0))
-                clue["dist"]   = int(raw_clue.get("dist", 0))
+                clue["n"] = int(raw_clue.get("n", -1))
+            "range":
+                clue["s"]  = int(raw_clue.get("s", 0))
+                clue["lo"] = int(raw_clue.get("lo", 0))
+                clue["hi"] = int(raw_clue.get("hi", 0))
+            "group_cmp":
+                clue["s"] = int(raw_clue.get("s", 0))
+                var gts: Array = []
+                for v in raw_clue.get("targets", []):
+                    gts.append(int(v))
+                clue["targets"] = gts
+                clue["s_first"] = bool(raw_clue.get("s_first", true))
+            "count_before":
+                clue["s"] = int(raw_clue.get("s", 0))
+                var cnb: Array = []
+                for v in raw_clue.get("neighbors", []):
+                    cnb.append(int(v))
+                clue["neighbors"] = cnb
+                clue["k"] = int(raw_clue.get("k", 0))
             "neg_exact":
                 clue["s"]       = int(raw_clue.get("s", 0))
                 clue["r"]       = int(raw_clue.get("r", 0))
@@ -1336,6 +2203,64 @@ func from_cache_dict(data: Dictionary) -> bool:
                 clue["s"] = int(raw_clue.get("s", 0))
                 clue["r"] = int(raw_clue.get("r", 0))
         _final_clues.append(clue)
+
+    _final_pitch_clues = []
+    for raw_pclue in data.get("final_pitch_clues", []):
+        var pclue: Dictionary = {}
+        var pkind: String = str(raw_pclue.get("kind", ""))
+        pclue["kind"] = pkind
+        pclue["text"] = str(raw_pclue.get("text", ""))
+        match pkind:
+            "pitch_exact":
+                pclue["s"] = int(raw_pclue.get("s", 0))
+                pclue["p"] = int(raw_pclue.get("p", 0))
+            "pitch_neg":
+                pclue["s"] = int(raw_pclue.get("s", 0))
+                var plist: Array = []
+                for v4 in raw_pclue.get("p_list", []):
+                    plist.append(int(v4))
+                pclue["p_list"] = plist
+            "pitch_cmp":
+                pclue["a"]   = int(raw_pclue.get("a", 0))
+                pclue["b"]   = int(raw_pclue.get("b", 0))
+                pclue["rel"] = str(raw_pclue.get("rel", "eq"))
+            "pitch_group_eq":
+                var pst: Array = []
+                for v5 in raw_pclue.get("stars", []):
+                    pst.append(int(v5))
+                pclue["stars"] = pst
+            "pitch_extreme":
+                pclue["s"] = int(raw_pclue.get("s", 0))
+                var pnb: Array = []
+                for v6 in raw_pclue.get("neighbors", []):
+                    pnb.append(int(v6))
+                pclue["neighbors"] = pnb
+                pclue["want_lowest"] = bool(raw_pclue.get("want_lowest", true))
+            "pitch_group_cmp":
+                pclue["s"] = int(raw_pclue.get("s", 0))
+                var pgt: Array = []
+                for v7 in raw_pclue.get("targets", []):
+                    pgt.append(int(v7))
+                pclue["targets"] = pgt
+                pclue["s_lower"] = bool(raw_pclue.get("s_lower", true))
+        _final_pitch_clues.append(pclue)
+
+    _final_identity_clues = []
+    for raw_iclue in data.get("final_identity_clues", []):
+        var iclue: Dictionary = {}
+        var ikind: String = str(raw_iclue.get("kind", ""))
+        iclue["kind"] = ikind
+        iclue["text"] = str(raw_iclue.get("text", ""))
+        match ikind:
+            "dist_color":
+                iclue["s"]    = int(raw_iclue.get("s", 0))
+                iclue["c"]    = int(raw_iclue.get("c", 0))
+                iclue["dist"] = int(raw_iclue.get("dist", 0))
+            "between":
+                iclue["mid"] = int(raw_iclue.get("mid", 0))
+                iclue["a"]   = int(raw_iclue.get("a", 0))
+                iclue["b"]   = int(raw_iclue.get("b", 0))
+        _final_identity_clues.append(iclue)
 
     return star_count > 0 and _generation_complete
 

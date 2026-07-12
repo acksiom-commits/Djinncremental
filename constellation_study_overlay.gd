@@ -106,11 +106,9 @@ var _player_seed:          int = 0
 var _match_records: Array[Dictionary] = []
 
 var _final_clues_cache:     Array = []     # cached final_clues dicts
-var _distance_flavor_cache: Array = []     # cached distance flavor texts
-var _between_flavor_cache:  Array = []     # cached between flavor texts
+var _final_identity_clues_cache: Array = [] # cached dist_color/between identity-anchor clue dicts
 var _color_negation_cache: Array = []      # cached {"s":int,"text":String} negation clues
-var _pitch_flavor_cache:    Array = []      # cached pitch comparison/grouping flavor texts
-var _pitch_negation_cache:  Array = []      # cached {"s":int,"text":String} pitch negation clues
+var _final_pitch_clues_cache: Array = []    # cached solver-validated Pitch-axis clue dicts
 
 # ── PUZZLE NOTES STATE ───────────────────────────────────────────────
 # Per-star sequence range assertions (1-based, 0 = unset).
@@ -306,11 +304,9 @@ func _load_constellation_data() -> void:
     _pitch_freqs = _cd.get_note_freqs(_constellation_id)
 
     _final_clues_cache = cache.get("final_clues", []).duplicate(true)
-    _distance_flavor_cache = cache.get("distance_flavor_texts", []).duplicate()
-    _between_flavor_cache = cache.get("between_flavor_texts", []).duplicate()
+    _final_identity_clues_cache = cache.get("final_identity_clues", []).duplicate(true)
     _color_negation_cache = cache.get("color_negation_texts", []).duplicate(true)
-    _pitch_flavor_cache = cache.get("pitch_flavor_texts", []).duplicate()
-    _pitch_negation_cache = cache.get("pitch_negation_texts", []).duplicate(true)
+    _final_pitch_clues_cache = cache.get("final_pitch_clues", []).duplicate(true)
 
     _compute_star_screen_positions()
     _selected_star = -1
@@ -839,7 +835,7 @@ func _populate_sequence_markers() -> void:
     var shown: bool = false
     for clue in _final_clues_cache:
         var kind: String = str(clue.get("kind", ""))
-        if kind != "cmp" and kind != "adj_seq" and kind != "extreme" and kind != "exact" and kind != "cmp_dist" and kind != "neg_exact" and kind != "neg_adjacent":
+        if kind != "cmp" and kind != "adj_seq" and kind != "extreme" and kind != "exact" and kind != "range" and kind != "group_cmp" and kind != "count_before" and kind != "neg_exact" and kind != "neg_adjacent":
             continue
         var text: String = str(clue.get("text", ""))
         if text == "":
@@ -858,15 +854,11 @@ func _populate_sequence_markers() -> void:
 
 func _populate_adjacency_markers() -> void:
     var shown: bool = false
-    for text in _distance_flavor_cache:
-        if str(text) == "":
+    for iclue in _final_identity_clues_cache:
+        var itext: String = str(iclue.get("text", ""))
+        if itext == "":
             continue
-        _markers_content.add_child(_make_clue_label(str(text), Color(0.82, 0.78, 0.92, 1)))
-        shown = true
-    for text in _between_flavor_cache:
-        if str(text) == "":
-            continue
-        _markers_content.add_child(_make_clue_label(str(text), Color(0.82, 0.78, 0.92, 1)))
+        _markers_content.add_child(_make_clue_label(itext, Color(0.82, 0.78, 0.92, 1)))
         shown = true
 
     if not shown:
@@ -939,30 +931,21 @@ func _populate_name_clues_markers() -> void:
         _markers_content.add_child(_make_clue_label(text, Color(0.82, 0.78, 0.92, 1)))
         shown = true
 
-    for text in _pitch_flavor_cache:
-        if str(text) == "" or not _text_mentions_star_name(str(text)):
-            continue
-        _markers_content.add_child(_make_clue_label(str(text), Color(0.82, 0.78, 0.92, 1)))
-        shown = true
-
     var neutral_col := Color(0.55, 0.50, 0.65, 1)
-    for entry in _pitch_negation_cache:
-        var text2: String = str(entry.get("text", ""))
+    for pclue in _final_pitch_clues_cache:
+        var text2: String = str(pclue.get("text", ""))
         if text2 == "" or not _text_mentions_star_name(text2):
             continue
-        _markers_content.add_child(_make_clue_label(text2, neutral_col))
+        var pkind: String = str(pclue.get("kind", ""))
+        var col2: Color = neutral_col if pkind == "pitch_neg" else Color(0.82, 0.78, 0.92, 1)
+        _markers_content.add_child(_make_clue_label(text2, col2))
         shown = true
 
-    for text in _distance_flavor_cache:
-        if str(text) == "" or not _text_mentions_star_name(str(text)):
+    for iclue in _final_identity_clues_cache:
+        var itext2: String = str(iclue.get("text", ""))
+        if itext2 == "" or not _text_mentions_star_name(itext2):
             continue
-        _markers_content.add_child(_make_clue_label(str(text), Color(0.82, 0.78, 0.92, 1)))
-        shown = true
-
-    for text in _between_flavor_cache:
-        if str(text) == "" or not _text_mentions_star_name(str(text)):
-            continue
-        _markers_content.add_child(_make_clue_label(str(text), Color(0.82, 0.78, 0.92, 1)))
+        _markers_content.add_child(_make_clue_label(itext2, Color(0.82, 0.78, 0.92, 1)))
         shown = true
 
     if not shown:
@@ -976,18 +959,14 @@ func _populate_name_clues_markers() -> void:
 
 func _populate_pitch_markers() -> void:
     var shown: bool = false
-    for text in _pitch_flavor_cache:
-        if str(text) == "":
-            continue
-        _markers_content.add_child(_make_clue_label(str(text), Color(0.82, 0.78, 0.92, 1)))
-        shown = true
-
     var neutral_col := Color(0.55, 0.50, 0.65, 1)
-    for entry in _pitch_negation_cache:
-        var text: String = str(entry.get("text", ""))
+    for pclue in _final_pitch_clues_cache:
+        var text: String = str(pclue.get("text", ""))
         if text == "":
             continue
-        _markers_content.add_child(_make_clue_label(text, neutral_col))
+        var pkind: String = str(pclue.get("kind", ""))
+        var col: Color = neutral_col if pkind == "pitch_neg" else Color(0.82, 0.78, 0.92, 1)
+        _markers_content.add_child(_make_clue_label(text, col))
         shown = true
 
     if not shown:
