@@ -149,12 +149,10 @@ horizontal_alignment = 1
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="TabColor" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=295307069]
+[node name="TabPlaceholder" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=1922528262]
 layout_mode = 2
-size_flags_horizontal = 3
-focus_mode = 0
-theme_override_font_sizes/font_size = 16
-text = "Color"
+focus_behavior_recursive = 1
+text = "Name"
 
 [node name="TabSequence" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=2024991309]
 layout_mode = 2
@@ -163,12 +161,12 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 16
 text = "Sequence"
 
-[node name="TabAdjacency" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=671060694]
+[node name="TabColor" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=295307069]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_font_sizes/font_size = 16
-text = "Adjacency"
+text = "Color"
 
 [node name="MarkerTabBar2" type="HBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=808034110]
 layout_mode = 2
@@ -177,12 +175,14 @@ layout_mode = 2
 layout_mode = 2
 text = "Pitch"
 
-[node name="TabPlaceholder" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=1922528262]
+[node name="TabAdjacency" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=671060694]
 layout_mode = 2
-focus_behavior_recursive = 1
-text = "Later"
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 16
+text = "Adjacency"
 
-[node name="TabName" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=1396505685]
+[node name="MatchesTab" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=1396505685]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
