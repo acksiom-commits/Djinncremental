@@ -30,15 +30,22 @@ var _cd: Node = null
 @onready var _title_label:         Label         = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox/TitleLabel
 @onready var _close_btn:           Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox/CloseButton
 @onready var _fork_btn: Button = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox/TuningForkButton
+@onready var _pitch_listen_btn: Button = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox/PitchListenButton
 @onready var _synth:    Node   = get_node_or_null("../RootUI/PuzzleSynths")
-@onready var _star_map_control:    Control       = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/StarMapControl
+@onready var _star_map_control:    Control = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/StarMapColumn/StarMapControl
 
 @onready var _markers_content:     VBoxContainer = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkersScrollContainer/MarkersContentVBox
+@onready var _sort_sub_tab_bar:    HBoxContainer = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/SortSubTabBar
+@onready var _melody_staff_panel:  Control = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/StarMapColumn/MelodyStaffPanel
+
+var _staff_popup: PopupPanel = null
+var _staff_popup_seq_pos: int = -1
+
+const UNKNOWN_SEQ_COLOR := Color(0.35, 0.75, 0.45, 1.0)
 @onready var _tab_color:           Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar/TabColor
 @onready var _tab_sequence:        Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar/TabSequence
 
 @onready var _tab_pitch:           Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2/TabPitch
-@onready var _tab_matches:         Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2/MatchesTab
 @onready var _tab_adjacency:       Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2/TabAdjacency
 @onready var _tab_name_clues:      Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar/TabPlaceholder
 
@@ -84,7 +91,7 @@ var _star_screen_pos:     Array = []     # Array[Vector2], map-space
 var _star_names:          Array = []     # Array[String] from cache
 var _star_colors:         Array = []     # Array[int] 0-3
 var _name_assignments:    Array = []     # Array[String], per-star slot
-var _active_marker_tab:   int   = 0      # 0=Color 1=Sequence 2=Name
+var _active_marker_tab:   int   = -1     # -1=Default(Matches) 0=Color 1=Sequence 2=Pitch 3=Adjacency 4=NameClues
 # Adjacency marker states: key = "a:b" (a<b), value = int 0=neutral 1=✓ 2=✗
 var _adjacency_states:    Dictionary = {}
 var _pitch_rank_solution:   Array = []     # Array[int], melody step per star
@@ -140,6 +147,10 @@ var _fork_replay_lit_star:  int       = -1
 var _fork_high_water:       int       = 0
 var _fork_fanfare_lit_star: int       = -1
 
+var _pitch_listen_mode:      bool  = false
+var _pitch_reveal_label:     Label = null
+var _pitch_reveal_timer:     float = 0.0
+
 # ── STYLE BOXES (loaded once) ─────────────────────────────────────────
 var _sb_unassigned:   StyleBox = null
 var _sb_assigned:     StyleBox = null
@@ -160,21 +171,352 @@ func _ready() -> void:
 
     _tab_color.pressed.connect(func(): _set_marker_tab(0))
     _tab_sequence.pressed.connect(func(): _set_marker_tab(1))
-    _tab_pitch.pressed.connect(func(): _set_marker_tab(3))
-    _tab_matches.pressed.connect(func(): _set_marker_tab(2))
-    _tab_adjacency.pressed.connect(func(): _set_marker_tab(4))
-    _tab_name_clues.pressed.connect(func(): _set_marker_tab(5))
+    _tab_pitch.pressed.connect(func(): _set_marker_tab(2))
+    _tab_adjacency.pressed.connect(func(): _set_marker_tab(3))
+    _tab_name_clues.pressed.connect(func(): _set_marker_tab(4))
 
     _star_map_control.draw.connect(_draw_star_map)
     _star_map_control.gui_input.connect(_on_map_input)
+    _melody_staff_panel.draw.connect(_draw_melody_staff)
+    _melody_staff_panel.gui_input.connect(_on_melody_staff_input)
+    _staff_popup = PopupPanel.new()
+    add_child(_staff_popup)
     _star_map_control.resized.connect(_on_star_map_resized)
     _close_btn.pressed.connect(_on_close)
     _fork_btn.pressed.connect(_on_fork_toggle_pressed)
     if _synth and _synth.has_signal("sequence_note_played"):
         _synth.sequence_note_played.connect(_on_fork_fanfare_note)
 
+    _pitch_listen_btn.pressed.connect(_on_pitch_listen_toggle_pressed)
+    _pitch_reveal_label = Label.new()
+    _pitch_reveal_label.add_theme_font_size_override("font_size", 18)
+    _pitch_reveal_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.6, 1.0))
+    _pitch_reveal_label.visible = false
+    _pitch_reveal_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    _star_map_control.add_child(_pitch_reveal_label)
+
+
+# ==================================================
+# MELODY BAR SCORE — piano-roll style summary of confirmed Sequence×Pitch
+# information. Purely a rendering query over _match_records: no ground
+# truth is ever read here. A position only gets a notehead if the player
+# has confirmed BOTH the exact sequence slot AND a pitch on that same
+# record; a confirmed slot with unconfirmed pitch gets a "?" at neutral
+# height; a wholly unconfirmed slot draws nothing.
+# ==================================================
+
+func _melody_marker_for_position(seq_pos: int) -> Dictionary:
+    var has_position: bool = false
+    for r in _match_records:
+        var lo: int = int(r.get("seq_lo", 0))
+        var hi: int = int(r.get("seq_hi", 0))
+        if lo == seq_pos and hi == seq_pos:
+            has_position = true
+            var pitch_states: Dictionary = r.get("pitch_states", {})
+            for note_name in pitch_states:
+                if int(pitch_states[note_name]) == 1:
+                    return {"has_position": true, "pitch_known": true, "note_name": str(note_name)}
+    return {"has_position": has_position, "pitch_known": false, "note_name": ""}
+
+
+func _freq_for_note_name(note_name: String) -> float:
+    for f in _pitch_freqs:
+        if ConstellationLogicPuzzle.note_name_for_freq(f) == note_name:
+            return f
+    return -1.0
+
+
+func _freq_to_y_fraction(freq: float) -> float:
+    # 0.0 = lowest note in this constellation's scale, 1.0 = highest.
+    if _pitch_freqs.is_empty() or freq < 0.0:
+        return 0.5
+    var min_f: float = _pitch_freqs[0]
+    var max_f: float = _pitch_freqs[0]
+    for f in _pitch_freqs:
+        min_f = minf(min_f, f)
+        max_f = maxf(max_f, f)
+    if is_equal_approx(max_f, min_f):
+        return 0.5
+    return (freq - min_f) / (max_f - min_f)
+
+
+func _known_color_for_seq_position(seq_pos: int) -> int:
+    # A position's color counts as "known" either because the player
+    # directly confirmed one, or because elimination (from here or
+    # propagated in from a Sort: tab) has narrowed it down to the single
+    # remaining candidate — that's the same "resolves by elimination"
+    # pattern already used for identity anchors elsewhere in this panel.
+    for r in _match_records:
+        var lo: int = int(r.get("seq_lo", 0))
+        var hi: int = int(r.get("seq_hi", 0))
+        if lo != seq_pos or hi != seq_pos:
+            continue
+        var cs: Dictionary = r.get("color_states", {})
+        var confirmed: int = -1
+        var eliminated_count: int = 0
+        var remaining: int = -1
+        for ci in COLOR_NAME_LABELS.size():
+            var state: int = int(cs.get(ci, 0))
+            if state == 1:
+                confirmed = ci
+            elif state == 2:
+                eliminated_count += 1
+            else:
+                remaining = ci
+        if confirmed >= 0:
+            return confirmed
+        if eliminated_count == COLOR_NAME_LABELS.size() - 1 and remaining >= 0:
+            return remaining
+    return -1
+
+
+func _draw_melody_staff() -> void:
+    var panel_size: Vector2 = _melody_staff_panel.size
+    if _star_count <= 0 or panel_size.x <= 0.0 or panel_size.y <= 0.0:
+        return
+
+    var margin_x: float = 20.0
+    var margin_top: float = 14.0
+    var margin_bottom: float = 20.0
+    var usable_w: float = panel_size.x - margin_x * 2.0
+    var usable_h: float = panel_size.y - margin_top - margin_bottom
+    var step_x: float = usable_w / float(maxi(_star_count - 1, 1))
+
+    var baseline_y: float = margin_top + usable_h * 0.5
+    var baseline_col := Color(0.55, 0.50, 0.65, 1.0)
+    _melody_staff_panel.draw_line(
+        Vector2(margin_x, baseline_y), Vector2(margin_x + usable_w, baseline_y), baseline_col, 1.0)
+
+    # Faint measure dividers, every 4 notes — a piano-roll rhythm cue, not
+    # tied to the actual melody's real phrase structure (which varies per
+    # constellation and isn't something the UI should assume it knows).
+    var bar_col := Color(0.55, 0.50, 0.65, 1.0)
+    var pos: int = 4
+    while pos < _star_count:
+        var bx: float = margin_x + step_x * float(pos)
+        _melody_staff_panel.draw_line(
+            Vector2(bx, margin_top), Vector2(bx, margin_top + usable_h), bar_col, 1.0)
+        pos += 4
+
+    var note_col := Color(0.82, 0.78, 0.92, 1.0)
+    var unknown_col := Color(0.55, 0.50, 0.65, 1.0)
+    var font := ThemeDB.fallback_font
+    var font_size_small := 10
+
+    for seq_pos in range(1, _star_count + 1):
+        var x: float = margin_x + step_x * float(seq_pos - 1)
+        var marker: Dictionary = _melody_marker_for_position(seq_pos)
+
+        if marker["has_position"] and marker["pitch_known"]:
+            var freq: float = _freq_for_note_name(str(marker["note_name"]))
+            var frac: float = _freq_to_y_fraction(freq)
+            var y: float = margin_top + usable_h * (1.0 - frac)
+            _melody_staff_panel.draw_circle(Vector2(x, y), 5.0, note_col)
+            var label: String = str(marker["note_name"])
+            var label_w: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
+            _melody_staff_panel.draw_string(font, Vector2(x - label_w * 0.5, y - 9.0),
+                label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, note_col)
+        elif marker["has_position"]:
+            var qw: float = font.get_string_size("?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+            _melody_staff_panel.draw_string(font, Vector2(x - qw * 0.5, baseline_y + 4.0),
+                "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, unknown_col)
+
+        var num_label: String = str(seq_pos)
+        var nw: float = font.get_string_size(num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
+        var known_color: int = _known_color_for_seq_position(seq_pos)
+        var num_col: Color = STAR_COLORS_BY_IDX[known_color] if known_color >= 0 else UNKNOWN_SEQ_COLOR
+        _melody_staff_panel.draw_string(font, Vector2(x - nw * 0.5, margin_top + usable_h + 14.0),
+            num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, num_col)
+
+
+func _on_melody_staff_input(event: InputEvent) -> void:
+    if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
+        return
+    if _star_count <= 0:
+        return
+
+    var panel_size: Vector2 = _melody_staff_panel.size
+    var margin_x: float = 20.0
+    var usable_w: float = panel_size.x - margin_x * 2.0
+    var step_x: float = usable_w / float(maxi(_star_count - 1, 1))
+
+    var click_x: float = event.position.x
+    var nearest_pos: int = 1
+    var nearest_dist: float = INF
+    for seq_pos in range(1, _star_count + 1):
+        var x: float = margin_x + step_x * float(seq_pos - 1)
+        var d: float = abs(click_x - x)
+        if d < nearest_dist:
+            nearest_dist = d
+            nearest_pos = seq_pos
+
+    if nearest_dist <= step_x * 0.5:
+        _open_staff_popup(nearest_pos, _melody_staff_panel.global_position + Vector2(click_x, event.position.y))
+
+
+func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
+    _staff_popup_seq_pos = seq_pos
+    var record_idx: int = _get_or_create_match_record_for_seq(seq_pos)
+
+    for child in _staff_popup.get_children():
+        child.queue_free()
+
+    var vbox := VBoxContainer.new()
+    vbox.custom_minimum_size = Vector2(180, 0)
+    vbox.add_theme_constant_override("separation", 4)
+    _staff_popup.add_child(vbox)
+
+    var title := Label.new()
+    title.text = "Note %d" % seq_pos
+    title.add_theme_font_size_override("font_size", 14)
+    title.add_theme_color_override("font_color", Color(0.82, 0.78, 0.92, 1))
+    title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    vbox.add_child(title)
+    vbox.add_child(HSeparator.new())
+
+    var pitch_hdr := Label.new()
+    pitch_hdr.text = "PITCH"
+    pitch_hdr.add_theme_font_size_override("font_size", 11)
+    pitch_hdr.add_theme_color_override("font_color", Color(0.55, 0.50, 0.65, 1))
+    vbox.add_child(pitch_hdr)
+
+    var pitch_states: Dictionary = _match_records[record_idx].get("pitch_states", {})
+    for f in _pitch_freqs:
+        var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(f)
+        var row := HBoxContainer.new()
+        var lbl := Label.new()
+        lbl.text = note_name
+        lbl.custom_minimum_size = Vector2(50, 0)
+        lbl.add_theme_font_size_override("font_size", 13)
+        row.add_child(lbl)
+        var btn_check := Button.new()
+        btn_check.text = "\u2713"
+        btn_check.custom_minimum_size = Vector2(28, 24)
+        btn_check.focus_mode = Control.FOCUS_NONE
+        row.add_child(btn_check)
+        var btn_x := Button.new()
+        btn_x.text = "\u2717"
+        btn_x.custom_minimum_size = Vector2(28, 24)
+        btn_x.focus_mode = Control.FOCUS_NONE
+        row.add_child(btn_x)
+        vbox.add_child(row)
+
+        var state: int = int(pitch_states.get(note_name, 0))
+        _apply_name_row_visual(state, lbl, btn_check, btn_x, Color(0.82, 0.78, 0.92, 1))
+
+        var nn := note_name
+        btn_check.pressed.connect(func(): _on_staff_pitch_check(record_idx, nn, lbl, btn_check, btn_x))
+        btn_x.pressed.connect(func(): _on_staff_pitch_x(record_idx, nn, lbl, btn_check, btn_x))
+
+    vbox.add_child(HSeparator.new())
+
+    var color_hdr := Label.new()
+    color_hdr.text = "COLOR"
+    color_hdr.add_theme_font_size_override("font_size", 11)
+    color_hdr.add_theme_color_override("font_color", Color(0.55, 0.50, 0.65, 1))
+    vbox.add_child(color_hdr)
+
+    var color_states: Dictionary = _match_records[record_idx].get("color_states", {})
+    for ci in COLOR_NAME_LABELS.size():
+        var crow := HBoxContainer.new()
+        var clbl := Label.new()
+        clbl.text = COLOR_NAME_LABELS[ci]
+        clbl.custom_minimum_size = Vector2(50, 0)
+        clbl.add_theme_font_size_override("font_size", 13)
+        crow.add_child(clbl)
+        var cbtn_check := Button.new()
+        cbtn_check.text = "\u2713"
+        cbtn_check.custom_minimum_size = Vector2(28, 24)
+        cbtn_check.focus_mode = Control.FOCUS_NONE
+        crow.add_child(cbtn_check)
+        var cbtn_x := Button.new()
+        cbtn_x.text = "\u2717"
+        cbtn_x.custom_minimum_size = Vector2(28, 24)
+        cbtn_x.focus_mode = Control.FOCUS_NONE
+        crow.add_child(cbtn_x)
+        vbox.add_child(crow)
+
+        var cstate: int = int(color_states.get(ci, 0))
+        _apply_name_row_visual(cstate, clbl, cbtn_check, cbtn_x, STAR_COLORS_BY_IDX[ci])
+
+        var cidx := ci
+        cbtn_check.pressed.connect(func(): _on_staff_color_check(record_idx, cidx))
+        cbtn_x.pressed.connect(func(): _on_staff_color_x(record_idx, cidx))
+
+    _staff_popup.position = Vector2i(screen_pos) - Vector2i(90, 0)
+    _staff_popup.popup()
+
+
+func _propagate_pitch_confirmed_same_record(record_idx: int, confirmed_note: String) -> void:
+    var r: Dictionary = _match_records[record_idx]
+    var pitch_states: Dictionary = r.get("pitch_states", {})
+    for f in _pitch_freqs:
+        var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(f)
+        if note_name != confirmed_note:
+            pitch_states[note_name] = 2
+    pitch_states[confirmed_note] = 1
+    r["pitch_states"] = pitch_states
+
+
+func _on_staff_pitch_check(record_idx: int, note_name: String, _lbl: Label, _btn_check: Button, _btn_x: Button) -> void:
+    if bool(_match_records[record_idx].get("pitch_revealed", false)):
+        return
+    var pitch_states: Dictionary = _match_records[record_idx].get("pitch_states", {})
+    var cur: int = int(pitch_states.get(note_name, 0))
+    var new_state: int = 0 if cur == 1 else 1
+    if new_state == 1:
+        _propagate_pitch_confirmed_same_record(record_idx, note_name)
+    else:
+        pitch_states[note_name] = new_state
+        _match_records[record_idx]["pitch_states"] = pitch_states
+    _save_puzzle_notes()
+    _full_propagation_refresh()
+    _open_staff_popup(_staff_popup_seq_pos, _staff_popup.position)
+
+
+func _on_staff_pitch_x(record_idx: int, note_name: String, _lbl: Label, _btn_check: Button, _btn_x: Button) -> void:
+    if bool(_match_records[record_idx].get("pitch_revealed", false)):
+        return
+    var pitch_states: Dictionary = _match_records[record_idx].get("pitch_states", {})
+    var cur: int = int(pitch_states.get(note_name, 0))
+    pitch_states[note_name] = 0 if cur == 2 else 2
+    _match_records[record_idx]["pitch_states"] = pitch_states
+    _save_puzzle_notes()
+    _full_propagation_refresh()
+    _open_staff_popup(_staff_popup_seq_pos, _staff_popup.position)
+
+
+func _on_staff_color_check(record_idx: int, color_idx: int) -> void:
+    var r: Dictionary = _match_records[record_idx]
+    var cur: int = int(r["color_states"].get(color_idx, 0))
+    var new_state: int = 0 if cur == 1 else 1
+    r["color_states"][color_idx] = new_state
+    if new_state == 1:
+        _propagate_color_confirmed_same_record(record_idx, color_idx)
+    _apply_color_elimination_to_names(record_idx, color_idx, new_state)
+    _save_puzzle_notes()
+    _full_propagation_refresh()
+    _open_staff_popup(_staff_popup_seq_pos, _staff_popup.position)
+
+
+func _on_staff_color_x(record_idx: int, color_idx: int) -> void:
+    var r: Dictionary = _match_records[record_idx]
+    var cur: int = int(r["color_states"].get(color_idx, 0))
+    var new_state: int = 0 if cur == 2 else 2
+    r["color_states"][color_idx] = new_state
+    _apply_color_elimination_to_names(record_idx, color_idx, new_state)
+    _save_puzzle_notes()
+    _full_propagation_refresh()
+    _open_staff_popup(_staff_popup_seq_pos, _staff_popup.position)
+
 
 func _process(delta: float) -> void:
+    if _pitch_reveal_timer > 0.0:
+        _pitch_reveal_timer -= delta
+        _pitch_reveal_label.modulate.a = clampf(_pitch_reveal_timer / 0.4, 0.0, 1.0)
+        if _pitch_reveal_timer <= 0.0:
+            _pitch_reveal_label.visible = false
+
     if _fork_wrong_flash_timer > 0.0:
         _fork_wrong_flash_timer -= delta
         _star_map_control.queue_redraw()
@@ -492,6 +834,11 @@ func _on_map_input(event: InputEvent) -> void:
         get_viewport().set_input_as_handled()
         return
 
+    if _pitch_listen_mode:
+        _on_pitch_listen_star_clicked(best_idx)
+        get_viewport().set_input_as_handled()
+        return
+
     _selected_star = -1 if best_idx == _selected_star else best_idx
     _star_map_control.queue_redraw()
     for wi in _star_widgets.size():
@@ -499,6 +846,46 @@ func _on_map_input(event: InputEvent) -> void:
             _star_widgets[wi].visible = (wi == _selected_star)
     _reposition_star_widgets()
     get_viewport().set_input_as_handled()
+
+
+# ==================================================
+# TUNING-FORK LISTEN MODE — free-form pitch confirmation. Hearing a star's
+# ACTUAL tone is directly perceivable ground truth, same category as color
+# being visible on the map — so writing it straight into the record system
+# is not a leak, it's the player using their ears as a legitimate sensor.
+# The note NAME is revealed on click too, since most players can't name a
+# pitch by ear alone; that's a deliberate difficulty choice, not a bug.
+# ==================================================
+func _on_pitch_listen_toggle_pressed() -> void:
+    _pitch_listen_mode = not _pitch_listen_mode
+    _pitch_listen_btn.modulate = Color(0.3, 1.0, 0.4, 1.0) if _pitch_listen_mode else Color(1, 1, 1, 1)
+    if _pitch_listen_mode:
+        _fork_mode = false
+        _fork_btn.modulate = Color(1, 1, 1, 1)
+
+
+func _on_pitch_listen_star_clicked(star_idx: int) -> void:
+    if star_idx < 0 or star_idx >= _star_pitch_index.size():
+        return
+    var p: int = _star_pitch_index[star_idx]
+    if p < 0 or p >= _pitch_freqs.size():
+        return
+    var freq: float = _pitch_freqs[p]
+    if _synth and _synth.has_method("play_bell_note"):
+        _synth.play_bell_note(freq)
+
+    var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(freq)
+    var record_idx: int = _get_or_create_match_record_for_star_idx(star_idx)
+    _propagate_pitch_confirmed_same_record(record_idx, note_name)
+    _match_records[record_idx]["pitch_revealed"] = true
+    _save_puzzle_notes()
+    _full_propagation_refresh()
+
+    if star_idx < _star_screen_pos.size():
+        _pitch_reveal_label.text = note_name
+        _pitch_reveal_label.visible = true
+        _pitch_reveal_label.position = _star_screen_pos[star_idx] + Vector2(-12, -32)
+        _pitch_reveal_timer = 1.4
 
 
 # ==================================================
@@ -758,14 +1145,12 @@ func _set_marker_tab(tab_idx: int) -> void:
         _sb_tab_active if tab_idx == 0 else _sb_tab_inactive)
     _tab_sequence.add_theme_stylebox_override("normal",
         _sb_tab_active if tab_idx == 1 else _sb_tab_inactive)
-    _tab_matches.add_theme_stylebox_override("normal",
-        _sb_tab_active if tab_idx == 2 else _sb_tab_inactive)
     _tab_pitch.add_theme_stylebox_override("normal",
-        _sb_tab_active if tab_idx == 3 else _sb_tab_inactive)
+        _sb_tab_active if tab_idx == 2 else _sb_tab_inactive)
     _tab_adjacency.add_theme_stylebox_override("normal",
-        _sb_tab_active if tab_idx == 4 else _sb_tab_inactive)
+        _sb_tab_active if tab_idx == 3 else _sb_tab_inactive)
     _tab_name_clues.add_theme_stylebox_override("normal",
-        _sb_tab_active if tab_idx == 5 else _sb_tab_inactive)
+        _sb_tab_active if tab_idx == 4 else _sb_tab_inactive)
     _populate_markers_panel()
 
 
@@ -776,10 +1161,10 @@ func _populate_markers_panel() -> void:
     match _active_marker_tab:
         0: _populate_color_markers()
         1: _populate_sequence_markers()
-        2: _populate_name_markers()
-        3: _populate_pitch_markers()
-        4: _populate_adjacency_markers()
-        5: _populate_name_clues_markers()
+        2: _populate_pitch_markers()
+        3: _populate_adjacency_markers()
+        4: _populate_name_clues_markers()
+        _: _populate_name_markers()
 
 
 func _populate_color_markers() -> void:
@@ -859,28 +1244,38 @@ func _sort_matches(mode: int) -> void:
         push_warning("StudyOverlay: _sort_matches called with invalid mode %d, ignoring" % mode)
         return
     _matches_sort_mode = mode
-    _populate_name_markers()
+    # Route through _set_marker_tab so _active_marker_tab correctly lands on
+    # -1 (Matches/default) and the top-level tab highlighting clears. Without
+    # this, _active_marker_tab stayed at whatever top tab was last active,
+    # so any later refresh (e.g. a color toggle) would dispatch back to that
+    # stale tab instead of staying on the Sort: view.
+    _set_marker_tab(-1)
 
 
 func _populate_name_markers() -> void:
     for child in _markers_content.get_children():
         child.queue_free()
 
-
-    var sort_row := HBoxContainer.new()
-    sort_row.add_theme_constant_override("separation", 4)
-    sort_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    # Sort: sub-tab buttons live in SortSubTabBar, a sibling of the scroll
+    # container — NOT inside _markers_content — so they stay pinned in view
+    # regardless of scroll position. Rebuilt here (rather than once in
+    # _ready) since _sort_matches() calls this function directly on every
+    # button press, same as the dispatcher path does.
+    for child in _sort_sub_tab_bar.get_children():
+        child.queue_free()
+    _sort_sub_tab_bar.visible = true
+    _sort_sub_tab_bar.add_theme_constant_override("separation", 6)
     var sort_labels: Array = ["Name", "Sequence", "Color", "Pitch"]
     for i in sort_labels.size():
         var btn := Button.new()
         btn.text = "Sort: %s" % sort_labels[i]
-        btn.add_theme_font_size_override("font_size", 12)
+        btn.add_theme_font_size_override("font_size", 16)
+        btn.custom_minimum_size = Vector2(0, 40)
+        btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         btn.focus_mode = Control.FOCUS_NONE
         var mode := i
         btn.pressed.connect(func(): _sort_matches(mode))
-        sort_row.add_child(btn)
-    _markers_content.add_child(sort_row)
-    _markers_content.add_child(HSeparator.new())
+        _sort_sub_tab_bar.add_child(btn)
 
     match _matches_sort_mode:
         0, -1:
@@ -985,6 +1380,19 @@ func _on_adjacency_x(edge_key: String, btn_check: Button, btn_x: Button) -> void
 # FLOATING STAR WIDGETS
 # ==================================================
 func _build_star_widgets() -> void:
+    # Always deferred: this tears down and rebuilds every star widget,
+    # including whichever one's own LineEdit/Button signal may currently be
+    # mid-dispatch on the call stack that triggered this (e.g. a range
+    # field's focus_exited firing as part of the very rebuild it causes).
+    # Mutating a node's ancestor tree synchronously from inside its own
+    # signal handler is a hard Godot error ("Parent node is busy setting up
+    # children") — deferring by one frame, imperceptible for a UI rebuild,
+    # removes the race entirely rather than requiring every call site to
+    # remember to defer it themselves.
+    call_deferred("_build_star_widgets_impl")
+
+
+func _build_star_widgets_impl() -> void:
     # Tear down any previous widgets.
     for w in _star_widgets:
         if is_instance_valid(w):
@@ -1011,38 +1419,50 @@ func _build_star_widgets() -> void:
         range_row.mouse_filter = Control.MOUSE_FILTER_PASS
         range_row.add_theme_constant_override("separation", 3)
 
-        var lbl_gt := Label.new()
-        lbl_gt.text = ">"
-        lbl_gt.add_theme_font_size_override("font_size", 15)
-        lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
-        lbl_gt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-        range_row.add_child(lbl_gt)
+        var existing_record: int = _get_or_create_match_record_for_star_idx(i)
+        var star_bounds: Array = _effective_seq_bounds(existing_record)
 
         var edit_lo := LineEdit.new()
-        edit_lo.custom_minimum_size = Vector2(38, 28)
+        edit_lo.custom_minimum_size = Vector2(26, 28)
         edit_lo.max_length = 2
         edit_lo.placeholder_text = "\u2013"
-        var existing_record: int = _find_match_record_by_star_idx(i)
-        var display_lo: int = int(_match_records[existing_record]["seq_lo"]) if existing_record >= 0 else 0
+        var display_lo: int = int(star_bounds[0])
         edit_lo.text = str(display_lo) if display_lo > 0 else ""
-        edit_lo.add_theme_font_size_override("font_size", 15)
+        edit_lo.add_theme_font_size_override("font_size", 13)
         _style_range_edit(edit_lo, star_color)
         range_row.add_child(edit_lo)
 
         var lbl_lt := Label.new()
         lbl_lt.text = "<"
-        lbl_lt.add_theme_font_size_override("font_size", 15)
+        lbl_lt.add_theme_font_size_override("font_size", 14)
         lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
         lbl_lt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         range_row.add_child(lbl_lt)
 
+        var edit_mid := LineEdit.new()
+        edit_mid.custom_minimum_size = Vector2(62, 28)
+        edit_mid.max_length = 12
+        edit_mid.placeholder_text = "\u2013"
+        edit_mid.text = _compressed_possible_positions_str(existing_record)
+        edit_mid.add_theme_font_size_override("font_size", 11)
+        edit_mid.alignment = HORIZONTAL_ALIGNMENT_CENTER
+        _style_range_edit(edit_mid, star_color)
+        range_row.add_child(edit_mid)
+
+        var lbl_gt := Label.new()
+        lbl_gt.text = "<"
+        lbl_gt.add_theme_font_size_override("font_size", 14)
+        lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+        lbl_gt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+        range_row.add_child(lbl_gt)
+
         var edit_hi := LineEdit.new()
-        edit_hi.custom_minimum_size = Vector2(38, 28)
+        edit_hi.custom_minimum_size = Vector2(26, 28)
         edit_hi.max_length = 2
         edit_hi.placeholder_text = "\u2013"
-        var display_hi: int = int(_match_records[existing_record]["seq_hi"]) if existing_record >= 0 else 0
+        var display_hi: int = int(star_bounds[1])
         edit_hi.text = str(display_hi) if display_hi > 0 else ""
-        edit_hi.add_theme_font_size_override("font_size", 15)
+        edit_hi.add_theme_font_size_override("font_size", 13)
         _style_range_edit(edit_hi, star_color)
         range_row.add_child(edit_hi)
 
@@ -1051,11 +1471,14 @@ func _build_star_widgets() -> void:
         # Capture index for lambdas.
         var si := i
         var lo_ref := edit_lo
+        var mid_ref := edit_mid
         var hi_ref := edit_hi
         edit_lo.text_submitted.connect(func(_t): _on_widget_range_committed(si, lo_ref, hi_ref))
         edit_lo.focus_exited.connect(func(): _on_widget_range_committed(si, lo_ref, hi_ref))
         edit_hi.text_submitted.connect(func(_t): _on_widget_range_committed(si, lo_ref, hi_ref))
         edit_hi.focus_exited.connect(func(): _on_widget_range_committed(si, lo_ref, hi_ref))
+        edit_mid.text_submitted.connect(func(_t): _on_widget_middle_committed(si, lo_ref, mid_ref, hi_ref))
+        edit_mid.focus_exited.connect(func(): _on_widget_middle_committed(si, lo_ref, mid_ref, hi_ref))
 
         # ── Name checklist ─────────────────────────────────────────
         # List every star name — color is one of the facts to deduce,
@@ -1159,6 +1582,19 @@ func _confirmed_sequence_str(star_idx: int) -> String:
     return "?"
 
 
+func _confirmed_pitch_str_for_star(star_idx: int) -> String:
+    if star_idx < 0:
+        return "?"
+    var idx: int = _find_match_record_by_star_idx(star_idx)
+    if idx < 0:
+        return "?"
+    var pitch_states: Dictionary = _match_records[idx].get("pitch_states", {})
+    for note in pitch_states:
+        if int(pitch_states[note]) == 1:
+            return str(note)
+    return "?"
+
+
 func _ordinal(n: int) -> String:
     var mod100: int = n % 100
     if mod100 >= 11 and mod100 <= 13:
@@ -1205,10 +1641,10 @@ func _style_color_toggle_btn(btn: Button, color_idx: int, state: int) -> void:
             btn.modulate = Color(base_col.r, base_col.g, base_col.b, 1.0)
             btn.text = letter + "\u2713"
         2:  # eliminated
-            btn.modulate = Color(base_col.r, base_col.g, base_col.b, 0.3)
+            btn.modulate = Color(base_col.r, base_col.g, base_col.b, 1.0)
             btn.text = letter + "\u2717"
         _:  # neutral
-            btn.modulate = Color(base_col.r, base_col.g, base_col.b, 0.6)
+            btn.modulate = Color(base_col.r, base_col.g, base_col.b, 1.0)
             btn.text = letter
 
 
@@ -1246,6 +1682,10 @@ func _reposition_star_widgets() -> void:
 
 
 func _build_star_tags() -> void:
+    call_deferred("_build_star_tags_impl")
+
+
+func _build_star_tags_impl() -> void:
     for t in _star_tags:
         if is_instance_valid(t):
             t.queue_free()
@@ -1277,6 +1717,7 @@ func _build_star_tags() -> void:
         if name_str == "":
             name_str = "?"
         var seq_str: String = _confirmed_sequence_str(i)
+        var pitch_str: String = _confirmed_pitch_str_for_star(i)
 
         var name_lbl := Label.new()
         name_lbl.name = "NameLabel"
@@ -1292,10 +1733,19 @@ func _build_star_tags() -> void:
         seq_lbl.add_theme_color_override("font_color", Color(star_color.r, star_color.g, star_color.b, 0.75))
         seq_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
+        var pitch_lbl := Label.new()
+        pitch_lbl.name = "PitchLabel"
+        pitch_lbl.text = pitch_str
+        pitch_lbl.add_theme_font_size_override("font_size", 11)
+        pitch_lbl.add_theme_color_override("font_color", Color(star_color.r, star_color.g, star_color.b, 0.75))
+        pitch_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
         vbox.add_child(name_lbl.duplicate())
         vbox.add_child(seq_lbl.duplicate())
+        vbox.add_child(pitch_lbl.duplicate())
         hbox.add_child(name_lbl)
         hbox.add_child(seq_lbl)
+        hbox.add_child(pitch_lbl)
 
     _reposition_star_tags()
 
@@ -1391,12 +1841,12 @@ func _on_name_check(star_idx: int, star_name: String,
 
     if new_state == 1:
         var record_idx: int = _get_or_create_match_record_for_name(star_name)
-        _confirm_match_record_identity(record_idx, star_idx, star_name)
+        record_idx = _confirm_match_record_identity(record_idx, star_idx, star_name)
         _propagate_name_confirmed(star_idx, star_name)
         _save_puzzle_notes()
         _build_star_widgets()
         _build_star_tags()
-        if _active_marker_tab == 2 or _active_marker_tab == 3:
+        if _active_marker_tab < 0 or _active_marker_tab == 2:
             _populate_markers_panel()
         return
 
@@ -1407,7 +1857,7 @@ func _on_name_check(star_idx: int, star_name: String,
     _apply_name_row_visual(new_state, name_lbl, btn_check, btn_x, star_color)
     _save_puzzle_notes()
     _build_star_tags()
-    if _active_marker_tab == 2 or _active_marker_tab == 3:
+    if _active_marker_tab < 0 or _active_marker_tab == 2:
         _populate_markers_panel()
 
 
@@ -1427,7 +1877,7 @@ func _on_name_x(star_idx: int, star_name: String,
 
     _save_puzzle_notes()
     _build_star_tags()
-    if _active_marker_tab == 2:
+    if _active_marker_tab < 0:
         _populate_markers_panel()
 
 
@@ -1511,16 +1961,39 @@ func _slot_letter(idx: int) -> String:
     return char(65 + idx) if idx < 26 else str(idx + 1)
 
 
+
+
+func _known_color_for_record(record_idx: int) -> int:
+    var r: Dictionary = _match_records[record_idx]
+    var star_idx: int = int(r.get("star_idx", -1))
+    if star_idx >= 0:
+        return _star_colors[star_idx] if star_idx < _star_colors.size() else -1
+    var cs: Dictionary = r.get("color_states", {})
+    for ci in COLOR_NAME_LABELS.size():
+        if int(cs.get(ci, 0)) == 1:
+            return ci
+    return -1
+
+
 func _get_or_create_match_record_for_color_slot(color_idx: int, position_in_group: int) -> int:
     var label: String = "%s %s" % [COLOR_NAME_LABELS[color_idx], _slot_letter(position_in_group)]
     for i in _match_records.size():
         if str(_match_records[i].get("color_slot_label", "")) == label:
             return i
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        if str(r.get("color_slot_label", "")) != "":
+            continue
+        if int(r.get("color_states", {}).get(color_idx, 0)) == 1:
+            r["color_slot_label"] = label
+            return i
     _match_records.append({
         "name": "",
         "seq_lo": 0, "seq_hi": 0,
+        "seq_candidates": [],
         "color_states": {},
         "pitch_states": {},
+        "pitch_revealed": false,
         "star_elim": {},
         "pitch_carousel_idx": 0,
         "star_idx": -1,
@@ -1536,11 +2009,21 @@ func _get_or_create_match_record_for_pitch_slot(pitch_freq: float, position_in_g
     for i in _match_records.size():
         if str(_match_records[i].get("pitch_slot_label", "")) == label:
             return i
+    var note_name: String = pitch_name
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        if str(r.get("pitch_slot_label", "")) != "":
+            continue
+        if int(r.get("pitch_states", {}).get(note_name, 0)) == 1:
+            r["pitch_slot_label"] = label
+            return i
     _match_records.append({
         "name": "",
         "seq_lo": 0, "seq_hi": 0,
+        "seq_candidates": [],
         "color_states": {},
         "pitch_states": {},
+        "pitch_revealed": false,
         "star_elim": {},
         "pitch_carousel_idx": 0,
         "star_idx": -1,
@@ -1557,8 +2040,10 @@ func _get_or_create_match_record_for_name(name_str: String) -> int:
     _match_records.append({
         "name": name_str,
         "seq_lo": 0, "seq_hi": 0,
+        "seq_candidates": [],
         "color_states": {},
         "pitch_states": {},
+        "pitch_revealed": false,
         "star_elim": {},
         "pitch_carousel_idx": 0,
         "star_idx": -1,
@@ -1575,8 +2060,10 @@ func _get_or_create_match_record_for_seq(slot: int) -> int:
     _match_records.append({
         "name": "",
         "seq_lo": slot, "seq_hi": slot,
+        "seq_candidates": [],
         "color_states": {},
         "pitch_states": {},
+        "pitch_revealed": false,
         "star_elim": {},
         "pitch_carousel_idx": 0,
         "star_idx": -1,
@@ -1593,8 +2080,10 @@ func _get_or_create_match_record_for_star_idx(star_idx: int) -> int:
     _match_records.append({
         "name": "",
         "seq_lo": 0, "seq_hi": 0,
+        "seq_candidates": [],
         "color_states": {},
         "pitch_states": {},
+        "pitch_revealed": false,
         "star_elim": {},
         "pitch_carousel_idx": 0,
         "star_idx": star_idx,
@@ -1638,6 +2127,17 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
     elif int(target["seq_lo"]) > 0 and int(source["seq_lo"]) > 0 and int(target["seq_lo"]) != int(source["seq_lo"]):
         push_warning("StudyOverlay: merge conflict, seq %d vs %d" % [int(target["seq_lo"]), int(source["seq_lo"])])
 
+    var target_cand: Array = target.get("seq_candidates", [])
+    var source_cand: Array = source.get("seq_candidates", [])
+    if target_cand.is_empty() and not source_cand.is_empty():
+        target["seq_candidates"] = source_cand.duplicate()
+    elif not target_cand.is_empty() and not source_cand.is_empty():
+        var merged_cand: Array = []
+        for v in target_cand:
+            if source_cand.has(v):
+                merged_cand.append(v)
+        target["seq_candidates"] = merged_cand
+
     for ck in source["color_states"]:
         var sv: int = int(source["color_states"][ck])
         var tv: int = int(target["color_states"].get(ck, 0))
@@ -1646,13 +2146,31 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
         elif sv == 2 or tv == 2:
             target["color_states"][ck] = 2
 
+    var target_confirmed_note: String = ""
+    for pk0 in target["pitch_states"]:
+        if int(target["pitch_states"][pk0]) == 1:
+            target_confirmed_note = str(pk0)
+            break
+    var source_confirmed_note: String = ""
+    for pk1 in source["pitch_states"]:
+        if int(source["pitch_states"][pk1]) == 1:
+            source_confirmed_note = str(pk1)
+            break
+    if target_confirmed_note != "" and source_confirmed_note != "" and target_confirmed_note != source_confirmed_note:
+        push_warning("StudyOverlay: merge conflict, confirmed pitches '%s' vs '%s' — keeping '%s'" % [target_confirmed_note, source_confirmed_note, target_confirmed_note])
+
     for pk in source["pitch_states"]:
         var sv2: int = int(source["pitch_states"][pk])
         var tv2: int = int(target["pitch_states"].get(pk, 0))
+        if pk == source_confirmed_note and target_confirmed_note != "" and pk != target_confirmed_note:
+            continue
         if sv2 == 1 or tv2 == 1:
             target["pitch_states"][pk] = 1
         elif sv2 == 2 or tv2 == 2:
             target["pitch_states"][pk] = 2
+
+    if bool(source.get("pitch_revealed", false)):
+        target["pitch_revealed"] = true
 
     var target_elim: Dictionary = target.get("star_elim", {})
     var source_elim: Dictionary = source.get("star_elim", {})
@@ -1683,7 +2201,9 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
         push_warning("StudyOverlay: merge conflict, pitch slot labels '%s' vs '%s'" % [target_pitch_label, source_pitch_label])
 
     _match_records.remove_at(source_idx)
-    return _find_match_record_by_name(target["name"]) if target["name"] != "" else target_idx
+    if source_idx < target_idx:
+        target_idx -= 1
+    return target_idx
 
 
 func _confirm_match_record_identity(record_idx: int, star_idx: int, star_name: String) -> int:
@@ -1715,8 +2235,11 @@ func _save_match_records() -> Array:
         out.append({
             "name": r["name"],
             "seq_lo": r["seq_lo"], "seq_hi": r["seq_hi"],
+            "seq_candidates": (r.get("seq_candidates", []) as Array).duplicate(),
             "color_states": (r["color_states"] as Dictionary).duplicate(),
             "pitch_states": (r["pitch_states"] as Dictionary).duplicate(),
+            "pitch_revealed": bool(r.get("pitch_revealed", false)),
+            "star_elim": (r.get("star_elim", {}) as Dictionary).duplicate(),
             "star_idx": r["star_idx"],
             "color_slot_label": str(r.get("color_slot_label", "")),
             "pitch_slot_label": str(r.get("pitch_slot_label", "")),
@@ -1734,11 +2257,20 @@ func _load_match_records(data: Array) -> void:
         var pitch_states: Dictionary = {}
         for pk in e.get("pitch_states", {}):
             pitch_states[str(pk)] = int(e["pitch_states"][pk])
+        var star_elim: Dictionary = {}
+        for sk in e.get("star_elim", {}):
+            star_elim[int(sk)] = int(e["star_elim"][sk])
+        var seq_candidates: Array = []
+        for v in e.get("seq_candidates", []):
+            seq_candidates.append(int(v))
         _match_records.append({
             "name": str(e.get("name", "")),
             "seq_lo": int(e.get("seq_lo", 0)), "seq_hi": int(e.get("seq_hi", 0)),
+            "seq_candidates": seq_candidates,
             "color_states": color_states,
             "pitch_states": pitch_states,
+            "pitch_revealed": bool(e.get("pitch_revealed", false)),
+            "star_elim": star_elim,
             "pitch_carousel_idx": 0,
             "star_idx": int(e.get("star_idx", -1)),
             "color_slot_label": str(e.get("color_slot_label", "")),
@@ -1759,12 +2291,14 @@ func _display_color_for_record(record_idx: int) -> Color:
 func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 3)
-    for ci in COLOR_NAME_LABELS.size():
+    # Alphabetical order: Blue(0), Red(3), White(1), Yellow(2)
+    var btn_order: Array = [0, 3, 1, 2]
+    for ci in btn_order:
         var btn := Button.new()
         btn.custom_minimum_size = Vector2(26, 24)
         btn.focus_mode = Control.FOCUS_NONE
         btn.add_theme_font_size_override("font_size", 13)
-        var cidx := ci
+        var cidx: int = int(ci)
         var ridx := record_idx
         btn.pressed.connect(func(): _on_record_color_toggle(ridx, cidx, btn))
         var cur_state: int = int(_match_records[record_idx]["color_states"].get(ci, 0))
@@ -1795,15 +2329,9 @@ func _on_record_color_toggle(record_idx: int, color_idx: int, btn: Button) -> vo
 
     if new_state == 1:
         _propagate_color_confirmed_same_record(record_idx, color_idx)
-        var seq_lo: int = int(r["seq_lo"])
-        var seq_hi: int = int(r["seq_hi"])
-        if seq_lo > 0 and seq_lo == seq_hi:
-            _propagate_position_taken(record_idx, seq_lo)
 
     _save_puzzle_notes()
-    _build_star_widgets()
-    _build_star_tags()
-    call_deferred("_populate_markers_panel")
+    _full_propagation_refresh()
 
 
 func _make_pitch_carousel_row_for_record(record_idx: int) -> HBoxContainer:
@@ -1844,6 +2372,14 @@ func _make_pitch_carousel_row_for_record(record_idx: int) -> HBoxContainer:
 
     var refresh_carousel := func():
         var r: Dictionary = _match_records[ridx]
+        var confirmed_note: String = ""
+        for n in notes_list:
+            if int(r["pitch_states"].get(n, 0)) == 1:
+                confirmed_note = n
+                break
+        if confirmed_note != "":
+            r["pitch_carousel_idx"] = notes_list.find(confirmed_note)
+
         var i: int = int(r["pitch_carousel_idx"]) % notes_list.size()
         var note: String = notes_list[i]
         var state: int = int(r["pitch_states"].get(note, 0))
@@ -1871,6 +2407,8 @@ func _make_pitch_carousel_row_for_record(record_idx: int) -> HBoxContainer:
         refresh_carousel.call())
     btn_mark.pressed.connect(func():
         var r: Dictionary = _match_records[ridx]
+        if bool(r.get("pitch_revealed", false)):
+            return
         var i: int = int(r["pitch_carousel_idx"]) % notes_list.size()
         var note: String = notes_list[i]
         var cur: int = int(r["pitch_states"].get(note, 0))
@@ -1882,40 +2420,80 @@ func _make_pitch_carousel_row_for_record(record_idx: int) -> HBoxContainer:
     return row
 
 
+func _compressed_possible_positions_str(record_idx: int) -> String:
+    var candidates: Array = _effective_seq_candidates(record_idx)
+    if candidates.is_empty():
+        return ""
+    if candidates.size() == _star_count:
+        return ""
+    candidates.sort()
+    if candidates.size() == 1:
+        return str(candidates[0])
+
+    var segments: Array = []
+    var seg_start: int = candidates[0]
+    var prev: int = candidates[0]
+    for idx in range(1, candidates.size()):
+        var c: int = candidates[idx]
+        if c == prev + 1:
+            prev = c
+        else:
+            segments.append([seg_start, prev])
+            seg_start = c
+            prev = c
+    segments.append([seg_start, prev])
+
+    var parts: Array = []
+    for seg in segments:
+        parts.append(str(seg[0]) if seg[0] == seg[1] else "%d-%d" % [seg[0], seg[1]])
+    return ",".join(parts)
+
+
 func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> HBoxContainer:
     var row := HBoxContainer.new()
-    row.add_theme_constant_override("separation", 3)
+    row.add_theme_constant_override("separation", 2)
 
-    var lbl_gt := Label.new()
-    lbl_gt.text = ">"
-    lbl_gt.add_theme_font_size_override("font_size", 14)
-    lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
-    row.add_child(lbl_gt)
+    var bounds: Array = _effective_seq_bounds(record_idx)
 
     var edit_lo := LineEdit.new()
-    edit_lo.custom_minimum_size = Vector2(34, 24)
+    edit_lo.custom_minimum_size = Vector2(24, 24)
     edit_lo.max_length = 2
     edit_lo.placeholder_text = "\u2013"
-    var r: Dictionary = _match_records[record_idx]
-    var lo_val: int = int(r["seq_lo"])
+    var lo_val: int = int(bounds[0])
     edit_lo.text = str(lo_val) if lo_val > 0 else ""
-    edit_lo.add_theme_font_size_override("font_size", 13)
+    edit_lo.add_theme_font_size_override("font_size", 12)
     _style_range_edit(edit_lo, row_color)
     row.add_child(edit_lo)
 
     var lbl_lt := Label.new()
     lbl_lt.text = "<"
-    lbl_lt.add_theme_font_size_override("font_size", 14)
+    lbl_lt.add_theme_font_size_override("font_size", 13)
     lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
     row.add_child(lbl_lt)
 
+    var edit_mid := LineEdit.new()
+    edit_mid.custom_minimum_size = Vector2(58, 24)
+    edit_mid.max_length = 12
+    edit_mid.placeholder_text = "\u2013"
+    edit_mid.text = _compressed_possible_positions_str(record_idx)
+    edit_mid.add_theme_font_size_override("font_size", 11)
+    edit_mid.alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _style_range_edit(edit_mid, row_color)
+    row.add_child(edit_mid)
+
+    var lbl_gt := Label.new()
+    lbl_gt.text = "<"
+    lbl_gt.add_theme_font_size_override("font_size", 13)
+    lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+    row.add_child(lbl_gt)
+
     var edit_hi := LineEdit.new()
-    edit_hi.custom_minimum_size = Vector2(34, 24)
+    edit_hi.custom_minimum_size = Vector2(24, 24)
     edit_hi.max_length = 2
     edit_hi.placeholder_text = "\u2013"
-    var hi_val: int = int(r["seq_hi"])
+    var hi_val: int = int(bounds[1])
     edit_hi.text = str(hi_val) if hi_val > 0 else ""
-    edit_hi.add_theme_font_size_override("font_size", 13)
+    edit_hi.add_theme_font_size_override("font_size", 12)
     _style_range_edit(edit_hi, row_color)
     row.add_child(edit_hi)
 
@@ -1924,6 +2502,8 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     edit_lo.focus_exited.connect(func(): _on_record_range_committed(ridx, edit_lo, edit_hi))
     edit_hi.text_submitted.connect(func(_t): _on_record_range_committed(ridx, edit_lo, edit_hi))
     edit_hi.focus_exited.connect(func(): _on_record_range_committed(ridx, edit_lo, edit_hi))
+    edit_mid.text_submitted.connect(func(_t): _on_record_middle_committed(ridx, edit_lo, edit_mid, edit_hi))
+    edit_mid.focus_exited.connect(func(): _on_record_middle_committed(ridx, edit_lo, edit_mid, edit_hi))
 
     return row
 
@@ -1946,6 +2526,7 @@ func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: Lin
     var r: Dictionary = _match_records[record_idx]
     r["seq_lo"] = lo
     r["seq_hi"] = hi
+    r["seq_candidates"] = []
 
     lo_edit.text = str(lo) if lo > 0 else ""
     hi_edit.text = str(hi) if hi > 0 else ""
@@ -1956,9 +2537,37 @@ func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: Lin
             record_idx = _merge_match_records(record_idx, existing_idx)
 
     _save_puzzle_notes()
-    _build_star_widgets()
-    _build_star_tags()
-    call_deferred("_populate_markers_panel")
+    _full_propagation_refresh()
+
+
+func _on_record_middle_committed(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
+    var raw: String = mid_edit.text.strip_edges()
+    if raw == "":
+        _match_records[record_idx]["seq_candidates"] = []
+        mid_edit.text = _compressed_possible_positions_str(record_idx)
+        return
+
+    var parsed: Array = _parse_candidate_list(raw)
+    var valid: Array = []
+    for p in parsed:
+        if p >= 1 and p <= _star_count:
+            valid.append(p)
+
+    if valid.is_empty():
+        mid_edit.text = _compressed_possible_positions_str(record_idx)
+        return
+
+    if valid.size() == 1:
+        lo_edit.text = str(valid[0])
+        hi_edit.text = str(valid[0])
+        _on_record_range_committed(record_idx, lo_edit, hi_edit)
+        return
+
+    _match_records[record_idx]["seq_candidates"] = valid
+    _match_records[record_idx]["seq_lo"] = 0
+    _match_records[record_idx]["seq_hi"] = 0
+    _save_puzzle_notes()
+    _full_propagation_refresh()
 
 
 func _on_record_name_committed(record_idx: int, name_edit: LineEdit) -> void:
@@ -1966,10 +2575,20 @@ func _on_record_name_committed(record_idx: int, name_edit: LineEdit) -> void:
         return
     var entered: String = name_edit.text.strip_edges()
     if entered == "":
+        if str(_match_records[record_idx].get("name", "")) == "":
+            return
         _match_records[record_idx]["name"] = ""
         _save_puzzle_notes()
         _build_star_widgets()
         _build_star_tags()
+        return
+    if str(_match_records[record_idx].get("name", "")) == entered:
+        # Already committed — text_submitted and focus_exited both fire on
+        # Enter, so this is very likely the second call for the same action.
+        # The first call may have already merged and removed a record,
+        # shifting array indices; re-running against this now-stale
+        # record_idx risks silently corrupting whatever record slid into
+        # its old slot. Nothing changed, so there's nothing to do.
         return
     if not _star_names.has(entered):
         name_edit.text = str(_match_records[record_idx]["name"])
@@ -2011,17 +2630,42 @@ func _on_widget_range_committed(star_idx: int, lo_edit: LineEdit, hi_edit: LineE
     var record_idx: int = _get_or_create_match_record_for_star_idx(star_idx)
     _match_records[record_idx]["seq_lo"] = lo
     _match_records[record_idx]["seq_hi"] = hi
+    _match_records[record_idx]["seq_candidates"] = []
 
     if lo > 0 and lo == hi:
-        _propagate_range_exact(star_idx, lo)
         var existing_idx: int = _find_match_record_by_exact_seq(lo)
         if existing_idx >= 0 and existing_idx != record_idx:
             record_idx = _merge_match_records(record_idx, existing_idx)
 
     _save_puzzle_notes()
-    _build_star_tags()
-    if _active_marker_tab == 2:
-        call_deferred("_populate_markers_panel")
+    _full_propagation_refresh()
+
+
+func _on_widget_middle_committed(star_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
+    var record_idx: int = _get_or_create_match_record_for_star_idx(star_idx)
+    var raw: String = mid_edit.text.strip_edges()
+    if raw == "":
+        _match_records[record_idx]["seq_candidates"] = []
+        mid_edit.text = _compressed_possible_positions_str(record_idx)
+        return
+    var parsed: Array = _parse_candidate_list(raw)
+    var valid: Array = []
+    for p in parsed:
+        if p >= 1 and p <= _star_count:
+            valid.append(p)
+    if valid.is_empty():
+        mid_edit.text = _compressed_possible_positions_str(record_idx)
+        return
+    if valid.size() == 1:
+        lo_edit.text = str(valid[0])
+        hi_edit.text = str(valid[0])
+        _on_widget_range_committed(star_idx, lo_edit, hi_edit)
+        return
+    _match_records[record_idx]["seq_candidates"] = valid
+    _match_records[record_idx]["seq_lo"] = 0
+    _match_records[record_idx]["seq_hi"] = 0
+    _save_puzzle_notes()
+    _full_propagation_refresh()
 
 
 func _effective_color_state(record_idx: int, color_idx: int) -> int:
@@ -2068,79 +2712,105 @@ func _records_provably_distinct(idx_a: int, idx_b: int) -> bool:
     return false
 
 
-func _propagate_position_taken(source_record_idx: int, exact_pos: int) -> void:
-    # Exactly one star occupies any given sequence position — but that only
-    # licenses excluding this position from records PROVABLY a different
-    # star. A record that could still turn out to be the same star (e.g.
-    # another Yellow slot, when position 15 is confirmed Yellow) must NOT
-    # lose this position as a candidate, or the player would be structurally
-    # blocked from ever recording the rest of that star's information.
-    print("[PROPTEST] _propagate_position_taken source=%d exact_pos=%d total_records=%d" % [source_record_idx, exact_pos, _match_records.size()])
-    for i in _match_records.size():
-        if i == source_record_idx:
+func _parse_candidate_list(raw: String) -> Array:
+    var result: Dictionary = {}
+    for chunk in raw.split(",", false):
+        var c: String = chunk.strip_edges()
+        if c == "":
             continue
-        var distinct: bool = _records_provably_distinct(source_record_idx, i)
-        var ri: Dictionary = _match_records[i]
-        print("[PROPTEST] record %d: name='%s' star_idx=%d color_slot_label='%s' seq_lo=%d seq_hi=%d color_states=%s -> distinct=%s" % [
-            i, str(ri.get("name","")), int(ri.get("star_idx",-1)), str(ri.get("color_slot_label","")),
-            int(ri.get("seq_lo",0)), int(ri.get("seq_hi",0)), str(ri.get("color_states",{})), str(distinct)])
-        if not distinct:
+        var dash: int = c.find("-")
+        if dash > 0:
+            var a_str: String = c.substr(0, dash).strip_edges()
+            var b_str: String = c.substr(dash + 1).strip_edges()
+            if a_str.is_valid_int() and b_str.is_valid_int():
+                var a: int = int(a_str)
+                var b: int = int(b_str)
+                if a > b:
+                    var tmp := a; a = b; b = tmp
+                for p in range(a, b + 1):
+                    result[p] = true
+        elif c.is_valid_int():
+            result[int(c)] = true
+    var out: Array = result.keys()
+    out.sort()
+    return out
+
+
+func _effective_seq_candidates(record_idx: int) -> Array:
+    var r: Dictionary = _match_records[record_idx]
+    var explicit: Array = r.get("seq_candidates", [])
+    var base: Array = []
+    if not explicit.is_empty():
+        base = explicit.duplicate()
+    else:
+        var lo: int = int(r.get("seq_lo", 0))
+        var hi: int = int(r.get("seq_hi", 0))
+        if lo <= 0:
+            lo = 1
+        if hi <= 0:
+            hi = _star_count
+        for p in range(lo, hi + 1):
+            base.append(p)
+
+    var excluded: Array = _compute_excluded_positions_for(record_idx)
+    var result: Array = []
+    for p in base:
+        if not excluded.has(p):
+            result.append(p)
+    return result
+
+
+func _compute_excluded_positions_for(record_idx: int) -> Array:
+    # Scans the CURRENT full set of records live, every call. Nothing is
+    # stored or pushed, so a record created AFTER some other record's
+    # position was confirmed still sees the exclusion correctly — proven
+    # necessary by the Sort:Color test: color-slot records created after
+    # the Blue/15 confirmation never received a one-time push, because a
+    # push cannot reach something that doesn't exist yet.
+    var excluded: Array = []
+    for i in _match_records.size():
+        if i == record_idx:
             continue
         var r: Dictionary = _match_records[i]
-        var jlo: int = int(r["seq_lo"])
-        var jhi: int = int(r["seq_hi"])
-        if jlo == exact_pos and jhi == exact_pos:
-            # Exact contradiction — clear.
-            r["seq_lo"] = 0
-            r["seq_hi"] = 0
-        elif jlo == exact_pos:
-            r["seq_lo"] = exact_pos + 1 if exact_pos + 1 <= _star_count else 0
-        elif jhi == exact_pos:
-            r["seq_hi"] = exact_pos - 1 if exact_pos - 1 >= 1 else 0
-        elif jlo == 0 and jhi == 0:
-            # No range asserted at all yet. A boundary position (first or
-            # last slot in the whole sequence) can still be excluded as a
-            # simple interval; a middle position CANNOT be represented by a
-            # single [lo, hi] pair against a fully open range, and is
-            # intentionally left alone here rather than silently ignored —
-            # that would need an actual excluded-positions list, which the
-            # current record schema doesn't have.
-            if exact_pos == _star_count:
-                r["seq_hi"] = _star_count - 1
-            elif exact_pos == 1:
-                r["seq_lo"] = 2
+        var lo: int = int(r.get("seq_lo", 0))
+        var hi: int = int(r.get("seq_hi", 0))
+        if lo > 0 and lo == hi and _records_provably_distinct(record_idx, i):
+            excluded.append(lo)
+    return excluded
 
+
+func _effective_seq_bounds(record_idx: int) -> Array:
+    var r: Dictionary = _match_records[record_idx]
+    var stored_lo: int = int(r.get("seq_lo", 0))
+    var stored_hi: int = int(r.get("seq_hi", 0))
+    if stored_lo > 0 and stored_lo == stored_hi and (r.get("seq_candidates", []) as Array).is_empty():
+        return [stored_lo, stored_hi, []]
+
+    var candidates: Array = _effective_seq_candidates(record_idx)
+    if candidates.is_empty():
+        return [0, 0, []]
+
+    candidates.sort()
+    var eff_lo: int = candidates[0]
+    var eff_hi: int = candidates[candidates.size() - 1]
+
+    var mid_excluded: Array = []
+    for p in range(eff_lo, eff_hi + 1):
+        if not candidates.has(p):
+            mid_excluded.append(p)
+
+    var display_lo: int = eff_lo if (stored_lo > 0 or eff_lo > 1) else 0
+    var display_hi: int = eff_hi if (stored_hi > 0 or eff_hi < _star_count) else 0
+    return [display_lo, display_hi, mid_excluded]
+
+
+func _full_propagation_refresh() -> void:
     _build_star_widgets()
     _build_star_tags()
+    _melody_staff_panel.queue_redraw()
     call_deferred("_populate_markers_panel")
 
 
-func _propagate_range_exact(confirmed_star: int, exact_pos: int) -> void:
-    # If another star has a range that is exactly this position, clear it
-    # (contradiction). If their lo or hi equals this position, clamp them away.
-    for j in _star_count:
-        if j == confirmed_star:
-            continue
-        var rec_idx: int = _get_or_create_match_record_for_star_idx(j)
-        var r: Dictionary = _match_records[rec_idx]
-        var jlo: int = int(r["seq_lo"])
-        var jhi: int = int(r["seq_hi"])
-        if jlo == exact_pos and jhi == exact_pos:
-            # Exact contradiction — clear.
-            r["seq_lo"] = 0
-            r["seq_hi"] = 0
-        elif jlo == exact_pos:
-            r["seq_lo"] = exact_pos + 1 if exact_pos + 1 <= _star_count else 0
-        elif jhi == exact_pos:
-            r["seq_hi"] = exact_pos - 1 if exact_pos - 1 >= 1 else 0
-        # Rebuild that star's LineEdit displays.
-        if j < _star_widgets.size() and is_instance_valid(_star_widgets[j]):
-            var range_row: HBoxContainer = _star_widgets[j].get_child(0)
-            if range_row and range_row.get_child_count() >= 4:
-                var lo_edit: LineEdit = range_row.get_child(1)
-                var hi_edit: LineEdit = range_row.get_child(3)
-                lo_edit.text = str(r["seq_lo"]) if int(r["seq_lo"]) > 0 else ""
-                hi_edit.text = str(r["seq_hi"]) if int(r["seq_hi"]) > 0 else ""
 
 
 
@@ -2199,8 +2869,8 @@ func _make_fact_row(label_text: String, control: Control, color: Color) -> HBoxC
     row.add_theme_constant_override("separation", 4)
     var lbl := Label.new()
     lbl.text = label_text
-    lbl.add_theme_font_size_override("font_size", 13)
-    lbl.add_theme_color_override("font_color", Color(color.r, color.g, color.b, 0.75))
+    lbl.add_theme_font_size_override("font_size", 16)
+    lbl.add_theme_color_override("font_color", Color(color.r, color.g, color.b, 1.0))
     row.add_child(lbl)
     row.add_child(control)
     return row
@@ -2353,9 +3023,12 @@ func _populate_color_group_rows() -> void:
             _build_color_group_row(ci, pos)
 
 
+
+
 func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
     var record_idx: int = _get_or_create_match_record_for_pitch_slot(pitch_freq, position_in_group)
     var row_color: Color = _display_color_for_record(record_idx)
+    var known_star_color: int = _known_color_for_record(record_idx)
 
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 8)
@@ -2366,8 +3039,15 @@ func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
     pitch_lbl.text = ConstellationLogicPuzzle.note_name_for_freq(pitch_freq)
     pitch_lbl.custom_minimum_size = Vector2(64, 0)
     pitch_lbl.add_theme_font_size_override("font_size", 16)
-    pitch_lbl.add_theme_color_override("font_color", row_color)
+    pitch_lbl.add_theme_color_override("font_color",
+        STAR_COLORS_BY_IDX[known_star_color] if known_star_color >= 0 else row_color)
     row.add_child(pitch_lbl)
+    if known_star_color >= 0:
+        var swatch := ColorRect.new()
+        swatch.color = STAR_COLORS_BY_IDX[known_star_color]
+        swatch.custom_minimum_size = Vector2(10, 10)
+        swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        row.add_child(swatch)
 
     var name_edit := LineEdit.new()
     name_edit.custom_minimum_size = Vector2(100, 0)

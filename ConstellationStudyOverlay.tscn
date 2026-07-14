@@ -92,7 +92,11 @@ vertical_alignment = 1
 
 [node name="TuningForkButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=2140373983]
 layout_mode = 2
-text = " ♪ "
+text = "     ♪     "
+
+[node name="PitchListenButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=1256225004]
+layout_mode = 2
+text = "     👂     "
 
 [node name="CloseButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=1515545597]
 custom_minimum_size = Vector2(32, 32)
@@ -127,10 +131,18 @@ layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="StarMapControl" type="Control" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox" unique_id=658721923]
+[node name="StarMapColumn" type="VBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox" unique_id=452520221]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="StarMapControl" type="Control" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/StarMapColumn" unique_id=658721923]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+
+[node name="MelodyStaffPanel" type="Control" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/StarMapColumn" unique_id=1749684993]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
 
 [node name="MarkersVBox" type="VBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox" unique_id=1716107462]
 custom_minimum_size = Vector2(340, 0)
@@ -193,6 +205,9 @@ text = "MATCHES"
 custom_minimum_size = Vector2(0, 1)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_header_sep")
+
+[node name="SortSubTabBar" type="HBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=1278433470]
+layout_mode = 2
 
 [node name="MarkersScrollContainer" type="ScrollContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=1779052422]
 layout_mode = 2
