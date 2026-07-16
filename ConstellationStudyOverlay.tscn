@@ -194,13 +194,6 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 16
 text = "Adjacency"
 
-[node name="MatchesTab" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=1396505685]
-layout_mode = 2
-size_flags_horizontal = 3
-focus_mode = 0
-theme_override_font_sizes/font_size = 16
-text = "MATCHES"
-
 [node name="MarkerTabSep" type="Panel" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=1186065417]
 custom_minimum_size = Vector2(0, 1)
 layout_mode = 2

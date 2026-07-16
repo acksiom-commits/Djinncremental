@@ -923,15 +923,17 @@ func _on_puzzle_generation_complete(constellation_id: int,
         study.show_for_constellation(constellation_id)
 
 
-func _dev_recompute_archon_puzzle() -> void:
+func _dev_recompute_puzzle(constellation_id: int) -> void:
     var cd = get_node_or_null("/root/ConstellationData")
     if not cd or not game_context:
         return
-    cd.clear_puzzle_cache(0)
-    game_context.assignments.erase("constellation_0_solve_count")
-    game_context.assignments.erase("constellation_0_high_water")
+    cd.clear_puzzle_cache(constellation_id)
+    var solve_key: String = "constellation_%d_solve_count" % constellation_id
+    var hw_key: String = "constellation_%d_high_water" % constellation_id
+    game_context.assignments.erase(solve_key)
+    game_context.assignments.erase(hw_key)
 
-    var def: Dictionary = cd.get_constellation_def(0)
+    var def: Dictionary = cd.get_constellation_def(constellation_id)
     if def.is_empty():
         return
     var star_count: int = def.get("star_count", 0)
@@ -942,20 +944,20 @@ func _dev_recompute_archon_puzzle() -> void:
         push_warning("RootUI: ConstellationOverlay not found for puzzle recompute.")
         return
     var line_pairs: Array = def.get("line_pairs", [])
-    var correct_star_sequence: Array = overlay.get_correct_star_sequence(0)
+    var correct_star_sequence: Array = overlay.get_correct_star_sequence(constellation_id)
     var name_theme: Dictionary = def.get("name_theme", {})
-    var star_pitch_index: Array = cd.get_note_assignment(0)
-    var pitch_freqs: Array = cd.get_note_freqs(0)
+    var star_pitch_index: Array = cd.get_note_assignment(constellation_id)
+    var pitch_freqs: Array = cd.get_note_freqs(constellation_id)
     var dev_seed: int = randi()
 
     var puzzle := ConstellationLogicPuzzle.new()
     puzzle.setup(star_count, line_pairs, correct_star_sequence,
-            dev_seed, 0, name_theme,
+            dev_seed, constellation_id, name_theme,
             star_pitch_index, pitch_freqs)
     puzzle.generation_complete.connect(
         func(cid: int):
             cd.set_puzzle_cache(cid, puzzle.to_cache_dict())
-            print("[DEV] Archon (constellation 0) puzzle recomputed, seed=%d" % dev_seed)
+            print("[DEV] Constellation %d puzzle recomputed, seed=%d" % [cid, dev_seed])
             var study := get_node_or_null("/root/Node2D/CanvasLayer/ConstellationStudyOverlay")
             if study and study.visible and study.has_method("show_for_constellation"):
                 study.show_for_constellation(cid))
@@ -1559,7 +1561,13 @@ func _input(event: InputEvent) -> void:
                         game_context.constellation_spark_totals["0"] = cd.get_spark_cap(0) * 0.15
                     cd.active_constellation_changed.emit(0, cd.active_per_octant[0])
         if event.keycode == KEY_U:
-            _dev_recompute_archon_puzzle()
+            var study_overlay := get_node_or_null("/root/Node2D/CanvasLayer/ConstellationStudyOverlay")
+            var target_id: int = 0
+            if study_overlay and study_overlay.has_method("get_current_constellation_id"):
+                var open_id: int = study_overlay.get_current_constellation_id()
+                if open_id >= 0:
+                    target_id = open_id
+            _dev_recompute_puzzle(target_id)
             get_viewport().set_input_as_handled()
         if event.keycode == KEY_G and production_manager:
             production_manager.dev_inject_ten_grains()

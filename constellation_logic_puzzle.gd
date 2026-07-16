@@ -55,6 +55,8 @@ const SEQ_WORD_EARLIER      := "earlier"
 const SEQ_WORD_LATER        := "later"
 const FRAME_BUDGET_MSEC     := 2       # max ms of work per frame during async gen
 const MAX_COLOR_PAIRS_PER_DIR := 3     # color-comparison pool cap per direction
+const DIFFICULTY_JITTER_MAGNITUDE := 3.0   # +/- range added to difficulty scores per generation,
+                                            # so clue-kind ORDER varies run-to-run, not just clue CONTENT.
 # ── Single-match clue rationing, per characteristic ──────────────────────
 # Each characteristic (sequence, adjacency, ...) gets its OWN independent
 # positive-single-match budget and negative-single-match budget, each
@@ -135,6 +137,7 @@ var _pitch_freq_rank: Array[int] = []   # pitch_index -> ascending-frequency ran
 var _final_pitch_clues: Array[Dictionary] = []
 
 var _rng := RandomNumberGenerator.new()
+var _difficulty_jitter_salt: int = 0
 
 
 # ==================================================
@@ -1023,23 +1026,24 @@ func _forward_check_pitch(var_idx: int, val: int, domains: Array,
 
 
 func _score_pitch_clue_difficulty(clue: Dictionary) -> float:
+    var base: float = 1.0
     match clue.get("kind", ""):
         "pitch_exact":
-            return 10.0
+            base = 10.0
         "pitch_extreme":
-            return 7.0
+            base = 7.0
         "pitch_neg":
-            return 6.0
+            base = 6.0
         "pitch_group_eq":
-            return 5.0 + (float(clue.get("stars", []).size()) * 0.5)
+            base = 5.0 + (float(clue.get("stars", []).size()) * 0.5)
         "pitch_group_cmp":
-            return 4.0 + (float(clue.get("targets", []).size()) * 0.8)
+            base = 4.0 + (float(clue.get("targets", []).size()) * 0.8)
         "pitch_cmp":
             var a2: int = clue.get("a", 0)
             var b2: int = clue.get("b", 0)
             var gap2: int = abs(_pitch_freq_rank[star_pitch_index[a2]] - _pitch_freq_rank[star_pitch_index[b2]])
-            return 2.0 + (float(gap2) * 0.5)
-    return 1.0
+            base = 2.0 + (float(gap2) * 0.5)
+    return base + _clue_difficulty_jitter(clue)
 
 
 # ==================================================
@@ -1627,31 +1631,39 @@ func get_clue_texts(_include_flavor: bool = true) -> Array[String]:
     return texts
 
 
+func _clue_difficulty_jitter(clue: Dictionary) -> float:
+    var key: String = "%d|%s" % [_difficulty_jitter_salt, JSON.stringify(clue)]
+    var h: int = hash(key)
+    var frac: float = float(abs(h) % 1000000) / 1000000.0   # 0.0..1.0
+    return (frac - 0.5) * 2.0 * DIFFICULTY_JITTER_MAGNITUDE
+
+
 func _score_clue_difficulty(clue: Dictionary, solution: Array[int]) -> float:
+    var base: float = 1.0
     match clue.get("kind", ""):
         "exact":
-            return 10.0
+            base = 10.0
         "adj_seq":
-            return 8.0
+            base = 8.0
         "count_before":
-            return 7.5
+            base = 7.5
         "extreme":
-            return 7.0
+            base = 7.0
         "neg_exact":
-            return 6.0
+            base = 6.0
         "range":
             var width: int = int(clue.get("hi", star_count - 1)) - int(clue.get("lo", 0)) + 1
-            return 5.0 + (float(star_count - width) * 0.25)
+            base = 5.0 + (float(star_count - width) * 0.25)
         "neg_adjacent":
-            return 5.0
+            base = 5.0
         "group_cmp":
-            return 4.0 + (float(clue.get("targets", []).size()) * 0.8)
+            base = 4.0 + (float(clue.get("targets", []).size()) * 0.8)
         "cmp":
             var star_a2: int = clue.get("a", 0)
             var star_b2: int = clue.get("b", 0)
             var gap2: int = abs(solution[star_a2] - solution[star_b2])
-            return 2.0 + (float(gap2) * 0.5)
-    return 1.0
+            base = 2.0 + (float(gap2) * 0.5)
+    return base + _clue_difficulty_jitter(clue)
 
 
 func generate_clues_async(_manual_clue_count: int = -1) -> void:
@@ -1659,6 +1671,7 @@ func generate_clues_async(_manual_clue_count: int = -1) -> void:
     _final_clues.clear()
     _final_pitch_clues.clear()
     _final_identity_clues.clear()
+    _difficulty_jitter_salt = _rng.randi()
 
     var t_total_start: float = Time.get_ticks_msec()
 

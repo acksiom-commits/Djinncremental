@@ -94,11 +94,17 @@ var _name_assignments:    Array = []     # Array[String], per-star slot
 var _active_marker_tab:   int   = -1     # -1=Default(Matches) 0=Color 1=Sequence 2=Pitch 3=Adjacency 4=NameClues
 # Adjacency marker states: key = "a:b" (a<b), value = int 0=neutral 1=✓ 2=✗
 var _adjacency_states:    Dictionary = {}
+var _protected_names:         Dictionary = {}   # key "star_idx:name" -> true; right-click "still possible" flags
+var _star_name_list_expanded: Dictionary = {}   # star_idx -> bool, collapsed by default
+var _widget_closed: Dictionary = {}             # star_idx -> bool, closed via X button
+var _user_blocks: Dictionary = {}               # "star_idx:name" -> true; blocks placed by user clicking X, not by propagation
 var _pitch_rank_solution:   Array = []     # Array[int], melody step per star
 var _star_pitch_index:      Array = []     # Array[int], raw note index per star (ConstellationData)
 var _pitch_freqs:           Array = []     # Array[float], frequency table for this constellation
 var _matches_sort_mode:    int = -1       # -1/0=Name,1=Sequence,2=Color,3=Pitch
 var _player_seed:          int = 0
+var _puzzle_seed_used:      int = 0     # actual seed used for THIS cached puzzle instance
+                                          # (differs from _player_seed after a dev regenerate)
 
 # Match records — one per set of facts the player has asserted belong to the same star.
 # Each record: {
@@ -301,7 +307,7 @@ func _draw_melody_staff() -> void:
     var note_col := Color(0.82, 0.78, 0.92, 1.0)
     var unknown_col := Color(0.55, 0.50, 0.65, 1.0)
     var font := ThemeDB.fallback_font
-    var font_size_small := 10
+    var font_size_small := 16
 
     for seq_pos in range(1, _star_count + 1):
         var x: float = margin_x + step_x * float(seq_pos - 1)
@@ -596,6 +602,7 @@ func _load_constellation_data() -> void:
         return
 
     var cache: Dictionary = _cd.get_puzzle_cache(_constellation_id)
+    _puzzle_seed_used = int(cache.get("player_seed_used", 0))
 
     var raw_names = cache.get("star_names", [])
     _star_names = []
@@ -622,6 +629,16 @@ func _load_constellation_data() -> void:
     var raw_adj: Dictionary = notes.get("adjacency_states", {})
     for k in raw_adj:
         _adjacency_states[str(k)] = int(raw_adj[k])
+
+    _protected_names.clear()
+    var raw_prot: Dictionary = notes.get("protected_names", {})
+    for k in raw_prot:
+        _protected_names[str(k)] = true
+
+    _user_blocks.clear()
+    var raw_blocks: Dictionary = notes.get("user_blocks", {})
+    for k in raw_blocks:
+        _user_blocks[str(k)] = true
 
     _load_match_records(notes.get("match_records", []))
 
@@ -843,7 +860,9 @@ func _on_map_input(event: InputEvent) -> void:
     _star_map_control.queue_redraw()
     for wi in _star_widgets.size():
         if is_instance_valid(_star_widgets[wi]):
-            _star_widgets[wi].visible = (wi == _selected_star)
+            if wi == _selected_star:
+                _widget_closed.erase(wi)
+            _star_widgets[wi].visible = (wi == _selected_star) and not _widget_closed.get(wi, false)
     _reposition_star_widgets()
     get_viewport().set_input_as_handled()
 
@@ -1133,6 +1152,8 @@ func _save_puzzle_notes() -> void:
     var notes: Dictionary = {}
     notes["adjacency_states"] = _adjacency_states.duplicate()
     notes["match_records"] = _save_match_records()
+    notes["protected_names"] = _protected_names.duplicate()
+    notes["user_blocks"] = _user_blocks.duplicate()
     _cd.set_player_puzzle_notes(_constellation_id, notes)
 
 
@@ -1176,9 +1197,10 @@ func _populate_color_markers() -> void:
 
     var reveal_count: int = maxi(2, int(_star_count * 0.4))
     var reveal_order: Array = range(_star_count)
+    var seed_mix: int = (_puzzle_seed_used ^ (_constellation_id * 40503)) & 0x7FFFFFFF
     reveal_order.sort_custom(func(a, b):
-        var ha: int = (int(a) * 2654435761 + _constellation_id * 40503) & 0x7FFFFFFF
-        var hb: int = (int(b) * 2654435761 + _constellation_id * 40503) & 0x7FFFFFFF
+        var ha: int = (int(a) * 2654435761 + seed_mix) & 0x7FFFFFFF
+        var hb: int = (int(b) * 2654435761 + seed_mix) & 0x7FFFFFFF
         return ha < hb)
     var revealed: Dictionary = {}
     for i in mini(reveal_count, reveal_order.size()):
@@ -1361,8 +1383,8 @@ func _on_adjacency_check(edge_key: String, btn_check: Button, btn_x: Button) -> 
     var cur: int = int(_adjacency_states.get(edge_key, 0))
     var new_state: int = 0 if cur == 1 else 1
     _adjacency_states[edge_key] = new_state
-    btn_check.modulate = Color(0.3, 1.0, 0.4, 1.0) if new_state == 1 else Color(1,1,1,0.45)
-    btn_x.modulate = Color(1,1,1,0.45)
+    btn_check.modulate = Color(0.3, 1.0, 0.4, 1.0) if new_state == 1 else Color(1,1,1,1.0)
+    btn_x.modulate = Color(1,1,1,1.0)
     _save_puzzle_notes()
 
 
@@ -1370,8 +1392,8 @@ func _on_adjacency_x(edge_key: String, btn_check: Button, btn_x: Button) -> void
     var cur: int = int(_adjacency_states.get(edge_key, 0))
     var new_state: int = 0 if cur == 2 else 2
     _adjacency_states[edge_key] = new_state
-    btn_x.modulate = Color(1.0, 0.35, 0.25, 1.0) if new_state == 2 else Color(1,1,1,0.45)
-    btn_check.modulate = Color(1,1,1,0.45)
+    btn_x.modulate = Color(1.0, 0.35, 0.25, 1.0) if new_state == 2 else Color(1,1,1,1.0)
+    btn_check.modulate = Color(1,1,1,1.0)
     _save_puzzle_notes()
 
 
@@ -1410,6 +1432,7 @@ func _build_star_widgets_impl() -> void:
         var root := VBoxContainer.new()
         root.mouse_filter = Control.MOUSE_FILTER_PASS
         root.add_theme_constant_override("separation", 4)
+        root.z_index = 10
         _star_map_control.add_child(root)
         _star_widgets.append(root)
         root.visible = (i == _selected_star)
@@ -1423,10 +1446,10 @@ func _build_star_widgets_impl() -> void:
         var star_bounds: Array = _effective_seq_bounds(existing_record)
 
         var edit_lo := LineEdit.new()
-        edit_lo.custom_minimum_size = Vector2(26, 28)
+        edit_lo.custom_minimum_size = Vector2(20, 28)
         edit_lo.max_length = 2
         edit_lo.placeholder_text = "\u2013"
-        var display_lo: int = int(star_bounds[0])
+        var display_lo: int = _exclusive_display_lo(int(star_bounds[0]), int(star_bounds[1]))
         edit_lo.text = str(display_lo) if display_lo > 0 else ""
         edit_lo.add_theme_font_size_override("font_size", 13)
         _style_range_edit(edit_lo, star_color)
@@ -1435,7 +1458,7 @@ func _build_star_widgets_impl() -> void:
         var lbl_lt := Label.new()
         lbl_lt.text = "<"
         lbl_lt.add_theme_font_size_override("font_size", 14)
-        lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+        lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 1.0))
         lbl_lt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         range_row.add_child(lbl_lt)
 
@@ -1452,19 +1475,32 @@ func _build_star_widgets_impl() -> void:
         var lbl_gt := Label.new()
         lbl_gt.text = "<"
         lbl_gt.add_theme_font_size_override("font_size", 14)
-        lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+        lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 1.0))
         lbl_gt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         range_row.add_child(lbl_gt)
 
         var edit_hi := LineEdit.new()
-        edit_hi.custom_minimum_size = Vector2(26, 28)
+        edit_hi.custom_minimum_size = Vector2(20, 28)
         edit_hi.max_length = 2
         edit_hi.placeholder_text = "\u2013"
-        var display_hi: int = int(star_bounds[1])
+        var display_hi: int = _exclusive_display_hi(int(star_bounds[0]), int(star_bounds[1]))
         edit_hi.text = str(display_hi) if display_hi > 0 else ""
         edit_hi.add_theme_font_size_override("font_size", 13)
         _style_range_edit(edit_hi, star_color)
         range_row.add_child(edit_hi)
+
+        var spacer := Control.new()
+        spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        range_row.add_child(spacer)
+
+        var btn_close := Button.new()
+        btn_close.text = "\u2715"
+        btn_close.custom_minimum_size = Vector2(28, 28)
+        btn_close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        btn_close.focus_mode = Control.FOCUS_NONE
+        btn_close.add_theme_font_size_override("font_size", 14)
+        btn_close.flat = false
+        range_row.add_child(btn_close)
 
         root.add_child(range_row)
 
@@ -1480,77 +1516,138 @@ func _build_star_widgets_impl() -> void:
         edit_mid.text_submitted.connect(func(_t): _on_widget_middle_committed(si, lo_ref, mid_ref, hi_ref))
         edit_mid.focus_exited.connect(func(): _on_widget_middle_committed(si, lo_ref, mid_ref, hi_ref))
 
-        # ── Name checklist ─────────────────────────────────────────
-        # List every star name — color is one of the facts to deduce,
-        # so the checklist must not pre-filter by it. Sorted alphabetically,
-        # same comparator as the Matches tab's "Sort: Name" mode, so it
-        # doesn't fall back to raw star-index order (which clusters by
-        # color, since _assign_colors_balanced() fills color quotas in
-        # contiguous blocks).
+        var close_si := i
+        btn_close.pressed.connect(func(): _widget_closed[close_si] = true; root.visible = false)
+
+        # ── Reset buttons ──────────────────────────────────────────
+        var reset_row := HBoxContainer.new()
+        reset_row.mouse_filter = Control.MOUSE_FILTER_PASS
+        reset_row.add_theme_constant_override("separation", 3)
+        root.add_child(reset_row)
+
+        var btn_undo_sel := Button.new()
+        btn_undo_sel.text = "Undo selects"
+        btn_undo_sel.focus_mode = Control.FOCUS_NONE
+        btn_undo_sel.custom_minimum_size = Vector2(0, 30)
+        btn_undo_sel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        btn_undo_sel.add_theme_font_size_override("font_size", 11)
+        reset_row.add_child(btn_undo_sel)
+
+        var btn_undo_block := Button.new()
+        btn_undo_block.text = "Undo blocks"
+        btn_undo_block.focus_mode = Control.FOCUS_NONE
+        btn_undo_block.custom_minimum_size = Vector2(0, 30)
+        btn_undo_block.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        btn_undo_block.add_theme_font_size_override("font_size", 11)
+        reset_row.add_child(btn_undo_block)
+
+        var btn_undo_all := Button.new()
+        btn_undo_all.text = "Undo all"
+        btn_undo_all.focus_mode = Control.FOCUS_NONE
+        btn_undo_all.custom_minimum_size = Vector2(0, 30)
+        btn_undo_all.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        btn_undo_all.add_theme_font_size_override("font_size", 11)
+        reset_row.add_child(btn_undo_all)
+
+        var si_reset := i
+        btn_undo_sel.pressed.connect(func(): _on_undo_name_selects(si_reset))
+        btn_undo_block.pressed.connect(func(): _on_undo_name_blocks(si_reset))
+        btn_undo_all.pressed.connect(func(): _on_undo_name_all(si_reset))
+
+        # ── Full candidate checklist (check/X/protect) — always visible ──
         var all_star_names: Array[String] = []
         for j in _star_count:
             all_star_names.append(_star_names[j] if j < _star_names.size() else "?")
         all_star_names.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
 
         if not all_star_names.is_empty():
-            var scroll := ScrollContainer.new()
-            scroll.custom_minimum_size = Vector2(0, 0)
-            scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-            # Height capped at WIDGET_NAME_MAX_H but shrinks if fewer names.
-            var row_h: float = 30.0
-            var natural_h: float = all_star_names.size() * row_h
-            scroll.custom_minimum_size = Vector2(160, minf(natural_h, WIDGET_NAME_MAX_H))
-            scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-            root.add_child(scroll)
+            var panel := PanelContainer.new()
+            var panel_sb := StyleBoxFlat.new()
+            panel_sb.bg_color = Color(0.06, 0.04, 0.14, 1.0)
+            panel_sb.border_color = Color(star_color.r * 0.6, star_color.g * 0.6, star_color.b * 0.6, 1.0)
+            panel_sb.border_width_left = 1
+            panel_sb.border_width_top = 1
+            panel_sb.border_width_right = 1
+            panel_sb.border_width_bottom = 1
+            panel_sb.corner_radius_top_left = 4
+            panel_sb.corner_radius_top_right = 4
+            panel_sb.corner_radius_bottom_right = 4
+            panel_sb.corner_radius_bottom_left = 4
+            panel_sb.content_margin_left = 4
+            panel_sb.content_margin_right = 4
+            panel_sb.content_margin_top = 4
+            panel_sb.content_margin_bottom = 4
+            panel.add_theme_stylebox_override("panel", panel_sb)
+            panel.self_modulate = Color(1, 1, 1, 1)
+            panel.custom_minimum_size = Vector2(300, 0)
+            root.add_child(panel)
 
-            var name_vbox := VBoxContainer.new()
-            name_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-            scroll.add_child(name_vbox)
+            var name_hbox := HBoxContainer.new()
+            name_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+            name_hbox.add_theme_constant_override("separation", 6)
+            panel.add_child(name_hbox)
 
-            for name_str in all_star_names:
-                var row := HBoxContainer.new()
-                row.mouse_filter = Control.MOUSE_FILTER_PASS
-                row.add_theme_constant_override("separation", 3)
+            var half: int = (all_star_names.size() + 1) / 2
+            for col_i in 2:
+                var col_vbox := VBoxContainer.new()
+                col_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+                name_hbox.add_child(col_vbox)
 
-                var name_lbl := Label.new()
-                name_lbl.text = name_str
-                name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-                name_lbl.add_theme_font_size_override("font_size", 16)
-                name_lbl.add_theme_color_override("font_color", star_color)
-                name_lbl.clip_text = true
-                row.add_child(name_lbl)
+                var start: int = col_i * half
+                var end: int = mini(start + half, all_star_names.size())
+                for ci in range(start, end):
+                    var name_str: String = all_star_names[ci]
+                    var row := HBoxContainer.new()
+                    row.mouse_filter = Control.MOUSE_FILTER_PASS
+                    row.add_theme_constant_override("separation", 3)
 
-                var btn_check := Button.new()
-                btn_check.text = "\u2713"
-                btn_check.custom_minimum_size = Vector2(28, 26)
-                btn_check.focus_mode = Control.FOCUS_NONE
-                btn_check.add_theme_font_size_override("font_size", 15)
-                row.add_child(btn_check)
+                    var name_lbl := Label.new()
+                    name_lbl.text = name_str
+                    name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+                    name_lbl.add_theme_font_size_override("font_size", 16)
+                    name_lbl.add_theme_color_override("font_color", star_color)
+                    name_lbl.clip_text = true
+                    row.add_child(name_lbl)
 
-                var btn_x := Button.new()
-                btn_x.text = "\u2717"
-                btn_x.custom_minimum_size = Vector2(28, 26)
-                btn_x.focus_mode = Control.FOCUS_NONE
-                btn_x.add_theme_font_size_override("font_size", 15)
-                row.add_child(btn_x)
+                    var btn_check := Button.new()
+                    btn_check.text = "\u2713"
+                    btn_check.custom_minimum_size = Vector2(28, 26)
+                    btn_check.focus_mode = Control.FOCUS_NONE
+                    btn_check.add_theme_font_size_override("font_size", 15)
+                    row.add_child(btn_check)
 
-                name_vbox.add_child(row)
+                    var btn_x := Button.new()
+                    btn_x.text = "\u2717"
+                    btn_x.custom_minimum_size = Vector2(28, 26)
+                    btn_x.focus_mode = Control.FOCUS_NONE
+                    btn_x.add_theme_font_size_override("font_size", 15)
+                    row.add_child(btn_x)
 
-                # Capture for lambda — name_str is already a value copy in for loop.
-                var captured_name := name_str
-                btn_check.pressed.connect(func(): _on_name_check(si, captured_name, name_lbl, btn_check, btn_x))
-                btn_x.pressed.connect(func(): _on_name_x(si, captured_name, name_lbl, btn_check, btn_x))
+                    col_vbox.add_child(row)
 
-            # Apply saved state to name rows immediately.
-            _refresh_name_widget(i, name_vbox, all_star_names, star_color)
+                    var captured_name := name_str
+                    btn_check.pressed.connect(func(): _on_name_check(si, captured_name, name_lbl, btn_check, btn_x))
+                    btn_check.gui_input.connect(func(event: InputEvent):
+                        if event is InputEventMouseButton:
+                            print("[DEBUG] btn_check gui_input: button=%d pressed=%s star=%d name=%s" %
+                                [event.button_index, event.pressed, si, captured_name])
+                        if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+                            _on_name_protect_toggle(si, captured_name)
+                            get_viewport().set_input_as_handled())
+                    btn_x.pressed.connect(func(): _on_name_x(si, captured_name, name_lbl, btn_check, btn_x))
+
+            # Refresh all rows across both columns — pass full name list for correct cross-referencing.
+            for col_i in 2:
+                var col_vbox: VBoxContainer = name_hbox.get_child(col_i)
+                _refresh_name_widget(i, col_vbox, all_star_names, star_color, col_i * half)
 
     _reposition_star_widgets()
 
 
 func _style_range_edit(edit: LineEdit, star_color: Color) -> void:
     var sb := StyleBoxFlat.new()
-    sb.bg_color = Color(0.06, 0.04, 0.14, 0.85)
-    sb.border_color = Color(star_color.r * 0.6, star_color.g * 0.6, star_color.b * 0.6, 0.7)
+    sb.bg_color = Color(0.06, 0.04, 0.14, 1.0)
+    sb.border_color = Color(star_color.r * 0.6, star_color.g * 0.6, star_color.b * 0.6, 1.0)
     sb.border_width_left = 1; sb.border_width_top = 1
     sb.border_width_right = 1; sb.border_width_bottom = 1
     sb.corner_radius_top_left = 2; sb.corner_radius_top_right = 2
@@ -1560,7 +1657,7 @@ func _style_range_edit(edit: LineEdit, star_color: Color) -> void:
     edit.add_theme_stylebox_override("normal", sb)
     edit.add_theme_stylebox_override("focus", sb)
     edit.add_theme_color_override("font_color", Color(0.90, 0.87, 1.00, 1.0))
-    edit.add_theme_color_override("font_placeholder_color", Color(0.40, 0.35, 0.60, 0.6))
+    edit.add_theme_color_override("font_placeholder_color", Color(0.40, 0.35, 0.60, 1.0))
 
 
 func _sequence_number(star_idx: int) -> int:
@@ -1659,25 +1756,28 @@ func _confirmed_name_for_star(star_idx: int) -> String:
 
 func _reposition_star_widgets() -> void:
     var map_h: float = _star_map_control.size.y
+    var map_w: float = _star_map_control.size.x
     for i in _star_widgets.size():
         if i >= _star_screen_pos.size():
             break
         var w: Control = _star_widgets[i]
         if not is_instance_valid(w):
             continue
-        # Force a minimum size pass so we know the widget's height.
         w.reset_size()
         var wh: float = w.get_combined_minimum_size().y
+        var ww: float = w.get_combined_minimum_size().x
         var dot: Vector2 = _star_screen_pos[i]
+        # Flip above dot if widget would overflow bottom, else place below.
         var flip_up: bool = dot.y + WIDGET_OFFSET_BELOW + wh > map_h
         var pos_y: float
         if flip_up:
             pos_y = dot.y - wh - WIDGET_OFFSET_ABOVE
         else:
             pos_y = dot.y + WIDGET_OFFSET_BELOW
+        # Clamp Y to keep widget fully inside map bounds.
+        pos_y = clampf(pos_y, 0.0, maxf(0.0, map_h - wh))
         # Centre the widget horizontally on the dot, clamped to map bounds.
-        var ww: float = w.get_combined_minimum_size().x
-        var pos_x: float = clampf(dot.x - ww * 0.5, 0.0, maxf(0.0, _star_map_control.size.x - ww))
+        var pos_x: float = clampf(dot.x - ww * 0.5, 0.0, maxf(0.0, map_w - ww))
         w.position = Vector2(pos_x, pos_y)
 
 
@@ -1722,21 +1822,21 @@ func _build_star_tags_impl() -> void:
         var name_lbl := Label.new()
         name_lbl.name = "NameLabel"
         name_lbl.text = name_str
-        name_lbl.add_theme_font_size_override("font_size", 12)
+        name_lbl.add_theme_font_size_override("font_size", 16)
         name_lbl.add_theme_color_override("font_color", star_color)
         name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
         var seq_lbl := Label.new()
         seq_lbl.name = "SeqLabel"
         seq_lbl.text = "%s" % _ordinal_str(seq_str)
-        seq_lbl.add_theme_font_size_override("font_size", 11)
+        seq_lbl.add_theme_font_size_override("font_size", 16)
         seq_lbl.add_theme_color_override("font_color", Color(star_color.r, star_color.g, star_color.b, 0.75))
         seq_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
         var pitch_lbl := Label.new()
         pitch_lbl.name = "PitchLabel"
         pitch_lbl.text = pitch_str
-        pitch_lbl.add_theme_font_size_override("font_size", 11)
+        pitch_lbl.add_theme_font_size_override("font_size", 16)
         pitch_lbl.add_theme_color_override("font_color", Color(star_color.r, star_color.g, star_color.b, 0.75))
         pitch_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
@@ -1792,40 +1892,51 @@ func _reposition_star_tags() -> void:
 
 
 func _refresh_name_widget(star_idx: int, name_vbox: VBoxContainer,
-        all_star_names: Array[String], star_color: Color) -> void:
+        all_star_names: Array[String], star_color: Color, col_start: int = 0) -> void:
     var rows: Array = name_vbox.get_children()
     for ri in rows.size():
-        if ri >= all_star_names.size():
+        var name_idx: int = col_start + ri
+        if name_idx >= all_star_names.size():
             break
         var row: HBoxContainer = rows[ri]
         var name_lbl: Label = row.get_child(0)
         var btn_check: Button = row.get_child(1)
         var btn_x: Button = row.get_child(2)
-        var captured_name: String = all_star_names[ri]
-        var state: int = _star_elim_state(star_idx, captured_name)
+        var captured_name: String = all_star_names[name_idx]
+        var state: int = _effective_name_display_state(star_idx, captured_name, all_star_names)
         _apply_name_row_visual(state, name_lbl, btn_check, btn_x, star_color)
 
 
 func _apply_name_row_visual(state: int, name_lbl: Label,
         btn_check: Button, btn_x: Button, star_color: Color) -> void:
     match state:
-        1:  # confirmed ✓
+        1:  # confirmed ✓ (hard)
             name_lbl.add_theme_color_override("font_color",
                 Color(star_color.r, star_color.g, star_color.b, 1.0))
             name_lbl.modulate = Color(1, 1, 1, 1)
             btn_check.modulate = Color(0.3, 1.0, 0.4, 1.0)
-            btn_x.modulate = Color(1, 1, 1, 0.4)
-        2:  # eliminated ✗
-            name_lbl.add_theme_color_override("font_color", Color(0.35, 0.30, 0.45, 0.5))
-            name_lbl.modulate = Color(1, 1, 1, 0.45)
-            btn_check.modulate = Color(1, 1, 1, 0.4)
+            btn_x.modulate = Color(1, 1, 1, 1.0)
+        2:  # eliminated ✗ (hard)
+            name_lbl.add_theme_color_override("font_color", Color(0.35, 0.30, 0.45, 1.0))
+            name_lbl.modulate = Color(1, 1, 1, 1.0)
+            btn_check.modulate = Color(1, 1, 1, 1.0)
             btn_x.modulate = Color(1.0, 0.35, 0.25, 1.0)
+        3:  # soft-eliminated — another candidate in this row is protected
+            name_lbl.add_theme_color_override("font_color", Color(0.45, 0.40, 0.55, 1.0))
+            name_lbl.modulate = Color(1, 1, 1, 1.0)
+            btn_check.modulate = Color(1, 1, 1, 1.0)
+            btn_x.modulate = Color(1.0, 0.6, 0.5, 1.0)
+        4:  # protected — TEMP debug: impossible to miss
+            name_lbl.add_theme_color_override("font_color", Color(1, 0, 1, 1))
+            name_lbl.modulate = Color(1, 1, 1, 1)
+            btn_check.modulate = Color(1, 0, 1, 1)
+            btn_x.modulate = Color(1, 0, 1, 1)
         _:  # neutral
             name_lbl.add_theme_color_override("font_color",
-                Color(star_color.r, star_color.g, star_color.b, 0.85))
+                Color(star_color.r, star_color.g, star_color.b, 1.0))
             name_lbl.modulate = Color(1, 1, 1, 1)
-            btn_check.modulate = Color(1, 1, 1, 0.55)
-            btn_x.modulate = Color(1, 1, 1, 0.55)
+            btn_check.modulate = Color(1, 1, 1, 1.0)
+            btn_x.modulate = Color(1, 1, 1, 1.0)
 
 
 # ==================================================
@@ -1840,14 +1951,21 @@ func _on_name_check(star_idx: int, star_name: String,
     var new_state: int = 0 if cur == 1 else 1
 
     if new_state == 1:
+        var name_record: int = _find_match_record_by_name(star_name)
+        if name_record >= 0:
+            var existing_star: int = int(_match_records[name_record].get("star_idx", -1))
+            if existing_star >= 0 and existing_star != star_idx:
+                _apply_name_row_visual(2, name_lbl, btn_check, btn_x, star_color)
+                return
         var record_idx: int = _get_or_create_match_record_for_name(star_name)
-        record_idx = _confirm_match_record_identity(record_idx, star_idx, star_name)
-        _propagate_name_confirmed(star_idx, star_name)
+        record_idx = await _confirm_match_record_identity(record_idx, star_idx, star_name)
+        if record_idx < 0:
+            _apply_name_row_visual(_star_elim_state(star_idx, star_name), name_lbl, btn_check, btn_x, star_color)
+            return
+        var resolved_name: String = str(_match_records[record_idx]["name"])
+        _propagate_name_confirmed(star_idx, resolved_name)
         _save_puzzle_notes()
-        _build_star_widgets()
-        _build_star_tags()
-        if _active_marker_tab < 0 or _active_marker_tab == 2:
-            _populate_markers_panel()
+        _full_propagation_refresh()
         return
 
     var record_idx2: int = _get_or_create_match_record_for_name(star_name)
@@ -1856,9 +1974,7 @@ func _on_name_check(star_idx: int, star_name: String,
     _match_records[record_idx2]["star_elim"] = elim2
     _apply_name_row_visual(new_state, name_lbl, btn_check, btn_x, star_color)
     _save_puzzle_notes()
-    _build_star_tags()
-    if _active_marker_tab < 0 or _active_marker_tab == 2:
-        _populate_markers_panel()
+    _full_propagation_refresh()
 
 
 func _on_name_x(star_idx: int, star_name: String,
@@ -1875,10 +1991,115 @@ func _on_name_x(star_idx: int, star_name: String,
     _match_records[record_idx]["star_elim"] = elim
     _apply_name_row_visual(new_state, name_lbl, btn_check, btn_x, star_color)
 
+    var ukey: String = "%d:%s" % [star_idx, star_name]
+    if new_state == 2:
+        _user_blocks[ukey] = true
+    else:
+        _user_blocks.erase(ukey)
+
     _save_puzzle_notes()
     _build_star_tags()
     if _active_marker_tab < 0:
         _populate_markers_panel()
+
+
+# ==================================================
+# UNDO NAME-SELECTION/NAME-BLOCK CALLBACKS
+# ==================================================
+func _clear_protected_names_for_star(star_idx: int) -> void:
+    var to_erase: Array[String] = []
+    for key in _protected_names.keys():
+        var parts: PackedStringArray = key.split(":")
+        if parts.size() == 2 and parts[0].is_valid_int() and int(parts[0]) == star_idx:
+            to_erase.append(key)
+    for k in to_erase:
+        _protected_names.erase(k)
+
+
+func _on_undo_name_selects(star_idx: int) -> void:
+    var own_record: int = _find_match_record_by_star_idx(star_idx)
+    if own_record >= 0:
+        var r: Dictionary = _match_records[own_record]
+        r["star_idx"] = -1
+        var own_elim: Dictionary = r.get("star_elim", {})
+        if own_elim.has(star_idx):
+            own_elim.erase(star_idx)
+            r["star_elim"] = own_elim
+    for i in _match_records.size():
+        if i == own_record:
+            continue
+        var other: Dictionary = _match_records[i]
+        var other_star: int = int(other.get("star_idx", -1))
+        if other_star >= 0 and other_star != star_idx:
+            continue
+        var other_name: String = str(other.get("name", ""))
+        var ukey: String = "%d:%s" % [star_idx, other_name]
+        if _user_blocks.has(ukey):
+            continue
+        var elim2: Dictionary = other.get("star_elim", {})
+        if int(elim2.get(star_idx, 0)) == 2:
+            elim2.erase(star_idx)
+            other["star_elim"] = elim2
+    _clear_protected_names_for_star(star_idx)
+    _save_puzzle_notes()
+    _full_propagation_refresh()
+
+
+func _on_undo_name_blocks(star_idx: int) -> void:
+    var user_blocked_names: Array[String] = []
+    for ukey in _user_blocks.keys():
+        var parts: PackedStringArray = ukey.split(":")
+        if parts.size() == 2 and parts[0].is_valid_int() and int(parts[0]) == star_idx:
+            user_blocked_names.append(parts[1])
+    for name_str in user_blocked_names:
+        var rec: int = _find_match_record_by_name(name_str)
+        if rec >= 0:
+            var elim: Dictionary = _match_records[rec].get("star_elim", {})
+            if elim.has(star_idx):
+                elim.erase(star_idx)
+                _match_records[rec]["star_elim"] = elim
+        _user_blocks.erase("%d:%s" % [star_idx, name_str])
+    _save_puzzle_notes()
+    _full_propagation_refresh()
+
+
+func _on_undo_name_all(star_idx: int) -> void:
+    var own_record: int = _find_match_record_by_star_idx(star_idx)
+    if own_record >= 0:
+        var r: Dictionary = _match_records[own_record]
+        r["star_idx"] = -1
+        var own_elim: Dictionary = r.get("star_elim", {})
+        if own_elim.has(star_idx):
+            own_elim.erase(star_idx)
+            r["star_elim"] = own_elim
+
+    # Union of "Undo selects" + "Undo blocks", scoped to this star's row only.
+    # Names confirmed at a DIFFERENT star are left alone — that elimination
+    # is structural (the name belongs elsewhere), not part of this star's row.
+    for i in _match_records.size():
+        if i == own_record:
+            continue
+        var other: Dictionary = _match_records[i]
+        var other_star: int = int(other.get("star_idx", -1))
+        if other_star >= 0 and other_star != star_idx:
+            continue
+        var elim2: Dictionary = other.get("star_elim", {})
+        if elim2.has(star_idx):
+            elim2.erase(star_idx)
+            other["star_elim"] = elim2
+
+    _clear_protected_names_for_star(star_idx)
+
+    var user_blocked_names: Array[String] = []
+    for ukey in _user_blocks.keys():
+        var parts: PackedStringArray = ukey.split(":")
+        if parts.size() == 2 and parts[0].is_valid_int() and int(parts[0]) == star_idx:
+            user_blocked_names.append(parts[1])
+    for name_str in user_blocked_names:
+        _user_blocks.erase("%d:%s" % [star_idx, name_str])
+
+    _save_puzzle_notes()
+    _full_propagation_refresh()
 
 
 # ==================================================
@@ -1932,6 +2153,139 @@ func _star_elim_state(star_idx: int, name_str: String) -> int:
     return int(r.get("star_elim", {}).get(star_idx, 0))
 
 
+func _star_confirmed_name(star_idx: int) -> String:
+    for r in _match_records:
+        if int(r.get("star_idx", -1)) == star_idx:
+            return str(r.get("name", ""))
+    return ""
+
+
+func _on_star_name_expand_toggle(star_idx: int) -> void:
+    _star_name_list_expanded[star_idx] = not _star_name_list_expanded.get(star_idx, false)
+    _build_star_widgets()
+
+
+func _on_star_name_dropdown_selected(star_idx: int, chosen_name: String) -> void:
+    if chosen_name == "":
+        var confirmed_name: String = _star_confirmed_name(star_idx)
+        if confirmed_name == "":
+            return
+        var unassign_record_idx: int = _get_or_create_match_record_for_name(confirmed_name)
+        var elim: Dictionary = _match_records[unassign_record_idx].get("star_elim", {})
+        elim[star_idx] = 0
+        _match_records[unassign_record_idx]["star_elim"] = elim
+        if int(_match_records[unassign_record_idx].get("star_idx", -1)) == star_idx:
+            _match_records[unassign_record_idx]["star_idx"] = -1
+        _save_puzzle_notes()
+        _full_propagation_refresh()
+        return
+
+    var record_idx: int = _get_or_create_match_record_for_name(chosen_name)
+    record_idx = await _confirm_match_record_identity(record_idx, star_idx, chosen_name)
+    if record_idx < 0:
+        _full_propagation_refresh()
+        return
+    var resolved_name: String = str(_match_records[record_idx]["name"])
+    _propagate_name_confirmed(star_idx, resolved_name)
+    _save_puzzle_notes()
+    _full_propagation_refresh()
+
+
+func _possible_names_for_record(record_idx: int) -> Array[String]:
+    var r: Dictionary = _match_records[record_idx]
+    var this_star_idx: int = int(r.get("star_idx", -1))
+    var this_name: String = str(r.get("name", ""))
+    var this_seq_lo: int = int(r.get("seq_lo", 0))
+    var this_seq_hi: int = int(r.get("seq_hi", 0))
+    var this_seq_exact: int = this_seq_lo if this_seq_lo > 0 and this_seq_lo == this_seq_hi else -1
+    var this_color_label: String = str(r.get("color_slot_label", ""))
+    var this_pitch_label: String = str(r.get("pitch_slot_label", ""))
+
+    var result: Array[String] = []
+    for n in _star_names:
+        var name_str: String = str(n)
+        if name_str == this_name:
+            result.append(name_str)
+            continue
+
+        var other_idx: int = _find_match_record_by_name(name_str)
+        if other_idx >= 0 and other_idx != record_idx:
+            var other: Dictionary = _match_records[other_idx]
+            var other_star: int = int(other.get("star_idx", -1))
+            var other_seq_lo: int = int(other.get("seq_lo", 0))
+            var other_seq_hi: int = int(other.get("seq_hi", 0))
+            var other_seq_exact: int = other_seq_lo if other_seq_lo > 0 and other_seq_lo == other_seq_hi else -1
+            var other_color_label: String = str(other.get("color_slot_label", ""))
+            var other_pitch_label: String = str(other.get("pitch_slot_label", ""))
+
+            var conflict: bool = false
+            var conflict_reason: String = ""
+            if this_star_idx >= 0 and other_star >= 0 and other_star != this_star_idx:
+                conflict = true
+                conflict_reason = "star %d vs %d" % [this_star_idx, other_star]
+            if this_seq_exact > 0 and other_seq_exact > 0 and other_seq_exact != this_seq_exact:
+                conflict = true
+                conflict_reason = "seq %d vs %d" % [this_seq_exact, other_seq_exact]
+            if this_color_label != "" and other_color_label != "" and other_color_label != this_color_label:
+                conflict = true
+                conflict_reason = "color slot '%s' vs '%s'" % [this_color_label, other_color_label]
+            if this_pitch_label != "" and other_pitch_label != "" and other_pitch_label != this_pitch_label:
+                conflict = true
+                conflict_reason = "pitch slot '%s' vs '%s'" % [this_pitch_label, other_pitch_label]
+            if conflict:
+                print("[DEBUG] possible_names: record %d excludes '%s' — %s" % [record_idx, name_str, conflict_reason])
+                continue
+
+        if this_star_idx >= 0 and _star_elim_state(this_star_idx, name_str) == 2:
+            print("[DEBUG] possible_names: record %d excludes '%s' — X'd for this slot's star %d" % [record_idx, name_str, this_star_idx])
+            continue
+
+        result.append(name_str)
+    result.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
+    return result
+
+
+func _protect_key(star_idx: int, name_str: String) -> String:
+    return "%d:%s" % [star_idx, name_str]
+
+
+func _is_name_protected(star_idx: int, name_str: String) -> bool:
+    return _protected_names.has(_protect_key(star_idx, name_str))
+
+
+func _star_has_any_protected(star_idx: int, all_names_for_star: Array) -> bool:
+    # Ignores stale protect flags on names that got hard-decided by some
+    # other means since being protected (e.g. a later color elimination) —
+    # only a name still sitting at neutral counts toward "protected."
+    for n in all_names_for_star:
+        var name_str: String = str(n)
+        if _is_name_protected(star_idx, name_str) and _star_elim_state(star_idx, name_str) == 0:
+            return true
+    return false
+
+
+func _effective_name_display_state(star_idx: int, name_str: String, all_names_for_star: Array) -> int:
+    var base: int = _star_elim_state(star_idx, name_str)
+    if base != 0:
+        return base   # hard confirm (1) or hard eliminate (2) always wins
+    if not _star_has_any_protected(star_idx, all_names_for_star):
+        return 0       # neutral, nobody's protected anything yet in this row
+    return 4 if _is_name_protected(star_idx, name_str) else 3
+
+
+func _on_name_protect_toggle(star_idx: int, star_name: String) -> void:
+    var base: int = _star_elim_state(star_idx, star_name)
+    if base != 0:
+        return   # already hard-confirmed or hard-eliminated; right-click no-ops
+    var key: String = _protect_key(star_idx, star_name)
+    if _protected_names.has(key):
+        _protected_names.erase(key)
+    else:
+        _protected_names[key] = true
+    _save_puzzle_notes()
+    _full_propagation_refresh()
+
+
 func _apply_color_elimination_to_names(record_idx: int, color_idx: int, new_state: int) -> void:
     # Color is the one axis directly visible per star, so it's the one axis
     # that can safely auto-propagate into the name/star grid without leaking
@@ -1961,6 +2315,17 @@ func _slot_letter(idx: int) -> String:
     return char(65 + idx) if idx < 26 else str(idx + 1)
 
 
+func _anonymous_star_label(star_idx: int) -> String:
+    var color_idx: int = _star_colors[star_idx] if star_idx < _star_colors.size() else 1
+    var color_name: String = COLOR_NAME_LABELS[clamp(color_idx, 0, COLOR_NAME_LABELS.size() - 1)]
+    var ordinal: int = 0
+    for s in _star_count:
+        var sc: int = _star_colors[s] if s < _star_colors.size() else 1
+        if sc == color_idx and s < star_idx:
+            ordinal += 1
+    return "%s star %s" % [color_name, _slot_letter(ordinal)]
+
+
 
 
 func _known_color_for_record(record_idx: int) -> int:
@@ -1973,6 +2338,16 @@ func _known_color_for_record(record_idx: int) -> int:
         if int(cs.get(ci, 0)) == 1:
             return ci
     return -1
+
+
+func _sync_color_states_from_star_idx(record_idx: int) -> void:
+    var r: Dictionary = _match_records[record_idx]
+    var star_idx: int = int(r.get("star_idx", -1))
+    if star_idx < 0 or star_idx >= _star_colors.size():
+        return
+    var true_color: int = clamp(_star_colors[star_idx], 0, 3)
+    for ci in COLOR_NAME_LABELS.size():
+        r["color_states"][ci] = 1 if ci == true_color else 2
 
 
 func _get_or_create_match_record_for_color_slot(color_idx: int, position_in_group: int) -> int:
@@ -2110,22 +2485,50 @@ func _find_match_record_by_star_idx(star_idx: int) -> int:
     return -1
 
 
+func _show_conflict_choice(what: String, value_a: String, value_b: String) -> String:
+    var dlg := AcceptDialog.new()
+    dlg.title = "Conflicting %s" % what
+    dlg.dialog_text = "Two entries disagree on %s. Which is correct?" % what
+    dlg.get_ok_button().hide()
+    dlg.add_button("Keep: %s" % value_a, false, "choice_a")
+    dlg.add_button("Keep: %s" % value_b, false, "choice_b")
+    add_child(dlg)
+    dlg.popup_centered()
+    var chosen_action: String = await dlg.custom_action
+    dlg.queue_free()
+    var winner: String = value_a if chosen_action == "choice_a" else value_b
+    var loser: String = value_b if chosen_action == "choice_a" else value_a
+    print("[CONFLICT] %s: kept '%s', discarded '%s'" % [what, winner, loser])
+    return winner
+
+
 func _merge_match_records(target_idx: int, source_idx: int) -> int:
     if target_idx == source_idx:
         return target_idx
     var target: Dictionary = _match_records[target_idx]
     var source: Dictionary = _match_records[source_idx]
 
+    # Tracks a name that lost the "Keep: X / Keep: Y" conflict below, so it can
+    # be explicitly re-eliminated for the resolved star after its own record
+    # gets deleted by this merge — otherwise that elimination is lost entirely
+    # and the checklist row comes back up neutral next rebuild.
+    var discarded_name: String = ""
+
     if target["name"] == "" and source["name"] != "":
         target["name"] = source["name"]
     elif target["name"] != "" and source["name"] != "" and target["name"] != source["name"]:
-        push_warning("StudyOverlay: merge conflict, names '%s' vs '%s'" % [target["name"], source["name"]])
+        var kept_name: String = await _show_conflict_choice("name", target["name"], source["name"])
+        discarded_name = source["name"] if kept_name == target["name"] else target["name"]
+        target["name"] = kept_name
 
     if int(target["seq_lo"]) == 0 and int(source["seq_lo"]) > 0:
         target["seq_lo"] = source["seq_lo"]
         target["seq_hi"] = source["seq_hi"]
     elif int(target["seq_lo"]) > 0 and int(source["seq_lo"]) > 0 and int(target["seq_lo"]) != int(source["seq_lo"]):
-        push_warning("StudyOverlay: merge conflict, seq %d vs %d" % [int(target["seq_lo"]), int(source["seq_lo"])])
+        var winning_seq: int = int(await _show_conflict_choice(
+            "sequence position", str(int(target["seq_lo"])), str(int(source["seq_lo"]))))
+        target["seq_lo"] = winning_seq
+        target["seq_hi"] = winning_seq
 
     var target_cand: Array = target.get("seq_candidates", [])
     var source_cand: Array = source.get("seq_candidates", [])
@@ -2157,7 +2560,14 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
             source_confirmed_note = str(pk1)
             break
     if target_confirmed_note != "" and source_confirmed_note != "" and target_confirmed_note != source_confirmed_note:
-        push_warning("StudyOverlay: merge conflict, confirmed pitches '%s' vs '%s' — keeping '%s'" % [target_confirmed_note, source_confirmed_note, target_confirmed_note])
+        var winning_note: String = await _show_conflict_choice(
+            "confirmed pitch", target_confirmed_note, source_confirmed_note)
+        if winning_note == source_confirmed_note:
+            target["pitch_states"][target_confirmed_note] = 0
+            target_confirmed_note = source_confirmed_note
+        else:
+            source["pitch_states"][source_confirmed_note] = 0
+            source_confirmed_note = ""
 
     for pk in source["pitch_states"]:
         var sv2: int = int(source["pitch_states"][pk])
@@ -2191,30 +2601,53 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
     if target_label == "" and source_label != "":
         target["color_slot_label"] = source_label
     elif target_label != "" and source_label != "" and target_label != source_label:
-        push_warning("StudyOverlay: merge conflict, color slot labels '%s' vs '%s'" % [target_label, source_label])
+        target["color_slot_label"] = await _show_conflict_choice("color slot label", target_label, source_label)
 
     var target_pitch_label: String = str(target.get("pitch_slot_label", ""))
     var source_pitch_label: String = str(source.get("pitch_slot_label", ""))
     if target_pitch_label == "" and source_pitch_label != "":
         target["pitch_slot_label"] = source_pitch_label
     elif target_pitch_label != "" and source_pitch_label != "" and target_pitch_label != source_pitch_label:
-        push_warning("StudyOverlay: merge conflict, pitch slot labels '%s' vs '%s'" % [target_pitch_label, source_pitch_label])
+        target["pitch_slot_label"] = await _show_conflict_choice("pitch slot label", target_pitch_label, source_pitch_label)
+
+    _sync_color_states_from_star_idx(target_idx)
 
     _match_records.remove_at(source_idx)
     if source_idx < target_idx:
         target_idx -= 1
+
+    # The name that lost the conflict above no longer has any record of its own —
+    # whichever side it came from was just deleted. Re-create a blank record for
+    # it now and immediately mark it eliminated for the star this merged record
+    # ended up representing, so the checklist row stays darkened instead of
+    # reverting to a fresh, unmarked neutral candidate on the next rebuild.
+    if discarded_name != "" and int(_match_records[target_idx]["star_idx"]) >= 0:
+        var resolved_star: int = int(_match_records[target_idx]["star_idx"])
+        var loser_record_idx: int = _get_or_create_match_record_for_name(discarded_name)
+        if loser_record_idx != target_idx:
+            var loser_elim: Dictionary = _match_records[loser_record_idx].get("star_elim", {})
+            loser_elim[resolved_star] = 2
+            _match_records[loser_record_idx]["star_elim"] = loser_elim
+
     return target_idx
 
 
 func _confirm_match_record_identity(record_idx: int, star_idx: int, star_name: String) -> int:
     var existing_by_star: int = _find_match_record_by_star_idx(star_idx)
     if existing_by_star >= 0 and existing_by_star != record_idx:
-        record_idx = _merge_match_records(record_idx, existing_by_star)
+        record_idx = await _merge_match_records(record_idx, existing_by_star)
 
     var r: Dictionary = _match_records[record_idx]
     if int(r["star_idx"]) >= 0 and int(r["star_idx"]) != star_idx:
-        push_warning("StudyOverlay: confirm conflict, record star_idx %d vs confirming star_idx %d" % [int(r["star_idx"]), star_idx])
-    r["name"] = star_name
+        var old_label: String = "%s (current)" % _anonymous_star_label(int(r["star_idx"]))
+        var new_label: String = "%s (just checked)" % _anonymous_star_label(star_idx)
+        var winner: String = await _show_conflict_choice(
+            "star identity for '%s'" % star_name, old_label, new_label)
+        if winner == old_label:
+            return -1
+
+    if str(r["name"]) == "":
+        r["name"] = star_name
     r["star_idx"] = star_idx
 
     var true_color: int = clamp(_star_colors[star_idx] if star_idx < _star_colors.size() else 1, 0, 3)
@@ -2286,6 +2719,17 @@ func _display_color_for_record(record_idx: int) -> Color:
         if int(r["color_states"][ck]) == 1:
             return STAR_COLORS_BY_IDX[int(ck)]
     return Color(0.2, 0.9, 0.2, 1)
+
+
+func _debug_dump_named_records() -> void:
+    for watch_name in ["Eosaara", "Pyrios"]:
+        var idx: int = _find_match_record_by_name(watch_name)
+        if idx < 0:
+            print("[DEBUG] record for '%s': NOT FOUND" % watch_name)
+            continue
+        var r: Dictionary = _match_records[idx]
+        print("[DEBUG] record for '%s': star_idx=%d color_slot_label='%s' color_states=%s" %
+            [watch_name, int(r.get("star_idx", -1)), str(r.get("color_slot_label", "")), str(r.get("color_states", {}))])
 
 
 func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
@@ -2456,10 +2900,10 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     var bounds: Array = _effective_seq_bounds(record_idx)
 
     var edit_lo := LineEdit.new()
-    edit_lo.custom_minimum_size = Vector2(24, 24)
+    edit_lo.custom_minimum_size = Vector2(20, 24)
     edit_lo.max_length = 2
     edit_lo.placeholder_text = "\u2013"
-    var lo_val: int = int(bounds[0])
+    var lo_val: int = _exclusive_display_lo(int(bounds[0]), int(bounds[1]))
     edit_lo.text = str(lo_val) if lo_val > 0 else ""
     edit_lo.add_theme_font_size_override("font_size", 12)
     _style_range_edit(edit_lo, row_color)
@@ -2488,10 +2932,10 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     row.add_child(lbl_gt)
 
     var edit_hi := LineEdit.new()
-    edit_hi.custom_minimum_size = Vector2(24, 24)
+    edit_hi.custom_minimum_size = Vector2(20, 24)
     edit_hi.max_length = 2
     edit_hi.placeholder_text = "\u2013"
-    var hi_val: int = int(bounds[1])
+    var hi_val: int = _exclusive_display_hi(int(bounds[0]), int(bounds[1]))
     edit_hi.text = str(hi_val) if hi_val > 0 else ""
     edit_hi.add_theme_font_size_override("font_size", 12)
     _style_range_edit(edit_hi, row_color)
@@ -2514,27 +2958,31 @@ func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: Lin
     var raw_lo: String = lo_edit.text.strip_edges()
     var raw_hi: String = hi_edit.text.strip_edges()
 
-    var lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
-    var hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
+    var typed_lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
+    var typed_hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
 
-    if lo < 1 or lo > _star_count: lo = 0
-    if hi < 1 or hi > _star_count: hi = 0
+    if typed_lo < 1 or typed_lo > _star_count: typed_lo = 0
+    if typed_hi < 1 or typed_hi > _star_count: typed_hi = 0
 
-    if lo > 0 and hi > 0 and lo > hi:
-        var tmp := lo; lo = hi; hi = tmp
+    if typed_lo > 0 and typed_hi > 0 and typed_lo > typed_hi:
+        var tmp := typed_lo; typed_lo = typed_hi; typed_hi = tmp
+
+    var converted: Array = _parse_exclusive_bounds(typed_lo, typed_hi)
+    var lo: int = int(converted[0])
+    var hi: int = int(converted[1])
 
     var r: Dictionary = _match_records[record_idx]
     r["seq_lo"] = lo
     r["seq_hi"] = hi
     r["seq_candidates"] = []
 
-    lo_edit.text = str(lo) if lo > 0 else ""
-    hi_edit.text = str(hi) if hi > 0 else ""
+    lo_edit.text = str(_exclusive_display_lo(lo, hi)) if lo > 0 else ""
+    hi_edit.text = str(_exclusive_display_hi(lo, hi)) if hi > 0 else ""
 
     if lo > 0 and lo == hi:
         var existing_idx: int = _find_match_record_by_exact_seq(lo)
         if existing_idx >= 0 and existing_idx != record_idx:
-            record_idx = _merge_match_records(record_idx, existing_idx)
+            record_idx = await _merge_match_records(record_idx, existing_idx)
 
     _save_puzzle_notes()
     _full_propagation_refresh()
@@ -2570,40 +3018,26 @@ func _on_record_middle_committed(record_idx: int, lo_edit: LineEdit, mid_edit: L
     _full_propagation_refresh()
 
 
-func _on_record_name_committed(record_idx: int, name_edit: LineEdit) -> void:
+func _on_record_name_selected(record_idx: int, selected_name: String) -> void:
     if record_idx < 0 or record_idx >= _match_records.size():
         return
-    var entered: String = name_edit.text.strip_edges()
-    if entered == "":
-        if str(_match_records[record_idx].get("name", "")) == "":
-            return
+    if str(_match_records[record_idx].get("name", "")) == selected_name:
+        return
+
+    if selected_name == "":
         _match_records[record_idx]["name"] = ""
         _save_puzzle_notes()
-        _build_star_widgets()
-        _build_star_tags()
-        return
-    if str(_match_records[record_idx].get("name", "")) == entered:
-        # Already committed — text_submitted and focus_exited both fire on
-        # Enter, so this is very likely the second call for the same action.
-        # The first call may have already merged and removed a record,
-        # shifting array indices; re-running against this now-stale
-        # record_idx risks silently corrupting whatever record slid into
-        # its old slot. Nothing changed, so there's nothing to do.
-        return
-    if not _star_names.has(entered):
-        name_edit.text = str(_match_records[record_idx]["name"])
+        _full_propagation_refresh()
         return
 
-    _match_records[record_idx]["name"] = entered
+    _match_records[record_idx]["name"] = selected_name
 
-    var existing_idx: int = _find_match_record_by_name(entered)
+    var existing_idx: int = _find_match_record_by_name(selected_name)
     if existing_idx >= 0 and existing_idx != record_idx:
-        record_idx = _merge_match_records(record_idx, existing_idx)
+        record_idx = await _merge_match_records(record_idx, existing_idx)
 
     _save_puzzle_notes()
-    _build_star_widgets()
-    _build_star_tags()
-    call_deferred("_populate_markers_panel")
+    _full_propagation_refresh()
 
 
 # ==================================================
@@ -2615,17 +3049,21 @@ func _on_widget_range_committed(star_idx: int, lo_edit: LineEdit, hi_edit: LineE
     var raw_lo: String = lo_edit.text.strip_edges()
     var raw_hi: String = hi_edit.text.strip_edges()
 
-    var lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
-    var hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
+    var typed_lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
+    var typed_hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
 
-    if lo < 1 or lo > _star_count: lo = 0
-    if hi < 1 or hi > _star_count: hi = 0
+    if typed_lo < 1 or typed_lo > _star_count: typed_lo = 0
+    if typed_hi < 1 or typed_hi > _star_count: typed_hi = 0
 
-    if lo > 0 and hi > 0 and lo > hi:
-        var tmp := lo; lo = hi; hi = tmp
+    if typed_lo > 0 and typed_hi > 0 and typed_lo > typed_hi:
+        var tmp := typed_lo; typed_lo = typed_hi; typed_hi = tmp
 
-    lo_edit.text = str(lo) if lo > 0 else ""
-    hi_edit.text = str(hi) if hi > 0 else ""
+    var converted: Array = _parse_exclusive_bounds(typed_lo, typed_hi)
+    var lo: int = int(converted[0])
+    var hi: int = int(converted[1])
+
+    lo_edit.text = str(_exclusive_display_lo(lo, hi)) if lo > 0 else ""
+    hi_edit.text = str(_exclusive_display_hi(lo, hi)) if hi > 0 else ""
 
     var record_idx: int = _get_or_create_match_record_for_star_idx(star_idx)
     _match_records[record_idx]["seq_lo"] = lo
@@ -2635,7 +3073,7 @@ func _on_widget_range_committed(star_idx: int, lo_edit: LineEdit, hi_edit: LineE
     if lo > 0 and lo == hi:
         var existing_idx: int = _find_match_record_by_exact_seq(lo)
         if existing_idx >= 0 and existing_idx != record_idx:
-            record_idx = _merge_match_records(record_idx, existing_idx)
+            record_idx = await _merge_match_records(record_idx, existing_idx)
 
     _save_puzzle_notes()
     _full_propagation_refresh()
@@ -2777,6 +3215,33 @@ func _compute_excluded_positions_for(record_idx: int) -> Array:
         if lo > 0 and lo == hi and _records_provably_distinct(record_idx, i):
             excluded.append(lo)
     return excluded
+
+
+func _exclusive_display_lo(inclusive_lo: int, inclusive_hi: int) -> int:
+    if inclusive_lo <= 0:
+        return 0
+    if inclusive_lo == inclusive_hi:
+        return inclusive_lo
+    return inclusive_lo - 1
+
+
+func _exclusive_display_hi(inclusive_lo: int, inclusive_hi: int) -> int:
+    if inclusive_hi <= 0:
+        return 0
+    if inclusive_lo == inclusive_hi:
+        return inclusive_hi
+    var shown: int = inclusive_hi + 1
+    return 0 if shown > _star_count else shown
+
+
+func _parse_exclusive_bounds(raw_lo: int, raw_hi: int) -> Array:
+    if raw_lo > 0 and raw_hi > 0 and raw_lo == raw_hi:
+        return [raw_lo, raw_hi]
+    var lo: int = raw_lo + 1 if raw_lo > 0 else 0
+    var hi: int = raw_hi - 1 if raw_hi > 0 else 0
+    if lo > 0 and hi > 0 and lo > hi:
+        return [0, 0]
+    return [lo, hi]
 
 
 func _effective_seq_bounds(record_idx: int) -> Array:
@@ -2948,24 +3413,40 @@ func _build_sequence_slot_row(slot: int) -> void:
     seq_lbl.add_theme_color_override("font_color", row_color)
     row.add_child(seq_lbl)
 
-    var name_edit := LineEdit.new()
-    name_edit.custom_minimum_size = Vector2(100, 0)
-    name_edit.placeholder_text = "type a name"
-    name_edit.text = str(_match_records[record_idx]["name"])
+    var name_dropdown := OptionButton.new()
+    name_dropdown.custom_minimum_size = Vector2(120, 0)
+    var possible_names: Array[String] = _possible_names_for_record(record_idx)
+    var current_name: String = str(_match_records[record_idx]["name"])
+    name_dropdown.add_item("— none —")
+    name_dropdown.set_item_metadata(0, "")
+    var selected_idx: int = 0
+    for pn in possible_names:
+        name_dropdown.add_item(pn)
+        var item_idx: int = name_dropdown.item_count - 1
+        name_dropdown.set_item_metadata(item_idx, pn)
+        if pn == current_name:
+            selected_idx = item_idx
+    if current_name != "" and not possible_names.has(current_name):
+        name_dropdown.add_item(current_name)
+        var extra_idx: int = name_dropdown.item_count - 1
+        name_dropdown.set_item_metadata(extra_idx, current_name)
+        selected_idx = extra_idx
+    name_dropdown.selected = selected_idx
 
     var facts_vbox := VBoxContainer.new()
     facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     facts_vbox.add_theme_constant_override("separation", 1)
     row.add_child(facts_vbox)
 
-    facts_vbox.add_child(_make_fact_row("Name:", name_edit, row_color))
+    facts_vbox.add_child(_make_fact_row("Name:", name_dropdown, row_color))
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row_for_record(record_idx), row_color))
 
     var ridx := record_idx
-    var edit_ref := name_edit
-    name_edit.text_submitted.connect(func(_t): _on_record_name_committed(ridx, edit_ref))
-    name_edit.focus_exited.connect(func(): _on_record_name_committed(ridx, edit_ref))
+    var dropdown_ref := name_dropdown
+    name_dropdown.item_selected.connect(func(idx: int):
+        var chosen: String = str(dropdown_ref.get_item_metadata(idx))
+        await _on_record_name_selected(ridx, chosen))
 
     _markers_content.add_child(HSeparator.new())
 
@@ -2991,30 +3472,50 @@ func _build_color_group_row(color_idx: int, position_in_group: int) -> void:
     color_lbl.add_theme_color_override("font_color", STAR_COLORS_BY_IDX[color_idx])
     row.add_child(color_lbl)
 
-    var name_edit := LineEdit.new()
-    name_edit.custom_minimum_size = Vector2(100, 0)
-    name_edit.placeholder_text = "type a name"
-    name_edit.text = str(_match_records[record_idx]["name"])
+    var name_dropdown := OptionButton.new()
+    name_dropdown.custom_minimum_size = Vector2(120, 0)
+    var possible_names: Array[String] = _possible_names_for_record(record_idx)
+    var current_name: String = str(_match_records[record_idx]["name"])
+    name_dropdown.add_item("— none —")
+    name_dropdown.set_item_metadata(0, "")
+    var selected_idx: int = 0
+    for pn in possible_names:
+        name_dropdown.add_item(pn)
+        var item_idx: int = name_dropdown.item_count - 1
+        name_dropdown.set_item_metadata(item_idx, pn)
+        if pn == current_name:
+            selected_idx = item_idx
+    if current_name != "" and not possible_names.has(current_name):
+        name_dropdown.add_item(current_name)
+        var extra_idx: int = name_dropdown.item_count - 1
+        name_dropdown.set_item_metadata(extra_idx, current_name)
+        selected_idx = extra_idx
+    name_dropdown.selected = selected_idx
 
     var facts_vbox := VBoxContainer.new()
     facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     facts_vbox.add_theme_constant_override("separation", 1)
     row.add_child(facts_vbox)
 
-    facts_vbox.add_child(_make_fact_row("Name:", name_edit, row_color))
+    facts_vbox.add_child(_make_fact_row("Name:", name_dropdown, row_color))
     facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
     facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_carousel_row_for_record(record_idx), row_color))
 
     var ridx := record_idx
-    var edit_ref := name_edit
-    name_edit.text_submitted.connect(func(_t): _on_record_name_committed(ridx, edit_ref))
-    name_edit.focus_exited.connect(func(): _on_record_name_committed(ridx, edit_ref))
+    var dropdown_ref := name_dropdown
+    name_dropdown.item_selected.connect(func(idx: int):
+        var chosen: String = str(dropdown_ref.get_item_metadata(idx))
+        await _on_record_name_selected(ridx, chosen))
 
     _markers_content.add_child(HSeparator.new())
 
 
 func _populate_color_group_rows() -> void:
-    for ci in COLOR_NAME_LABELS.size():
+    _debug_dump_named_records()
+    var color_order: Array = range(COLOR_NAME_LABELS.size())
+    color_order.sort_custom(func(a, b):
+        return String(COLOR_NAME_LABELS[a]).nocasecmp_to(String(COLOR_NAME_LABELS[b])) > 0)
+    for ci in color_order:
         var count_in_color: int = 0
         for i in _star_count:
             if clamp(_star_colors[i] if i < _star_colors.size() else 1, 0, 3) == ci:
@@ -3029,6 +3530,10 @@ func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
     var record_idx: int = _get_or_create_match_record_for_pitch_slot(pitch_freq, position_in_group)
     var row_color: Color = _display_color_for_record(record_idx)
     var known_star_color: int = _known_color_for_record(record_idx)
+    print("[DEBUG] pitch row %s pos=%d record=%d star_idx=%d known_color=%d color_states=%s" %
+        [ConstellationLogicPuzzle.note_name_for_freq(pitch_freq), position_in_group, record_idx,
+         int(_match_records[record_idx].get("star_idx", -1)), known_star_color,
+         str(_match_records[record_idx].get("color_states", {}))])
 
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 8)
@@ -3049,24 +3554,40 @@ func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
         swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
         row.add_child(swatch)
 
-    var name_edit := LineEdit.new()
-    name_edit.custom_minimum_size = Vector2(100, 0)
-    name_edit.placeholder_text = "type a name"
-    name_edit.text = str(_match_records[record_idx]["name"])
+    var name_dropdown := OptionButton.new()
+    name_dropdown.custom_minimum_size = Vector2(120, 0)
+    var possible_names: Array[String] = _possible_names_for_record(record_idx)
+    var current_name: String = str(_match_records[record_idx]["name"])
+    name_dropdown.add_item("— none —")
+    name_dropdown.set_item_metadata(0, "")
+    var selected_idx: int = 0
+    for pn in possible_names:
+        name_dropdown.add_item(pn)
+        var item_idx: int = name_dropdown.item_count - 1
+        name_dropdown.set_item_metadata(item_idx, pn)
+        if pn == current_name:
+            selected_idx = item_idx
+    if current_name != "" and not possible_names.has(current_name):
+        name_dropdown.add_item(current_name)
+        var extra_idx: int = name_dropdown.item_count - 1
+        name_dropdown.set_item_metadata(extra_idx, current_name)
+        selected_idx = extra_idx
+    name_dropdown.selected = selected_idx
 
     var facts_vbox := VBoxContainer.new()
     facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     facts_vbox.add_theme_constant_override("separation", 1)
     row.add_child(facts_vbox)
 
-    facts_vbox.add_child(_make_fact_row("Name:", name_edit, row_color))
+    facts_vbox.add_child(_make_fact_row("Name:", name_dropdown, row_color))
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
 
     var ridx := record_idx
-    var edit_ref := name_edit
-    name_edit.text_submitted.connect(func(_t): _on_record_name_committed(ridx, edit_ref))
-    name_edit.focus_exited.connect(func(): _on_record_name_committed(ridx, edit_ref))
+    var dropdown_ref := name_dropdown
+    name_dropdown.item_selected.connect(func(idx: int):
+        var chosen: String = str(dropdown_ref.get_item_metadata(idx))
+        await _on_record_name_selected(ridx, chosen))
 
     _markers_content.add_child(HSeparator.new())
 
