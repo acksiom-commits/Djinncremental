@@ -55,6 +55,10 @@ const SEQ_WORD_EARLIER      := "earlier"
 const SEQ_WORD_LATER        := "later"
 const FRAME_BUDGET_MSEC     := 2       # max ms of work per frame during async gen
 const MAX_COLOR_PAIRS_PER_DIR := 3     # color-comparison pool cap per direction
+const MAX_CROSS_TRIM_ROUNDS := 10   # was 6 — bumped for the third (name) axis
+                                        # rounds. Total clue count is non-increasing round
+                                        # to round, so this is a defensive ceiling, not a
+                                        # normally-hit limit.
 const DIFFICULTY_JITTER_MAGNITUDE := 3.0   # +/- range added to difficulty scores per generation,
                                             # so clue-kind ORDER varies run-to-run, not just clue CONTENT.
 # ── Single-match clue rationing, per characteristic ──────────────────────
@@ -129,6 +133,7 @@ var _pitch_freqs: Array[float] = []       # this constellation's Hz table, index
 var _distances: Array[Array] = []         # _distances[a][b] = shortest graph-hop count, -1 if unreachable
 var _final_identity_clues: Array[Dictionary] = []   # promoted dist_color/between identity anchors
 var _color_negation_texts: Array[Dictionary] = []   # [{"s":int, "text":String}, ...]
+var _alph_rank: Array[int] = []   # star_index -> alphabetical rank among star_names, 0..star_count-1
 
 # ── Pitch CSP domain — parallel to the Sequence-rank domain above, but NOT
 # alldiff: multiple stars can legitimately share a pitch class. ──────────
@@ -610,7 +615,7 @@ func _validate_count_clues(solution: Array, count_clues: Array[Dictionary]) -> b
     return true
 
 
-func _solve(clues: Array[Dictionary], cap: int = 2) -> Array:
+func _solve(clues: Array[Dictionary], cap: int = 2, rank_restriction: Array = []) -> Array:
     var expanded_cmp: Array[Dictionary] = _expand_clues_to_cmp(clues)
     var adj_clues: Array[Dictionary] = []
     var count_clues: Array[Dictionary] = []
@@ -621,6 +626,11 @@ func _solve(clues: Array[Dictionary], cap: int = 2) -> Array:
             count_clues.append(clue)
 
     var possible: Array = _init_possibility_grid()
+    if not rank_restriction.is_empty():
+        for i in star_count:
+            for r in star_count:
+                if not rank_restriction[i][r]:
+                    possible[i][r] = false
     if not _apply_exact_clues(possible, clues):
         return []
     if not _apply_negative_clues(possible, clues):
@@ -911,10 +921,549 @@ func _pitch_possible_to_domains(possible: Array) -> Array:
     return domains
 
 
-func _solve_pitch(clues: Array[Dictionary], cap: int = 2) -> Array:
+func _possibility_grid_for_pitch_clues(clues: Array[Dictionary]):
+    # Pitch-axis mirror of _possibility_grid_for_clues: front-end of
+    # _solve_pitch (clue application + arc-consistency) without backtracking.
+    var expanded_pcmp: Array[Dictionary] = _expand_pitch_clues_to_cmp(clues)
+    var possible: Array = _init_pitch_possibility_grid()
+    if not _apply_pitch_exact_clues(possible, clues):
+        return null
+    if not _apply_pitch_negative_clues(possible, clues):
+        return null
+    if not _propagate_pitch(possible, expanded_pcmp):
+        return null
+    return possible
+
+
+func _possibility_grid_for_clues(clues: Array[Dictionary]):
+    # Sequence-axis mirror of _possibility_grid_for_pitch_clues: front-end of
+    # _solve (clue application + arc-consistency) without backtracking.
+    var expanded_cmp: Array[Dictionary] = _expand_clues_to_cmp(clues)
+    var adj_clues: Array[Dictionary] = []
+    var count_clues: Array[Dictionary] = []
+    for clue in clues:
+        if clue["kind"] == "adj_seq":
+            adj_clues.append(clue)
+        elif clue["kind"] == "count_before":
+            count_clues.append(clue)
+
+    var possible: Array = _init_possibility_grid()
+    if not _apply_exact_clues(possible, clues):
+        return null
+    if not _apply_negative_clues(possible, clues):
+        return null
+    if not _apply_range_clues(possible, clues):
+        return null
+    if not _propagate(possible, expanded_cmp, adj_clues, count_clues):
+        return null
+    return possible
+
+
+func _rank_restriction_from_pitch_clues(pitch_clues: Array[Dictionary]) -> Array:
+    # star_pitch_index and pitch_rank_solution are both ground truth the
+    # generator already has — a star's true rank is always among the ranks
+    # of stars sharing its true pitch, since both derive from the same
+    # melody data at generation time. Translates whatever pitch_clues has
+    # narrowed each star's pitch domain to into a rank restriction.
+    var no_restriction: Array = _init_possibility_grid()
+    var pitch_possible = _possibility_grid_for_pitch_clues(pitch_clues)
+    if pitch_possible == null:
+        return no_restriction
+
+    var ranks_for_pitch: Dictionary = {}   # pitch_class -> Array[rank]
+    for s2 in star_count:
+        var true_p: int = star_pitch_index[s2] if s2 < star_pitch_index.size() else -1
+        if not ranks_for_pitch.has(true_p):
+            ranks_for_pitch[true_p] = []
+        ranks_for_pitch[true_p].append(pitch_rank_solution[s2])
+
+    var restriction: Array = []
+    for s in star_count:
+        var row: Array = []
+        row.resize(star_count)
+        for r in star_count:
+            row[r] = false
+        for p in pitch_count:
+            if pitch_possible[s][p]:
+                for r2 in ranks_for_pitch.get(p, []):
+                    row[int(r2)] = true
+        restriction.append(row)
+    return restriction
+
+
+func _pitch_restriction_from_rank_clues(seq_clues: Array[Dictionary]) -> Array:
+    # Mirror of _rank_restriction_from_pitch_clues, other direction: if
+    # star s's rank could be r, and star_at_rank[r] is the one true star
+    # that occupies r, then s's pitch must be star_at_rank[r]'s true pitch
+    # IF s truly is that star — same self-referential-but-sound pattern.
+    var no_restriction: Array = _init_pitch_possibility_grid()
+    var rank_possible = _possibility_grid_for_clues(seq_clues)
+    if rank_possible == null:
+        return no_restriction
+
+    var star_at_rank: Dictionary = {}   # rank -> star_index
+    for s2 in star_count:
+        star_at_rank[pitch_rank_solution[s2]] = s2
+
+    var restriction: Array = []
+    for s in star_count:
+        var row: Array = []
+        row.resize(pitch_count)
+        for p in pitch_count:
+            row[p] = false
+        for r in star_count:
+            if rank_possible[s][r]:
+                var owner: int = int(star_at_rank.get(r, -1))
+                if owner >= 0 and owner < star_pitch_index.size():
+                    row[star_pitch_index[owner]] = true
+        restriction.append(row)
+    return restriction
+
+
+func _trim_sequence_pass(clues: Array[Dictionary], restriction: Array, frame_timer_box: Array) -> bool:
+    # One full weakest-first sweep over `clues` (mutated in place), testing
+    # removal against `restriction` (rank restriction from the pitch axis's
+    # CURRENT clue set, or [] for none). Returns true if anything was removed.
+    var removed_any: bool = false
+    var idx: int = 0
+    while idx < clues.size():
+        if clues.size() <= 1:
+            break
+        var trial_clue: Dictionary = clues[idx]
+        clues.remove_at(idx)
+        var trial_solutions: Array = _solve(clues, 2, restriction)
+        if trial_solutions.size() == 1:
+            removed_any = true
+        else:
+            clues.insert(idx, trial_clue)
+            idx += 1
+        if Time.get_ticks_msec() - float(frame_timer_box[0]) >= FRAME_BUDGET_MSEC:
+            await Engine.get_main_loop().process_frame
+            frame_timer_box[0] = Time.get_ticks_msec()
+    return removed_any
+
+
+func _trim_pitch_pass(clues: Array[Dictionary], restriction: Array, frame_timer_box: Array) -> bool:
+    var removed_any: bool = false
+    var idx: int = 0
+    while idx < clues.size():
+        if clues.size() <= 1:
+            break
+        var trial_clue: Dictionary = clues[idx]
+        clues.remove_at(idx)
+        var trial_solutions: Array = _solve_pitch(clues, 2, restriction)
+        if trial_solutions.size() == 1:
+            removed_any = true
+        else:
+            clues.insert(idx, trial_clue)
+            idx += 1
+        if Time.get_ticks_msec() - float(frame_timer_box[0]) >= FRAME_BUDGET_MSEC:
+            await Engine.get_main_loop().process_frame
+            frame_timer_box[0] = Time.get_ticks_msec()
+    return removed_any
+
+
+func _score_name_clue_difficulty(clue: Dictionary) -> float:
+    var base: float = 1.0
+    match str(clue.get("kind", "")):
+        "dist_color":
+            base = 6.0
+        "between":
+            base = 5.0
+        "alph_extreme":
+            base = 4.0
+        "neg_color":
+            base = 2.0 + float(clue.get("excluded", []).size())
+    return base + _clue_difficulty_jitter(clue)
+
+
+func _apply_one_name_filter(possible: Array, clue: Dictionary) -> void:
+    match str(clue.get("kind", "")):
+        "exact":
+            var s: int = clue["s"]
+            var r: int = clue["r"]
+            for d in star_count:
+                if pitch_rank_solution[d] != r:
+                    possible[d][s] = false
+        "range":
+            var s: int = clue["s"]
+            var lo: int = clue["lo"]
+            var hi: int = clue["hi"]
+            for d in star_count:
+                if pitch_rank_solution[d] < lo or pitch_rank_solution[d] > hi:
+                    possible[d][s] = false
+        "neg_exact":
+            var s: int = clue["s"]
+            var r: int = clue["r"]
+            for d in star_count:
+                if pitch_rank_solution[d] == r:
+                    possible[d][s] = false
+        "neg_adjacent":
+            var s: int = clue["s"]
+            var r: int = clue["r"]
+            for d in star_count:
+                var hit: bool = false
+                for n in adjacency[d]:
+                    if pitch_rank_solution[int(n)] == r:
+                        hit = true
+                        break
+                if hit:
+                    possible[d][s] = false
+        "count_before":
+            var s: int = clue["s"]
+            var k: int = clue["k"]
+            for d in star_count:
+                var cnt: int = 0
+                for n in adjacency[d]:
+                    if pitch_rank_solution[int(n)] < pitch_rank_solution[d]:
+                        cnt += 1
+                if cnt != k:
+                    possible[d][s] = false
+        "extreme":
+            var s: int = clue["s"]
+            var want_lowest: bool = clue["want_lowest"]
+            for d in star_count:
+                if adjacency[d].is_empty():
+                    possible[d][s] = false
+                    continue
+                var ok: bool = true
+                for n in adjacency[d]:
+                    if want_lowest and pitch_rank_solution[int(n)] < pitch_rank_solution[d]:
+                        ok = false
+                        break
+                    elif not want_lowest and pitch_rank_solution[int(n)] > pitch_rank_solution[d]:
+                        ok = false
+                        break
+                if not ok:
+                    possible[d][s] = false
+        "group_cmp":
+            var s: int = clue["s"]
+            var s_first: bool = clue["s_first"]
+            var target_ranks: Array = []
+            for t in clue["targets"]:
+                target_ranks.append(pitch_rank_solution[int(t)])
+            if target_ranks.is_empty():
+                return
+            var bound: int = target_ranks.min() if s_first else target_ranks.max()
+            for d in star_count:
+                if s_first and pitch_rank_solution[d] >= bound:
+                    possible[d][s] = false
+                elif not s_first and pitch_rank_solution[d] <= bound:
+                    possible[d][s] = false
+        "dist_color":
+            var s: int = clue["s"]
+            var c: int = clue["c"]
+            var dist: int = clue["dist"]
+            for d in star_count:
+                var found: bool = false
+                for other in star_count:
+                    if other != d and _distances[d][other] == dist and star_colors[other] == c:
+                        found = true
+                        break
+                if not found:
+                    possible[d][s] = false
+        "neg_color":
+            var s: int = clue["s"]
+            var excluded: Array = clue.get("excluded", [])
+            for d in star_count:
+                if star_colors[d] in excluded:
+                    possible[d][s] = false
+        "alph_extreme":
+            var s: int = clue["s"]
+            var want_lowest_rank: bool = clue["want_lowest_rank"]
+            var group_ranks: Array = []
+            for t in clue["group"]:
+                group_ranks.append(pitch_rank_solution[int(t)])
+            if group_ranks.is_empty():
+                return
+            var bound2: int = group_ranks.min() if want_lowest_rank else group_ranks.max()
+            for d in star_count:
+                if pitch_rank_solution[d] != bound2:
+                    possible[d][s] = false
+        "pitch_exact":
+            var s: int = clue["s"]
+            var p: int = clue["p"]
+            for d in star_count:
+                var dp: int = star_pitch_index[d] if d < star_pitch_index.size() else -1
+                if dp != p:
+                    possible[d][s] = false
+        "pitch_neg":
+            var s: int = clue["s"]
+            var p_list: Array = clue.get("p_list", [])
+            for d in star_count:
+                var dp: int = star_pitch_index[d] if d < star_pitch_index.size() else -1
+                if dp in p_list:
+                    possible[d][s] = false
+        "pitch_extreme":
+            var s: int = clue["s"]
+            var want_lowest: bool = clue["want_lowest"]
+            for d in star_count:
+                if adjacency[d].is_empty():
+                    possible[d][s] = false
+                    continue
+                var dp: int = star_pitch_index[d] if d < star_pitch_index.size() else 0
+                var d_rank: int = _pitch_freq_rank[dp]
+                var ok: bool = true
+                for n in adjacency[d]:
+                    var np: int = star_pitch_index[int(n)] if int(n) < star_pitch_index.size() else 0
+                    var n_rank: int = _pitch_freq_rank[np]
+                    if want_lowest and n_rank < d_rank:
+                        ok = false
+                        break
+                    elif not want_lowest and n_rank > d_rank:
+                        ok = false
+                        break
+                if not ok:
+                    possible[d][s] = false
+        "pitch_group_cmp":
+            var s: int = clue["s"]
+            var s_lower: bool = clue["s_lower"]
+            var target_ranks: Array = []
+            for t in clue["targets"]:
+                var tp: int = star_pitch_index[int(t)] if int(t) < star_pitch_index.size() else 0
+                target_ranks.append(_pitch_freq_rank[tp])
+            if target_ranks.is_empty():
+                return
+            var bound3: int = target_ranks.min() if s_lower else target_ranks.max()
+            for d in star_count:
+                var dp2: int = star_pitch_index[d] if d < star_pitch_index.size() else 0
+                var d_rank2: int = _pitch_freq_rank[dp2]
+                if s_lower and d_rank2 >= bound3:
+                    possible[d][s] = false
+                elif not s_lower and d_rank2 <= bound3:
+                    possible[d][s] = false
+        "pitch_group_eq":
+            var stars: Array = clue["stars"]
+            if stars.is_empty():
+                return
+            var anchor: int = int(stars[0])
+            var shared_p: int = star_pitch_index[anchor] if anchor < star_pitch_index.size() else -1
+            for st in stars:
+                var s2: int = int(st)
+                for d in star_count:
+                    var dp3: int = star_pitch_index[d] if d < star_pitch_index.size() else -1
+                    if dp3 != shared_p:
+                        possible[d][s2] = false
+        _:
+            pass   # cmp, adj_seq, pitch_cmp, between handled separately
+
+
+func _apply_name_single_dot_filters(possible: Array, seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary], name_clues: Array[Dictionary]) -> bool:
+    for clue in seq_clues:
+        _apply_one_name_filter(possible, clue)
+    for clue in pitch_clues:
+        _apply_one_name_filter(possible, clue)
+    for clue in name_clues:
+        _apply_one_name_filter(possible, clue)
+    for i in star_count:
+        var any_left: bool = false
+        for j in star_count:
+            if possible[i][j]:
+                any_left = true
+                break
+        if not any_left:
+            return false
+    return true
+
+
+func _name_arcs_from_clues(seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary]) -> Array:
+    var arcs: Array = []
+    for clue in seq_clues:
+        var k: String = str(clue.get("kind", ""))
+        if k == "cmp":
+            arcs.append({"n1": int(clue["a"]), "n2": int(clue["b"]), "kind": "cmp", "a_gt_b": bool(clue["a_gt_b"])})
+        elif k == "adj_seq":
+            arcs.append({"n1": int(clue["a"]), "n2": int(clue["b"]), "kind": "adj_seq"})
+    for clue in pitch_clues:
+        if str(clue.get("kind", "")) == "pitch_cmp":
+            arcs.append({"n1": int(clue["a"]), "n2": int(clue["b"]), "kind": "pitch_cmp", "rel": str(clue["rel"])})
+    return arcs
+
+
+func _name_arc_predicate(arc: Dictionary, d1: int, d2: int) -> bool:
+    match str(arc["kind"]):
+        "cmp":
+            var a_gt_b: bool = arc["a_gt_b"]
+            return (pitch_rank_solution[d1] > pitch_rank_solution[d2]) if a_gt_b else (pitch_rank_solution[d1] < pitch_rank_solution[d2])
+        "adj_seq":
+            return pitch_rank_solution[d1] == pitch_rank_solution[d2] + 1
+        "pitch_cmp":
+            var p1: int = star_pitch_index[d1] if d1 < star_pitch_index.size() else 0
+            var p2: int = star_pitch_index[d2] if d2 < star_pitch_index.size() else 0
+            var rel: String = arc["rel"]
+            if rel == "eq":
+                return is_equal_approx(_pitch_freqs[p1], _pitch_freqs[p2])
+            elif rel == "gt":
+                return _pitch_freq_rank[p1] > _pitch_freq_rank[p2]
+            else:
+                return _pitch_freq_rank[p1] < _pitch_freq_rank[p2]
+    return true
+
+
+func _name_arc_consistency(possible: Array, arcs: Array) -> bool:
+    var changed: bool = true
+    while changed:
+        changed = false
+        for arc in arcs:
+            var n1: int = arc["n1"]
+            var n2: int = arc["n2"]
+            for d1 in star_count:
+                if not possible[d1][n1]:
+                    continue
+                var supported: bool = false
+                for d2 in star_count:
+                    if possible[d2][n2] and _name_arc_predicate(arc, d1, d2):
+                        supported = true
+                        break
+                if not supported:
+                    possible[d1][n1] = false
+                    changed = true
+            for d2 in star_count:
+                if not possible[d2][n2]:
+                    continue
+                var supported2: bool = false
+                for d1 in star_count:
+                    if possible[d1][n1] and _name_arc_predicate(arc, d1, d2):
+                        supported2 = true
+                        break
+                if not supported2:
+                    possible[d2][n2] = false
+                    changed = true
+        for i in star_count:
+            var any_left: bool = false
+            for j in star_count:
+                if possible[i][j]:
+                    any_left = true
+                    break
+            if not any_left:
+                return false
+    return true
+
+
+func _validate_between_clues(assignment: Array, between_clues: Array[Dictionary]) -> bool:
+    for clue in between_clues:
+        var mid_dot: int = assignment[int(clue["mid"])]
+        var a_dot: int = assignment[int(clue["a"])]
+        var b_dot: int = assignment[int(clue["b"])]
+        if _distances[a_dot][mid_dot] + _distances[mid_dot][b_dot] != _distances[a_dot][b_dot]:
+            return false
+    return true
+
+
+func _solve_names(seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary], name_clues: Array[Dictionary], cap: int = 2) -> Array:
+    var possible: Array = _init_possibility_grid()
+    if not _apply_name_single_dot_filters(possible, seq_clues, pitch_clues, name_clues):
+        return []
+    var arcs: Array = _name_arcs_from_clues(seq_clues, pitch_clues)
+    if not _name_arc_consistency(possible, arcs):
+        return []
+
+    var between_clues: Array[Dictionary] = []
+    for clue in name_clues:
+        if str(clue.get("kind", "")) == "between":
+            between_clues.append(clue)
+
+    if _all_singleton(possible):
+        var sol: Array = _extract_singleton_solution(possible)
+        if not _validate_between_clues(sol, between_clues):
+            return []
+        return [sol]
+
+    var solutions: Array = []
+    var assignment: Array = []
+    assignment.resize(star_count)
+    for i in star_count:
+        assignment[i] = -1
+    var init_domains: Array = _possible_to_domains(possible)
+    _backtrack_fc_names(assignment, init_domains, between_clues, solutions, cap)
+    return solutions
+
+
+func _backtrack_fc_names(assignment: Array, domains: Array, between_clues: Array[Dictionary], solutions: Array, cap: int) -> void:
+    if solutions.size() >= cap:
+        return
+    var var_idx: int = -1
+    var best_size: int = star_count + 1
+    for i in star_count:
+        if assignment[i] == -1:
+            var sz: int = domains[i].size()
+            if sz < best_size:
+                best_size = sz
+                var_idx = i
+    if var_idx == -1:
+        if _validate_between_clues(assignment, between_clues):
+            solutions.append(assignment.duplicate())
+        return
+    for val in domains[var_idx]:
+        assignment[var_idx] = val
+        var new_doms = _forward_check(var_idx, val, domains, [], [])
+        if new_doms != null:
+            _backtrack_fc_names(assignment, new_doms, between_clues, solutions, cap)
+        assignment[var_idx] = -1
+        if solutions.size() >= cap:
+            return
+
+
+func _name_candidate_pool() -> Array[Dictionary]:
+    var pool: Array[Dictionary] = []
+    pool.append_array(_build_dist_color_pool())
+    pool.append_array(_build_between_pool())
+    pool.append_array(_build_neg_color_pool())
+    pool.append_array(_build_alph_extreme_pool())
+    pool.sort_custom(func(a, b): return _score_name_clue_difficulty(a) > _score_name_clue_difficulty(b))
+    return pool
+
+
+func _ensure_and_trim_names(name_chosen: Array[Dictionary], name_pool: Array[Dictionary], seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary], frame_timer_box: Array) -> bool:
+    var changed: bool = false
+    var safety: int = name_pool.size() + name_chosen.size() + 10
+    var counter: int = 0
+    while true:
+        counter += 1
+        if counter > safety:
+            push_warning("ConstellationLogicPuzzle [%d]: name-axis safety cap hit." % constellation_id)
+            break
+        var solutions: Array = _solve_names(seq_clues, pitch_clues, name_chosen, 2)
+        if solutions.size() == 1:
+            break
+        if name_pool.is_empty():
+            push_error("ConstellationLogicPuzzle [%d]: NAME BINDING STILL NOT UNIQUE after full pool." % constellation_id)
+            break
+        name_chosen.append(name_pool[0])
+        name_pool.remove_at(0)
+        changed = true
+        if Time.get_ticks_msec() - float(frame_timer_box[0]) >= FRAME_BUDGET_MSEC:
+            await Engine.get_main_loop().process_frame
+            frame_timer_box[0] = Time.get_ticks_msec()
+
+    var idx: int = 0
+    while idx < name_chosen.size():
+        if name_chosen.size() <= 1:
+            break
+        var trial: Dictionary = name_chosen[idx]
+        name_chosen.remove_at(idx)
+        var trial_solutions: Array = _solve_names(seq_clues, pitch_clues, name_chosen, 2)
+        if trial_solutions.size() == 1:
+            changed = true
+            name_pool.append(trial)
+        else:
+            name_chosen.insert(idx, trial)
+            idx += 1
+        if Time.get_ticks_msec() - float(frame_timer_box[0]) >= FRAME_BUDGET_MSEC:
+            await Engine.get_main_loop().process_frame
+            frame_timer_box[0] = Time.get_ticks_msec()
+    return changed
+
+
+func _solve_pitch(clues: Array[Dictionary], cap: int = 2, pitch_restriction: Array = []) -> Array:
     var expanded_cmp: Array[Dictionary] = _expand_pitch_clues_to_cmp(clues)
 
     var possible: Array = _init_pitch_possibility_grid()
+    if not pitch_restriction.is_empty():
+        for i in star_count:
+            for p in pitch_count:
+                if not pitch_restriction[i][p]:
+                    possible[i][p] = false
     if not _apply_pitch_exact_clues(possible, clues):
         return []
     if not _apply_pitch_negative_clues(possible, clues):
@@ -1338,7 +1887,49 @@ func _build_neg_color_pool() -> Array[Dictionary]:
             text = "%s is not %s." % [star_names[s], names[0]]
         else:
             text = "%s is neither %s nor %s." % [star_names[s], names[0], names[1]]
-        pool.append({"s": s, "text": text})
+        pool.append({"kind": "neg_color", "s": s, "excluded": excluded.duplicate(), "text": text})
+    return pool
+
+
+func _compute_alph_rank() -> void:
+    _alph_rank = []
+    _alph_rank.resize(star_count)
+    var order: Array = []
+    for i in star_count:
+        order.append(i)
+    order.sort_custom(func(a, b): return star_names[a] < star_names[b])
+    for rank in order.size():
+        _alph_rank[order[rank]] = rank
+
+
+func _build_alph_extreme_pool() -> Array[Dictionary]:
+    var pool: Array[Dictionary] = []
+    var by_color: Array[Array] = [[], [], [], []]
+    for s in star_count:
+        by_color[star_colors[s]].append(s)
+    for c in 4:
+        var group: Array = by_color[c]
+        if group.size() < 2:
+            continue
+        var alph_first: int = group[0]
+        for t in group:
+            if _alph_rank[int(t)] < _alph_rank[alph_first]:
+                alph_first = int(t)
+        var alph_last: int = group[0]
+        for t in group:
+            if _alph_rank[int(t)] > _alph_rank[alph_last]:
+                alph_last = int(t)
+        var group_ranks: Array = []
+        for t in group:
+            group_ranks.append(pitch_rank_solution[int(t)])
+        var min_rank: int = group_ranks.min()
+        var max_rank: int = group_ranks.max()
+        if pitch_rank_solution[alph_first] == min_rank:
+            pool.append({"kind": "alph_extreme", "s": alph_first, "group": group.duplicate(), "want_lowest_rank": true,
+                "text": "Among the %s stars, the one whose name comes first alphabetically fires earliest." % COLOR_NAMES[c].to_lower()})
+        if pitch_rank_solution[alph_last] == max_rank:
+            pool.append({"kind": "alph_extreme", "s": alph_last, "group": group.duplicate(), "want_lowest_rank": false,
+                "text": "Among the %s stars, the one whose name comes last alphabetically fires latest." % COLOR_NAMES[c].to_lower()})
     return pool
 
 
@@ -1828,46 +2419,10 @@ func generate_clues_async(_manual_clue_count: int = -1) -> void:
         constellation_id, phase2_dt, solve_call_count, solve_total_msec, solve_max_msec,
         chosen.size(), skipped_cands.size(), override_injected, str(unique)])
 
-    var t_phase3_start: float = Time.get_ticks_msec()
-    var trim_solve_count: int = 0
-    var trim_solve_max: float = 0.0
-
-    chosen.sort_custom(func(clue_a, clue_b):
-        return _score_clue_difficulty(clue_a, pitch_rank_solution) < _score_clue_difficulty(clue_b, pitch_rank_solution))
-
-    var trim_idx: int = 0
-    while trim_idx < chosen.size():
-        if chosen.size() <= 1:
-            break
-
-        var trial_clue: Dictionary = chosen[trim_idx]
-        chosen.remove_at(trim_idx)
-
-        var t_trim_solve: float = Time.get_ticks_msec()
-        var trial_solutions: Array = _solve(chosen, 2)
-        var trim_dt: float = Time.get_ticks_msec() - t_trim_solve
-        trim_solve_count += 1
-        if trim_dt > trim_solve_max:
-            trim_solve_max = trim_dt
-
-        if trial_solutions.size() == 1:
-            pass   # still unique without it — leave it out, don't advance trim_idx
-        else:
-            chosen.insert(trim_idx, trial_clue)
-            trim_idx += 1
-
-        if Time.get_ticks_msec() - frame_timer >= FRAME_BUDGET_MSEC:
-            await Engine.get_main_loop().process_frame
-            frame_timer = Time.get_ticks_msec()
-
-    var phase3_dt: float = Time.get_ticks_msec() - t_phase3_start
-    print("[PUZZLE_TIMING %d] PHASE3 (seq trim): %.0fms wall, %d solve calls, max_single_solve=%.0fms, final_clues=%d" % [
-        constellation_id, phase3_dt, trim_solve_count, trim_solve_max, chosen.size()])
-
-    _final_clues = chosen
-
     # ==================================================
-    # PHASE 4/5 — PITCH axis
+    # PHASE 4 — PITCH axis injection only (axis-only baseline, same
+    # reasoning as Phase 2: no cross-referencing available yet since
+    # neither axis has a finished clue set for the other to lean on).
     # ==================================================
     var pitch_chosen: Array[Dictionary] = []
 
@@ -1981,46 +2536,61 @@ func generate_clues_async(_manual_clue_count: int = -1) -> void:
         print("[PUZZLE_TIMING %d] PHASE4 (pitch gen): %.0fms, %d solve calls, total_solve=%.0fms, max_single_solve=%.0fms, clues=%d, cap-skipped=%d, override-injected=%d, unique=%s" % [
             constellation_id, phase4_dt, p_solve_call_count, p_solve_total_msec, p_solve_max_msec,
             pitch_chosen.size(), p_skipped_cands.size(), p_override_injected, str(p_unique)])
+    else:
+        print("[PUZZLE_TIMING %d] pitch_count=0, skipping Pitch CSP phase." % constellation_id)
 
-        var t_phase5_start: float = Time.get_ticks_msec()
-        var p_trim_solve_count: int = 0
-        var p_trim_solve_max: float = 0.0
+    # ==================================================
+    # PHASE 3/5/7 — CROSS-AXIS TRIM FIXPOINT. Alternates full weakest-first
+    # sweeps of the sequence, pitch, and name clue sets, each one leaning on
+    # the OTHER axes' current (already-trimmed-this-round) clue sets. Repeats
+    # until a full round removes nothing from any side.
+    # ==================================================
+    var t_phase357_start: float = Time.get_ticks_msec()
+    var cross_trim_round: int = 0
+    var frame_timer_box: Array = [frame_timer]
 
+    chosen.sort_custom(func(clue_a, clue_b):
+        return _score_clue_difficulty(clue_a, pitch_rank_solution) < _score_clue_difficulty(clue_b, pitch_rank_solution))
+    if pitch_count > 0:
         pitch_chosen.sort_custom(func(clue_a, clue_b):
             return _score_pitch_clue_difficulty(clue_a) < _score_pitch_clue_difficulty(clue_b))
 
-        var p_trim_idx: int = 0
-        while p_trim_idx < pitch_chosen.size():
-            if pitch_chosen.size() <= 1:
-                break
+    _compute_alph_rank()
+    var name_chosen: Array[Dictionary] = []
+    var name_pool: Array[Dictionary] = _name_candidate_pool()
 
-            var p_trial_clue: Dictionary = pitch_chosen[p_trim_idx]
-            pitch_chosen.remove_at(p_trim_idx)
+    while cross_trim_round < MAX_CROSS_TRIM_ROUNDS:
+        cross_trim_round += 1
+        var round_changed: bool = false
 
-            var pt_trim_solve: float = Time.get_ticks_msec()
-            var p_trial_solutions: Array = _solve_pitch(pitch_chosen, 2)
-            var p_trim_dt: float = Time.get_ticks_msec() - pt_trim_solve
-            p_trim_solve_count += 1
-            if p_trim_dt > p_trim_solve_max:
-                p_trim_solve_max = p_trim_dt
+        var pitch_rank_restriction: Array = []
+        if pitch_count > 0:
+            pitch_rank_restriction = _rank_restriction_from_pitch_clues(pitch_chosen)
+        if await _trim_sequence_pass(chosen, pitch_rank_restriction, frame_timer_box):
+            round_changed = true
 
-            if p_trial_solutions.size() == 1:
-                pass
-            else:
-                pitch_chosen.insert(p_trim_idx, p_trial_clue)
-                p_trim_idx += 1
+        if pitch_count > 0:
+            var seq_pitch_restriction: Array = _pitch_restriction_from_rank_clues(chosen)
+            if await _trim_pitch_pass(pitch_chosen, seq_pitch_restriction, frame_timer_box):
+                round_changed = true
 
-            if Time.get_ticks_msec() - frame_timer >= FRAME_BUDGET_MSEC:
-                await Engine.get_main_loop().process_frame
-                frame_timer = Time.get_ticks_msec()
+        if await _ensure_and_trim_names(name_chosen, name_pool, chosen, pitch_chosen, frame_timer_box):
+            round_changed = true
 
-        var phase5_dt: float = Time.get_ticks_msec() - t_phase5_start
-        print("[PUZZLE_TIMING %d] PHASE5 (pitch trim): %.0fms wall, %d solve calls, max_single_solve=%.0fms, final_pitch_clues=%d" % [
-            constellation_id, phase5_dt, p_trim_solve_count, p_trim_solve_max, pitch_chosen.size()])
-    else:
-        print("[PUZZLE_TIMING %d] pitch_count=0, skipping Pitch CSP phases." % constellation_id)
+        if not round_changed:
+            break
 
+    if cross_trim_round >= MAX_CROSS_TRIM_ROUNDS:
+        push_warning("ConstellationLogicPuzzle [%d]: cross-axis trim hit MAX_CROSS_TRIM_ROUNDS without reaching a fixpoint." % constellation_id)
+
+    frame_timer = float(frame_timer_box[0])
+    var phase357_dt: float = Time.get_ticks_msec() - t_phase357_start
+    print("[PUZZLE_TIMING %d] PHASE3/5/7 (cross-axis trim, 3-way): %.0fms wall, %d rounds, final_seq_clues=%d, final_pitch_clues=%d, final_name_clues=%d" % [
+        constellation_id, phase357_dt, cross_trim_round, chosen.size(), pitch_chosen.size(), name_chosen.size()])
+
+    _final_clues = chosen
     _final_pitch_clues = pitch_chosen
+    _final_identity_clues = name_chosen
 
     var kind_counts: Dictionary = {}
     for clue in chosen:
@@ -2033,72 +2603,6 @@ func generate_clues_async(_manual_clue_count: int = -1) -> void:
         var pkc: String = str(pclue.get("kind", ""))
         pitch_kind_counts[pkc] = int(pitch_kind_counts.get(pkc, 0)) + 1
     print("[PUZZLE_TIMING %d] final pitch composition: %s" % [constellation_id, str(pitch_kind_counts)])
-
-    # ==================================================
-    # PHASE 6 — IDENTITY ANCHORS, minimal coverage only. Coverage targets are
-    # exactly the stars referenced BY NAME in the final clue sets — nothing
-    # more. A between anchor names two additional stars, so choosing one adds
-    # those names to the obligation list (worklist). dist_color anchors are
-    # self-contained and preferred. No filler beyond coverage: a clue that
-    # isn't needed doesn't ship.
-    # ==================================================
-    var needed: Dictionary = {}
-    for clue in chosen:
-        match str(clue.get("kind", "")):
-            "cmp", "adj_seq":
-                needed[int(clue["a"])] = true
-                needed[int(clue["b"])] = true
-            "exact":
-                needed[int(clue.get("n", -1))] = true
-            "neg_exact", "neg_adjacent", "range", "group_cmp", "count_before":
-                needed[int(clue["s"])] = true
-    for pclue in pitch_chosen:
-        match str(pclue.get("kind", "")):
-            "pitch_cmp":
-                needed[int(pclue["a"])] = true
-                needed[int(pclue["b"])] = true
-            "pitch_exact", "pitch_neg", "pitch_extreme", "pitch_group_cmp":
-                needed[int(pclue["s"])] = true
-            "pitch_group_eq":
-                for st in pclue["stars"]:
-                    needed[int(st)] = true
-    needed.erase(-1)
-
-    var dist_color_pool: Array[Dictionary] = _build_dist_color_pool()
-    var between_pool: Array[Dictionary] = _build_between_pool()
-    var dist_color_by_star: Dictionary = {}
-    for dc in dist_color_pool:
-        dist_color_by_star[int(dc["s"])] = dc
-    var between_by_mid: Dictionary = {}
-    for bt in between_pool:
-        var m: int = int(bt["mid"])
-        if not between_by_mid.has(m):
-            between_by_mid[m] = []
-        between_by_mid[m].append(bt)
-
-    var identity_chosen: Array[Dictionary] = []
-    var handled: Dictionary = {}
-    var uncoverable: Array = []
-    var queue: Array = needed.keys()
-    while not queue.is_empty():
-        var sq: int = int(queue.pop_back())
-        if handled.has(sq):
-            continue
-        handled[sq] = true
-        if dist_color_by_star.has(sq):
-            identity_chosen.append(dist_color_by_star[sq])
-        elif between_by_mid.has(sq):
-            var bt2: Dictionary = between_by_mid[sq][0]
-            identity_chosen.append(bt2)
-            for extra in [int(bt2["a"]), int(bt2["b"])]:
-                if not handled.has(extra):
-                    queue.push_back(extra)
-        else:
-            uncoverable.append(star_names[sq] if sq < star_names.size() else str(sq))
-
-    _final_identity_clues = identity_chosen
-    print("[PUZZLE_TIMING %d] identity anchors: needed=%d chosen=%d uncoverable=%s (uncovered names resolve by elimination)" % [
-        constellation_id, needed.size(), identity_chosen.size(), str(uncoverable)])
 
     var total_dt: float = Time.get_ticks_msec() - t_total_start
     print("[PUZZLE_TIMING %d] TOTAL wall time: %.0fms" % [constellation_id, total_dt])

@@ -881,6 +881,11 @@ func _on_pitch_listen_toggle_pressed() -> void:
     if _pitch_listen_mode:
         _fork_mode = false
         _fork_btn.modulate = Color(1, 1, 1, 1)
+        _selected_star = -1
+        for wi in _star_widgets.size():
+            if is_instance_valid(_star_widgets[wi]):
+                _star_widgets[wi].visible = false
+    _star_map_control.queue_redraw()
 
 
 func _on_pitch_listen_star_clicked(star_idx: int) -> void:
@@ -914,6 +919,8 @@ func _on_fork_toggle_pressed() -> void:
     _fork_mode = not _fork_mode
     _fork_btn.modulate = Color(0.3, 1.0, 0.4, 1.0) if _fork_mode else Color(1, 1, 1, 1)
     if _fork_mode:
+        _pitch_listen_mode = false
+        _pitch_listen_btn.modulate = Color(1, 1, 1, 1)
         _selected_star = -1
         for wi in _star_widgets.size():
             if is_instance_valid(_star_widgets[wi]):
@@ -1435,7 +1442,7 @@ func _build_star_widgets_impl() -> void:
         root.z_index = 10
         _star_map_control.add_child(root)
         _star_widgets.append(root)
-        root.visible = (i == _selected_star)
+        root.visible = (i == _selected_star) and not _widget_closed.get(i, false)
 
         # ── Range row ──────────────────────────────────────────────
         var range_row := HBoxContainer.new()
@@ -1452,6 +1459,7 @@ func _build_star_widgets_impl() -> void:
         var display_lo: int = _exclusive_display_lo(int(star_bounds[0]), int(star_bounds[1]))
         edit_lo.text = str(display_lo) if display_lo > 0 else ""
         edit_lo.add_theme_font_size_override("font_size", 13)
+        edit_lo.add_theme_constant_override("minimum_character_width", 2)
         _style_range_edit(edit_lo, star_color)
         range_row.add_child(edit_lo)
 
@@ -1486,6 +1494,7 @@ func _build_star_widgets_impl() -> void:
         var display_hi: int = _exclusive_display_hi(int(star_bounds[0]), int(star_bounds[1]))
         edit_hi.text = str(display_hi) if display_hi > 0 else ""
         edit_hi.add_theme_font_size_override("font_size", 13)
+        edit_hi.add_theme_constant_override("minimum_character_width", 2)
         _style_range_edit(edit_hi, star_color)
         range_row.add_child(edit_hi)
 
@@ -1587,6 +1596,7 @@ func _build_star_widgets_impl() -> void:
             name_hbox.add_theme_constant_override("separation", 6)
             panel.add_child(name_hbox)
 
+            @warning_ignore("integer_division")
             var half: int = (all_star_names.size() + 1) / 2
             for col_i in 2:
                 var col_vbox := VBoxContainer.new()
@@ -2906,6 +2916,7 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     var lo_val: int = _exclusive_display_lo(int(bounds[0]), int(bounds[1]))
     edit_lo.text = str(lo_val) if lo_val > 0 else ""
     edit_lo.add_theme_font_size_override("font_size", 12)
+    edit_lo.add_theme_constant_override("minimum_character_width", 2)
     _style_range_edit(edit_lo, row_color)
     row.add_child(edit_lo)
 
@@ -2938,6 +2949,7 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     var hi_val: int = _exclusive_display_hi(int(bounds[0]), int(bounds[1]))
     edit_hi.text = str(hi_val) if hi_val > 0 else ""
     edit_hi.add_theme_font_size_override("font_size", 12)
+    edit_hi.add_theme_constant_override("minimum_character_width", 2)
     _style_range_edit(edit_hi, row_color)
     row.add_child(edit_hi)
 
