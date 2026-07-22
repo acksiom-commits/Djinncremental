@@ -2,9 +2,13 @@ class_name ConstellationStarNamer
 extends RefCounted
 # ================= CONSTELLATION STAR NAMER v1.0.0 =================
 # Procedurally generates Greek-rooted star names, seeded per constellation
-# so names are stable across sessions for the same constellation_id
-# (NOT per-player — these are flavor/lore names, same for every player,
-# unlike colors and pitch-rank which ARE per-player seeded).
+# so the NAME POOL is stable across sessions for the same constellation_id
+# (NOT per-player — these are flavor/lore names, the same set for every
+# player). WHICH star gets WHICH name from that pool is a separate decision:
+# constellation_logic_puzzle.gd's setup() shuffles the array this function
+# returns with the player-seeded RNG (_shuffle_star_names_for_player())
+# immediately after calling this, the same way colors are shuffled. Do not
+# add player-seeding here — that shuffle step is where it belongs.
 #
 # Each constellation can supply its own theme (prefix/mid/suffix pools)
 # via constellation_data.gd's optional "name_theme" field:
