@@ -12,10 +12,8 @@
 
 These surfaced during the audit and aren't refactor concerns — they're open questions or live bugs.
 
-1. **Only 5 constellations are defined, not 6.** `constellation_data.gd:101-506` (`BUILT_IN` array) has ids 0-4 (The Archon, The Spark, The Hourglass, The Satchel, The Bellows), with a comment at line 505 reserving ids 5-16 "for future built-in constellations." There's a parallel `patron_constellations.json` loading path (`constellation_data.gd:508,1152`) that could in principle supply a 6th, but `res://data/patron_constellations.json` doesn't exist in the repo. Either a 6th constellation didn't make it into this file, or "6" was aspirational and the real current count is 5 — worth confirming before this doc gets used as a reference.
-2. **Two live economy-tracking bugs from the Grain→Mote Uonite migration:**
-   - `game_data.gd:115` `RECIPES["uonite_assemble"]` still lists `{"grain": 20, "sparks": 1}` — the tooltip shown to players for Uonite cost is stale (confirmed via `git show aa83a2a`, the commit that moved Uonite to Mote-based).
-   - `production_manager.gd:1263-1279` `get_consumption_network()` still routes Uonite's cost through Grain and has no Mote entry, so `get_resource_drain_per_second`/`get_potential_drain_per_second` — and therefore any UI bar driven by them — misreport both Grain and Mote drain.
+1. ~~**Only 5 constellations are defined, not 6.**~~ **RESOLVED** — `constellation_data.gd` now defines ids 0-5 (6 constellations, The Djinn added).
+2. ~~**Two live economy-tracking bugs from the Grain→Mote Uonite migration**~~ **RESOLVED** — `game_data.gd` `RECIPES["uonite_assemble"]` and `production_manager.gd`'s `get_consumption_network()` both fixed to route through Mote.
 
 ---
 
@@ -58,8 +56,8 @@ Signal: `manifold_ticked`. Entry points: `manual_summon_spark/monad_compress/tet
 
 `archon_tetrahedron.gd` is self-contained (procedural mesh, expression/tween system) and has no game-state coupling — clean by comparison.
 
-### A live scene/script drift bug
-`root_ui.gd:1010` transitions players to `TESTFirmamentUI.tscn` (test-prefixed name, shipping as the real transition target). Meanwhile `FirmamentUI.tscn` — the scene that reads as "the real one" by name — has drifted to load `root_ui.gd` as its script instead of `firmament_ui.gd`. One of these two Firmament scenes is effectively dead; `firmament_ui.gd` (117 lines) is only attached inside the test-named scene. Worth a deliberate decision (pick one, delete/rename the other) rather than leaving this ambiguous.
+### A live scene/script drift bug — RESOLVED 2026-07-24
+`root_ui.gd:1010` transitioned players to `TESTFirmamentUI.tscn` (test-prefixed name, shipping as the real transition target). Meanwhile `FirmamentUI.tscn` — the scene that reads as "the real one" by name — had drifted to load `root_ui.gd` as its script instead of `firmament_ui.gd`. Confirmed via node-tree comparison that the two scenes weren't near-duplicates: `FirmamentUI.tscn` (root_ui.gd) was a far more complete build (full constellation panel, every production button with cooldown bars, Uonite creation viewport) than `TESTFirmamentUI.tscn` (firmament_ui.gd, resource bars + Archon + dialogue only, no constellation/production UI) — raising a real question of whether content needed to migrate rather than just picking a name. Confirmed with the dev: `TESTFirmamentUI.tscn`'s sparseness is intentional (Firmament-age production/constellation gameplay isn't built yet by design); `FirmamentUI.tscn` was a genuinely abandoned earlier prototype. Resolution: deleted the old `FirmamentUI.tscn`, renamed `TESTFirmamentUI.tscn` → `FirmamentUI.tscn`, updated `root_ui.gd:1010`'s transition target to match. `constellation_selector.gd` (only used by the deleted scene) and `RootUI_v2.tscn` (confirmed unused, referenced nowhere in code) were removed in the same pass — see §4/§5 below, also updated.
 
 ### Pain points
 - `root_ui.gd:884-964` — `_start_puzzle_generation`/`_dev_recompute_puzzle` duplicate ~35 lines of puzzle setup nearly verbatim.
@@ -117,7 +115,7 @@ Owns constellation definitions (`BUILT_IN`, see §0), octant geometry, unlock/me
 **Files:** `constellation_study_overlay.gd` (4041, **primary refactor target #1**), `constellation_overlay.gd` (606), `constellation_popout.gd` (737), `constellation_selector.gd` (335, likely superseded), `puzzle_synths.gd` (456, clean).
 
 ### Shape
-`constellation_overlay.gd` projects stars to screen space and draws the constellation on the main game view; it also owns the **live in-game click-sequence puzzle** — the old Simon-says mechanic, which is still the actual on-screen solve interaction. `constellation_study_overlay.gd` is the modal "study" panel: it renders the zebra-grid clues, tracks player deductions (`_match_records`), and persists them via `ConstellationData`. `constellation_popout.gd` is the current (v2.0.0) left-edge constellation selector; `constellation_selector.gd` is an older (v0.8.0) bottom-slide equivalent, structurally near-identical but simpler, still wired into `FirmamentUI.tscn` while `constellation_popout.gd` is wired into `RootUI_v2.tscn` — almost certainly a superseded predecessor kept alive by the parallel/legacy Firmament scene (see §2's `FirmamentUI`/`TESTFirmamentUI` drift — these two issues are likely the same root cause).
+`constellation_overlay.gd` projects stars to screen space and draws the constellation on the main game view; it also owns the **live in-game click-sequence puzzle** — the old Simon-says mechanic, which is still the actual on-screen solve interaction. `constellation_study_overlay.gd` is the modal "study" panel: it renders the zebra-grid clues, tracks player deductions (`_match_records`), and persists them via `ConstellationData`. `constellation_popout.gd` is the current (v2.0.0) left-edge constellation selector, instanced as `ConstellationPopout.tscn` inside the live `RootUI.tscn`. `constellation_selector.gd` was an older (v0.8.0) bottom-slide equivalent, structurally near-identical but simpler — **RESOLVED 2026-07-24**: it was only used by the abandoned `FirmamentUI.tscn` (see §2), confirmed dead, and deleted alongside it.
 
 `constellation_study_overlay.gd` never calls into `constellation_logic_puzzle.gd` directly (only the static `note_name_for_freq` helper) — all puzzle data comes through `ConstellationData.get_puzzle_cache()`.
 
@@ -148,16 +146,16 @@ Owns constellation definitions (`BUILT_IN`, see §0), octant geometry, unlock/me
 ## 5. Cross-cutting
 
 - **`resource_registry.gd`** (2 lines, `extends Node`, no members) and its matching `.tscn` are referenced nowhere in the codebase. It reads as scaffolding for a planned refactor (centralizing resource dictionaries out of `game_context.gd`) that was started but never continued. Worth a decision: finish it or delete it — an empty autoload-shaped stub sitting in the tree is exactly the kind of thing that causes confusion in six months.
-- **The FirmamentUI/TESTFirmamentUI drift (§2) and the constellation_selector/constellation_popout duplication (§4) look like the same underlying event**: a "test" scene became the real one and the old "real" scene + its script were never fully retired. Worth resolving both together rather than as two separate cleanups.
+- **The FirmamentUI/TESTFirmamentUI drift (§2) and the constellation_selector/constellation_popout duplication (§4) were the same underlying event** — **RESOLVED 2026-07-24**, both together: a "test" scene became the real one and the old "real" scene + its script were never fully retired. See §2's resolution note for what was deleted/renamed.
 - **Duplication pattern across the whole codebase**: near-duplicate solver pairs (Sequence/Pitch CSP), near-duplicate UI panel pairs (`constellation_selector`/`constellation_popout`), near-duplicate puzzle-interaction code (Fork mode/`constellation_overlay`'s click-sequence), and 4x-duplicated recipe cost data all share the same shape — a system got copied to iterate safely, and the old copy was never deleted or reunified once the new one won. This is the single biggest structural theme across the whole audit, more than any individual file's size.
 
 ---
 
 ## Suggested refactor order (not yet executed — for discussion)
 
-1. Resolve the two open questions in §0 (constellation count, the two stale-recipe-data bugs) — small, concrete, and everything downstream benefits from correct answers here first.
-2. Split `constellation_study_overlay.gd` into deduction-engine / widget-UI / (retire or isolate) Fork-mode-duplicate — highest line-count payoff, clearest natural seams.
+1. ~~Resolve the two open questions in §0 (constellation count, the two stale-recipe-data bugs)~~ **DONE** — see §0.
+2. ~~Split `constellation_study_overlay.gd` into deduction-engine / widget-UI / (retire or isolate) Fork-mode-duplicate~~ **DONE 2026-07-24** — split into `constellation_fork_puzzle.gd` (335 lines), `constellation_puzzle_widgets.gd` (2339 lines), `constellation_puzzle_deduction.gd` (1505 lines); the orchestrator shell is down to 692 lines, matching this doc's original target range.
 3. Split or de-duplicate `constellation_logic_puzzle.gd`'s Sequence/Pitch solver clone and Form-builder near-duplicates — second highest payoff, more delicate because of the correctness properties already verified (don't touch without re-running the uniqueness checks memory already documents).
-4. Decide FirmamentUI vs TESTFirmamentUI and constellation_selector vs constellation_popout — delete or finish, not both living forever.
+4. ~~Decide FirmamentUI vs TESTFirmamentUI and constellation_selector vs constellation_popout — delete or finish, not both living forever.~~ **DONE 2026-07-24** — see §2/§4 resolution notes.
 5. `root_ui.gd`'s `_check_*_trigger` sprawl and Archon poke-minigame extraction — lower urgency, same "god object" pattern.
 6. `resource_registry.gd` — finish or delete.

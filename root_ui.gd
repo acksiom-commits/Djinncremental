@@ -1007,7 +1007,7 @@ func _on_name_picker_confirm() -> void:
 func _on_age_selected(key: String) -> void:
     match key:
         "firmament":
-            _transition_to_age("res://TESTFirmamentUI.tscn")
+            _transition_to_age("res://FirmamentUI.tscn")
         "world":
             _transition_to_age("res://WorldUI.tscn")
         "civilization":
