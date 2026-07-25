@@ -1,65 +1,95 @@
 class_name ConstellationLogicPuzzle
 extends RefCounted
-# ================= CONSTELLATION LOGIC PUZZLE v2.0.0 =================
-# Deductive (Zebra-style) clue generator + solver for the constellation
-# pitch-assignment puzzle.
+# ============== CONSTELLATION LOGIC PUZZLE — FORMS/CELLS ARCHITECTURE ==============
+# Ground-up replacement generator for constellation_logic_puzzle.gd's clue
+# generation layer, built on the corrected three-tier model (2026-07-20):
 #
-# v2.0.0: Full rewrite of solver and generator.
-#   SOLVER: Replaced naive backtracking with forward-checking + MRV
-#     (Minimum-Remaining-Values) heuristic. FC propagates domain
-#     reductions immediately after every partial assignment, pruning
-#     branches that would violate alldiff or comparison constraints
-#     before recursing. MRV always picks the most-constrained unassigned
-#     variable next, reducing branching factor dramatically. Result:
-#     milliseconds per solve vs. seconds/timeouts for naive backtracking
-#     at 15+ stars.
-#   GENERATOR: generate_clues_by_primer_type samples and constructs one
-#     clue at a time directly from ground truth, ranked by primer-category
-#     entropic bias, cycling through all categories every pass until
-#     Sequence and Name both solve uniquely — see that function's own doc
-#     comment and the constellation_puzzle_sequential_generator_design
-#     memory for the full history (this comment predates that redesign and
-#     describes the old entropy-greedy-pool approach it replaced).
-#   ASYNC: generate_clues_async() is a coroutine (call with await) that
-#     yields to the engine every FRAME_BUDGET_MSEC milliseconds, keeping
-#     the main thread responsive during background pre-generation.
-#   CACHE: Serializes to/from Dictionary for save_manager.gd integration.
-#     Caller is responsible for storing/loading the cache dict.
+#   1. RECORD ARRAY (upstream of everything, produced by ground-truth
+#      generation below): every pair of two specific Star Characteristics
+#      (Name/Sequence/Color/Pitch/Distance value-tuples, including Color/
+#      Pitch sub-ranks so grouped values behave as a nested mini zebra-grid)
+#      is a CELL, graded True or False depending on whether both actually
+#      co-occur on the same star. Every cell starts "unused."
+#   2. FORMS (22 abstract templates, structural shells with typed Star-
+#      Characteristic node slots — NOT yet built in this file, pending the
+#      finalized form table). A Form's nodes are filled by WEIGHTED RANDOM
+#      CELL SAMPLING: biased toward True cells over False (more information
+#      per cell, though False cells are never "decorative" — they still
+#      carry real, sound, single-referent constraint, just non-cascading),
+#      and CHAIN-CONSTRAINED so exactly one node's cell must be "used"
+#      already (linking to the previous clue — skipped only for the very
+#      first clue), with every other node drawn from "unused" cells.
+#   3. KIND is DERIVED, never assigned upstream: once a Form's nodes are
+#      filled with actual cell content, "kind" is just a label describing
+#      which categories ended up in which nodes — consumed only by grammar
+#      formation (phrasing template selection). Kind is never a dispatch
+#      key generation branches on to decide what to sample.
+#   4. CLUE is a filled Form run through grammar formation/checking to
+#      produce correct English text for the player.
 #
-# PROBLEM SHAPE:
-#   N stars, each with a FIXED, player-visible identity:
-#     - name (generated once per constellation_id, same for all players)
-#     - color (one of 4 categories, seeded per-player, visible at a glance)
-#     - position in the line-graph (proximity, derived from line_pairs)
-#   Each star fires exactly once in the melody (guaranteed by
-#   constellation_overlay.gd's _build_correct_star_sequence). The ONE
-#   unknown the player deduces is: which melody-step does each star fire
-#   at (= pitch_rank_solution[star_index] = step index in correct_star_sequence).
+# BLOAT CONTROL (two methods, per user direction 2026-07-20):
+#   (1) ZebraTutor pass: after each committed clue, run the propagation
+#       engine below and flip every cell that becomes DERIVABLE (not merely
+#       directly sampled) from "unused" to "used" — this is what makes
+#       exhausting the unused-cell pool converge with actual solvability,
+#       rather than "coverage" and "sufficiency" being unrelated properties.
+#       This is why the propagation engine survives wholesale from the old
+#       file: it graduates from "downstream verifier" to the literal engine
+#       driving what counts as used/unused.
+#   (2) (reserved — second bloat-control method not yet specified)
 #
-# USAGE (async, pre-generation):
-#   var puzzle := ConstellationLogicPuzzle.new()
-#   puzzle.setup(star_count, line_pairs, correct_star_sequence,
-#                player_seed, constellation_id)
-#   await puzzle.generate_clues_async()   # yields between frames
-#   var clues: Array[String] = puzzle.get_clue_texts()
-#   var cache: Dictionary = puzzle.to_cache_dict()  # save this
+# WHAT'S PORTED FROM constellation_logic_puzzle.gd, VERBATIM OR NEAR-VERBATIM:
+#   - Ground-truth generation (stars/colors/pitches/distances/names/sub-ranks)
+#   - Sequence-axis + Pitch-axis propagation/solving engine (arc-consistency,
+#     forward-checking backtrack, possibility-grid front-ends) — the kind-
+#     string matches inside these are STRUCTURAL dispatch (exact/negative/
+#     comparison shape), not per-kind bespoke logic, so they port cleanly;
+#     the literal strings will be re-keyed to Form names once defined.
+#   - Generic helpers: shuffle, pick-from-domain/pick-star, domain-min/max/
+#     forced-value, alphabetical-rank, note-name-for-frequency.
+#   - Public API shape (setup/is_generation_complete/generate_clues_async/
+#     get_form_clue_texts/check_solution) and the cache-serialization OUTER
+#     shell.
 #
-# USAGE (restore from cache):
-#   var puzzle := ConstellationLogicPuzzle.new()
-#   puzzle.from_cache_dict(cache_dict)
-#   var clues: Array[String] = puzzle.get_clue_texts()
+# DELIBERATELY NOT PORTED, PENDING WORK:
+#   - Name-axis solving (_apply_one_name_filter/_apply_name_single_dot_
+#     filters/_name_arcs_from_clues/_name_arc_predicate/_name_arc_consistency/
+#     _possibility_grid_for_name_clues/_solve_names/_backtrack_fc_names in the
+#     old file): this is ~560 lines entirely keyed on the OLD per-kind kind-
+#     strings with bespoke logic per kind (unlike the Sequence/Pitch engine's
+#     structural-only dispatch) — it cannot be separated from the old kind
+#     system, so it needs a genuine rewrite once the new Kind field-shapes
+#     are known from the finalized Forms table, not a mechanical port.
+#   - The entire kind-string-keyed generation apparatus (_sample_and_build
+#     and ~40 per-kind bodies, _category_kinds/PRIMER_ELIGIBLE_KINDS/
+#     STRUCTURAL_KINDS, _primer_category_min/_attempts_for_category/
+#     _force_primer_coverage, _try_pick_for_category, generate_clues_by_
+#     primer_type's Phase A/B loop): superseded outright by the Forms/Cells
+#     pipeline; no port, no adaptation.
+#   - _score_clue_difficulty: repurposed per user direction as a data-
+#     collection hook for future per-Form player-enjoyment tracking, not a
+#     trim-ordering key (there is no trim pass anymore) — not yet rebuilt.
+#   - The 22 Forms themselves, the record-array/cell data structure, the
+#     weighted+chained sampling loop, and grammar formation are NEW and not
+#     yet written — blocked on the finalized Forms table (names only are
+#     confirmed so far: Exact Identity, Single Negation, Dual Negation,
+#     Disjunction, Pairwise Order, Exact Offset, Adjacency, Range, Group
+#     Order, Count, Extreme, Equality Pair, Mutual Exclusion, Group
+#     Comparison, Distance Existential, Distance Extreme, Betweenness,
+#     Degree Fact, Non-Adjacency, Cross-Domain Bridge, Pseudo-True Pair
+#     Aligned, Pseudo-True Pair Staggered).
 # ========================================================================
- 
- 
+
+
+# ==================================================
+# GROUND TRUTH GENERATION — ported verbatim, upstream of all three tiers
+# ==================================================
 enum StarColor { BLUE, WHITE, YELLOW_ORANGE, RED }
+enum Category { NAME, SEQUENCE, COLOR, PITCH, DISTANCE }
 const COLOR_NAMES           := ["Blue", "White", "Yellow", "Red"]
 const SEQ_WORD_EARLIER      := "earlier"
 const SEQ_WORD_LATER        := "later"
 const FRAME_BUDGET_MSEC     := 2       # max ms of work per frame during async gen
-const MAX_CROSS_TRIM_ROUNDS := 10   # was 6 — bumped for the third (name) axis
-                                        # rounds. Total clue count is non-increasing round
-                                        # to round, so this is a defensive ceiling, not a
-                                        # normally-hit limit.
 const MAX_BACKTRACK_NODES := 50000   # hard ceiling on recursive nodes explored per
                                        # solve() call, shared across all three solvers.
                                        # Without this, a hard-to-disambiguate clue set
@@ -74,61 +104,6 @@ var _pitch_solve_fast_path_count: int = 0
 var _pitch_solve_backtrack_count: int = 0
 var _pitch_unresolved_star_sum: int = 0
 var _pitch_unresolved_star_samples: int = 0
-const DIFFICULTY_JITTER_MAGNITUDE := 3.0   # +/- range added to difficulty scores per generation,
-                                            # so clue-kind ORDER varies run-to-run, not just clue CONTENT.
-# ── Single-match clue rationing, per characteristic ──────────────────────
-# Each characteristic (sequence, proximity, ...) gets its OWN independent
-# positive-single-match budget and negative-single-match budget, each
-# floor(star_count / CHARACTERISTIC_DIVISOR). Multiple clue kinds describing
-# the same characteristic (e.g. "ordinal_exact" and "ordinal_adjacent" both pin a Sequence
-# position) draw from the SAME budget rather than each getting their own —
-# that's what caught adj_seq flooding unchecked last pass despite exact
-# being capped. To add a characteristic or reclassify a kind, edit the two
-# dictionaries below only; no other code changes needed.
-const CHARACTERISTIC_DIVISOR := 4
-const ENTROPY_SHORTLIST_SIZE := 12
-const PITCH_EXACT_MAX_SHARE := 0.5   # entropy-greedy will pick pitch_exact for the
-                                       # overwhelming majority of picks left unchecked
-                                       # (a direct pin is structurally more entropy-
-                                       # efficient per-clue than any relational fact) —
-                                       # this caps its SHARE of normal picks so other
-                                       # pitch kinds get real representation, not just
-                                       # Phase 8's "at least one" floor.
-const PITCH_FLAVOR_CLUE_TARGET := 6  # 2026-07-19: Pitch is NOT meant to be solvable
-                                       # from clues alone — players are expected to use
-                                       # the Listen mechanic to assign pitches themselves
-                                       # (standing design constraint, not a completeness
-                                       # requirement). Pitch generation used to run an
-                                       # entropy-greedy loop until _solve_pitch reported a
-                                       # unique solution (driving 10-16+ tone_exact clues
-                                       # per puzzle) — replaced with a small fixed budget
-                                       # of the MOST informative picks as a reinforcement/
-                                       # convenience layer, not a parallel full CSP solve.
-const PRIMER_CATEGORY_MIN := 2
-# _primer_category_min(cat), defined further down near
-# PRIMER_CATEGORY_ENTROPIC_BIAS, scales this flat floor by the same bias
-# table driving _attempts_for_category — a flat floor of 2 was letting
-# _trim_sequence_pass legitimately strip Multi-Elimination back down to
-# barely anything even when generation produced plenty, since 2 survivors
-# (one unique_list_n, one tone_all_diff) technically satisfies "the
-# category has 2 members" without giving the player much Multi-
-# Elimination content at all.
-const TAB_MIN := 4
-const POS_SINGLE_MATCH_KINDS_BY_CHARACTERISTIC: Dictionary = {
-    "sequence":             ["ordinal_exact", "ordinal_adjacent"],
-    "sequence_offset":      ["ordinal_offset"],
-    "sequence_primer":      ["ordinal_neither_nor", "ordinal_either_or", "ordinal_unaligned"],
-    "relative_order":       ["ordinal_cmp"],
-    "pitch_relative_order": ["tone_cmp"],
-    "pitch_single":         ["tone_exact"],
-    "proximity_extreme":    ["ordinal_extreme"],
-    "proximity_count":      ["ordinal_count_before"],
-}
-const NEG_SINGLE_MATCH_KINDS_BY_CHARACTERISTIC: Dictionary = {
-    "sequence":  ["ordinal_neg"],
-    "proximity": ["proximity_neg_adjacent"],
-    "pitch":     ["tone_neg"],
-}
 const NOTE_LETTER_NAMES: Array[String] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
 ]
@@ -181,7 +156,7 @@ var _generation_complete: bool = false
  
 # ── Real-pitch + graph-distance data (known info, used for flavor clues only) ──
 var star_pitch_index: Array[int] = []     # star_pitch_index[i] = pitch-table index for star i
-var _pitch_sub_rank: Array[int] = []      # star_pitch_index[i]-relative sub-rank (0,1,2.. -> "A","B","C"), same purpose as _color_sub_rank
+var _pitch_sub_rank: Array[int] = []      # frequency-rank-relative sub-rank (0,1,2.. -> "A","B","C") — grouped by actual pitch (_pitch_freq_rank), not raw star_pitch_index; same purpose as _color_sub_rank
 var _pitch_freqs: Array[float] = []       # this constellation's Hz table, indexed by pitch index
 var _distances: Array[Array] = []         # _distances[a][b] = shortest graph-hop count, -1 if unreachable
 var _final_identity_clues: Array[Dictionary] = []   # promoted dist_color/between identity anchors
@@ -194,7 +169,6 @@ var _pitch_freq_rank: Array[int] = []   # pitch_index -> ascending-frequency ran
 var _final_pitch_clues: Array[Dictionary] = []
  
 var _rng := RandomNumberGenerator.new()
-var _difficulty_jitter_salt: int = 0
  
  
 # ==================================================
@@ -232,14 +206,21 @@ func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
     _pitch_freqs = []
     for v in p_pitch_freqs:
         _pitch_freqs.append(float(v))
-    _pitch_sub_rank = _assign_sub_ranks_within_groups(star_pitch_index)
 
     # Pitch CSP domain setup: distinct pitch-class count and a stable
     # ascending-frequency rank per pitch index (ties share a rank), used by
     # the pitch propagator for bound-consistency the same way star ranks are
-    # used by the Sequence propagator.
+    # used by the Sequence propagator. Computed BEFORE _pitch_sub_rank
+    # (moved below _pitch_freq_rank, was previously computed from the raw,
+    # frequency-meaningless star_pitch_index instead) so sub-ranks group
+    # stars that actually share a pitch, not stars that happen to share an
+    # arbitrary table slot — those aren't the same grouping in general.
     pitch_count = _pitch_freqs.size()
     _compute_pitch_freq_rank()
+    var pitch_freq_rank_per_star: Array = []
+    for s in star_count:
+        pitch_freq_rank_per_star.append(_pitch_freq_rank[star_pitch_index[s]])
+    _pitch_sub_rank = _assign_sub_ranks_within_groups(pitch_freq_rank_per_star)
  
  
 func _compute_pitch_freq_rank() -> void:
@@ -417,16 +398,17 @@ func _set_pitch_ranks_from_sequence(correct_star_sequence: Array) -> void:
             missing = true
     if missing:
         push_warning("ConstellationLogicPuzzle [%d]: some stars never fire in correct_star_sequence — check puzzle_sequence content." % constellation_id)
- 
+
+
 # ==================================================
-# ARC-CONSISTENCY PROPAGATION (fixed-point, no branching)
+# SEQUENCE-AXIS PROPAGATION + SOLVER — ported verbatim
 # ==================================================
-# Runs before any backtracking is attempted. For puzzles where the clue set
-# is already tight enough to fully determine the solution (the common case,
-# since generate_clues_async() adds clues until unique), this alone proves
-# uniqueness with zero search. Backtracking only runs as a fallback, seeded
-# from these already-reduced domains rather than the full 0..N range.
- 
+# Kind-string matches below (ordinal_exact/ordinal_neg/ordinal_cmp/etc, plus
+# the pitch-axis tone_* equivalents further down) are STRUCTURAL dispatch —
+# "this clue has an exact-identity shape," "this clue has a comparison
+# shape" — not per-kind bespoke logic. They will be re-keyed to whatever
+# names the finalized Forms table assigns once that exists; the algorithm
+# bodies themselves don't change.
 func _init_possibility_grid() -> Array:
     var grid: Array = []
     for i in star_count:
@@ -1261,168 +1243,40 @@ func _possibility_grid_for_clues(clues: Array[Dictionary]):
     return possible
 
 
-func _remaining_entropy_for_clues(clues: Array[Dictionary]) -> float:
-    var possible = _possibility_grid_for_clues(clues)
-    if possible == null:
-        return -1.0
-    var entropy: float = 0.0
-    for s in star_count:
-        var domain_size: int = 0
-        for r in star_count:
-            if possible[s][r]:
-                domain_size += 1
-        if domain_size == 0:
-            return -1.0
-        entropy += log(float(domain_size)) / log(2.0)
-    return entropy
-
-
-func _remaining_entropy_for_pitch_clues(clues: Array[Dictionary]) -> float:
-    var possible = _possibility_grid_for_pitch_clues(clues)
-    if possible == null:
-        return -1.0
-    var entropy: float = 0.0
-    for s in star_count:
-        var domain_size: int = 0
-        for p in pitch_count:
-            if possible[s][p]:
-                domain_size += 1
-        if domain_size == 0:
-            return -1.0
-        entropy += log(float(domain_size)) / log(2.0)
-    return entropy
- 
- 
-## _rank_restriction_from_pitch_clues/_pitch_restriction_from_rank_clues were
-## removed in Phase 4 of the 2026-07-18 refactor. Phase 2 had already fixed
-## them to always return the fully-unrestricted grid — Pitch and Sequence
-## are independently-seeded, uncorrelated axes (verified: star_pitch_index
-## uses a separate RNG stream from pitch_rank_solution — see setup()), so no
-## sound restriction between them was ever derivable without an explicit
-## bridging clue, and any such clue is already a normal member of its own
-## axis's clue set. With both functions permanently no-ops, their only call
-## site (the cross-trim loop below) now passes [] directly — equivalent,
-## and skips rebuilding a full unrestricted grid every round for nothing.
-## See constellation_puzzle_csp_review_findings memory for the original bug
-## this fixed (ground truth leaking into clue-trimming decisions).
 
 
 # ==================================================
-# UNIFIED CATEGORY GRID (Phase 3 of the 2026-07-18 refactor) — ADDITIVE.
+# GENERIC DOMAIN HELPERS — ported verbatim
 # ==================================================
-# One shared, generic engine for all 5 puzzle categories, replacing the
-# pattern of maintaining near-duplicate propagators per axis (_propagate vs
-# _propagate_pitch) and treating Color/Proximity as untracked side data.
-# Not yet wired into generate_clues_async() — this section is self-contained
-# and can be exercised/verified independently before Phase 4 migrates the
-# live entropy/trim pipeline onto it.
-#
-# Two dimensions distinguish the 5 categories, and this section keeps them
-# separate on purpose (established across the design conversation preceding
-# this refactor):
-#   (1) WHEN the player learns a star's value without solving: Color and
-#       Degree/Proximity are painted on the map at a glance; Pitch is
-#       revealed via listening OR deduced; Name and Sequence are only ever
-#       deduced.
-#   (2) Value SCARCITY structure (how many stars share a given value) is
-#       universal across all 5 categories, not just the 3 "unsolved" ones —
-#       Color and Degree have real scarce/common value splits too (verified
-#       via _assign_colors_balanced()'s uneven leftover distribution and the
-#       naturally skewed degree distributions read from line_pairs).
-#
-# CRITICAL BOUNDARY: this section has two kinds of function, and they must
-# never be mixed. "Live domain" functions (_init_category_grid,
-# _propagate_category, _naked_subset_pass) work ONLY from clue-derived
-# possibility grids — never ground truth — and are safe to use for
-# solve-time uniqueness verification. "Ground truth" functions
-# (_category_ground_truth_value, _category_value_group_sizes) exist only for
-# GENERATION-TIME clue-authoring and difficulty/entropy scoring, exactly
-# like every existing pool-builder already reads star_colors/
-# pitch_rank_solution/etc. to write truthful clue text. Using a ground-truth
-# function's output to narrow a live possibility grid during trimming or
-# uniqueness-checking would reintroduce the exact leak fixed in Phase 2.
-
-enum Category { NAME, PITCH, SEQUENCE, COLOR, DEGREE }
-
-
-func _category_domain_size(cat: int) -> int:
-    match cat:
-        Category.NAME, Category.SEQUENCE:
-            return star_count
-        Category.PITCH:
-            return pitch_count
-        Category.COLOR:
-            return 4
-        Category.DEGREE:
-            return _max_degree + 1
-    return 0
-
-
-func _category_is_alldiff(cat: int) -> bool:
-    return cat == Category.NAME or cat == Category.SEQUENCE
-
-
-func _init_category_grid(cat: int) -> Array:
-    var size: int = _category_domain_size(cat)
-    var grid: Array = []
-    for i in star_count:
-        var row: Array = []
-        row.resize(size)
-        for v in size:
-            row[v] = true
-        grid.append(row)
-    return grid
-
-
-func _init_color_grid() -> Array:
-    # Color is known from generation (painted on the map) — its grid starts
-    # pre-collapsed to the singleton truth, same shape as any other category,
-    # so the generic engine below never needs to special-case it.
-    var grid: Array = _init_category_grid(Category.COLOR)
-    for i in star_count:
-        for v in 4:
-            grid[i][v] = (v == star_colors[i])
-    return grid
-
-
-func _init_degree_grid() -> Array:
-    # Degree stands in for the "Proximity" category's scalar, scarcity-
-    # carrying value (see design conversation — hop-distance is pairwise,
-    # not a single per-star value, so Degree is what gets a category slot).
-    var grid: Array = _init_category_grid(Category.DEGREE)
-    for i in star_count:
-        for v in (_max_degree + 1):
-            grid[i][v] = (v == star_degrees[i])
-    return grid
-
-
-func _value_rank(v: int, value_rank: Array) -> int:
-    # value_rank remaps a raw domain index to a comparable ordering — needed
-    # for Pitch (class index vs frequency rank); pass [] for categories
-    # where the raw index already IS the comparable order (Sequence, Degree).
-    if value_rank.is_empty():
-        return v
-    return value_rank[v]
-
-
-func _category_domain_min_rank(grid: Array, dot: int, domain_size: int, value_rank: Array) -> int:
-    var m: int = -1
-    for v in domain_size:
+func _domain_min(grid: Array, dot: int, size: int) -> int:
+    for v in size:
         if grid[dot][v]:
-            var r: int = _value_rank(v, value_rank)
-            if m == -1 or r < m:
-                m = r
-    return m
+            return v
+    return -1
 
 
-func _category_domain_max_rank(grid: Array, dot: int, domain_size: int, value_rank: Array) -> int:
-    var m: int = -1
-    for v in domain_size:
+func _domain_max(grid: Array, dot: int, size: int) -> int:
+    for v in range(size - 1, -1, -1):
         if grid[dot][v]:
-            var r: int = _value_rank(v, value_rank)
-            if r > m:
-                m = r
-    return m
+            return v
+    return -1
+
+
+func _domain_forced_value(grid: Array, dot: int, size: int) -> int:
+    var found: int = -1
+    for v in size:
+        if grid[dot][v]:
+            if found != -1:
+                return -1   # more than one possibility left — not forced
+            found = v
+    return found
+
+
+func _domain_any_in_range(grid: Array, dot: int, lo: int, hi: int) -> bool:
+    for v in range(lo, hi + 1):
+        if grid[dot][v]:
+            return true
+    return false
 
 
 func _naked_subset_pass(grid: Array, domain_size: int, alldiff: bool) -> bool:
@@ -1508,1406 +1362,12 @@ func _naked_subset_pass(grid: Array, domain_size: int, alldiff: bool) -> bool:
     return changed_any
 
 
-## ── Decomposed single-pass primitives (no internal while-loop, no
-## contradiction check) — each does ONE round of narrowing and reports
-## whether anything changed. _propagate_unified() below combines these into
-## ONE joint fixed-point loop across ALL 5 categories at once, instead of
-## converging each category separately and freezing it before the next
-## starts. This is what actually lets a clue touching multiple categories
-## (e.g. "Selion is more distant from Keriion than the 4th note star" — a
-## Name constraint, anchored by a Sequence-picked reference, evaluated via
-## Distance) be processed as one joint constraint rather than forced into a
-## single "home axis" bucket the way _kind_home_array() does today.
-
-func _apply_direct_category_arcs_once(grid: Array, domain_size: int,
-        cmp_arcs: Array, eq_arcs: Array, offset_arcs: Array,
-        value_rank: Array = []) -> bool:
-    # One round of bound-consistency for arcs BOTH of whose endpoints are
-    # dot indices within the SAME category's own domain (Sequence-Sequence,
-    # Pitch-Pitch) — the shape _propagate/_propagate_pitch each implemented
-    # separately. Returns false immediately on contradiction.
-    var changed: bool = false
-
-    for arc in cmp_arcs:
-        var a: int = arc["a"]
-        var b: int = arc["b"]
-        var a_gt_b: bool = arc["a_gt_b"]
-        var hi: int = a if a_gt_b else b
-        var lo: int = b if a_gt_b else a
-
-        var min_lo: int = _category_domain_min_rank(grid, lo, domain_size, value_rank)
-        if min_lo == -1:
-            return false
-        for v in domain_size:
-            if grid[hi][v] and _value_rank(v, value_rank) <= min_lo:
-                grid[hi][v] = false
-                changed = true
-
-        var max_hi: int = _category_domain_max_rank(grid, hi, domain_size, value_rank)
-        if max_hi == -1:
-            return false
-        for v in domain_size:
-            if grid[lo][v] and _value_rank(v, value_rank) >= max_hi:
-                grid[lo][v] = false
-                changed = true
-
-    for arc in eq_arcs:
-        var a2: int = arc["a"]
-        var b2: int = arc["b"]
-        for v in domain_size:
-            if grid[a2][v] and not grid[b2][v]:
-                grid[a2][v] = false
-                changed = true
-        for v in domain_size:
-            if grid[b2][v] and not grid[a2][v]:
-                grid[b2][v] = false
-                changed = true
-
-    for arc in offset_arcs:
-        var oa: int = arc["a"]
-        var ob: int = arc["b"]
-        var off: int = int(arc.get("offset", 1))
-        for v in domain_size:
-            if grid[oa][v]:
-                var bv: int = v - off
-                var supported: bool = bv >= 0 and bv < domain_size and grid[ob][bv]
-                if not supported:
-                    grid[oa][v] = false
-                    changed = true
-        for v in domain_size:
-            if grid[ob][v]:
-                var av: int = v + off
-                var supported2: bool = av >= 0 and av < domain_size and grid[oa][av]
-                if not supported2:
-                    grid[ob][v] = false
-                    changed = true
-
-    return changed
-
-
-func _apply_alldiff_projection_once(grid: Array, domain_size: int) -> bool:
-    # Singleton-claims-exclusivity: reusable for BOTH Sequence and Name
-    # (both alldiff), a single round.
-    var changed: bool = false
-    for i in star_count:
-        var count_i: int = 0
-        var only_v: int = -1
-        for v in domain_size:
-            if grid[i][v]:
-                count_i += 1
-                only_v = v
-        if count_i == 1:
-            for j in star_count:
-                if j != i and grid[j][only_v]:
-                    grid[j][only_v] = false
-                    changed = true
-    return changed
-
-
-func _apply_cardinality_arcs_once(grid: Array, count_clues: Array) -> int:
-    # Cardinality constraint (ordinal_count_before: "exactly k of s's
-    # neighbors fire before s"). Ported verbatim from the legacy
-    # _propagate's count_clues handling — Sequence-only, since this clue
-    # kind doesn't exist on any other category. Closes the KNOWN GAP
-    # _propagate_unified previously had (documented in
-    # _verify_unified_grid_matches_legacy — puzzles containing
-    # ordinal_count_before reported a false mismatch there, harmlessly,
-    # since the live pipeline's _solve() always applied it correctly via
-    # the untouched legacy _propagate; this makes the unified engine a
-    # genuinely complete replacement instead of relying on that fallback).
-    # Returns -1 on contradiction, 1 if anything changed, 0 otherwise —
-    # tri-state instead of bool because a wipeout here must be reported
-    # immediately, the same way the legacy code returns false mid-loop.
-    var changed: bool = false
-    for clue in count_clues:
-        var s3: int = clue["s"]
-        var k3: int = clue["k"]
-        var nbrs: Array = clue["neighbors"]
-
-        for r in star_count:
-            if not grid[s3][r]:
-                continue
-            var must_before: int = 0
-            var can_before: int = 0
-            for n in nbrs:
-                var mn: int = star_count
-                var mx: int = -1
-                for rr in star_count:
-                    if grid[int(n)][rr]:
-                        if rr < mn:
-                            mn = rr
-                        if rr > mx:
-                            mx = rr
-                if mx == -1:
-                    return -1
-                if mx < r:
-                    must_before += 1
-                    can_before += 1
-                elif mn < r:
-                    can_before += 1
-            if must_before > k3 or can_before < k3:
-                grid[s3][r] = false
-                changed = true
-
-        var s_count: int = 0
-        var s_rank: int = -1
-        for r in star_count:
-            if grid[s3][r]:
-                s_count += 1
-                s_rank = r
-        if s_count == 0:
-            return -1
-        if s_count == 1:
-            var must_before2: int = 0
-            var straddlers: Array = []
-            for n in nbrs:
-                var mn2: int = star_count
-                var mx2: int = -1
-                for rr in star_count:
-                    if grid[int(n)][rr]:
-                        if rr < mn2:
-                            mn2 = rr
-                        if rr > mx2:
-                            mx2 = rr
-                if mx2 == -1:
-                    return -1
-                if mx2 < s_rank:
-                    must_before2 += 1
-                elif mn2 < s_rank and mx2 >= s_rank:
-                    straddlers.append(int(n))
-            if must_before2 > k3 or must_before2 + straddlers.size() < k3:
-                return -1
-            if must_before2 == k3:
-                for n2 in straddlers:
-                    for rr in s_rank:
-                        if grid[n2][rr]:
-                            grid[n2][rr] = false
-                            changed = true
-            elif must_before2 + straddlers.size() == k3:
-                for n2 in straddlers:
-                    for rr in range(s_rank, star_count):
-                        if grid[n2][rr]:
-                            grid[n2][rr] = false
-                            changed = true
-    return 1 if changed else 0
-
-
-func _category_has_empty_domain(grid: Array, domain_size: int) -> bool:
-    for i in star_count:
-        var any_left: bool = false
-        for v in domain_size:
-            if grid[i][v]:
-                any_left = true
-                break
-        if not any_left:
-            return true
-    return false
-
-
-## ── Cross-category ("Name-indirect") arcs — one side (or both) is a NAME
-## SLOT, not a direct dot index. Name's domain values ARE dot identities
-## (grid[dot][slot] — "could this dot hold this name"), fundamentally
-## different from Pitch/Sequence/Color/Degree's domains (direct attribute
-## values of a KNOWN dot) — so evaluating a Name-side endpoint requires
-## resolving which candidate dots the slot could still refer to, then
-## checking the OTHER endpoint's constraint using each candidate's OWN
-## domain in whatever category that endpoint specifies. This generalizes
-## the Phase 2 _name_arc_predicate pattern (kept untouched, still backing
-## live production _solve_names()) to arbitrary category pairs and adds a
-## Distance relation as a first-class arc kind rather than folding it into
-## a per-star "Proximity" domain (Distance is inherently pairwise; Degree
-## remains the actual per-star Proximity domain value, for the cases where
-## a scalar genuinely fits — see design conversation).
-func _cross_arc_predicate(arc: Dictionary, d1: int, d2: int, grids: Dictionary) -> bool:
-    match str(arc["kind"]):
-        "ordinal_cmp":
-            var a_gt_b: bool = arc["a_gt_b"]
-            var seq_grid: Array = grids[Category.SEQUENCE]
-            if a_gt_b:
-                return _category_domain_max_rank(seq_grid, d1, star_count, []) > _category_domain_min_rank(seq_grid, d2, star_count, [])
-            else:
-                return _category_domain_min_rank(seq_grid, d1, star_count, []) < _category_domain_max_rank(seq_grid, d2, star_count, [])
-        "ordinal_adjacent":
-            var seq_grid2: Array = grids[Category.SEQUENCE]
-            for r2 in star_count:
-                if seq_grid2[d2][r2] and r2 + 1 < star_count and seq_grid2[d1][r2 + 1]:
-                    return true
-            return false
-        "ordinal_offset":
-            var seq_grid3: Array = grids[Category.SEQUENCE]
-            var off: int = int(arc["offset"])
-            for r2 in star_count:
-                if seq_grid3[d2][r2]:
-                    var r1: int = r2 + off
-                    if r1 >= 0 and r1 < star_count and seq_grid3[d1][r1]:
-                        return true
-            return false
-        "tone_cmp":
-            var pitch_grid: Array = grids[Category.PITCH]
-            var rel: String = arc["rel"]
-            if rel == "eq":
-                for p in pitch_count:
-                    if pitch_grid[d1][p] and pitch_grid[d2][p]:
-                        return true
-                return false
-            elif rel == "gt":
-                return _pitch_max_possible_rank(pitch_grid, d1) > _pitch_min_possible_rank(pitch_grid, d2)
-            else:
-                return _pitch_min_possible_rank(pitch_grid, d1) < _pitch_max_possible_rank(pitch_grid, d2)
-        "proximity_dist_label":
-            # Structural distance between two fixed dots — legitimate,
-            # like color/degree, no ground-truth unknown involved.
-            return _distances[d1][d2] == int(arc["dist"])
-        "proximity_dist_cmp_name":
-            # "n1 is MORE/LESS distant from n2 than a FIXED reference dot
-            # is from n2" — the reference dot is baked in at generation
-            # time from ground truth (same pattern as ordinal_group_cmp_
-            # color's "targets" list), so evaluating it here is purely
-            # structural (_distances lookup), never a live unknown.
-            var ref_dot: int = int(arc["ref_dot"])
-            var want_more: bool = bool(arc["want_more"])
-            if want_more:
-                return _distances[d1][d2] > _distances[ref_dot][d2]
-            else:
-                return _distances[d1][d2] < _distances[ref_dot][d2]
-    return true
-
-
-func _apply_cross_arcs_once(name_grid: Array, arcs: Array, grids: Dictionary) -> bool:
-    var changed: bool = false
-    for arc in arcs:
-        var n1: int = arc["n1"]
-        var n2: int = arc["n2"]
-        for d1 in star_count:
-            if not name_grid[d1][n1]:
-                continue
-            var supported: bool = false
-            for d2 in star_count:
-                if name_grid[d2][n2] and _cross_arc_predicate(arc, d1, d2, grids):
-                    supported = true
-                    break
-            if not supported:
-                name_grid[d1][n1] = false
-                changed = true
-        for d2 in star_count:
-            if not name_grid[d2][n2]:
-                continue
-            var supported2: bool = false
-            for d1 in star_count:
-                if name_grid[d1][n1] and _cross_arc_predicate(arc, d1, d2, grids):
-                    supported2 = true
-                    break
-            if not supported2:
-                name_grid[d2][n2] = false
-                changed = true
-    return changed
-
-
-func _propagate_unified(grids: Dictionary,
-        seq_cmp_arcs: Array, seq_offset_arcs: Array,
-        pitch_cmp_arcs: Array, pitch_eq_arcs: Array,
-        cross_arcs: Array, enable_naked_subset: bool = true,
-        seq_count_clues: Array = []) -> bool:
-    # ONE combined fixed-point loop across all 5 categories, replacing the
-    # pattern of converging Sequence, then Pitch, then Name as three
-    # separate, sequentially-frozen passes. `grids` is a Dictionary keyed
-    # by Category enum value -> that category's possibility grid; all 5
-    # must be present (Color/Degree typically pre-collapsed singletons via
-    # _init_color_grid()/_init_degree_grid()).
-    #
-    # seq_count_clues: ordinal_count_before cardinality constraints — was a
-    # documented gap here (2026-07-18), closed via _apply_cardinality_arcs_once.
-    var seq_grid: Array = grids[Category.SEQUENCE]
-    var pitch_grid: Array = grids[Category.PITCH]
-    var name_grid: Array = grids[Category.NAME]
-
-    var changed: bool = true
-    while changed:
-        changed = false
-
-        if _apply_direct_category_arcs_once(seq_grid, star_count, seq_cmp_arcs, [], seq_offset_arcs, []):
-            changed = true
-        if pitch_count > 0 and _apply_direct_category_arcs_once(pitch_grid, pitch_count, pitch_cmp_arcs, pitch_eq_arcs, [], _pitch_freq_rank):
-            changed = true
-
-        if not seq_count_clues.is_empty():
-            var card_result: int = _apply_cardinality_arcs_once(seq_grid, seq_count_clues)
-            if card_result == -1:
-                return false
-            elif card_result == 1:
-                changed = true
-
-        if _apply_alldiff_projection_once(seq_grid, star_count):
-            changed = true
-        if _apply_alldiff_projection_once(name_grid, star_count):
-            changed = true
-
-        if _apply_cross_arcs_once(name_grid, cross_arcs, grids):
-            changed = true
-
-        if enable_naked_subset:
-            for cat in grids.keys():
-                if not _category_is_alldiff(cat):
-                    continue   # sound only for Sequence/Name — see _naked_subset_pass
-                var g: Array = grids[cat]
-                var size: int = _category_domain_size(cat)
-                if _naked_subset_pass(g, size, true):
-                    changed = true
-
-        for cat in grids.keys():
-            if cat == Category.PITCH and pitch_count == 0:
-                continue   # domain_size 0 means "no pitch data", not "every star impossible"
-            if _category_has_empty_domain(grids[cat], _category_domain_size(cat)):
-                return false
-
-    return true
-
-
-## _category_ground_truth_value / _category_value_group_sizes deleted
-## 2026-07-19 — their only caller was _sample_unique_list_n's old
-## singleton-only Color/Degree/Pitch participant selection, which was
-## replaced with plain per-star sampling (no singleton requirement — see
-## _sample_unique_list_n's doc comment for why that was never actually
-## needed for solving correctness).
-
-
-func _verify_unified_grid_matches_legacy(seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary]) -> Dictionary:
-    # Manual cross-check, not wired into generation: confirms
-    # _propagate_unified (naked-subset DISABLED, so this is an apples-to-
-    # apples comparison) reaches the identical Sequence/Pitch possibility
-    # grids as the existing, independently-implemented _propagate/
-    # _propagate_pitch for the same clue set. Call this by hand (e.g. from
-    # a debug console or a temporary print in generate_clues_async) against
-    # a real generated puzzle's chosen/pitch_chosen before Phase 4 migrates
-    # anything onto the new engine. ordinal_count_before (cardinality)
-    # clues are now fully supported via _apply_cardinality_arcs_once — this
-    # used to be a documented gap reported as an expected mismatch here;
-    # it's closed as of 2026-07-18. Name-axis cross-arc predicates are
-    # checked separately by _verify_cross_arc_predicates_match_legacy,
-    # since the unified engine's Name handling only covers the arc layer so
-    # far — the single-dot filters (_apply_one_name_filter) aren't merged
-    # into it yet; that's remaining Phase 4 work.
-    var report: Dictionary = {"sequence_matches": true, "pitch_matches": true, "mismatches": []}
-
-    var legacy_seq = _possibility_grid_for_clues(seq_clues)
-    var seq_cmp_arcs: Array = _expand_clues_to_cmp(seq_clues)
-    var seq_offset_arcs: Array = []
-    var seq_count_clues: Array = []
-    for clue in seq_clues:
-        if clue["kind"] == "ordinal_adjacent" or clue["kind"] == "ordinal_offset":
-            seq_offset_arcs.append(clue)
-        elif clue["kind"] == "ordinal_count_before":
-            seq_count_clues.append(clue)
-
-    var pitch_cmp_arcs: Array = []
-    var pitch_eq_arcs: Array = []
-    if pitch_count > 0:
-        # _expand_pitch_clues_to_cmp uses a {"a","b","rel":"eq"|"gt"|"lt"}
-        # shape — split into _propagate_unified's separate cmp_arcs
-        # ({"a","b","a_gt_b"}) and eq_arcs ({"a","b"}) forms.
-        for arc in _expand_pitch_clues_to_cmp(pitch_clues):
-            var rel: String = str(arc["rel"])
-            if rel == "eq":
-                pitch_eq_arcs.append({"a": arc["a"], "b": arc["b"]})
-            else:
-                pitch_cmp_arcs.append({"a": arc["a"], "b": arc["b"], "a_gt_b": (rel == "gt")})
-
-    # NOTE: deliberately untyped (no ": Array") — a variable explicitly
-    # typed as Array cannot be reassigned null in GDScript.
-    var new_seq = _init_category_grid(Category.SEQUENCE)
-    var new_pitch = _init_category_grid(Category.PITCH)
-    var contradiction: bool = false
-    if not _apply_exact_clues(new_seq, seq_clues) or not _apply_negative_clues(new_seq, seq_clues) or not _apply_range_clues(new_seq, seq_clues):
-        contradiction = true
-    if pitch_count > 0 and (not _apply_pitch_exact_clues(new_pitch, pitch_clues) or not _apply_pitch_negative_clues(new_pitch, pitch_clues)):
-        contradiction = true
-
-    if not contradiction:
-        var grids: Dictionary = {
-            Category.SEQUENCE: new_seq,
-            Category.PITCH: new_pitch,
-            Category.NAME: _init_category_grid(Category.NAME),
-            Category.COLOR: _init_color_grid(),
-            Category.DEGREE: _init_degree_grid(),
-        }
-        # Phase 4: naked-subset is now ENABLED on both sides of this
-        # comparison — _possibility_grid_for_clues (the "legacy" baseline
-        # below) was updated in Phase 4 to layer naked-subset on top of
-        # _propagate too, so disabling it here would compare an outdated
-        # legacy behavior against the new engine and falsely report
-        # mismatches. Pitch is unaffected either way (never alldiff, so
-        # _propagate_unified's per-category naked-subset loop always skips
-        # it regardless of this flag).
-        if not _propagate_unified(grids, seq_cmp_arcs, seq_offset_arcs, pitch_cmp_arcs, pitch_eq_arcs, [], true, seq_count_clues):
-            contradiction = true
-        new_seq = grids[Category.SEQUENCE]
-        new_pitch = grids[Category.PITCH]
-
-    if (legacy_seq == null) != contradiction:
-        report["sequence_matches"] = false
-        report["mismatches"].append("sequence: contradiction mismatch (legacy_null=%s new_contradiction=%s)" % [str(legacy_seq == null), str(contradiction)])
-    elif legacy_seq != null and not contradiction:
-        for i in star_count:
-            for v in star_count:
-                if legacy_seq[i][v] != new_seq[i][v]:
-                    report["sequence_matches"] = false
-                    report["mismatches"].append("sequence[%d][%d]: legacy=%s new=%s" % [i, v, str(legacy_seq[i][v]), str(new_seq[i][v])])
-
-    if pitch_count > 0:
-        var legacy_pitch = _possibility_grid_for_pitch_clues(pitch_clues)
-        if (legacy_pitch == null) != contradiction:
-            report["pitch_matches"] = false
-            report["mismatches"].append("pitch: contradiction mismatch (legacy_null=%s new_contradiction=%s)" % [str(legacy_pitch == null), str(contradiction)])
-        elif legacy_pitch != null and not contradiction:
-            for i in star_count:
-                for v in pitch_count:
-                    if legacy_pitch[i][v] != new_pitch[i][v]:
-                        report["pitch_matches"] = false
-                        report["mismatches"].append("pitch[%d][%d]: legacy=%s new=%s" % [i, v, str(legacy_pitch[i][v]), str(new_pitch[i][v])])
-
-    return report
-
-
-func _verify_cross_arc_predicates_match_legacy(seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary]) -> Dictionary:
-    # Manual cross-check for the NEW cross-arc predicate layer specifically:
-    # confirms _cross_arc_predicate reproduces the identical per-pair
-    # boolean as the legacy _name_arc_predicate for every ordinal_cmp/
-    # ordinal_adjacent/ordinal_offset/tone_cmp arc derivable from the given
-    # clue sets, across every (d1, d2) dot pair, using the SAME live
-    # rank/pitch possibility grids as input to both. proximity_dist_label
-    # and proximity_dist_cmp_name have no legacy equivalent to compare
-    # against (they're new), so they're excluded from this check.
-    var report: Dictionary = {"matches": true, "mismatches": []}
-    var rank_possible = _possibility_grid_for_clues(seq_clues)
-    if rank_possible == null:
-        report["mismatches"].append("sequence clues already contradictory — cannot compare")
-        return report
-    var pitch_possible: Array = _init_pitch_possibility_grid()
-    if pitch_count > 0:
-        var pp = _possibility_grid_for_pitch_clues(pitch_clues)
-        if pp == null:
-            report["mismatches"].append("pitch clues already contradictory — cannot compare")
-            return report
-        pitch_possible = pp
-
-    var grids: Dictionary = {Category.SEQUENCE: rank_possible, Category.PITCH: pitch_possible}
-    var arcs: Array = _name_arcs_from_clues(seq_clues, pitch_clues, [])
-    for arc in arcs:
-        var kind: String = str(arc["kind"])
-        if kind == "proximity_dist_label":
-            continue
-        for d1 in star_count:
-            for d2 in star_count:
-                var legacy_result: bool = _name_arc_predicate(arc, d1, d2, rank_possible, pitch_possible)
-                var new_result: bool = _cross_arc_predicate(arc, d1, d2, grids)
-                if legacy_result != new_result:
-                    report["matches"] = false
-                    report["mismatches"].append("%s(d1=%d,d2=%d): legacy=%s new=%s" % [kind, d1, d2, str(legacy_result), str(new_result)])
-    return report
-
-
-func _verify_naked_subset_soundness(seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary]) -> Dictionary:
-    # Oracle-based soundness check against a REAL generated puzzle: runs
-    # _propagate_unified with naked-subset ENABLED (only ever applied to
-    # Sequence/Name — see the alldiff guard in _naked_subset_pass) and
-    # confirms the TRUE ground-truth value for every dot, in both alldiff
-    # categories, is still possible afterward. Ground truth is used here
-    # ONLY as a test oracle, never fed into the live solve (see CRITICAL
-    # BOUNDARY note earlier in this section) — if naked-subset ever
-    # eliminates the actual answer, that's a definitive unsoundness bug,
-    # since a valid solution can never legitimately be ruled out.
-    var report: Dictionary = {"sound": true, "violations": []}
-
-    var seq_cmp_arcs: Array = _expand_clues_to_cmp(seq_clues)
-    var seq_offset_arcs: Array = []
-    var seq_count_clues: Array = []
-    for clue in seq_clues:
-        if clue["kind"] == "ordinal_adjacent" or clue["kind"] == "ordinal_offset":
-            seq_offset_arcs.append(clue)
-        elif clue["kind"] == "ordinal_count_before":
-            seq_count_clues.append(clue)
-
-    var pitch_cmp_arcs: Array = []
-    var pitch_eq_arcs: Array = []
-    if pitch_count > 0:
-        for arc in _expand_pitch_clues_to_cmp(pitch_clues):
-            var rel: String = str(arc["rel"])
-            if rel == "eq":
-                pitch_eq_arcs.append({"a": arc["a"], "b": arc["b"]})
-            else:
-                pitch_cmp_arcs.append({"a": arc["a"], "b": arc["b"], "a_gt_b": (rel == "gt")})
-
-    var new_seq = _init_category_grid(Category.SEQUENCE)
-    var new_pitch = _init_category_grid(Category.PITCH)
-    if not _apply_exact_clues(new_seq, seq_clues) or not _apply_negative_clues(new_seq, seq_clues) or not _apply_range_clues(new_seq, seq_clues):
-        report["sound"] = false
-        report["violations"].append("sequence clues already contradictory before naked-subset could run — cannot test")
-        return report
-    if pitch_count > 0 and (not _apply_pitch_exact_clues(new_pitch, pitch_clues) or not _apply_pitch_negative_clues(new_pitch, pitch_clues)):
-        report["sound"] = false
-        report["violations"].append("pitch clues already contradictory before naked-subset could run — cannot test")
-        return report
-
-    var cross_arcs: Array = _name_arcs_from_clues(seq_clues, pitch_clues, [])
-    var grids: Dictionary = {
-        Category.SEQUENCE: new_seq,
-        Category.PITCH: new_pitch,
-        Category.NAME: _init_category_grid(Category.NAME),
-        Category.COLOR: _init_color_grid(),
-        Category.DEGREE: _init_degree_grid(),
-    }
-
-    if not _propagate_unified(grids, seq_cmp_arcs, seq_offset_arcs, pitch_cmp_arcs, pitch_eq_arcs, cross_arcs, true, seq_count_clues):
-        report["sound"] = false
-        report["violations"].append("propagation with naked-subset ENABLED found a contradiction on a clue set already proven unique — naked-subset over-eliminated something")
-        return report
-
-    var seq_grid: Array = grids[Category.SEQUENCE]
-    for d in star_count:
-        var true_rank: int = pitch_rank_solution[d]
-        if not seq_grid[d][true_rank]:
-            report["sound"] = false
-            report["violations"].append("SEQUENCE: dot %d's true rank %d was eliminated" % [d, true_rank])
-
-    var name_grid: Array = grids[Category.NAME]
-    for d in star_count:
-        # Ground truth: dot d's true name-slot is trivially d itself.
-        if not name_grid[d][d]:
-            report["sound"] = false
-            report["violations"].append("NAME: dot %d's true name-slot was eliminated" % [d])
-
-    return report
-
-
-func _verify_naked_pair_synthetic() -> Dictionary:
-    # Hand-constructed scenario, independent of any real constellation (per
-    # the plan's Phase 3 verification criteria): 4 dots, two of them (0, 1)
-    # restricted to the identical 2-value rank domain {0,1} via
-    # ordinal_range clues — a textbook naked pair. Confirms ranks 0 and 1
-    # get eliminated from dots 2/3, and dots 0/1's own domains are
-    # untouched. Temporarily overrides star_count (restored before
-    # returning) — safe because this runs synchronously with no `await`,
-    # so nothing else can observe the change mid-call.
-    var saved_star_count: int = star_count
-    star_count = 4
-    var synth_clues: Array[Dictionary] = [
-        {"kind": "ordinal_range", "s": 0, "lo": 0, "hi": 1, "text": ""},
-        {"kind": "ordinal_range", "s": 1, "lo": 0, "hi": 1, "text": ""},
-    ]
-    var grid: Array = _init_category_grid(Category.SEQUENCE)
-    _apply_range_clues(grid, synth_clues)
-    var changed: bool = _naked_subset_pass(grid, 4, true)
-
-    var report: Dictionary = {"pass": true, "details": []}
-    if not changed:
-        report["pass"] = false
-        report["details"].append("expected a change from the naked-pair pass, got none")
-    if grid[2][0] or grid[2][1]:
-        report["pass"] = false
-        report["details"].append("dot 2 should have ranks 0,1 eliminated — has: %s" % [str(grid[2])])
-    if grid[3][0] or grid[3][1]:
-        report["pass"] = false
-        report["details"].append("dot 3 should have ranks 0,1 eliminated — has: %s" % [str(grid[3])])
-    if not (grid[2][2] and grid[2][3]):
-        report["pass"] = false
-        report["details"].append("dot 2 should retain ranks 2,3 — has: %s" % [str(grid[2])])
-    if not (grid[3][2] and grid[3][3]):
-        report["pass"] = false
-        report["details"].append("dot 3 should retain ranks 2,3 — has: %s" % [str(grid[3])])
-    if not (grid[0][0] and grid[0][1]) or grid[0][2] or grid[0][3]:
-        report["pass"] = false
-        report["details"].append("dot 0's own domain should stay exactly {0,1} — has: %s" % [str(grid[0])])
-    if not (grid[1][0] and grid[1][1]) or grid[1][2] or grid[1][3]:
-        report["pass"] = false
-        report["details"].append("dot 1's own domain should stay exactly {0,1} — has: %s" % [str(grid[1])])
-
-    star_count = saved_star_count
-    return report
-
-
-func _trim_sequence_pass(clues: Array[Dictionary], restriction: Array, frame_timer_box: Array) -> bool:
-    # One full weakest-first sweep over `clues` (mutated in place), testing
-    # removal against `restriction` (rank restriction from the pitch axis's
-    # CURRENT clue set, or [] for none). Returns true if anything was removed.
-    var removed_any: bool = false
-    var idx: int = 0
-    while idx < clues.size():
-        if clues.size() <= 1:
-            break
-        var trial_clue: Dictionary = clues[idx]
-        clues.remove_at(idx)
-        var trial_solutions: Array = _solve(clues, 2, restriction)
-        if trial_solutions.size() == 1:
-            removed_any = true
-        else:
-            clues.insert(idx, trial_clue)
-            idx += 1
-        if Time.get_ticks_msec() - float(frame_timer_box[0]) >= FRAME_BUDGET_MSEC:
-            await Engine.get_main_loop().process_frame
-            frame_timer_box[0] = Time.get_ticks_msec()
-    return removed_any
- 
- 
-func _trim_pitch_pass(clues: Array[Dictionary], restriction: Array, frame_timer_box: Array) -> bool:
-    var removed_any: bool = false
-    var idx: int = 0
-    while idx < clues.size():
-        if clues.size() <= 1:
-            break
-        var trial_clue: Dictionary = clues[idx]
-        clues.remove_at(idx)
-        var trial_solutions: Array = _solve_pitch(clues, 2, restriction)
-        if trial_solutions.size() == 1:
-            removed_any = true
-        else:
-            clues.insert(idx, trial_clue)
-            idx += 1
-        if Time.get_ticks_msec() - float(frame_timer_box[0]) >= FRAME_BUDGET_MSEC:
-            await Engine.get_main_loop().process_frame
-            frame_timer_box[0] = Time.get_ticks_msec()
-    return removed_any
- 
- 
-func _score_name_clue_difficulty(clue: Dictionary) -> float:
-    var base: float = 1.0
-    match str(clue.get("kind", "")):
-        "proximity_dist_color":
-            base = 6.0
-        "proximity_dist_tone":
-            base = 6.0
-        "proximity_dist_degree":
-            base = 5.5
-        "proximity_dist_label":
-            base = 6.5
-        "proximity_between":
-            base = 5.0
-        "label_extreme_ordinal_color":
-            base = 4.0
-        "color_neg":
-            base = 2.0 + float(clue.get("excluded", []).size())
-        "proximity_degree_exact":
-            base = 1.5
-        "proximity_degree_extreme":
-            base = 2.0
-        "proximity_degree_group_cmp_color":
-            base = 1.0 + (float(clue.get("targets", []).size()) * 0.3)
-        "color_exact":
-            base = 7.0
-        "proximity_dist_extreme":
-            base = 5.5
-        "proximity_dist_dual_cmp":
-            base = 4.5
-        "proximity_dist_offset":
-            base = 5.5
-    return base + _clue_difficulty_jitter(clue)
- 
- 
-## ── Live-domain helpers for the Name axis' single-dot filters and arc
-## predicates. All of these read LIVE possibility grids derived from the
-## currently-chosen Sequence/Pitch clue sets (via _possibility_grid_for_clues/
-## _possibility_grid_for_pitch_clues) — never pitch_rank_solution/
-## star_pitch_index ground truth — so a dot is only ever excluded from a
-## name-slot when PROVEN inconsistent with what the player's own Sequence/
-## Pitch deductions have established so far from the clues alone. This is
-## the standard "eliminate only when proven impossible" arc-consistency
-## rule; it is sometimes weaker than an exhaustive per-value search would
-## be, but it is always sound, and any residual slack is picked up by
-## _solve_names' backtracking fallback, same as every other propagation
-## pass in this file.
-func _domain_min(grid: Array, dot: int, size: int) -> int:
-    for v in size:
-        if grid[dot][v]:
-            return v
-    return -1
-
-
-func _domain_max(grid: Array, dot: int, size: int) -> int:
-    for v in range(size - 1, -1, -1):
-        if grid[dot][v]:
-            return v
-    return -1
-
-
-func _domain_forced_value(grid: Array, dot: int, size: int) -> int:
-    var found: int = -1
-    for v in size:
-        if grid[dot][v]:
-            if found != -1:
-                return -1   # more than one possibility left — not forced
-            found = v
-    return found
-
-
-func _domain_any_in_range(grid: Array, dot: int, lo: int, hi: int) -> bool:
-    for v in range(lo, hi + 1):
-        if grid[dot][v]:
-            return true
-    return false
-
-
-func _apply_one_name_filter(possible: Array, clue: Dictionary, rank_possible: Array, pitch_possible: Array) -> void:
-    match str(clue.get("kind", "")):
-        "ordinal_exact":
-            var s: int = clue["s"]
-            var r: int = clue["r"]
-            for d in star_count:
-                if not rank_possible[d][r]:
-                    possible[d][s] = false
-        "ordinal_range":
-            var s: int = clue["s"]
-            var lo: int = clue["lo"]
-            var hi: int = clue["hi"]
-            for d in star_count:
-                if not _domain_any_in_range(rank_possible, d, lo, hi):
-                    possible[d][s] = false
-        "ordinal_neg":
-            var s: int = clue["s"]
-            var r: int = clue["r"]
-            for d in star_count:
-                if _domain_forced_value(rank_possible, d, star_count) == r:
-                    possible[d][s] = false
-        "ordinal_neither_nor":
-            var ns1: int = clue["s1"]
-            var ns2: int = clue["s2"]
-            var nr: int = clue["r"]
-            for d in star_count:
-                if _domain_forced_value(rank_possible, d, star_count) == nr:
-                    possible[d][ns1] = false
-                    possible[d][ns2] = false
-        "ordinal_either_or":
-            var es: int = clue["s"]
-            var er1: int = clue["r1"]
-            var er2: int = clue["r2"]
-            for d in star_count:
-                if not rank_possible[d][er1] and not rank_possible[d][er2]:
-                    possible[d][es] = false
-        "ordinal_unaligned":
-            var us1: int = clue["s1"]
-            var us2: int = clue["s2"]
-            var ur1: int = clue["r1"]
-            var ur2: int = clue["r2"]
-            for d in star_count:
-                if not rank_possible[d][ur1] and not rank_possible[d][ur2]:
-                    possible[d][us1] = false
-                    possible[d][us2] = false
-        "proximity_neg_adjacent":
-            var s: int = clue["s"]
-            var r: int = clue["r"]
-            for d in star_count:
-                var hit: bool = false
-                for n in proximity[d]:
-                    if _domain_forced_value(rank_possible, int(n), star_count) == r:
-                        hit = true
-                        break
-                if hit:
-                    possible[d][s] = false
-        "ordinal_count_before":
-            var s: int = clue["s"]
-            var k: int = clue["k"]
-            for d in star_count:
-                var feasible: bool = false
-                for rd in star_count:
-                    if not rank_possible[d][rd]:
-                        continue
-                    var must_before: int = 0
-                    var can_before: int = 0
-                    for n in proximity[d]:
-                        var ni: int = int(n)
-                        var nmax: int = _domain_max(rank_possible, ni, star_count)
-                        var nmin: int = _domain_min(rank_possible, ni, star_count)
-                        if nmax == -1:
-                            continue
-                        if nmax < rd:
-                            must_before += 1
-                            can_before += 1
-                        elif nmin < rd:
-                            can_before += 1
-                    if must_before <= k and k <= can_before:
-                        feasible = true
-                        break
-                if not feasible:
-                    possible[d][s] = false
-        "ordinal_extreme":
-            var s: int = clue["s"]
-            var want_lowest: bool = clue["want_lowest"]
-            for d in star_count:
-                if proximity[d].is_empty():
-                    possible[d][s] = false
-                    continue
-                var d_bound: int = _domain_min(rank_possible, d, star_count) if want_lowest else _domain_max(rank_possible, d, star_count)
-                if d_bound == -1:
-                    continue
-                var feasible2: bool = true
-                for n in proximity[d]:
-                    var ni2: int = int(n)
-                    if want_lowest:
-                        var n_max: int = _domain_max(rank_possible, ni2, star_count)
-                        if n_max == -1 or n_max <= d_bound:
-                            feasible2 = false
-                            break
-                    else:
-                        var n_min: int = _domain_min(rank_possible, ni2, star_count)
-                        if n_min == -1 or n_min >= d_bound:
-                            feasible2 = false
-                            break
-                if not feasible2:
-                    possible[d][s] = false
-        "ordinal_group_cmp_color":
-            var subjects: Array = clue["subjects"]
-            var s_first: bool = clue["s_first"]
-            var targets: Array = clue["targets"]
-            if targets.is_empty():
-                return
-            for d in star_count:
-                var d_bound2: int = _domain_min(rank_possible, d, star_count) if s_first else _domain_max(rank_possible, d, star_count)
-                if d_bound2 == -1:
-                    continue
-                var feasible3: bool = true
-                for t in targets:
-                    var ti: int = int(t)
-                    if s_first:
-                        var t_max: int = _domain_max(rank_possible, ti, star_count)
-                        if t_max == -1 or t_max <= d_bound2:
-                            feasible3 = false
-                            break
-                    else:
-                        var t_min: int = _domain_min(rank_possible, ti, star_count)
-                        if t_min == -1 or t_min >= d_bound2:
-                            feasible3 = false
-                            break
-                if not feasible3:
-                    for subj in subjects:
-                        possible[d][int(subj)] = false
-        "ordinal_group_cmp_tone":
-            var subjects3: Array = clue["subjects"]
-            var s_first3: bool = clue["s_first"]
-            var targets3: Array = clue["targets"]
-            if targets3.is_empty():
-                return
-            for d in star_count:
-                var d_bound3: int = _domain_min(rank_possible, d, star_count) if s_first3 else _domain_max(rank_possible, d, star_count)
-                if d_bound3 == -1:
-                    continue
-                var feasible4: bool = true
-                for t in targets3:
-                    var ti2: int = int(t)
-                    if s_first3:
-                        var t_max2: int = _domain_max(rank_possible, ti2, star_count)
-                        if t_max2 == -1 or t_max2 <= d_bound3:
-                            feasible4 = false
-                            break
-                    else:
-                        var t_min2: int = _domain_min(rank_possible, ti2, star_count)
-                        if t_min2 == -1 or t_min2 >= d_bound3:
-                            feasible4 = false
-                            break
-                if not feasible4:
-                    for subj3 in subjects3:
-                        possible[d][int(subj3)] = false
-        "color_exact":
-            var s: int = clue["s"]
-            var c: int = clue["c"]
-            for d in star_count:
-                if star_colors[d] != c:
-                    possible[d][s] = false
-        "proximity_dist_color":
-            # NOTE: _build_dist_pool() (shared by dist_color/tone/degree/label)
-            # writes the shared value under "val", not "c" — pre-existing bug,
-            # same field-name mistake already found and fixed in
-            # from_cache_dict; this call site was crashing on every actual
-            # proximity_dist_color clue reaching _apply_one_name_filter.
-            var s: int = clue["s"]
-            var val: int = clue["val"]
-            var dist: int = clue["dist"]
-            for d in star_count:
-                var found: bool = false
-                for other in star_count:
-                    if other != d and _distances[d][other] == dist and star_colors[other] == val:
-                        found = true
-                        break
-                if not found:
-                    possible[d][s] = false
-        "color_neg":
-            var s: int = clue["s"]
-            var excluded: Array = clue.get("excluded", [])
-            for d in star_count:
-                if star_colors[d] in excluded:
-                    possible[d][s] = false
-        "unique_list_n":
-            # Only the Name participant (if any) constrains this axis: it
-            # asserts the star truly named star_names[subj] differs from
-            # every other listed (already-known-physical) participant, so
-            # none of those physical stars can be the true home of name
-            # `subj`. The Sequence participant (if any) is handled
-            # separately by the Sequence-axis possibility grid.
-            for part in clue["participants"]:
-                if int(part["cat"]) == Category.NAME:
-                    var subj: int = int(part["star"])
-                    for other in clue["participants"]:
-                        if int(other["star"]) == subj:
-                            continue
-                        possible[int(other["star"])][subj] = false
-        "label_extreme_ordinal_color":
-            var s: int = clue["s"]
-            var want_lowest_rank: bool = clue["want_lowest_rank"]
-            var group: Array = clue["group"]
-            if group.is_empty():
-                return
-            for d in star_count:
-                var d_bound4: int = _domain_min(rank_possible, d, star_count) if want_lowest_rank else _domain_max(rank_possible, d, star_count)
-                if d_bound4 == -1:
-                    continue
-                var feasible5: bool = true
-                for t in group:
-                    var ti3: int = int(t)
-                    if ti3 == d:
-                        continue
-                    if want_lowest_rank:
-                        var t_max3: int = _domain_max(rank_possible, ti3, star_count)
-                        if t_max3 == -1 or t_max3 < d_bound4:
-                            feasible5 = false
-                            break
-                    else:
-                        var t_min3: int = _domain_min(rank_possible, ti3, star_count)
-                        if t_min3 == -1 or t_min3 > d_bound4:
-                            feasible5 = false
-                            break
-                if not feasible5:
-                    possible[d][s] = false
-        "tone_exact":
-            var s: int = clue["s"]
-            var p: int = clue["p"]
-            for d in star_count:
-                if not pitch_possible[d][p]:
-                    possible[d][s] = false
-        "tone_neg":
-            var s: int = clue["s"]
-            var p_list: Array = clue.get("p_list", [])
-            for d in star_count:
-                var forced_p: int = _domain_forced_value(pitch_possible, d, pitch_count)
-                if forced_p != -1 and forced_p in p_list:
-                    possible[d][s] = false
-        "tone_extreme":
-            var s: int = clue["s"]
-            var want_lowest: bool = clue["want_lowest"]
-            for d in star_count:
-                if proximity[d].is_empty():
-                    possible[d][s] = false
-                    continue
-                var d_rank_bound: int = _pitch_max_possible_rank(pitch_possible, d) if want_lowest else _pitch_min_possible_rank(pitch_possible, d)
-                if d_rank_bound == -1:
-                    continue
-                var feasible6: bool = true
-                for n in proximity[d]:
-                    var ni3: int = int(n)
-                    if want_lowest:
-                        var n_rank_max: int = _pitch_max_possible_rank(pitch_possible, ni3)
-                        if n_rank_max == -1 or n_rank_max <= d_rank_bound:
-                            feasible6 = false
-                            break
-                    else:
-                        var n_rank_min: int = _pitch_min_possible_rank(pitch_possible, ni3)
-                        if n_rank_min == -1 or n_rank_min >= d_rank_bound:
-                            feasible6 = false
-                            break
-                if not feasible6:
-                    possible[d][s] = false
-        "tone_group_cmp_color":
-            var subjects4: Array = clue["subjects"]
-            var s_lower: bool = clue["s_lower"]
-            var targets4: Array = clue["targets"]
-            if targets4.is_empty():
-                return
-            for d in star_count:
-                # s_lower means THIS star's pitch is lower than every target's —
-                # so the bound we need from d's own domain is its MAX possible
-                # freq-rank (the best case for "still low enough").
-                var d_rank_bound2: int = _pitch_max_possible_rank(pitch_possible, d) if s_lower else _pitch_min_possible_rank(pitch_possible, d)
-                if d_rank_bound2 == -1:
-                    continue
-                var feasible7: bool = true
-                for t in targets4:
-                    var ti4: int = int(t)
-                    if s_lower:
-                        var t_rank_max: int = _pitch_max_possible_rank(pitch_possible, ti4)
-                        if t_rank_max == -1 or t_rank_max <= d_rank_bound2:
-                            feasible7 = false
-                            break
-                    else:
-                        var t_rank_min: int = _pitch_min_possible_rank(pitch_possible, ti4)
-                        if t_rank_min == -1 or t_rank_min >= d_rank_bound2:
-                            feasible7 = false
-                            break
-                if not feasible7:
-                    for subj4 in subjects4:
-                        possible[d][int(subj4)] = false
-        "tone_group_eq":
-            # A joint "all these name-slots share one pitch" constraint can't
-            # be soundly resolved as an independent per-dot filter (a dot's
-            # own pitch domain says nothing about which OTHER dot ends up
-            # bound to a fellow slot in the group). Left unfiltered here —
-            # sound (never falsely eliminates), and the constraint is still
-            # fully enforced on the Pitch axis itself via _propagate_pitch's
-            # "eq" arcs, independent of Name-axis solving.
-            pass
-        "proximity_dist_tone":
-            var s: int = clue["s"]
-            var val: int = clue["val"]
-            var dist: int = clue["dist"]
-            for d in star_count:
-                var found: bool = false
-                for other in star_count:
-                    if other != d and _distances[d][other] == dist and pitch_possible[other][val]:
-                        found = true
-                        break
-                if not found:
-                    possible[d][s] = false
-        "proximity_dist_degree":
-            var s: int = clue["s"]
-            var val: int = clue["val"]
-            var dist: int = clue["dist"]
-            for d in star_count:
-                var found: bool = false
-                for other in star_count:
-                    if other != d and _distances[d][other] == dist and star_degrees[other] == val:
-                        found = true
-                        break
-                if not found:
-                    possible[d][s] = false
-        "proximity_dist_label":
-            # References another NAME — the very unknown this whole grid is
-            # solving for — so "star_names[other] == val" would leak the
-            # true name↔dot mapping (same shape as the Pitch/Sequence leak).
-            # Handled as a "proximity_dist_label" arc in _name_arcs_from_clues
-            # instead: distance between two dots is purely structural (legit,
-            # like color/degree), so the arc form is both correct and free.
-            pass
-        "proximity_degree_exact":
-            var s: int = clue["s"]
-            var degree: int = clue["degree"]
-            for d in star_count:
-                if star_degrees[d] != degree:
-                    possible[d][s] = false
-        "proximity_degree_group_cmp_color":
-            var s: int = clue["s"]
-            var targets: Array = clue["targets"]
-            var s_more: bool = clue["s_more"]
-            for d in star_count:
-                var valid: bool = true
-                for t in targets:
-                    var t_deg: int = star_degrees[int(t)]
-                    if s_more and star_degrees[d] <= t_deg:
-                        valid = false
-                        break
-                    if not s_more and star_degrees[d] >= t_deg:
-                        valid = false
-                        break
-                if not valid:
-                    possible[d][s] = false
-        "proximity_degree_extreme":
-            var s: int = clue["s"]
-            var is_most: bool = clue["is_most"]
-            for d in star_count:
-                if is_most and star_degrees[d] != _max_degree:
-                    possible[d][s] = false
-                elif not is_most and star_degrees[d] != _min_degree:
-                    possible[d][s] = false
-        "proximity_dist_extreme":
-            # Fixed reference (ref) baked in at generation time — purely
-            # structural _distances lookups, legitimate like color/degree.
-            var s: int = clue["s"]
-            var ref: int = clue["ref"]
-            var want_least: bool = clue["want_least"]
-            for d in star_count:
-                if d == ref:
-                    possible[d][s] = false
-                    continue
-                var ok: bool = true
-                for other in star_count:
-                    if other == ref or other == d:
-                        continue
-                    if want_least and _distances[other][ref] <= _distances[d][ref]:
-                        ok = false
-                        break
-                    elif not want_least and _distances[other][ref] >= _distances[d][ref]:
-                        ok = false
-                        break
-                if not ok:
-                    possible[d][s] = false
-        "proximity_dist_dual_cmp":
-            var s: int = clue["s"]
-            var ref_a: int = clue["ref_a"]
-            var ref_b: int = clue["ref_b"]
-            var farther_from_a: bool = clue["farther_from_a"]
-            for d in star_count:
-                if d == ref_a or d == ref_b:
-                    possible[d][s] = false
-                    continue
-                var da: int = _distances[d][ref_a]
-                var db: int = _distances[d][ref_b]
-                var ok2: bool = (da > db) if farther_from_a else (da < db)
-                if not ok2:
-                    possible[d][s] = false
-        "proximity_dist_offset":
-            var s: int = clue["s"]
-            var ref_a: int = clue["ref_a"]
-            var ref_b: int = clue["ref_b"]
-            var offset: int = clue["offset"]
-            for d in star_count:
-                if d == ref_a or d == ref_b:
-                    possible[d][s] = false
-                    continue
-                if _distances[d][ref_a] - _distances[d][ref_b] != offset:
-                    possible[d][s] = false
-        _:
-            pass   # cmp, adj_seq, pitch_cmp, between handled separately
- 
- 
-func _apply_name_single_dot_filters(possible: Array, seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary], name_clues: Array[Dictionary], rank_possible: Array, pitch_possible: Array) -> bool:
-    for clue in seq_clues:
-        _apply_one_name_filter(possible, clue, rank_possible, pitch_possible)
-    for clue in pitch_clues:
-        _apply_one_name_filter(possible, clue, rank_possible, pitch_possible)
-    for clue in name_clues:
-        _apply_one_name_filter(possible, clue, rank_possible, pitch_possible)
-    for i in star_count:
-        var any_left: bool = false
-        for j in star_count:
-            if possible[i][j]:
-                any_left = true
-                break
-        if not any_left:
-            return false
-    return true
-
-
-func _name_slot_for_string(name_str: String) -> int:
-    # Bookkeeping only — which fixed candidate-name SLOT has this label —
-    # not a leak, since it never says which dot ends up holding that slot.
-    for i in star_names.size():
-        if star_names[i] == name_str:
-            return i
-    return -1
-
-
-func _name_arcs_from_clues(seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary], name_clues: Array[Dictionary]) -> Array:
-    var arcs: Array = []
-    for clue in seq_clues:
-        var k: String = str(clue.get("kind", ""))
-        if k == "ordinal_cmp":
-            arcs.append({"n1": int(clue["a"]), "n2": int(clue["b"]), "kind": "ordinal_cmp", "a_gt_b": bool(clue["a_gt_b"])})
-        elif k == "ordinal_adjacent":
-            arcs.append({"n1": int(clue["a"]), "n2": int(clue["b"]), "kind": "ordinal_adjacent"})
-        elif k == "ordinal_offset":
-            arcs.append({"n1": int(clue["a"]), "n2": int(clue["b"]), "kind": "ordinal_offset", "offset": int(clue["offset"])})
-    for clue in pitch_clues:
-        if str(clue.get("kind", "")) == "tone_cmp":
-            arcs.append({"n1": int(clue["a"]), "n2": int(clue["b"]), "kind": "tone_cmp", "rel": str(clue["rel"])})
-    for clue in name_clues:
-        if str(clue.get("kind", "")) == "proximity_dist_label":
-            var target_slot: int = _name_slot_for_string(str(clue["val"]))
-            if target_slot != -1:
-                arcs.append({"n1": int(clue["s"]), "n2": target_slot, "kind": "proximity_dist_label", "dist": int(clue["dist"])})
-    return arcs
-
-
-func _name_arc_predicate(arc: Dictionary, d1: int, d2: int, rank_possible: Array, pitch_possible: Array) -> bool:
-    # "Could this pair jointly satisfy the constraint" using the LIVE
-    # Sequence/Pitch possibility domains — never pitch_rank_solution/
-    # star_pitch_index ground truth. Support-exists, not ground-truth-true.
-    match str(arc["kind"]):
-        "ordinal_cmp":
-            var a_gt_b: bool = arc["a_gt_b"]
-            if a_gt_b:
-                return _domain_max(rank_possible, d1, star_count) > _domain_min(rank_possible, d2, star_count)
-            else:
-                return _domain_min(rank_possible, d1, star_count) < _domain_max(rank_possible, d2, star_count)
-        "ordinal_adjacent":
-            for r2 in star_count:
-                if rank_possible[d2][r2] and r2 + 1 < star_count and rank_possible[d1][r2 + 1]:
-                    return true
-            return false
-        "ordinal_offset":
-            var off: int = int(arc["offset"])
-            for r2 in star_count:
-                if rank_possible[d2][r2]:
-                    var r1: int = r2 + off
-                    if r1 >= 0 and r1 < star_count and rank_possible[d1][r1]:
-                        return true
-            return false
-        "tone_cmp":
-            var rel: String = arc["rel"]
-            if rel == "eq":
-                for p in pitch_count:
-                    if pitch_possible[d1][p] and pitch_possible[d2][p]:
-                        return true
-                return false
-            elif rel == "gt":
-                return _pitch_max_possible_rank(pitch_possible, d1) > _pitch_min_possible_rank(pitch_possible, d2)
-            else:
-                return _pitch_min_possible_rank(pitch_possible, d1) < _pitch_max_possible_rank(pitch_possible, d2)
-        "proximity_dist_label":
-            # Structural — pure graph distance between two fixed dots, no
-            # ground-truth unknown involved. Legitimate, like color/degree.
-            return _distances[d1][d2] == int(arc["dist"])
-    return true
-
-
-func _name_arc_consistency(possible: Array, arcs: Array, rank_possible: Array, pitch_possible: Array) -> bool:
-    var changed: bool = true
-    while changed:
-        changed = false
-        for arc in arcs:
-            var n1: int = arc["n1"]
-            var n2: int = arc["n2"]
-            for d1 in star_count:
-                if not possible[d1][n1]:
-                    continue
-                var supported: bool = false
-                for d2 in star_count:
-                    if possible[d2][n2] and _name_arc_predicate(arc, d1, d2, rank_possible, pitch_possible):
-                        supported = true
-                        break
-                if not supported:
-                    possible[d1][n1] = false
-                    changed = true
-            for d2 in star_count:
-                if not possible[d2][n2]:
-                    continue
-                var supported2: bool = false
-                for d1 in star_count:
-                    if possible[d1][n1] and _name_arc_predicate(arc, d1, d2, rank_possible, pitch_possible):
-                        supported2 = true
-                        break
-                if not supported2:
-                    possible[d2][n2] = false
-                    changed = true
-        for i in star_count:
-            var any_left: bool = false
-            for j in star_count:
-                if possible[i][j]:
-                    any_left = true
-                    break
-            if not any_left:
-                return false
-    return true
- 
- 
-func _validate_between_clues(assignment: Array, between_clues: Array[Dictionary]) -> bool:
-    for clue in between_clues:
-        var mid_dot: int = assignment[int(clue["mid"])]
-        var a_dot: int = assignment[int(clue["a"])]
-        var b_dot: int = assignment[int(clue["b"])]
-        if _distances[a_dot][mid_dot] + _distances[mid_dot][b_dot] != _distances[a_dot][b_dot]:
-            return false
-    return true
- 
- 
-func _possibility_grid_for_name_clues(seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary],
-        name_clues: Array[Dictionary], rank_possible: Array, pitch_possible: Array):
-    # Name-axis mirror of _possibility_grid_for_clues/_possibility_grid_for_
-    # pitch_clues: the propagation-only prefix of _solve_names (single-dot
-    # filters, arc consistency, naked-subset), stopping BEFORE backtracking.
-    # Extracted out of _solve_names (which now calls this directly) so the
-    # incremental resolved-star tracker (_refresh_resolved_stars) can reuse
-    # the exact same logic instead of a second, drift-prone copy. Takes
-    # already-computed rank_possible/pitch_possible since callers needing
-    # all three grids together would otherwise compute Sequence/Pitch twice.
-    var possible: Array = _init_possibility_grid()
-    if not _apply_name_single_dot_filters(possible, seq_clues, pitch_clues, name_clues, rank_possible, pitch_possible):
-        return null
-    var arcs: Array = _name_arcs_from_clues(seq_clues, pitch_clues, name_clues)
-    if not _name_arc_consistency(possible, arcs, rank_possible, pitch_possible):
-        return null
-    var nb_changed: bool = true
-    while nb_changed:
-        nb_changed = false
-        if _naked_subset_pass(possible, star_count, true):
-            nb_changed = true
-            if not _name_arc_consistency(possible, arcs, rank_possible, pitch_possible):
-                return null
-    return possible
-
-
-func _solve_names(seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary], name_clues: Array[Dictionary], cap: int = 2) -> Array:
-    # Live, leak-free front doors — never pitch_rank_solution/star_pitch_index
-    # ground truth. If either axis's own clue set is already contradictory,
-    # there's no valid world left to bind names against.
-    var rank_possible = _possibility_grid_for_clues(seq_clues)
-    if rank_possible == null:
-        return []
-    var pitch_possible: Array = _init_pitch_possibility_grid()
-    if pitch_count > 0:
-        var pp = _possibility_grid_for_pitch_clues(pitch_clues)
-        if pp == null:
-            return []
-        pitch_possible = pp
-
-    var possible = _possibility_grid_for_name_clues(seq_clues, pitch_clues, name_clues, rank_possible, pitch_possible)
-    if possible == null:
-        return []
-
-    var between_clues: Array[Dictionary] = []
-    for clue in name_clues:
-        if str(clue.get("kind", "")) == "proximity_between":
-            between_clues.append(clue)
- 
-    if _all_singleton(possible):
-        var sol: Array = _extract_singleton_solution(possible)
-        if not _validate_between_clues(sol, between_clues):
-            return []
-        return [sol]
- 
-    var solutions: Array = []
-    var assignment: Array = []
-    assignment.resize(star_count)
-    for i in star_count:
-        assignment[i] = -1
-    var init_domains: Array = _possible_to_domains(possible)
-    _backtrack_nodes_remaining = MAX_BACKTRACK_NODES
-    _backtrack_fc_names(assignment, init_domains, between_clues, solutions, cap)
-    return solutions
- 
- 
-func _backtrack_fc_names(assignment: Array, domains: Array, between_clues: Array[Dictionary], solutions: Array, cap: int) -> void:
-    if solutions.size() >= cap:
-        return
-    _backtrack_nodes_remaining -= 1
-    if _backtrack_nodes_remaining <= 0:
-        if _backtrack_nodes_remaining == 0:
-            push_warning("ConstellationLogicPuzzle [%d]: backtracking node budget exhausted (names) — aborting search early." % constellation_id)
-            _backtrack_nodes_remaining -= 1
-        return
-    var var_idx: int = -1
-    var best_size: int = star_count + 1
-    for i in star_count:
-        if assignment[i] == -1:
-            var sz: int = domains[i].size()
-            if sz < best_size:
-                best_size = sz
-                var_idx = i
-    if var_idx == -1:
-        if _validate_between_clues(assignment, between_clues):
-            solutions.append(assignment.duplicate())
-        return
-    for val in domains[var_idx]:
-        assignment[var_idx] = val
-        var new_doms = _forward_check(var_idx, val, domains, [], [])
-        if new_doms != null:
-            _backtrack_fc_names(assignment, new_doms, between_clues, solutions, cap)
-        assignment[var_idx] = -1
-        if solutions.size() >= cap:
-            return
- 
- 
-## _name_candidate_pool and _ensure_and_trim_names were deleted 2026-07-19
-## — the last remnant of the pre-refactor Name generator (pre-built
-## combinatorial pool, drained front-to-back with no category awareness).
-## Every kind they used to build is now sample-then-constructed on demand
-## by generate_clues_by_primer_type / _force_primer_coverage instead. See
-## constellation_puzzle_sequential_generator_design memory for the history.
- 
- 
+# ==================================================
+# PITCH-AXIS SOLVER — ported verbatim
+# ==================================================
+# Pitch is not one of the two truly-hidden axes (Name, Sequence) — players
+# can always resolve it via the Listen mechanic — but this solver still
+# exists so a clue-based path works too, same reasoning as the old file.
 func _validate_pitch_all_diff_clues(solution: Array, clues: Array[Dictionary]) -> bool:
     for clue in clues:
         var stars: Array = clue["stars"]
@@ -3066,588 +1526,11 @@ func _forward_check_pitch(var_idx: int, val: int, domains: Array,
     return nd
  
  
-func _score_pitch_clue_difficulty(clue: Dictionary) -> float:
-    var base: float = 1.0
-    match clue.get("kind", ""):
-        "tone_exact":
-            base = 10.0
-        "tone_extreme":
-            base = 7.0
-        "tone_neg":
-            base = 6.0
-        "tone_group_eq":
-            base = 5.0 + (float(clue.get("stars", []).size()) * 0.5)
-        "tone_group_cmp_color":
-            base = 4.0 + (float(clue.get("targets", []).size()) * 0.8)
-        "tone_cmp":
-            var a2: int = clue.get("a", 0)
-            var b2: int = clue.get("b", 0)
-            var gap2: int = abs(_pitch_freq_rank[star_pitch_index[a2]] - _pitch_freq_rank[star_pitch_index[b2]])
-            base = 2.0 + (float(gap2) * 0.5)
-        "tone_all_diff":
-            base = 6.0 + (float(clue.get("stars", []).size()) * 0.6)
-    return base + _clue_difficulty_jitter(clue)
- 
- 
+
+
 # ==================================================
-# CLUE TEXT BUILDERS
+# GENERIC HELPERS — ported verbatim (RNG, alphabetical rank, sampling)
 # ==================================================
- 
-## _build_cmp_clue / _build_adj_seq_clue deleted 2026-07-19 — each had
-## exactly one caller (the ordinal_cmp/ordinal_adjacent branches of
-## _sample_and_build), so folded inline there directly rather than kept as
-## single-use indirection.
-
-
-func _build_extreme_clue(s: int) -> Dictionary:
-    var neighbors: Array = proximity[s]
-    if neighbors.is_empty():
-        return {}
-    var s_rank: int = pitch_rank_solution[s]
-    if s_rank == 0 or s_rank == star_count - 1:
-        # Global-extreme subjects trivially satisfy "extreme among neighbors"
-        # regardless of which stars are actually adjacent — the claim adds
-        # zero information beyond what the ordinal in the text already gives
-        # away. Skip rather than generate a tautology.
-        return {}
-    var is_lowest: bool = true
-    var is_highest: bool = true
-    for n in neighbors:
-        if pitch_rank_solution[n] < pitch_rank_solution[s]:
-            is_lowest = false
-        if pitch_rank_solution[n] > pitch_rank_solution[s]:
-            is_highest = false
-    if not is_lowest and not is_highest:
-        return {}
-    var word: String = "earliest" if is_lowest else "latest"
-    var text: String = "The %s fires %s among all stars it connects to." % [_ordinal(pitch_rank_solution[s] + 1), word]
-    var nb_copy: Array = []
-    for n in neighbors:
-        nb_copy.append(int(n))
-    return {"kind": "ordinal_extreme", "s": s, "neighbors": nb_copy,
-            "want_lowest": is_lowest, "text": text}
- 
- 
-func _freq_for_star(s: int) -> float:
-    if s < 0 or s >= star_pitch_index.size():
-        return 0.0
-    var pidx: int = star_pitch_index[s]
-    if pidx < 0 or pidx >= _pitch_freqs.size():
-        return 0.0
-    return _pitch_freqs[pidx]
- 
- 
-## _build_pitch_cmp_text deleted 2026-07-19 — folded inline into the
-## tone_cmp branch of _sample_and_build (its one caller).
- 
- 
-# ==================================================
-# POOL BUILDERS
-# ==================================================
- 
-## _build_proximity_cmp_pool / _build_extreme_pool / _build_color_pool /
-## _build_degree_pool / _build_adj_seq_pool deleted 2026-07-19 — all
-## superseded by sample-then-construct (_sample_and_build's ordinal_cmp/
-## ordinal_extreme/ordinal_adjacent branches, _sample_degree_group_eq).
-## _build_cmp_clue/_build_adj_seq_clue/_build_extreme_clue are still used
-## directly by those branches.
-
-
-func _exact_desc_is_unique(subject: int, named_neighbor: int, color_c: int) -> bool:
-    for t in star_count:
-        if t == subject:
-            continue
-        if not proximity[t].has(named_neighbor):
-            continue
-        var has_color_neighbor: bool = false
-        for n in proximity[t]:
-            if int(n) != named_neighbor and star_colors[int(n)] == color_c:
-                has_color_neighbor = true
-                break
-        if has_color_neighbor:
-            return false
-    return true
- 
- 
-## _build_range_pool / _build_group_cmp_pool / _build_seq_pitch_cmp_pool /
-## _build_unique_list_pool / _build_count_before_pool /
-## _build_neg_adjacent_pool / _build_neg_exact_pool / _build_degree_*_pool /
-## _build_neither_nor_pool / _build_either_or_pool /
-## _build_unaligned_pair_pool / _build_offset_seq_pool /
-## _build_pitch_all_diff_pool deleted 2026-07-19 — all superseded by
-## sample-then-construct (_sample_and_build's dispatch table, plus
-## _sample_unique_list_n/_sample_degree_group_eq/etc.). _build_exact_pool
-## was likewise deleted; ordinal_exact is now built by _sample_and_build
-## directly using _exact_desc_is_unique above.
-
-
-func _pair_already_related(a: int, b: int, chosen: Array[Dictionary]) -> bool:
-    for c in chosen:
-        var k: String = str(c.get("kind", ""))
-        if k != "ordinal_cmp" and k != "ordinal_adjacent" and k != "ordinal_offset":
-            continue
-        var ca: int = int(c.get("a", -1))
-        var cb: int = int(c.get("b", -1))
-        if (ca == a and cb == b) or (ca == b and cb == a):
-            return true
-    return false
-
-
-func _print_clue_breakdown_diagnostics(chosen: Array[Dictionary], pitch_chosen: Array[Dictionary], name_chosen: Array[Dictionary]) -> void:
-    var tab_counts: Dictionary = {"Color": 0, "Sequence": 0, "Pitch": 0, "Proximity": 0}
-    var primer_counts: Dictionary = {}
-
-    # Not every kind maps onto a primer category — extreme/range/group_cmp/
-    # count_before/neg_adjacent/dist_color/between/alph_extreme/pitch_extreme/
-    # pitch_group_eq/pitch_group_cmp all predate the primer-coverage work and
-    # fall to "Other/structural" honestly, rather than forcing a false match.
-    var primer_map: Dictionary = {
-        "ordinal_exact": "True", "tone_exact": "True",
-        "ordinal_neg": "False", "tone_neg": "False",
-        "tone_all_diff": "Multi-Elimination",
-        "ordinal_neither_nor": "Neither/Nor", "color_neg": "Neither/Nor",
-        "ordinal_either_or": "Either/Or",
-        "ordinal_cmp": "Greater/Lesser (vague)", "tone_cmp": "Greater/Lesser (vague)", "ordinal_chain": "Greater/Lesser (vague)",
-        "ordinal_offset": "Greater/Lesser (specific)", "ordinal_adjacent": "Greater/Lesser (specific)",
-        "ordinal_unaligned": "Unaligned Pair",
-    }
-
-    tab_counts["NameClues"] = 0
-    for clue in chosen:
-        var kind: String = str(clue.get("kind", ""))
-        for tab in _kind_ui_tabs(kind):
-            if tab_counts.has(tab):
-                tab_counts[tab] = int(tab_counts[tab]) + 1
-        var primer_cat: String = str(primer_map.get(kind, "Other/structural"))
-        primer_counts[primer_cat] = int(primer_counts.get(primer_cat, 0)) + 1
-
-    for pclue in pitch_chosen:
-        var pkind: String = str(pclue.get("kind", ""))
-        for ptab in _kind_ui_tabs(pkind):
-            if tab_counts.has(ptab):
-                tab_counts[ptab] = int(tab_counts[ptab]) + 1
-        var pprimer_cat: String = str(primer_map.get(pkind, "Other/structural"))
-        primer_counts[pprimer_cat] = int(primer_counts.get(pprimer_cat, 0)) + 1
-
-    for iclue in name_chosen:
-        var ikind: String = str(iclue.get("kind", ""))
-        for itab in _kind_ui_tabs(ikind):
-            if tab_counts.has(itab):
-                tab_counts[itab] = int(tab_counts[itab]) + 1
-        var iprimer_cat: String = str(primer_map.get(ikind, "Other/structural"))
-        primer_counts[iprimer_cat] = int(primer_counts.get(iprimer_cat, 0)) + 1
-
-    print("[PUZZLE_TIMING %d] clue breakdown by UI tab: %s" % [constellation_id, str(tab_counts)])
-    print("[PUZZLE_TIMING %d] clue breakdown by primer category: %s" % [constellation_id, str(primer_counts)])
-
-
-func _kind_primer_category(kind: String) -> String:
-    match kind:
-        "ordinal_exact", "tone_exact", "color_exact":
-            return "True"
-        "ordinal_neg", "tone_neg":
-            return "False"
-        "tone_all_diff", "unique_list_n":
-            return "Multi-Elimination"
-        "ordinal_neither_nor", "color_neg":
-            return "Neither/Nor"
-        "ordinal_either_or":
-            return "Either/Or"
-        "ordinal_cmp", "tone_cmp", "proximity_dist_dual_cmp", "ordinal_chain":
-            return "Greater/Lesser (vague)"
-        "ordinal_offset", "ordinal_adjacent", "proximity_dist_offset":
-            return "Greater/Lesser (specific)"
-        "ordinal_unaligned":
-            return "Unaligned Pair"
-    return ""   # not primer-mapped — matches the diagnostic's "Other/structural" bucket
-
-
-# Sequential-generator design (2026-07-19): initial static ranking of the 8
-# primer categories by expected "entropic bias" — roughly, how many T/F grid
-# intersections a typical clue of that category resolves. Derived from
-# _score_clue_difficulty's base values (per the user's explicit direction to
-# start from that as a proxy), using a "typical" mid-range parameter for
-# variable-bonus kinds (e.g. ordinal_cmp's rank-gap, unique_list_n's N) since
-# the real value varies per clue instance. Where a kind's base value differs
-# between _score_clue_difficulty/_score_name_clue_difficulty/
-# _score_pitch_clue_difficulty (pre-existing drift across those three, not
-# something this table fixes), _score_clue_difficulty's value is preferred.
-# THIS IS A STARTING PROXY, not a measured result — per-category values
-# should be replaced with real observed elimination counts once the
-# sequential generator has run enough live puzzles to measure them directly.
-# Multi-Elimination ranks highest because unique_list_n's N-way shape
-# integrates the most distinct stars per clue, which the user identified as
-# the primary expected driver of entropic bias.
-const PRIMER_CATEGORY_ENTROPIC_BIAS := {
-    "Multi-Elimination":        11.0,  # unique_list_n (N~4): 5.0 + 4*1.5
-    "True":                      8.7,  # avg(ordinal_exact 10.0, tone_exact 9.0, color_exact 7.0)
-    "Greater/Lesser (specific)": 7.2,  # avg(ordinal_offset~8.1, ordinal_adjacent 8.0, proximity_dist_offset 5.5)
-    "Unaligned Pair":            6.5,  # ordinal_unaligned
-    "False":                     5.75, # avg(ordinal_neg 6.0, tone_neg 5.5)
-    "Either/Or":                 5.5,  # ordinal_either_or
-    "Greater/Lesser (vague)":    4.5,  # avg(ordinal_cmp~4.5 at typical gap, tone_cmp 4.5, proximity_dist_dual_cmp 4.5)
-    "Neither/Nor":               4.25, # avg(ordinal_neither_nor 4.5, color_neg 4.0)
-}
-
-
-static func _primer_categories_by_entropic_bias() -> Array[String]:
-    var cats: Array[String] = []
-    for c in PRIMER_CATEGORY_ENTROPIC_BIAS.keys():
-        cats.append(str(c))
-    cats.sort_custom(func(a, b): return PRIMER_CATEGORY_ENTROPIC_BIAS[a] > PRIMER_CATEGORY_ENTROPIC_BIAS[b])
-    return cats
-
-
-## Phase 5 (2026-07-18): the single canonical clue-kind -> UI-tab mapping.
-## Static because it's a pure function of `kind` with no instance state —
-## constellation_study_overlay.gd calls this directly (same pattern already
-## established for note_name_for_freq) instead of keeping its own copy.
-## Fixed drift found when unifying: "ordinal_group_cmp_tone" was unmapped
-## in the overlay's copy, "color_exact" disagreed (["Color"] here vs.
-## ["Color","NameClues"] there — resolved to the NameClues-inclusive form,
-## consistent with sibling kinds color_neg/proximity_dist_color), and the
-## four proximity_degree_* kinds existed only in the overlay's copy.
-static func _kind_ui_tabs(kind: String) -> Array[String]:
-    match kind:
-        "ordinal_exact", "ordinal_range", "ordinal_neg", "ordinal_cmp", "ordinal_adjacent", "ordinal_offset", "ordinal_neither_nor", "ordinal_either_or", "ordinal_unaligned", "ordinal_chain":
-            return ["Sequence"]
-        "ordinal_group_cmp_color":
-            return ["Sequence", "Color"]
-        "ordinal_group_cmp_tone":
-            return ["Sequence", "Pitch"]
-        "ordinal_extreme", "ordinal_count_before", "proximity_neg_adjacent":
-            return ["Sequence", "Proximity"]
-        "tone_exact", "tone_neg", "tone_cmp", "tone_group_eq":
-            return ["Pitch"]
-        "tone_extreme":
-            return ["Pitch", "Proximity"]
-        "tone_group_cmp_color":
-            return ["Pitch", "Color"]
-        "tone_all_diff":
-            return ["Pitch", "NameClues"]
-        "proximity_dist_color":
-            return ["Color", "Proximity", "NameClues"]
-        "proximity_between":
-            return ["Proximity", "NameClues"]
-        "color_neg":
-            return ["Color", "NameClues"]
-        "color_exact":
-            return ["Color", "NameClues"]
-        "label_extreme_ordinal_color":
-            return ["Color", "NameClues", "Sequence"]
-        "proximity_dist_extreme", "proximity_dist_dual_cmp", "proximity_dist_offset":
-            return ["Proximity", "NameClues"]
-        "proximity_degree_exact", "proximity_degree_group_eq", "proximity_degree_extreme", "proximity_degree_group_cmp_color":
-            return ["Proximity"]
-        "unique_list_n":
-            return ["Sequence", "Color", "Proximity", "Pitch", "NameClues"]
-    return []
-
-
-func _kind_home_array(kind: String) -> String:
-    # Which of chosen/pitch_chosen/name_chosen a candidate actually belongs
-    # in — independent of which UI tab(s) it's being pulled in to satisfy.
-    if kind.begins_with("pitch_") or kind.begins_with("tone_"):
-        return "pitch"
-    if kind == "proximity_dist_color" or kind == "proximity_between" or kind == "color_neg" or kind == "label_extreme_ordinal_color" \
-    or kind == "proximity_dist_tone" or kind == "proximity_dist_degree" or kind == "proximity_dist_label" \
-    or kind == "proximity_degree_exact" or kind == "proximity_degree_extreme" or kind == "proximity_degree_group_cmp_color" \
-    or kind == "color_exact" \
-    or kind == "proximity_dist_extreme" or kind == "proximity_dist_dual_cmp" or kind == "proximity_dist_offset":
-        return "name"
-    return "sequence"
-
-
-func _refresh_resolved_stars(seq_clues: Array[Dictionary], pitch_clues: Array[Dictionary],
-        name_clues: Array[Dictionary], resolved: Dictionary) -> Dictionary:
-    # Incremental propagation tracker (2026-07-19, per Bogaerts/Gamba/Guns
-    # 2021's step-wise CSP-explanation framework — their greedy-explain
-    # runs propagation to fixpoint and feeds each newly-derived fact back
-    # before picking the next step; this is the same idea applied inside
-    # generation instead of after it). A star counts as "resolved" only
-    # once its Sequence-rank OR Name-slot domain has actually narrowed to a
-    # single value via real propagation — not merely because some clue
-    # happened to mention it. Replaces the old "touched = mentioned" proxy
-    # (crude — a star could be named in five clues and still be logically
-    # ambiguous, or resolved by cross-referencing without ever being the
-    # PRIMARY subject of any one clue) with the genuine derived state,
-    # reusing the exact propagation front-ends already trusted for final
-    # verification (_possibility_grid_for_clues/_possibility_grid_for_
-    # pitch_clues/_possibility_grid_for_name_clues), just run after every
-    # committed clue instead of only once at the end. Pitch is
-    # deliberately excluded from "resolved" — it isn't something clues
-    # need to solve (players use Listen), so pitch_possible is computed
-    # only because Name-binding's cross-axis filters need it, never
-    # consulted for resolution status itself.
-    #
-    # Also returns whole-grid resolution status ({"seq_fully_resolved":
-    # bool, "name_fully_resolved": bool}) — per-star "resolved" (used for
-    # sampling bias) is a weaker signal than "every star's domain has
-    # collapsed to one value via PURE propagation" (used as the actual
-    # generation completion criterion — see generate_clues_by_primer_type):
-    # a star can be individually resolved while others in the same grid
-    # are still ambiguous.
-    var rank_possible = _possibility_grid_for_clues(seq_clues)
-    if rank_possible == null:
-        return {"seq_fully_resolved": false, "name_fully_resolved": false}   # a contradiction here would mean a generated clue was unsound — every clue is ground-truth-true, so this should never actually trigger
-    var pitch_possible: Array = _init_pitch_possibility_grid()
-    if pitch_count > 0:
-        var pp = _possibility_grid_for_pitch_clues(pitch_clues)
-        if pp != null:
-            pitch_possible = pp
-    var name_possible = _possibility_grid_for_name_clues(seq_clues, pitch_clues, name_clues, rank_possible, pitch_possible)
-    for s in star_count:
-        if _domain_forced_value(rank_possible, s, star_count) != -1:
-            resolved[s] = true
-        elif name_possible != null and _domain_forced_value(name_possible, s, star_count) != -1:
-            resolved[s] = true
-    return {
-        "seq_fully_resolved": _all_singleton(rank_possible),
-        "name_fully_resolved": name_possible != null and _all_singleton(name_possible),
-    }
-
-
-func _commit_generated_clue(picked: Dictionary, chosen: Array[Dictionary], pitch_chosen: Array[Dictionary],
-        name_chosen: Array[Dictionary], all_touched_stars: Dictionary, generated_texts: Dictionary) -> Dictionary:
-    var home: String = _kind_home_array(str(picked.get("kind", "")))
-    match home:
-        "pitch":
-            pitch_chosen.append(picked)
-        "name":
-            name_chosen.append(picked)
-        _:
-            chosen.append(picked)
-    generated_texts[str(picked.get("text", ""))] = true
-    return _refresh_resolved_stars(chosen, pitch_chosen, name_chosen, all_touched_stars)
-
-
-func _all_generatable_kinds() -> Array[String]:
-    var out: Array[String] = []
-    out.append_array(PRIMER_ELIGIBLE_KINDS)
-    out.append_array(STRUCTURAL_KINDS)
-    return out
-
-
-func _join_subject_names(names: Array) -> String:
-    if names.size() == 1:
-        return str(names[0])
-    if names.size() == 2:
-        return "%s and %s" % [names[0], names[1]]
-    var head: String = ", ".join(names.slice(0, names.size() - 1))
-    return "%s, and %s" % [head, names[names.size() - 1]]
-
-
-func _group_cmp_merge_key(clue: Dictionary, direction_field: String) -> String:
-    # Two group_cmp clues describe the exact same underlying relationship —
-    # and so can be merged into one multi-subject sentence — iff they share
-    # the identical target-star set AND the identical direction (s_first/
-    # s_lower). Comparing the actual target star indices (not just "same
-    # color" or "same pitch") is what makes this safe: it's the physical
-    # group the constraint is about, independent of how it's described.
-    var targets: Array = clue.get("targets", [])
-    var sorted_targets: Array = targets.duplicate()
-    sorted_targets.sort()
-    return "%s|%s" % [str(sorted_targets), str(clue.get(direction_field))]
-
-
-func _build_group_cmp_merged_text(kind: String, clue: Dictionary, subjects: Array) -> String:
-    var names: Array = []
-    for s in subjects:
-        names.append(star_names[int(s)])
-    var joined: String = _join_subject_names(names)
-    var plural: bool = subjects.size() > 1
-    var targets: Array = clue.get("targets", [])
-    var ref_star: int = int(targets[0]) if not targets.is_empty() else 0
-    match kind:
-        "ordinal_group_cmp_color":
-            var color_word: String = COLOR_NAMES[star_colors[ref_star]].to_lower()
-            var verb: String = "fire" if plural else "fires"
-            if bool(clue.get("s_first", true)):
-                return "%s %s before every %s star." % [joined, verb, color_word]
-            return "%s %s after every %s star." % [joined, verb, color_word]
-        "ordinal_group_cmp_tone":
-            var note_word: String = note_name_for_freq(_pitch_freqs[star_pitch_index[ref_star]])
-            var verb2: String = "fire" if plural else "fires"
-            if bool(clue.get("s_first", true)):
-                return "%s %s before every star that plays %s." % [joined, verb2, note_word]
-            return "%s %s after every star that plays %s." % [joined, verb2, note_word]
-        "tone_group_cmp_color":
-            var color_word2: String = COLOR_NAMES[star_colors[ref_star]].to_lower()
-            var verb3: String = "play" if plural else "plays"
-            if bool(clue.get("s_lower", true)):
-                return "%s %s a lower note than every %s star." % [joined, verb3, color_word2]
-            return "%s %s a higher note than every %s star." % [joined, verb3, color_word2]
-    return str(clue.get("text", ""))
-
-
-func _merge_group_cmp_kind(list: Array[Dictionary], kind: String, direction_field: String) -> void:
-    var groups: Dictionary = {}   # merge_key -> Array[int] indices into list
-    for i in list.size():
-        if str(list[i].get("kind", "")) != kind:
-            continue
-        var key: String = _group_cmp_merge_key(list[i], direction_field)
-        if not groups.has(key):
-            groups[key] = []
-        groups[key].append(i)
-
-    var indices_to_remove: Array = []
-    for key in groups.keys():
-        var idxs: Array = groups[key]
-        if idxs.size() < 2:
-            continue
-        var merged_subjects: Array = []
-        for idx in idxs:
-            for subj in (list[idx].get("subjects", []) as Array):
-                if not merged_subjects.has(int(subj)):
-                    merged_subjects.append(int(subj))
-        var first_idx: int = int(idxs[0])
-        list[first_idx]["subjects"] = merged_subjects
-        list[first_idx]["text"] = _build_group_cmp_merged_text(kind, list[first_idx], merged_subjects)
-        for j in range(1, idxs.size()):
-            indices_to_remove.append(int(idxs[j]))
-
-    indices_to_remove.sort()
-    indices_to_remove.reverse()
-    for idx in indices_to_remove:
-        list.remove_at(idx)
-
-
-func _merge_group_cmp_duplicates(chosen: Array[Dictionary], pitch_chosen: Array[Dictionary]) -> void:
-    # Two independently-sampled group_cmp clues can end up describing the
-    # exact same target group ("X fires before every star that plays G4"
-    # and "Y fires before every star that plays G4") since each is sampled
-    # without knowledge of the other. Rather than prevent this at sample
-    # time (which would need the sampler to see the whole chosen list),
-    # merge duplicates after generation into one multi-subject sentence —
-    # a text-presentation fix, not a selection mechanism, so it doesn't
-    # reintroduce the pool-then-filter pattern.
-    _merge_group_cmp_kind(chosen, "ordinal_group_cmp_color", "s_first")
-    _merge_group_cmp_kind(chosen, "ordinal_group_cmp_tone", "s_first")
-    _merge_group_cmp_kind(pitch_chosen, "tone_group_cmp_color", "s_lower")
-
-
-func _force_primer_coverage(chosen: Array[Dictionary], pitch_chosen: Array[Dictionary],
-        name_chosen: Array[Dictionary], all_touched_stars: Dictionary, generated_texts: Dictionary) -> Dictionary:
-    # REDUCED ROLE, 2026-07-19: generate_clues_by_primer_type's own loop now
-    # pursues kind-floor AND primer-category-floor coverage directly, as
-    # part of reaching "solved," using this exact same _attempt_construct/
-    # _try_pick_for_category machinery — so Pass 1 and Pass 3 below should
-    # find nothing left to do under normal operation (every kind already
-    # seen or already given up on as genuinely infeasible for this
-    # constellation, every primer category already at its floor). This
-    # function is kept as a defensive safety net, not the mechanism that
-    # achieves coverage — if its "forced" list is non-empty in a real run,
-    # that's worth investigating as a sign the primary loop's own coverage
-    # sweep missed something, not treated as expected/normal. Pass 2
-    # (UI-tab floor) is the one piece not folded into the primary loop —
-    # tab coverage is usually a side effect of kind+category coverage
-    # (most kinds map to multiple tabs) but isn't explicitly pursued there.
-    var forced: Array[String] = []
-    var category_kinds: Dictionary = _category_kinds()
-    var all_kinds: Array[String] = _all_generatable_kinds()
-
-    var has_kind: Dictionary = {}
-    for c in chosen:
-        has_kind[str(c.get("kind", ""))] = true
-    for c in pitch_chosen:
-        has_kind[str(c.get("kind", ""))] = true
-    for c in name_chosen:
-        has_kind[str(c.get("kind", ""))] = true
-
-    # ---- Pass 1: kind floor — every generatable kind gets at least one
-    # representative if the constellation structure supports it at all.
-    for kind in all_kinds:
-        if has_kind.get(kind, false):
-            continue
-        var picked: Dictionary = _attempt_construct(kind, all_touched_stars, generated_texts)
-        if not picked.is_empty():
-            _commit_generated_clue(picked, chosen, pitch_chosen, name_chosen, all_touched_stars, generated_texts)
-            has_kind[kind] = true
-            forced.append("%s: forced (kind floor)" % kind)
-        else:
-            forced.append("%s: pool empty, could not force (constellation structure doesn't support it)" % kind)
-
-    # ---- Pass 2: UI-tab floor, multi-membership aware ----
-    var tab_kinds: Dictionary = {"Color": [], "Proximity": [], "Sequence": [], "Pitch": [], "NameClues": []}
-    for kind in all_kinds:
-        for tab in _kind_ui_tabs(kind):
-            if tab_kinds.has(tab):
-                tab_kinds[tab].append(kind)
-
-    for tab in tab_kinds.keys():
-        var current_count: int = 0
-        for c in chosen:
-            if tab in _kind_ui_tabs(str(c.get("kind", ""))):
-                current_count += 1
-        for c in pitch_chosen:
-            if tab in _kind_ui_tabs(str(c.get("kind", ""))):
-                current_count += 1
-        for c in name_chosen:
-            if tab in _kind_ui_tabs(str(c.get("kind", ""))):
-                current_count += 1
-
-        var candidate_kinds: Array = (tab_kinds[tab] as Array).duplicate()
-        if candidate_kinds.is_empty():
-            continue
-        _shuffle_array(candidate_kinds)
-        var attempts: int = 0
-        var max_attempts: int = candidate_kinds.size() * 4
-        while current_count < TAB_MIN and attempts < max_attempts:
-            var kind2: String = candidate_kinds[attempts % candidate_kinds.size()]
-            attempts += 1
-            var picked2: Dictionary = _attempt_construct(kind2, all_touched_stars, generated_texts)
-            if picked2.is_empty():
-                continue
-            _commit_generated_clue(picked2, chosen, pitch_chosen, name_chosen, all_touched_stars, generated_texts)
-            current_count += 1
-            forced.append("%s: forced (tab floor, %s)" % [kind2, tab])
-
-        if current_count < TAB_MIN:
-            forced.append("%s tab: only reached %d/%d, exhausted" % [tab, current_count, TAB_MIN])
-
-    # ---- Pass 3: primer-category floor ----
-    var primer_categories: Array[String] = ["True", "False", "Multi-Elimination", "Neither/Nor",
-        "Either/Or", "Greater/Lesser (vague)", "Greater/Lesser (specific)", "Unaligned Pair"]
-
-    for category in primer_categories:
-        var cat_min: int = _primer_category_min(category)
-        var current_count2: int = 0
-        for c in chosen:
-            if _kind_primer_category(str(c.get("kind", ""))) == category:
-                current_count2 += 1
-        for c in pitch_chosen:
-            if _kind_primer_category(str(c.get("kind", ""))) == category:
-                current_count2 += 1
-        for c in name_chosen:
-            if _kind_primer_category(str(c.get("kind", ""))) == category:
-                current_count2 += 1
-
-        while current_count2 < cat_min:
-            var picked3: Dictionary = _try_pick_for_category(category, category_kinds, all_touched_stars, pitch_chosen, generated_texts)
-            if picked3.is_empty():
-                break
-            _commit_generated_clue(picked3, chosen, pitch_chosen, name_chosen, all_touched_stars, generated_texts)
-            current_count2 += 1
-            forced.append("%s: forced (primer floor, %s)" % [str(picked3.get("kind", "")), category])
-
-        if current_count2 < cat_min:
-            forced.append("%s: only reached %d/%d, exhausted" % [category, current_count2, cat_min])
-
-    return {"forced": forced}
-
-
-## _build_color_exact_pool deleted 2026-07-19 — color_exact is now built by
-## _sample_and_build directly.
-
-## _build_neg_color_pool deleted 2026-07-19, along with the whole
-## _color_negation_texts feature it fed (see field removal below and cache
-## version bump) — confirmed dead: computed every generation, serialized
-## to cache, deserialized into the overlay's _color_negation_cache, and
-## never read again anywhere (not in get_clue_texts(), not displayed by
-## the overlay). color_neg clues still exist as a normal generatable kind
-## via _sample_and_build; this was a separate, always-on, unused duplicate.
-
-
 func _compute_alph_rank() -> void:
     _alph_rank = []
     _alph_rank.resize(star_count)
@@ -3661,48 +1544,6 @@ func _compute_alph_rank() -> void:
  
 ## _build_alph_extreme_pool deleted 2026-07-19 — label_extreme_ordinal_color
 ## is now built by _sample_alph_extreme.
-
-
-func _describe_color_fragment(star_idx: int) -> String:
-    return "a %s star" % COLOR_NAMES[star_colors[star_idx]].to_lower()
- 
- 
-func _describe_pitch_fragment(star_idx: int) -> String:
-    var pitch_idx: int = star_pitch_index[star_idx] if star_idx < star_pitch_index.size() else 0
-    var freq: float = _pitch_freqs[pitch_idx] if pitch_idx < _pitch_freqs.size() else 0.0
-    return "a %s note" % note_name_for_freq(freq)
- 
- 
-func _attach_neighbor_fragment(base_text: String, subject: int, verb: String) -> Dictionary:
-    var neighbors: Array = proximity[subject]
-    if neighbors.is_empty():
-        return {"text": base_text, "c": -1}
-    var n: int = int(neighbors[_rng.randi_range(0, neighbors.size() - 1)])
-    var use_pitch: bool = _rng.randi() % 2 == 0
-    var fragment: String = _describe_pitch_fragment(n) if use_pitch else _describe_color_fragment(n)
-    var text: String = "%s and %s %s." % [base_text.trim_suffix("."), verb, fragment]
-    return {"text": text, "c": n}
- 
- 
-## _build_pitch_exact_pool / _build_pitch_neg_pool / _build_pitch_cmp_pool /
-## _build_pitch_group_eq_pool / _build_pitch_extreme_pool /
-## _build_pitch_group_cmp_pool / _build_dist_pool / _build_dist_color_pool /
-## _build_dist_pitch_pool deleted 2026-07-19 — all superseded by
-## sample-then-construct (_sample_and_build's tone_* branches,
-## _sample_dist_kind + its 4 thin dispatchers). _build_pitch_cmp_text is
-## still used directly by _build_tone_cmp_clue.
-
-
-## _degree_dist_phrase deleted 2026-07-19 — folded into an inline lambda at
-## its one call site (_sample_dist_degree), matching its three siblings
-## (color/tone/label) which were already inline lambdas.
-## _build_dist_degree_pool / _build_dist_extreme_pool /
-## _build_dist_dual_cmp_pool / _build_dist_offset_pool /
-## _build_dist_name_pool / _build_between_pool deleted 2026-07-19 — all
-## superseded by sample-then-construct (_sample_dist_degree,
-## _sample_dist_extreme, and the proximity_dist_dual_cmp/proximity_dist_
-## offset/proximity_between branches of _sample_and_build/_sample_between).
-## _degree_dist_phrase above is still used directly by _sample_dist_degree.
 
 
 func _shuffle_array(arr: Array) -> void:
@@ -3722,2258 +1563,75 @@ func _shuffle_dict_array(arr: Array[Dictionary]) -> void:
  
  
 # ==================================================
-# ASYNC GENERATION — yields to engine every FRAME_BUDGET_MSEC
+# GENERATION ENTRY POINT — matches root_ui.gd's calling convention
+# (puzzle.generate_clues_async.call_deferred(), then listens for
+# generation_complete). generate_clues_forms() itself is synchronous;
+# call_deferred() only defers *when* this runs, not whether it yields
+# internally, so no per-frame chunking is needed for that call shape to work.
 # ==================================================
-# Call with: await puzzle.generate_clues_async()
-# Check puzzle.is_generation_complete() before reading get_clue_texts().
- 
+# Check puzzle.is_generation_complete() before reading get_form_clue_texts().
+
 signal generation_complete(constellation_id: int)
- 
+
 func is_generation_complete() -> bool:
     return _generation_complete
+
+
+func generate_clues_async() -> void:
+    generate_clues_forms()
+    generation_complete.emit(constellation_id)
+
  
- 
-func get_clue_texts(_include_flavor: bool = true) -> Array[String]:
-    # v2.3.0: flavor is fully retired — every line returned is either a
-    # solver-validated deduction clue or an identity anchor. The parameter
-    # is kept only for call-site compatibility and is ignored.
-    var texts: Array[String] = []
-    for iclue in _final_identity_clues:
-        texts.append(str(iclue.get("text", "")))
-    for clue in _final_clues:
-        texts.append(str(clue.get("text", "")))
-    for pclue in _final_pitch_clues:
-        texts.append(str(pclue.get("text", "")))
-    return texts
- 
- 
-func _clue_difficulty_jitter(clue: Dictionary) -> float:
-    var key: String = "%d|%s" % [_difficulty_jitter_salt, JSON.stringify(clue)]
-    var h: int = hash(key)
-    var frac: float = float(abs(h) % 1000000) / 1000000.0   # 0.0..1.0
-    return (frac - 0.5) * 2.0 * DIFFICULTY_JITTER_MAGNITUDE
- 
- 
-func _score_clue_difficulty(clue: Dictionary, solution: Array[int]) -> float:
-    var base: float = 1.0
-    match clue.get("kind", ""):
-        "ordinal_exact":
-            base = 10.0
-        "ordinal_adjacent":
-            base = 8.0
-        "ordinal_count_before":
-            base = 7.5
-        "ordinal_extreme":
-            base = 7.0
-        "ordinal_neg":
-            base = 6.0
-        "ordinal_range":
-            var width: int = int(clue.get("hi", star_count - 1)) - int(clue.get("lo", 0)) + 1
-            base = 5.0 + (float(star_count - width) * 0.25)
-        "ordinal_offset":
-            base = 7.5 + (float(abs(int(clue.get("offset", 1)))) * 0.3)
-        "ordinal_unaligned":
-            base = 6.5
-        "ordinal_either_or":
-            base = 5.5
-        "ordinal_neither_nor":
-            base = 4.5
-        "ordinal_cmp":
-            var star_a2: int = clue.get("a", 0)
-            var star_b2: int = clue.get("b", 0)
-            var gap2: int = abs(solution[star_a2] - solution[star_b2])
-            base = 2.0 + (float(gap2) * 0.5)
-        "ordinal_chain":
-            # Two ordinal_cmp arcs bundled into one clue — scale off the
-            # full lo-to-hi span, same gap-bonus shape as ordinal_cmp but a
-            # higher base since it fixes the order of three stars at once.
-            var chain_lo: int = clue.get("a", 0)
-            var chain_hi: int = clue.get("b", 0)
-            var chain_gap: int = abs(solution[chain_hi] - solution[chain_lo])
-            base = 4.0 + (float(chain_gap) * 0.5)
-        "ordinal_group_cmp_color":
-            base = 4.0 + (float(clue.get("targets", []).size()) * 0.8)
-        "ordinal_group_cmp_tone":
-            base = 4.0 + (float(clue.get("targets", []).size()) * 0.8)
-        "tone_exact":
-            base = 9.0
-        "tone_neg":
-            base = 5.5
-        "tone_cmp":
-            base = 4.5
-        "tone_group_eq":
-            base = 3.5
-        "tone_extreme":
-            base = 7.0
-        "tone_group_cmp_color":
-            base = 4.0 + (float(clue.get("targets", []).size()) * 0.8)
-        "tone_all_diff":
-            base = 6.0
-        "color_neg":
-            base = 4.0
-        "proximity_neg_adjacent":
-            base = 5.0
-        "proximity_dist_color", "proximity_dist_tone", "proximity_dist_degree", "proximity_dist_label":
-            base = 8.5
-        "proximity_between":
-            base = 8.0
-        "proximity_degree_exact":
-            base = 5.0
-        "proximity_degree_group_eq":
-            base = 3.0
-        "proximity_degree_extreme":
-            base = 5.5
-        "proximity_degree_group_cmp_color":
-            base = 3.5 + (float(clue.get("targets", []).size()) * 0.8)
-        "label_extreme_ordinal_color":
-            base = 6.5
-        "unique_list_n":
-            # Scales with N — a 5-way clue eliminates 4 anchor dots from
-            # the deduced rank at once, more information-dense than a
-            # 3-way one.
-            base = 5.0 + (float(clue.get("n", 3)) * 1.5)
-    return base + _clue_difficulty_jitter(clue)
 
 
 # ==================================================
-# SEQUENTIAL/CHAINED GENERATOR — first pass, 2026-07-19
+# VALIDATION HELPER — ported verbatim
 # ==================================================
-# The user's redesign: rank primer CATEGORIES by entropic bias, generate one
-# clue at a time in that ranked order, each new clue sharing exactly one
-# star with the PREVIOUS clue (chaining, so the clue graph stays connected
-# instead of producing islands), rerolling/skipping when a candidate adds no
-# new information to the shared solving grid. This supersedes the old
-# entropy-greedy-then-trim-then-force dance: nothing redundant is ever added
-# in the first place, so there's no trim pass, and primer coverage happens
-# by construction (every category gets tried) instead of a bolt-on forcing
-# pass. See constellation_puzzle_sequential_generator memory for full design
-# context and open scope notes.
-#
-# SEQUENCE AXIS ONLY for this first pass, and only one representative clue
-# kind per primer category (True: ordinal_exact, False: ordinal_neg,
-# Neither/Nor: ordinal_neither_nor, Either/Or: ordinal_either_or,
-# Greater/Lesser vague: ordinal_cmp, Greater/Lesser specific: ordinal_offset,
-# Unaligned Pair: ordinal_unaligned, Multi-Elimination: unique_list_n).
-# Pitch/Name axis integration and full kind-taxonomy coverage are follow-up
-# work once this core mechanic is validated in-game — see task tracking.
-#
-# The "redundancy check" and "saturation" condition both reuse the existing,
-# already-correct _possibility_grid_for_clues/_solve rather than building a
-# new grid representation: a candidate "adds information" if the Sequence
-# possibility grid actually changes when it's added, and the loop stops once
-# _solve reports a unique solution — exactly the shared-grid check the
-# redesign calls for, without re-deriving what _possibility_grid_for_clues
-# already computes correctly.
-
-const SEQUENTIAL_GEN_STAR_FIELDS := {
-    "ordinal_exact":            ["s", "n"],
-    "ordinal_neg":              ["s"],
-    "ordinal_neither_nor":      ["s1", "s2"],
-    "ordinal_either_or":        ["s"],
-    "ordinal_unaligned":        ["s1", "s2"],
-    "ordinal_offset":           ["a", "b"],
-    "ordinal_adjacent":         ["a", "b"],
-    "ordinal_cmp":              ["a", "b"],
-    "ordinal_chain":            ["a", "mid", "b"],
-    "tone_exact":               ["s"],
-    "tone_neg":                 ["s"],
-    "tone_cmp":                 ["a", "b"],
-    "color_exact":              ["s"],
-    "color_neg":                ["s"],
-    "proximity_dist_dual_cmp":  ["s", "ref_a", "ref_b"],
-    "proximity_dist_offset":    ["s", "ref_a", "ref_b"],
-    "proximity_degree_exact":           ["s"],
-    "proximity_degree_extreme":         ["s"],
-    "proximity_degree_group_cmp_color": ["s"],
-    "proximity_degree_group_eq":        ["a", "b"],
-    "proximity_dist_color":             ["s"],
-    "proximity_dist_tone":              ["s"],
-    "proximity_dist_degree":            ["s"],
-    "proximity_dist_label":             ["s"],
-    "proximity_dist_extreme":           ["s", "ref"],
-    "proximity_between":                ["mid", "a", "b"],
-    "label_extreme_ordinal_color":      ["s"],
-    "ordinal_range":                    ["s"],
-    "ordinal_extreme":                  ["s"],
-    "ordinal_count_before":             ["s"],
-    "proximity_neg_adjacent":           ["s"],
-    "tone_extreme":                     ["s"],
-}
-const SEQUENTIAL_GEN_STAR_ARRAY_FIELDS := {
-    # kinds whose star references live in an array field rather than fixed
-    # scalar field names (unique_list_n's "participants" is handled
-    # separately below since each entry is itself a sub-dictionary).
-    # Kinds whose text mentions targets/neighbors/group only anonymously
-    # (e.g. "fires before every red star," never naming which stars those
-    # are) deliberately have NO array-field entry here — only the anchor
-    # (already in the scalar table above, or "subjects" below) is actually
-    # established for the player, matching the same principle already
-    # applied to ordinal_exact's anonymous color-identifying neighbor.
-    "tone_all_diff": "stars",
-    "tone_group_eq": "stars",
-    # group_cmp kinds moved here from the scalar table above: after the
-    # merge pass (_merge_group_cmp_kind) combines same-target-group clues,
-    # a single clue dict can name MULTIPLE subjects ("Selion and Nyxeai
-    # fire before every star that plays G4"), so "subjects" is always an
-    # array (even pre-merge, a single-element one) rather than a scalar "s".
-    "ordinal_group_cmp_color": "subjects",
-    "ordinal_group_cmp_tone": "subjects",
-    "tone_group_cmp_color": "subjects",
-}
-
-
-func _clue_touches_stars(clue: Dictionary) -> Array:
-    # Generic "which physical stars does this clue reference" extractor,
-    # used for the chaining-overlap check. Table-driven; unique_list_n is
-    # handled separately since its star list lives in "participants" (an
-    # array of sub-dictionaries), not a flat field. Any kind not covered
-    # returns an empty array (no known overlap — conservative, not unsound:
-    # it just means that candidate can never satisfy chaining except as the
-    # very first clue).
-    var kind: String = str(clue.get("kind", ""))
-    var touched: Array = []
-    if kind == "unique_list_n":
-        for part in clue.get("participants", []):
-            touched.append(int(part["star"]))
-        return touched
-    if SEQUENTIAL_GEN_STAR_ARRAY_FIELDS.has(kind):
-        var array_field: String = SEQUENTIAL_GEN_STAR_ARRAY_FIELDS[kind]
-        for v in clue.get(array_field, []):
-            touched.append(int(v))
-        return touched
-    var fields: Array = SEQUENTIAL_GEN_STAR_FIELDS.get(kind, [])
-    for f in fields:
-        if clue.has(f):
-            touched.append(int(clue[f]))
-    return touched
-
-
-func _grids_equal(a: Array, b: Array) -> bool:
-    if a.size() != b.size():
+func check_solution(candidate: Array) -> bool:
+    if candidate.size() != star_count:
         return false
-    for i in a.size():
-        var row_a: Array = a[i]
-        var row_b: Array = b[i]
-        if row_a.size() != row_b.size():
+    for i in star_count:
+        if int(candidate[i]) != pitch_rank_solution[i]:
             return false
-        for j in row_a.size():
-            if row_a[j] != row_b[j]:
-                return false
     return true
 
 
-func _clue_adds_information(candidate: Dictionary, all_touched_stars: Dictionary, generated_texts: Dictionary) -> bool:
-    # Two-tier check. Early on, "touches a star nothing has mentioned yet"
-    # is a cheap, correct proxy for "brings new information" — matches the
-    # Used/Unused model directly. But that proxy only holds BEFORE every
-    # star has appeared at least once; once all_touched_stars saturates
-    # (typically within the first handful of clues, since each one touches
-    # 2-3 stars), it would wrongly reject every subsequent candidate
-    # forever, even though a real puzzle needs dozens of further clues that
-    # relate ALREADY-touched stars in new ways (e.g. a comparison between
-    # two stars both mentioned before, in a combination never stated yet).
-    # So once no untouched star exists for this candidate, informativeness
-    # falls back to "is this the exact same fact as one already generated" —
-    # every clue's text is a deterministic function of the ground-truth
-    # stars it was built from, so identical text means identical fact,
-    # making text-dedup a sound (and cheap) proxy for "new relation."
-    for s in _clue_touches_stars(candidate):
-        if not all_touched_stars.has(s):
-            return true
-    return not generated_texts.has(str(candidate.get("text", "")))
-
-
-const PRIMER_ELIGIBLE_KINDS: Array[String] = [
-    "ordinal_exact", "tone_exact", "color_exact",
-    "ordinal_neg", "tone_neg",
-    "ordinal_neither_nor", "color_neg",
-    "ordinal_either_or",
-    "ordinal_cmp", "tone_cmp", "proximity_dist_dual_cmp", "ordinal_chain",
-    "ordinal_offset", "ordinal_adjacent", "proximity_dist_offset",
-    "ordinal_unaligned",
-    "unique_list_n", "tone_all_diff",
-]
-
-const OTHER_STRUCTURAL_CATEGORY := "Other/Structural"
-
-# Kinds with no primer-category home (_kind_primer_category returns "" for
-# all of these) — previously these were ONLY reachable via the old
-# pre-built _name_candidate_pool()/seq_pools_by_kind mechanism, drained by
-# _ensure_and_trim_names/_force_primer_coverage with no sampling logic of
-# their own. Now sample-then-construct like everything else
-# (_sample_degree_exact etc.), and get a turn every pass via the
-# OTHER_STRUCTURAL_CATEGORY pseudo-category below, so they're generated on
-# the same footing as the 8 real primer categories instead of being a
-# pool-drain afterthought.
-const STRUCTURAL_KINDS: Array[String] = [
-    "proximity_dist_color", "proximity_dist_tone", "proximity_dist_degree", "proximity_dist_label",
-    "proximity_dist_extreme", "proximity_between", "label_extreme_ordinal_color",
-    "ordinal_range", "ordinal_extreme", "ordinal_group_cmp_color", "ordinal_group_cmp_tone",
-    "ordinal_count_before", "proximity_neg_adjacent",
-    "tone_group_eq", "tone_extreme", "tone_group_cmp_color",
-]
-# Degree-as-a-primary-fact kinds (proximity_degree_exact/extreme/
-# group_cmp_color/group_eq) are DELIBERATELY EXCLUDED from this list — per
-# constellation_puzzle_proximity_clue_priority memory, Degree is excluded
-# from the automated systematic architecture entirely and hand-tuned per
-# constellation later (topology varies too much — e.g. The Archon has every
-# star at degree 2, so Degree carries zero discriminating power there).
-# _sample_degree_exact/_sample_degree_extreme/_sample_degree_group_cmp/
-# _sample_degree_group_eq still exist below as scaffolding for that future
-# hand-authoring tool, but are unreachable from the automated generator —
-# not wired into STRUCTURAL_KINDS, not in _all_generatable_kinds(), never
-# forced by Phase 8. proximity_dist_degree is NOT part of this exclusion —
-# it's a Distance-family kind (same as dist_color/tone/label) that happens
-# to use degree as an anonymous reference-star descriptor, and already
-# self-limits structurally in low-variance topologies via its own
-# uniqueness check, same as its three siblings.
-
-
-func _category_kinds() -> Dictionary:
-    # Derived from _kind_primer_category (the one canonical mapping) rather
-    # than hand-duplicated, so this can never drift from it.
-    var out: Dictionary = {}
-    for kind in PRIMER_ELIGIBLE_KINDS:
-        var cat: String = _kind_primer_category(kind)
-        if cat == "":
-            continue
-        if not out.has(cat):
-            out[cat] = []
-        out[cat].append(kind)
-    out[OTHER_STRUCTURAL_CATEGORY] = STRUCTURAL_KINDS.duplicate()
-    return out
-
-
-func _pick_from_domain(domain: Array, prefer_touched: bool, all_touched_stars: Dictionary, exclude: Dictionary) -> int:
-    # The actual sampling step, per the corrected design: a clue is built
-    # from directly-chosen cells, not filtered out of a pre-built list.
-    # `domain` restricts candidates to stars that are already known (from
-    # ground truth, computed by the caller) to be structurally valid for
-    # whatever role is being filled — e.g. only real map-neighbors, only
-    # stars reachable from an anchor, only ranks at least 2 apart — so the
-    # caller never has to guess-then-reject. prefer_touched=true is the
-    # "anchor" role (chain off something already established — falls back
-    # to the untouched set when nothing's touched yet, i.e. the very first
-    # clue); prefer_touched=false is the "fill" role (bring in fresh,
-    # unused information). Falls back to the other set only when the
-    # preferred one is empty (e.g. near the very end of generation, when
-    # almost every star in the domain is already touched).
-    var primary: Array = []
-    var fallback: Array = []
-    for s in domain:
-        var si: int = int(s)
-        if exclude.has(si):
-            continue
-        if all_touched_stars.has(si) == prefer_touched:
-            primary.append(si)
-        else:
-            fallback.append(si)
-    if not primary.is_empty():
-        return primary[_rng.randi_range(0, primary.size() - 1)]
-    if not fallback.is_empty():
-        return fallback[_rng.randi_range(0, fallback.size() - 1)]
-    return -1
-
-
-func _pick_star(prefer_touched: bool, all_touched_stars: Dictionary, exclude: Dictionary) -> int:
-    var all_stars: Array = []
-    for s in star_count:
-        all_stars.append(s)
-    return _pick_from_domain(all_stars, prefer_touched, all_touched_stars, exclude)
-
-
-## _build_tone_cmp_clue deleted 2026-07-19 (same session it was added in) —
-## folded inline into the tone_cmp branch of _sample_and_build once it
-## turned out to have exactly one caller, same as _build_pitch_cmp_text.
-
-
-const UNIQUE_LIST_DISTANCE_CAT := -1
-# Sentinel "cat" value for the self-referential Distance participant below —
-# deliberately NOT a Category enum member. Adding a real Category.DISTANCE
-# would risk being picked up by the shared unified-grid machinery elsewhere
-# (_init_category_grid, Category-keyed dictionaries built via generic
-# iteration) that Distance was never meant to participate in here; a plain
-# sentinel gets the exact same "no propagation, just anchors a truthful
-# descriptive slot" treatment that Color/Pitch/Degree participants already
-# fall through to (see the unique_list_n branches in the two propagators
-# below, which only special-case Category.SEQUENCE and Category.NAME).
-
-const UNIQUE_LIST_POSITIVE_BIAS := 0.7
-# True-cell bias (2026-07-19) — see _attempts_for_category's comment for
-# the full reasoning: positive/exact facts cascade via row/column alldiff
-# exclusion, negative facts only ever cross out one cell, so an unbiased
-# 50/50 coin flip here systematically overproduces low-information negative
-# participants relative to their actual value. 0.7 is a starting proxy
-# (matches the same "not yet measured, revisit once real puzzles show
-# actual effect" caveat as PRIMER_CATEGORY_ENTROPIC_BIAS), not a tuned
-# constant — applies to the Sequence/Color/Pitch/Distance sign coin flips
-# in the four _unique_list_*_participant functions below.
-
-
-func _unique_list_star_domain(used_stars: Dictionary) -> Array:
-    var domain: Array = []
-    for s in star_count:
-        if not used_stars.has(s):
-            domain.append(s)
-    return domain
-
-
-func _unique_list_name_participant(used_stars: Dictionary, all_touched_stars: Dictionary, prefer_touched: bool) -> Dictionary:
-    var star: int = _pick_from_domain(_unique_list_star_domain(used_stars), prefer_touched, all_touched_stars, {})
-    if star == -1:
-        return {}
-    return {"star": star, "cat": int(Category.NAME), "phrase": star_names[star]}
-
-
-func _unique_list_sequence_participant(used_stars: Dictionary, all_touched_stars: Dictionary, prefer_touched: bool) -> Dictionary:
-    var star: int = _pick_from_domain(_unique_list_star_domain(used_stars), prefer_touched, all_touched_stars, {})
-    if star == -1:
-        return {}
-    var true_rank: int = pitch_rank_solution[star]
-    var others: Array = []
-    for r in star_count:
-        if r != true_rank:
-            others.append(r)
-    # Positive: pins the exact rank (propagated in the Sequence-axis
-    # possibility grid's unique_list_n case — excludes every OTHER listed
-    # participant from holding this rank). Negative: excludes 1-2 ranks
-    # from THIS star's own domain instead — the same shape as ordinal_neg,
-    # just packaged as a unique_list_n participant. This was always meant
-    # to exist alongside the positive form (the "is"/"is not" duality
-    # every other primer category already has), not just the positive one.
-    if others.is_empty() or _rng.randf() < UNIQUE_LIST_POSITIVE_BIAS:
-        return {"star": star, "cat": int(Category.SEQUENCE), "sign": "pos",
-            "phrase": "the star that fires the %s" % _ordinal(true_rank + 1), "rank": true_rank}
-    _shuffle_array(others)
-    var exclude_count: int = 1 + (_rng.randi() % mini(2, others.size()))
-    var excluded: Array = []
-    for i in mini(exclude_count, others.size()):
-        excluded.append(int(others[i]))
-    var ord_phrases: Array = []
-    for r in excluded:
-        ord_phrases.append(_ordinal(int(r) + 1))
-    var phrase: String = ("a star that does not fire %s" % ord_phrases[0]) if ord_phrases.size() == 1 \
-        else ("a star that does not fire %s or %s" % [ord_phrases[0], ord_phrases[1]])
-    return {"star": star, "cat": int(Category.SEQUENCE), "sign": "neg", "excluded_ranks": excluded, "phrase": phrase}
-
-
-func _unique_list_color_participant(used_stars: Dictionary, all_touched_stars: Dictionary, prefer_touched: bool) -> Dictionary:
-    # No singleton requirement — see the const comment above and the big
-    # doc comment on _sample_unique_list_n: Color contributes no
-    # propagation of its own in a unique_list_n clue (positive OR
-    # negative), so "a yellow star" / "a star that is not yellow" are both
-    # perfectly valid, truthful participants regardless of how many stars
-    # share that color. Constraint power comes from whichever Name/
-    # Sequence participants are also in the clue.
-    var star: int = _pick_from_domain(_unique_list_star_domain(used_stars), prefer_touched, all_touched_stars, {})
-    if star == -1:
-        return {}
-    var true_color: int = star_colors[star]
-    if _rng.randf() < UNIQUE_LIST_POSITIVE_BIAS:
-        return {"star": star, "cat": int(Category.COLOR), "sign": "pos",
-            "phrase": "a %s star" % COLOR_NAMES[true_color].to_lower()}
-    var others: Array = []
-    for c in 4:
-        if c != true_color:
-            others.append(c)
-    _shuffle_array(others)
-    var exclude_count: int = 1 + (_rng.randi() % 2)
-    var excluded: Array = []
-    for i in mini(exclude_count, others.size()):
-        excluded.append(int(others[i]))
-    var names: Array = []
-    for c in excluded:
-        names.append(COLOR_NAMES[c].to_lower())
-    var phrase: String = ("a star that is not %s" % names[0]) if names.size() == 1 \
-        else ("a star that is neither %s nor %s" % [names[0], names[1]])
-    return {"star": star, "cat": int(Category.COLOR), "sign": "neg", "excluded_colors": excluded, "phrase": phrase}
-
-
-func _unique_list_pitch_participant(used_stars: Dictionary, all_touched_stars: Dictionary, prefer_touched: bool) -> Dictionary:
-    var star: int = _pick_from_domain(_unique_list_star_domain(used_stars), prefer_touched, all_touched_stars, {})
-    if star == -1:
-        return {}
-    var p: int = star_pitch_index[star] if star < star_pitch_index.size() else 0
-    var others: Array = []
-    for pi in pitch_count:
-        if pi != p:
-            others.append(pi)
-    if others.is_empty() or _rng.randf() < UNIQUE_LIST_POSITIVE_BIAS:
-        return {"star": star, "cat": int(Category.PITCH), "sign": "pos",
-            "phrase": "a star that plays %s" % note_name_for_freq(_pitch_freqs[p])}
-    _shuffle_array(others)
-    var exclude_count: int = 1 + (_rng.randi() % mini(2, others.size()))
-    var excluded: Array = []
-    for i in mini(exclude_count, others.size()):
-        excluded.append(int(others[i]))
-    var names: Array = []
-    for pi in excluded:
-        names.append(note_name_for_freq(_pitch_freqs[pi]))
-    var phrase: String = ("a star that does not play %s" % names[0]) if names.size() == 1 \
-        else ("a star that plays neither %s nor %s" % [names[0], names[1]])
-    return {"star": star, "cat": int(Category.PITCH), "sign": "neg", "excluded_pitches": excluded, "phrase": phrase}
-
-
-func _pick_false_distance(true_d: int) -> int:
-    var candidates: Array = []
-    for d in range(1, star_count):
-        if d != true_d:
-            candidates.append(d)
-    if candidates.is_empty():
-        return -1
-    return int(candidates[_rng.randi_range(0, candidates.size() - 1)])
-
-
-func _unique_list_distance_participant(used_stars: Dictionary, all_touched_stars: Dictionary, prefer_touched: bool, existing: Array) -> Dictionary:
-    # Self-referential: measured against one of the OTHER participants
-    # already in this same clue rather than an external fixed reference —
-    # "a star N hops away from another star in this list," without saying
-    # which one. Needs at least one existing participant to measure
-    # against, so this must be resolved after at least one other slot.
-    # Negative form asserts a FALSE distance value instead — still a true
-    # statement (the real distance genuinely isn't that value), same
-    # is/is-not duality as every other participant type here.
-    if existing.is_empty():
-        return {}
-    var primary: Array = []
-    var fallback: Array = []
-    for s in star_count:
-        if used_stars.has(s):
-            continue
-        if all_touched_stars.has(s) == prefer_touched:
-            primary.append(s)
-        else:
-            fallback.append(s)
-    _shuffle_array(primary)
-    _shuffle_array(fallback)
-    var domain: Array = primary + fallback
-    var ref_order: Array = existing.duplicate()
-    _shuffle_array(ref_order)
-    var want_negative: bool = _rng.randf() >= UNIQUE_LIST_POSITIVE_BIAS
-    for star in domain:
-        for ref_part in ref_order:
-            var ref_star: int = int(ref_part["star"])
-            var d: int = _distances[star][ref_star]
-            if d <= 0:
-                continue
-            if not want_negative:
-                var word: String = "star" if d == 1 else "stars"
-                return {"star": star, "cat": UNIQUE_LIST_DISTANCE_CAT, "sign": "pos", "dist": d,
-                    "phrase": "a star %d %s away from another star in this list" % [d, word]}
-            var false_d: int = _pick_false_distance(d)
-            if false_d == -1:
-                continue
-            var word2: String = "star" if false_d == 1 else "stars"
-            return {"star": star, "cat": UNIQUE_LIST_DISTANCE_CAT, "sign": "neg", "dist": false_d,
-                "phrase": "a star that is not %d %s away from another star in this list" % [false_d, word2]}
-    return {}
-
-
-func _sample_unique_list_n(all_touched_stars: Dictionary) -> Dictionary:
-    # Multivariate "unique list" clue — asserts N described entities are
-    # all different physical stars. Only Name and Sequence participants
-    # actually constrain solving (see the unique_list_n branches in
-    # _apply_arc_consistency-style propagation and _apply_one_name_filter);
-    # Color, Pitch, and Distance are all directly observable by the player
-    # already (constellation_puzzle_category_facts_CHECK_FIRST memory), so
-    # they don't need to uniquely pin down a specific star to be useful —
-    # "a yellow star" or "a star four hops from another star in this list"
-    # is a perfectly valid, truthful participant even when several stars
-    # match that description. Degree is excluded entirely, consistent with
-    # STRUCTURAL_KINDS (hand-tuned per constellation later, not automated).
-    # Every slot samples directly from the current unused-star domain — no
-    # pre-built per-category candidate list, matching the sample-then-
-    # construct standard used everywhere else in this generator.
-    const SLOT_TYPES := ["name", "sequence", "color", "pitch", "distance"]
-    var slots: Array = SLOT_TYPES.duplicate()
-    _shuffle_array(slots)
-    if slots.has("distance"):
-        slots.erase("distance")
-        slots.append("distance")
-
-    var take_n: int = 3 + (_rng.randi() % 3)
-    slots = slots.slice(0, mini(take_n, slots.size()))
-
-    var used_stars: Dictionary = {}
-    var participants: Array = []
-    var need_touched_one: bool = not all_touched_stars.is_empty()
-
-    for slot in slots:
-        var entry: Dictionary = {}
-        match slot:
-            "name":
-                entry = _unique_list_name_participant(used_stars, all_touched_stars, need_touched_one)
-            "sequence":
-                entry = _unique_list_sequence_participant(used_stars, all_touched_stars, need_touched_one)
-            "color":
-                entry = _unique_list_color_participant(used_stars, all_touched_stars, need_touched_one)
-            "pitch":
-                entry = _unique_list_pitch_participant(used_stars, all_touched_stars, need_touched_one)
-            "distance":
-                entry = _unique_list_distance_participant(used_stars, all_touched_stars, need_touched_one, participants)
-        if entry.is_empty():
-            continue
-        used_stars[int(entry["star"])] = true
-        if need_touched_one and all_touched_stars.has(int(entry["star"])):
-            need_touched_one = false
-        participants.append(entry)
-
-    if participants.size() < 3:
-        return {}
-    _shuffle_array(participants)
-
-    var phrases: Array = []
-    for part in participants:
-        phrases.append(str(part["phrase"]))
-    var n: int = phrases.size()
-    var text: String
-    match n:
-        3:
-            text = "%s, %s, and %s are all different stars." % phrases
-        4:
-            text = "%s, %s, %s, and %s are all different stars." % phrases
-        _:
-            text = "%s, %s, %s, %s, and %s are all different stars." % phrases
-    text = text[0].to_upper() + text.substr(1)
-    return {"kind": "unique_list_n", "n": n, "participants": participants.duplicate(true), "text": text}
-
-
-func _sample_tone_all_diff(all_touched_stars: Dictionary) -> Dictionary:
-    # Whether a given color group "all play different notes" is a fixed
-    # fact about the constellation (size >= 3 and every member's pitch
-    # distinct) — some colors will qualify and others won't, and no amount
-    # of resampling changes that. Compute which colors qualify directly,
-    # then restrict the anchor to a member of a qualifying group, instead
-    # of picking any anchor and discovering afterward whether its color
-    # happens to work.
-    var qualifying_members: Array = []
-    for c in 4:
-        var scan_group: Array = []
-        for t in star_count:
-            if star_colors[t] == c:
-                scan_group.append(t)
-        if scan_group.size() < 3:
-            continue
-        var pitches: Dictionary = {}
-        var all_distinct: bool = true
-        for t in scan_group:
-            var p: int = star_pitch_index[int(t)] if int(t) < star_pitch_index.size() else -1
-            if pitches.has(p):
-                all_distinct = false
-                break
-            pitches[p] = true
-        if all_distinct:
-            qualifying_members.append_array(scan_group)
-    if qualifying_members.is_empty():
-        return {}   # no color group in this constellation happens to have all-distinct pitches — a map fact
-    var s: int = _pick_from_domain(qualifying_members, true, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var c: int = star_colors[s]
-    var group: Array = []
-    for t in star_count:
-        if star_colors[t] == c:
-            group.append(t)
-    var names: Array = []
-    for t in group:
-        names.append(star_names[int(t)])
-    var head: String = ", ".join(names.slice(0, names.size() - 1))
-    var text: String = "%s, and %s all play different notes." % [head, names[names.size() - 1]]
-    return {"kind": "tone_all_diff", "stars": group.duplicate(), "text": text}
-
-
-func _sample_degree_exact(all_touched_stars: Dictionary) -> Dictionary:
-    # Modal degree is a whole-constellation fact, not a per-anchor one —
-    # compute it once, then restrict the anchor domain to stars that
-    # actually differ from it (only those can support this clue at all).
-    var freq: Dictionary = {}
-    for s in star_count:
-        var d: int = star_degrees[s]
-        freq[d] = int(freq.get(d, 0)) + 1
-    var modal_degree: int = -1
-    var modal_count: int = -1
-    for d in freq.keys():
-        if int(freq[d]) > modal_count:
-            modal_count = int(freq[d])
-            modal_degree = int(d)
-    var qualifying: Array = []
-    for s in star_count:
-        if star_degrees[s] != modal_degree:
-            qualifying.append(s)
-    if qualifying.is_empty():
-        return {}
-    var s: int = _pick_from_domain(qualifying, true, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var deg: int = star_degrees[s]
-    var text: String
-    if deg == 0:
-        text = "%s has no connections to any other star." % star_names[s]
-    else:
-        var word: String = "connection" if deg == 1 else "connections"
-        text = "%s has exactly %d %s." % [star_names[s], deg, word]
-    return {"kind": "proximity_degree_exact", "s": s, "degree": deg, "text": text}
-
-
-func _sample_degree_extreme(all_touched_stars: Dictionary) -> Dictionary:
-    if star_count == 0 or _max_degree == _min_degree:
-        return {}
-    var max_stars: Array = []
-    var min_stars: Array = []
-    for s in star_count:
-        if star_degrees[s] == _max_degree:
-            max_stars.append(s)
-        if star_degrees[s] == _min_degree:
-            min_stars.append(s)
-    var options: Array = []
-    if max_stars.size() == 1:
-        options.append({"s": int(max_stars[0]), "is_most": true})
-    if min_stars.size() == 1:
-        options.append({"s": int(min_stars[0]), "is_most": false})
-    if options.is_empty():
-        return {}
-    var untouched_opts: Array = []
-    var touched_opts: Array = []
-    for opt in options:
-        if all_touched_stars.has(int(opt["s"])):
-            touched_opts.append(opt)
-        else:
-            untouched_opts.append(opt)
-    var pool: Array = untouched_opts if not untouched_opts.is_empty() else touched_opts
-    var chosen: Dictionary = pool[_rng.randi_range(0, pool.size() - 1)]
-    var s: int = int(chosen["s"])
-    var is_most: bool = bool(chosen["is_most"])
-    var text: String = "%s has more connections than any other star in the constellation." % star_names[s] if is_most \
-        else "%s has fewer connections than any other star in the constellation." % star_names[s]
-    return {"kind": "proximity_degree_extreme", "s": s, "is_most": is_most, "text": text}
-
-
-func _sample_degree_group_cmp(all_touched_stars: Dictionary) -> Dictionary:
-    var s: int = _pick_star(true, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var valid_options: Array = []
-    for c in 4:
-        if c == star_colors[s]:
-            continue
-        var color_targets: Array = []
-        for t in star_count:
-            if t != s and star_colors[t] == c:
-                color_targets.append(t)
-        if color_targets.size() < 2:
-            continue
-        var more_all: bool = true
-        var fewer_all: bool = true
-        for t in color_targets:
-            var t_deg: int = star_degrees[int(t)]
-            if star_degrees[s] <= t_deg:
-                more_all = false
-            if star_degrees[s] >= t_deg:
-                fewer_all = false
-        if more_all:
-            valid_options.append({"c": c, "targets": color_targets, "s_more": true})
-        elif fewer_all:
-            valid_options.append({"c": c, "targets": color_targets, "s_more": false})
-    if valid_options.is_empty():
-        return {}
-    var opt: Dictionary = valid_options[_rng.randi_range(0, valid_options.size() - 1)]
-    var c: int = int(opt["c"])
-    var targets: Array = opt["targets"]
-    var s_more: bool = bool(opt["s_more"])
-    var text: String = "%s has more connections than every %s star." % [star_names[s], COLOR_NAMES[c].to_lower()] if s_more \
-        else "%s has fewer connections than every %s star." % [star_names[s], COLOR_NAMES[c].to_lower()]
-    return {"kind": "proximity_degree_group_cmp_color", "s": s, "targets": (targets as Array).duplicate(), "s_more": s_more, "text": text}
-
-
-func _sample_dist_kind(kind_name: String, attr_lookup: Callable, phrase_fn: Callable, all_touched_stars: Dictionary) -> Dictionary:
-    # Mirrors the old _build_dist_pool's per-anchor logic exactly, just
-    # scoped to ONE already-chosen anchor instead of looping over every
-    # star to build a full pool. The global uniqueness scan (is this
-    # distance+value pairing ambiguous anywhere else in the constellation)
-    # is a genuine structural fact about the map that can't be skipped —
-    # it's what makes "a Blue star" or "a star that plays A4" unambiguous.
-    var s: int = _pick_star(true, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var seen_pairs: Dictionary = {}
-    var candidates: Array = []
-    for other in star_count:
-        if other == s:
-            continue
-        var first_d: int = _distances[s][other]
-        if first_d <= 0:
-            continue
-        var first_v = attr_lookup.call(other)
-        var key: String = "%s_%d" % [str(first_v), first_d]
-        if seen_pairs.has(key):
-            continue
-        seen_pairs[key] = true
-        candidates.append([other, first_v, first_d])
-    var untouched_cands: Array = []
-    var touched_cands: Array = []
-    for cand in candidates:
-        if all_touched_stars.has(int(cand[0])):
-            touched_cands.append(cand)
-        else:
-            untouched_cands.append(cand)
-    _shuffle_array(untouched_cands)
-    _shuffle_array(touched_cands)
-    var ordered: Array = untouched_cands + touched_cands
-    for cand in ordered:
-        var v = cand[1]
-        var d: int = int(cand[2])
-        var unique_s: bool = true
-        for other_s in star_count:
-            if other_s == s:
-                continue
-            for other2 in star_count:
-                if other2 == other_s:
-                    continue
-                if _distances[other_s][other2] == d and attr_lookup.call(other2) == v:
-                    unique_s = false
-                    break
-            if not unique_s:
-                break
-        if unique_s:
-            var word: String = "star" if d == 1 else "stars"
-            var text: String = "%s is %d %s away from %s." % [star_names[s], d, word, phrase_fn.call(v)]
-            return {"kind": kind_name, "s": s, "val": v, "dist": d, "text": text}
-    return {}
-
-
-func _sample_dist_color(all_touched_stars: Dictionary) -> Dictionary:
-    return _sample_dist_kind("proximity_dist_color",
-        func(i): return star_colors[i],
-        func(v): return "a %s star" % COLOR_NAMES[int(v)].to_lower(),
-        all_touched_stars)
-
-
-func _sample_dist_tone(all_touched_stars: Dictionary) -> Dictionary:
-    return _sample_dist_kind("proximity_dist_tone",
-        func(i): return star_pitch_index[i],
-        func(v): return "a star that plays %s" % note_name_for_freq(_pitch_freqs[int(v)]),
-        all_touched_stars)
-
-
-func _sample_dist_degree(all_touched_stars: Dictionary) -> Dictionary:
-    return _sample_dist_kind("proximity_dist_degree",
-        func(i): return star_degrees[i],
-        func(v):
-            var dv: int = int(v)
-            if dv == 0:
-                return "a star with no connections"
-            return "a star with exactly %d %s" % [dv, ("connection" if dv == 1 else "connections")],
-        all_touched_stars)
-
-
-func _sample_dist_label(all_touched_stars: Dictionary) -> Dictionary:
-    return _sample_dist_kind("proximity_dist_label",
-        func(i): return star_names[i],
-        func(v): return str(v),
-        all_touched_stars)
-
-
-func _sample_between(all_touched_stars: Dictionary) -> Dictionary:
-    var mid: int = _pick_star(true, all_touched_stars, {})
-    if mid == -1:
-        return {}
-    var candidates: Array = []
-    for a in star_count:
-        if a == mid:
-            continue
-        for b in star_count:
-            if b == mid or a >= b:
-                continue
-            if _distances[a][b] <= 1:
-                continue
-            if _distances[a][mid] + _distances[mid][b] != _distances[a][b]:
-                continue
-            var da: int = _distances[a][mid]
-            var db: int = _distances[mid][b]
-            var unique_mid: bool = true
-            for s in star_count:
-                if s == a or s == b or s == mid:
-                    continue
-                if _distances[a][s] == da and _distances[s][b] == db:
-                    unique_mid = false
-                    break
-            if unique_mid:
-                candidates.append([a, b])
-    if candidates.is_empty():
-        return {}
-    var untouched_cands: Array = []
-    var touched_cands: Array = []
-    for c in candidates:
-        if not all_touched_stars.has(int(c[0])) or not all_touched_stars.has(int(c[1])):
-            untouched_cands.append(c)
-        else:
-            touched_cands.append(c)
-    var pool: Array = untouched_cands if not untouched_cands.is_empty() else touched_cands
-    var chosen: Array = pool[_rng.randi_range(0, pool.size() - 1)]
-    var a: int = int(chosen[0])
-    var b: int = int(chosen[1])
-    return {"kind": "proximity_between", "mid": mid, "a": a, "b": b,
-        "text": "%s lies between %s and %s." % [star_names[mid], star_names[a], star_names[b]]}
-
-
-func _sample_alph_extreme(all_touched_stars: Dictionary) -> Dictionary:
-    var by_color: Array = [[], [], [], []]
-    for s in star_count:
-        by_color[star_colors[s]].append(s)
-    var options: Array = []
-    for c in 4:
-        var group: Array = by_color[c]
-        if group.size() < 2:
-            continue
-        var alph_first: int = group[0]
-        for t in group:
-            if _alph_rank[int(t)] < _alph_rank[alph_first]:
-                alph_first = int(t)
-        var alph_last: int = group[0]
-        for t in group:
-            if _alph_rank[int(t)] > _alph_rank[alph_last]:
-                alph_last = int(t)
-        var group_ranks: Array = []
-        for t in group:
-            group_ranks.append(pitch_rank_solution[int(t)])
-        var min_rank: int = group_ranks.min()
-        var max_rank: int = group_ranks.max()
-        if pitch_rank_solution[alph_first] == min_rank:
-            options.append({"s": alph_first, "group": group, "want_lowest_rank": true, "c": c})
-        if pitch_rank_solution[alph_last] == max_rank:
-            options.append({"s": alph_last, "group": group, "want_lowest_rank": false, "c": c})
-    if options.is_empty():
-        return {}
-    var untouched_opts: Array = []
-    var touched_opts: Array = []
-    for opt in options:
-        if all_touched_stars.has(int(opt["s"])):
-            touched_opts.append(opt)
-        else:
-            untouched_opts.append(opt)
-    var pool: Array = untouched_opts if not untouched_opts.is_empty() else touched_opts
-    var chosen: Dictionary = pool[_rng.randi_range(0, pool.size() - 1)]
-    var c: int = int(chosen["c"])
-    var want_lowest: bool = bool(chosen["want_lowest_rank"])
-    var text: String = "Among the %s stars, the one whose name comes first alphabetically fires earliest." % COLOR_NAMES[c].to_lower() if want_lowest \
-        else "Among the %s stars, the one whose name comes last alphabetically fires latest." % COLOR_NAMES[c].to_lower()
-    return {"kind": "label_extreme_ordinal_color", "s": int(chosen["s"]), "group": (chosen["group"] as Array).duplicate(),
-        "want_lowest_rank": want_lowest, "text": text}
-
-
-func _sample_range(all_touched_stars: Dictionary) -> Dictionary:
-    const MIN_WIDTH := 3
-    var s: int = _pick_star(false, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var r: int = pitch_rank_solution[s]
-    var first_k: int = maxi(MIN_WIDTH, r + 1)
-    var last_k: int = maxi(MIN_WIDTH, star_count - r)
-    if first_k <= last_k and first_k < star_count:
-        return {"kind": "ordinal_range", "s": s, "lo": 0, "hi": first_k - 1,
-            "text": "%s fires among the first %d notes." % [star_names[s], first_k]}
-    elif last_k < first_k and last_k < star_count:
-        return {"kind": "ordinal_range", "s": s, "lo": star_count - last_k, "hi": star_count - 1,
-            "text": "%s fires among the last %d notes." % [star_names[s], last_k]}
-    return {}
-
-
-func _sample_extreme(all_touched_stars: Dictionary) -> Dictionary:
-    var eligible: Array = []
-    for s in star_count:
-        if proximity[s].size() >= 2:
-            eligible.append(s)
-    if eligible.is_empty():
-        return {}
-    var s: int = _pick_from_domain(eligible, true, all_touched_stars, {})
-    if s == -1:
-        return {}
-    return _build_extreme_clue(s)
-
-
-func _sample_group_cmp_color(all_touched_stars: Dictionary) -> Dictionary:
-    var s: int = _pick_star(true, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var valid_options: Array = []
-    for c in 4:
-        if c == star_colors[s]:
-            continue
-        var color_targets: Array = []
-        for t in star_count:
-            if t != s and star_colors[t] == c:
-                color_targets.append(t)
-        if color_targets.size() < 2:
-            continue
-        var before_all: bool = true
-        var after_all: bool = true
-        for t in color_targets:
-            if pitch_rank_solution[s] > pitch_rank_solution[int(t)]:
-                before_all = false
-            else:
-                after_all = false
-        if before_all:
-            valid_options.append({"targets": color_targets, "s_first": true, "c": c})
-        elif after_all:
-            valid_options.append({"targets": color_targets, "s_first": false, "c": c})
-    if valid_options.is_empty():
-        return {}
-    var opt: Dictionary = valid_options[_rng.randi_range(0, valid_options.size() - 1)]
-    var c: int = int(opt["c"])
-    var targets: Array = opt["targets"]
-    var s_first: bool = bool(opt["s_first"])
-    var text: String = "%s fires before every %s star." % [star_names[s], COLOR_NAMES[c].to_lower()] if s_first \
-        else "%s fires after every %s star." % [star_names[s], COLOR_NAMES[c].to_lower()]
-    return {"kind": "ordinal_group_cmp_color", "subjects": [s], "targets": (targets as Array).duplicate(), "s_first": s_first, "text": text}
-
-
-func _sample_group_cmp_tone(all_touched_stars: Dictionary) -> Dictionary:
-    var s: int = _pick_star(true, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var valid_options: Array = []
-    for p in pitch_count:
-        if p == star_pitch_index[s]:
-            continue
-        var tone_targets: Array = []
-        for t in star_count:
-            if t != s and star_pitch_index[t] == p:
-                tone_targets.append(t)
-        if tone_targets.size() < 2:
-            continue
-        var before_all: bool = true
-        var after_all: bool = true
-        for t in tone_targets:
-            if pitch_rank_solution[s] > pitch_rank_solution[int(t)]:
-                before_all = false
-            else:
-                after_all = false
-        if before_all:
-            valid_options.append({"targets": tone_targets, "s_first": true, "p": p})
-        elif after_all:
-            valid_options.append({"targets": tone_targets, "s_first": false, "p": p})
-    if valid_options.is_empty():
-        return {}
-    var opt: Dictionary = valid_options[_rng.randi_range(0, valid_options.size() - 1)]
-    var chosen_p: int = int(opt["p"])
-    var targets: Array = opt["targets"]
-    var s_first: bool = bool(opt["s_first"])
-    var text: String = "%s fires before every star that plays %s." % [star_names[s], note_name_for_freq(_pitch_freqs[chosen_p])] if s_first \
-        else "%s fires after every star that plays %s." % [star_names[s], note_name_for_freq(_pitch_freqs[chosen_p])]
-    return {"kind": "ordinal_group_cmp_tone", "subjects": [s], "targets": (targets as Array).duplicate(), "s_first": s_first, "text": text}
-
-
-func _sample_count_before(all_touched_stars: Dictionary) -> Dictionary:
-    var eligible: Array = []
-    for s in star_count:
-        var scan_nbrs: Array = proximity[s]
-        if scan_nbrs.size() < 2:
-            continue
-        var scan_k: int = 0
-        for n in scan_nbrs:
-            if pitch_rank_solution[int(n)] < pitch_rank_solution[s]:
-                scan_k += 1
-        if scan_k == 0 or scan_k == scan_nbrs.size():
-            continue
-        eligible.append(s)
-    if eligible.is_empty():
-        return {}
-    var s: int = _pick_from_domain(eligible, true, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var nbrs: Array = proximity[s]
-    var k: int = 0
-    var nb_copy: Array = []
-    for n in nbrs:
-        nb_copy.append(int(n))
-        if pitch_rank_solution[int(n)] < pitch_rank_solution[s]:
-            k += 1
-    return {"kind": "ordinal_count_before", "s": s, "neighbors": nb_copy, "k": k,
-        "text": "Exactly %d of %s's connected stars fire before it." % [k, star_names[s]]}
-
-
-func _sample_neg_adjacent(all_touched_stars: Dictionary) -> Dictionary:
-    var star_at_rank: Array = []
-    star_at_rank.resize(star_count)
-    for s in star_count:
-        star_at_rank[pitch_rank_solution[s]] = s
-    var eligible: Array = []
-    for s in star_count:
-        var neighbor_set: Dictionary = {}
-        for n in proximity[s]:
-            neighbor_set[int(n)] = true
-        var has_candidate: bool = false
-        for r in star_count:
-            var holder: int = star_at_rank[r]
-            if holder == s or neighbor_set.has(holder):
-                continue
-            has_candidate = true
-            break
-        if has_candidate:
-            eligible.append(s)
-    if eligible.is_empty():
-        return {}
-    var s: int = _pick_from_domain(eligible, false, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var neighbor_set2: Dictionary = {}
-    for n in proximity[s]:
-        neighbor_set2[int(n)] = true
-    var candidates: Array = []
-    for r in star_count:
-        var holder: int = star_at_rank[r]
-        if holder == s or neighbor_set2.has(holder):
-            continue
-        candidates.append(r)
-    var r: int = candidates[_rng.randi_range(0, candidates.size() - 1)]
-    var text: String = "%s is not connected to the %s." % [star_names[s], _ordinal(r + 1)]
-    if _rng.randi() % 2 == 0:
-        var use_pitch: bool = _rng.randi() % 2 == 0
-        if use_pitch:
-            text = "%s and plays %s." % [text.trim_suffix("."), _describe_pitch_fragment(s)]
-        else:
-            text = "%s and is %s." % [text.trim_suffix("."), _describe_color_fragment(s)]
-    return {"kind": "proximity_neg_adjacent", "s": s, "r": r, "text": text}
-
-
-func _sample_tone_group_eq(all_touched_stars: Dictionary) -> Dictionary:
-    var by_pitch: Dictionary = {}
-    for s in star_count:
-        var s_p: int = star_pitch_index[s] if s < star_pitch_index.size() else 0
-        if not by_pitch.has(s_p):
-            by_pitch[s_p] = []
-        by_pitch[s_p].append(s)
-    var qualifying_members: Array = []
-    for p in by_pitch.keys():
-        if (by_pitch[p] as Array).size() >= 2:
-            qualifying_members.append_array(by_pitch[p])
-    if qualifying_members.is_empty():
-        return {}
-    var anchor: int = _pick_from_domain(qualifying_members, true, all_touched_stars, {})
-    if anchor == -1:
-        return {}
-    var p: int = star_pitch_index[anchor] if anchor < star_pitch_index.size() else 0
-    var group: Array = by_pitch[p]
-    var names: Array = []
-    for s in group:
-        names.append(star_names[int(s)])
-    var text: String
-    if group.size() == 2:
-        text = "%s and %s play the same note." % [names[0], names[1]]
-    else:
-        var head: String = ", ".join(names.slice(0, names.size() - 1))
-        text = "%s, and %s all play the same note." % [head, names[names.size() - 1]]
-    return {"kind": "tone_group_eq", "stars": group.duplicate(), "text": text}
-
-
-func _sample_tone_extreme(all_touched_stars: Dictionary) -> Dictionary:
-    var eligible: Array = []
-    for s in star_count:
-        if proximity[s].size() >= 2:
-            eligible.append(s)
-    if eligible.is_empty():
-        return {}
-    var s: int = _pick_from_domain(eligible, true, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var nbrs: Array = proximity[s]
-    var sp: int = star_pitch_index[s] if s < star_pitch_index.size() else 0
-    var s_rank: int = _pitch_freq_rank[sp]
-    var strictly_lowest: bool = true
-    var strictly_highest: bool = true
-    for n in nbrs:
-        var np: int = star_pitch_index[int(n)] if int(n) < star_pitch_index.size() else 0
-        var nr: int = _pitch_freq_rank[np]
-        if nr <= s_rank:
-            strictly_lowest = false
-        if nr >= s_rank:
-            strictly_highest = false
-    var nb_copy: Array = []
-    for n in nbrs:
-        nb_copy.append(int(n))
-    if strictly_lowest:
-        return {"kind": "tone_extreme", "s": s, "neighbors": nb_copy, "want_lowest": true,
-            "text": "%s plays the lowest note among the stars it connects to." % star_names[s]}
-    elif strictly_highest:
-        return {"kind": "tone_extreme", "s": s, "neighbors": nb_copy, "want_lowest": false,
-            "text": "%s plays the highest note among the stars it connects to." % star_names[s]}
-    return {}
-
-
-func _sample_tone_group_cmp_color(all_touched_stars: Dictionary) -> Dictionary:
-    var s: int = _pick_star(true, all_touched_stars, {})
-    if s == -1:
-        return {}
-    var sp: int = star_pitch_index[s] if s < star_pitch_index.size() else 0
-    var s_rank: int = _pitch_freq_rank[sp]
-    var valid_options: Array = []
-    for c in 4:
-        if c == star_colors[s]:
-            continue
-        var color_targets: Array = []
-        for t in star_count:
-            if t != s and star_colors[t] == c:
-                color_targets.append(t)
-        if color_targets.size() < 2:
-            continue
-        var lower_all: bool = true
-        var higher_all: bool = true
-        for t in color_targets:
-            var tp: int = star_pitch_index[int(t)] if int(t) < star_pitch_index.size() else 0
-            var t_rank: int = _pitch_freq_rank[tp]
-            if s_rank >= t_rank:
-                lower_all = false
-            if s_rank <= t_rank:
-                higher_all = false
-        if lower_all:
-            valid_options.append({"targets": color_targets, "s_lower": true, "c": c})
-        elif higher_all:
-            valid_options.append({"targets": color_targets, "s_lower": false, "c": c})
-    if valid_options.is_empty():
-        return {}
-    var opt: Dictionary = valid_options[_rng.randi_range(0, valid_options.size() - 1)]
-    var c: int = int(opt["c"])
-    var targets: Array = opt["targets"]
-    var s_lower: bool = bool(opt["s_lower"])
-    var text: String = "%s plays a lower note than every %s star." % [star_names[s], COLOR_NAMES[c].to_lower()] if s_lower \
-        else "%s plays a higher note than every %s star." % [star_names[s], COLOR_NAMES[c].to_lower()]
-    return {"kind": "tone_group_cmp_color", "subjects": [s], "targets": (targets as Array).duplicate(), "s_lower": s_lower, "text": text}
-
-
-func _sample_dist_extreme(all_touched_stars: Dictionary) -> Dictionary:
-    var ref: int = _pick_star(true, all_touched_stars, {})
-    if ref == -1:
-        return {}
-    var min_dist: int = -1
-    var min_star: int = -1
-    var min_tied: bool = false
-    var max_dist: int = -1
-    var max_star: int = -1
-    var max_tied: bool = false
-    for s in star_count:
-        if s == ref:
-            continue
-        var d: int = _distances[s][ref]
-        if d < 0:
-            continue
-        if min_dist == -1 or d < min_dist:
-            min_dist = d
-            min_star = s
-            min_tied = false
-        elif d == min_dist:
-            min_tied = true
-        if max_dist == -1 or d > max_dist:
-            max_dist = d
-            max_star = s
-            max_tied = false
-        elif d == max_dist:
-            max_tied = true
-    var options: Array = []
-    if min_star != -1 and not min_tied:
-        options.append({"s": min_star, "want_least": true})
-    if max_star != -1 and not max_tied:
-        options.append({"s": max_star, "want_least": false})
-    if options.is_empty():
-        return {}
-    var untouched_opts: Array = []
-    var touched_opts: Array = []
-    for opt in options:
-        if all_touched_stars.has(int(opt["s"])):
-            touched_opts.append(opt)
-        else:
-            untouched_opts.append(opt)
-    var pool: Array = untouched_opts if not untouched_opts.is_empty() else touched_opts
-    var chosen: Dictionary = pool[_rng.randi_range(0, pool.size() - 1)]
-    var s: int = int(chosen["s"])
-    var want_least: bool = bool(chosen["want_least"])
-    var text: String = "%s is the star closest to %s." % [star_names[s], star_names[ref]] if want_least \
-        else "%s is the star farthest from %s." % [star_names[s], star_names[ref]]
-    return {"kind": "proximity_dist_extreme", "s": s, "ref": ref, "want_least": want_least, "text": text}
-
-
-func _sample_degree_group_eq(all_touched_stars: Dictionary) -> Dictionary:
-    var by_degree: Dictionary = {}
-    for s in star_count:
-        var s_deg: int = star_degrees[s]
-        if not by_degree.has(s_deg):
-            by_degree[s_deg] = []
-        by_degree[s_deg].append(s)
-    var qualifying_members: Array = []
-    for deg in by_degree.keys():
-        if (by_degree[deg] as Array).size() >= 2:
-            qualifying_members.append_array(by_degree[deg])
-    if qualifying_members.is_empty():
-        return {}
-    var a: int = _pick_from_domain(qualifying_members, true, all_touched_stars, {})
-    if a == -1:
-        return {}
-    var deg: int = star_degrees[a]
-    var group: Array = by_degree[deg]
-    var partner_domain: Array = []
-    for t in group:
-        if int(t) != a:
-            partner_domain.append(int(t))
-    if partner_domain.is_empty():
-        return {}
-    var b: int = _pick_from_domain(partner_domain, false, all_touched_stars, {a: true})
-    if b == -1:
-        return {}
-    var word: String = "connection" if deg == 1 else "connections"
-    var lo: int = mini(a, b)
-    var hi: int = maxi(a, b)
-    return {"kind": "proximity_degree_group_eq", "a": lo, "b": hi, "degree": deg,
-        "text": "%s and %s have the same number of connections (%d %s)." % [star_names[lo], star_names[hi], deg, word]}
-
-
-func _sample_and_build(kind: String, all_touched_stars: Dictionary) -> Dictionary:
-    # One clue, built directly from stars chosen right now via _pick_star —
-    # never scanned out of a pre-built combinatorial list. Ground truth is
-    # read at the moment of construction, so every returned dict is valid
-    # by construction; {} means this specific kind/star combo doesn't
-    # satisfy that kind's own structural requirement (e.g. no adjacent-rank
-    # predecessor, or an offset too small to phrase), not "already used."
-    match kind:
-        "ordinal_exact":
-            # Anchor domain: only stars with >=2 neighbors can possibly
-            # support this template at all (need a named neighbor plus a
-            # separate one to source the color from) — restrict up front
-            # rather than sampling any star and discovering it can't work.
-            var exact_anchors: Array = []
-            for cand in star_count:
-                if proximity[cand].size() >= 2:
-                    exact_anchors.append(cand)
-            if exact_anchors.is_empty():
-                return {}
-            var s: int = _pick_from_domain(exact_anchors, true, all_touched_stars, {})
-            if s == -1:
-                return {}
-            # For THIS specific anchor, compute every (n, color) pairing
-            # that genuinely satisfies the uniqueness requirement directly
-            # from ground truth, then choose among those — never guess a
-            # neighbor and check afterward.
-            var valid_options: Array = []
-            for n1 in proximity[s]:
-                for n2 in proximity[s]:
-                    if n1 == n2:
-                        continue
-                    var cc: int = star_colors[int(n2)]
-                    if _exact_desc_is_unique(s, int(n1), cc):
-                        valid_options.append([int(n1), cc])
-            if valid_options.is_empty():
-                return {}   # this anchor's neighborhood genuinely can't phrase this clue — a map fact, not a bad guess
-            var untouched_options: Array = []
-            var touched_options: Array = []
-            for opt in valid_options:
-                if all_touched_stars.has(int(opt[0])):
-                    touched_options.append(opt)
-                else:
-                    untouched_options.append(opt)
-            var option_pool: Array = untouched_options if not untouched_options.is_empty() else touched_options
-            var chosen_opt: Array = option_pool[_rng.randi_range(0, option_pool.size() - 1)]
-            var n: int = int(chosen_opt[0])
-            var color_c: int = int(chosen_opt[1])
-            var text: String = "The %s is connected to %s and a %s star." % [
-                _ordinal(pitch_rank_solution[s] + 1), star_names[n], COLOR_NAMES[color_c].to_lower()]
-            return {"kind": "ordinal_exact", "s": s, "r": pitch_rank_solution[s], "n": n, "text": text}
-        "tone_exact":
-            var s2: int = _pick_star(false, all_touched_stars, {})
-            if s2 == -1:
-                return {}
-            var p: int = star_pitch_index[s2] if s2 < star_pitch_index.size() else 0
-            return {"kind": "tone_exact", "s": s2, "p": p, "text": "%s plays %s." % [star_names[s2], _describe_pitch_fragment(s2)]}
-        "color_exact":
-            var s3: int = _pick_star(false, all_touched_stars, {})
-            if s3 == -1:
-                return {}
-            var c3: int = star_colors[s3]
-            return {"kind": "color_exact", "s": s3, "c": c3, "text": "%s is a %s star." % [star_names[s3], COLOR_NAMES[c3].to_lower()]}
-        "ordinal_neg":
-            var s4: int = _pick_star(false, all_touched_stars, {})
-            if s4 == -1:
-                return {}
-            var true_r: int = pitch_rank_solution[s4]
-            var wrong: Array = []
-            for r in star_count:
-                if r != true_r:
-                    wrong.append(r)
-            if wrong.is_empty():
-                return {}
-            var r4: int = wrong[_rng.randi_range(0, wrong.size() - 1)]
-            var base_text: String = "%s is not the %s." % [star_names[s4], _ordinal(r4 + 1)]
-            var attached: Dictionary = _attach_neighbor_fragment(base_text, s4, "is connected to")
-            return {"kind": "ordinal_neg", "s": s4, "r": r4, "has_mix": attached["c"] != -1, "c": attached["c"], "text": attached["text"]}
-        "tone_neg":
-            var s5: int = _pick_star(false, all_touched_stars, {})
-            if s5 == -1:
-                return {}
-            var true_pitch: int = star_pitch_index[s5] if s5 < star_pitch_index.size() else 0
-            var others: Array = []
-            for p2 in pitch_count:
-                if p2 != true_pitch:
-                    others.append(p2)
-            if others.is_empty():
-                return {}
-            _shuffle_array(others)
-            var exclude_count: int = 1 + (_rng.randi() % mini(2, others.size()))
-            var excluded: Array = []
-            for i in mini(exclude_count, others.size()):
-                excluded.append(others[i])
-            var names5: Array = []
-            for p3 in excluded:
-                names5.append(note_name_for_freq(_pitch_freqs[p3]))
-            var text5: String
-            if names5.size() == 1:
-                text5 = "%s does not play %s." % [star_names[s5], names5[0]]
-            else:
-                text5 = "%s plays neither %s nor %s." % [star_names[s5], names5[0], names5[1]]
-            var p_list: Array = []
-            for p4 in excluded:
-                p_list.append(int(p4))
-            return {"kind": "tone_neg", "s": s5, "p_list": p_list, "text": text5}
-        "ordinal_neither_nor":
-            var s1n: int = _pick_star(true, all_touched_stars, {})
-            if s1n == -1:
-                return {}
-            var s2n: int = _pick_star(false, all_touched_stars, {s1n: true})
-            if s2n == -1:
-                return {}
-            var candidates_r: Array = []
-            for r5 in star_count:
-                if r5 != pitch_rank_solution[s1n] and r5 != pitch_rank_solution[s2n]:
-                    candidates_r.append(r5)
-            if candidates_r.is_empty():
-                return {}
-            var r6: int = candidates_r[_rng.randi_range(0, candidates_r.size() - 1)]
-            return {"kind": "ordinal_neither_nor", "s1": s1n, "s2": s2n, "r": r6,
-                "text": "Neither %s nor %s fires %s." % [star_names[s1n], star_names[s2n], _ordinal(r6 + 1)]}
-        "color_neg":
-            var s6c: int = _pick_star(false, all_touched_stars, {})
-            if s6c == -1:
-                return {}
-            var true_color: int = star_colors[s6c]
-            var others2: Array = []
-            for c2 in 4:
-                if c2 != true_color:
-                    others2.append(c2)
-            _shuffle_array(others2)
-            var exclude_count2: int = 1 + (_rng.randi() % 2)
-            var excluded2: Array = []
-            for i2 in mini(exclude_count2, others2.size()):
-                excluded2.append(others2[i2])
-            var names2: Array = []
-            for c4 in excluded2:
-                names2.append(COLOR_NAMES[c4].to_lower())
-            var text2: String
-            if names2.size() == 1:
-                text2 = "%s is not %s." % [star_names[s6c], names2[0]]
-            else:
-                text2 = "%s is neither %s nor %s." % [star_names[s6c], names2[0], names2[1]]
-            return {"kind": "color_neg", "s": s6c, "excluded": excluded2.duplicate(), "text": text2}
-        "ordinal_either_or":
-            var s7: int = _pick_star(false, all_touched_stars, {})
-            if s7 == -1:
-                return {}
-            var r_true: int = pitch_rank_solution[s7]
-            var others3: Array = []
-            for r7 in star_count:
-                if r7 != r_true:
-                    others3.append(r7)
-            if others3.is_empty():
-                return {}
-            var r_decoy: int = others3[_rng.randi_range(0, others3.size() - 1)]
-            var r1e: int = mini(r_true, r_decoy)
-            var r2e: int = maxi(r_true, r_decoy)
-            return {"kind": "ordinal_either_or", "s": s7, "r1": r1e, "r2": r2e,
-                "text": "%s fires either %s or %s." % [star_names[s7], _ordinal(r1e + 1), _ordinal(r2e + 1)]}
-        "ordinal_cmp":
-            var a: int = _pick_star(true, all_touched_stars, {})
-            if a == -1:
-                return {}
-            var b: int = _pick_star(false, all_touched_stars, {a: true})
-            if b == -1:
-                return {}
-            var a_gt_b: bool = pitch_rank_solution[a] > pitch_rank_solution[b]
-            var cmp_word: String = SEQ_WORD_LATER if a_gt_b else SEQ_WORD_EARLIER
-            return {"kind": "ordinal_cmp", "a": a, "b": b, "a_gt_b": a_gt_b,
-                "text": "%s fires %s than %s." % [star_names[a], cmp_word, star_names[b]]}
-        "ordinal_chain":
-            var cs1: int = _pick_star(true, all_touched_stars, {})
-            if cs1 == -1:
-                return {}
-            var cs2: int = _pick_star(false, all_touched_stars, {cs1: true})
-            if cs2 == -1:
-                return {}
-            var cs3: int = _pick_star(false, all_touched_stars, {cs1: true, cs2: true})
-            if cs3 == -1:
-                return {}
-            var ranked: Array = [cs1, cs2, cs3]
-            ranked.sort_custom(func(x, y): return pitch_rank_solution[x] < pitch_rank_solution[y])
-            var c_lo: int = int(ranked[0])
-            var c_mid: int = int(ranked[1])
-            var c_hi: int = int(ranked[2])
-            var chain_text: String
-            match _rng.randi() % 3:
-                0:
-                    chain_text = "%s fires after %s but before %s." % [star_names[c_mid], star_names[c_lo], star_names[c_hi]]
-                1:
-                    chain_text = "%s fires before %s, which fires before %s." % [star_names[c_lo], star_names[c_mid], star_names[c_hi]]
-                _:
-                    chain_text = "%s fires after %s, which fires after %s." % [star_names[c_hi], star_names[c_mid], star_names[c_lo]]
-            return {"kind": "ordinal_chain", "a": c_lo, "mid": c_mid, "b": c_hi, "text": chain_text}
-        "tone_cmp":
-            var a2: int = _pick_star(true, all_touched_stars, {})
-            if a2 == -1:
-                return {}
-            var b2: int = _pick_star(false, all_touched_stars, {a2: true})
-            if b2 == -1:
-                return {}
-            var fa: float = _freq_for_star(a2)
-            var fb: float = _freq_for_star(b2)
-            var rel: String = "eq"
-            var tone_cmp_text: String
-            if is_equal_approx(fa, fb):
-                tone_cmp_text = "%s plays the same note as %s." % [star_names[a2], star_names[b2]]
-            else:
-                rel = "gt" if fa > fb else "lt"
-                var tone_word: String = "higher" if fa > fb else "lower"
-                tone_cmp_text = "%s plays a %s note than %s." % [star_names[a2], tone_word, star_names[b2]]
-            return {"kind": "tone_cmp", "a": a2, "b": b2, "rel": rel, "text": tone_cmp_text}
-        "proximity_dist_dual_cmp":
-            var s8: int = _pick_star(true, all_touched_stars, {})
-            if s8 == -1:
-                return {}
-            # References must be in s8's own connected component (distance
-            # >= 0) — only such stars have a comparable distance at all.
-            var reachable8: Array = []
-            for cand in star_count:
-                if cand != s8 and _distances[s8][cand] >= 0:
-                    reachable8.append(cand)
-            if reachable8.is_empty():
-                return {}
-            var ref_a: int = _pick_from_domain(reachable8, false, all_touched_stars, {s8: true})
-            if ref_a == -1:
-                return {}
-            var da: int = _distances[s8][ref_a]
-            # ref_b must have a DIFFERENT distance from s8 than ref_a does —
-            # restrict its domain to that directly, so da == db (the one
-            # case where "farther/closer" is genuinely inexpressible) can
-            # never even be sampled.
-            var ref_b_domain: Array = []
-            for cand in reachable8:
-                if cand != ref_a and _distances[s8][cand] != da:
-                    ref_b_domain.append(cand)
-            if ref_b_domain.is_empty():
-                return {}   # every other reachable star ties s8-ref_a's distance — a real map fact
-            var ref_b: int = _pick_from_domain(ref_b_domain, false, all_touched_stars, {s8: true, ref_a: true})
-            if ref_b == -1:
-                return {}
-            var db: int = _distances[s8][ref_b]
-            var farther_from_a: bool = da > db
-            var text4: String
-            if farther_from_a:
-                text4 = "%s is farther from %s than from %s." % [star_names[s8], star_names[ref_a], star_names[ref_b]]
-            else:
-                text4 = "%s is closer to %s than to %s." % [star_names[s8], star_names[ref_a], star_names[ref_b]]
-            return {"kind": "proximity_dist_dual_cmp", "s": s8, "ref_a": ref_a, "ref_b": ref_b, "farther_from_a": farther_from_a, "text": text4}
-        "ordinal_offset":
-            var a3: int = _pick_star(true, all_touched_stars, {})
-            if a3 == -1:
-                return {}
-            # b's domain is ranks at least 2 away from a's rank (offsets of
-            # 0/1 aren't phrased by this template — 0 is impossible for a
-            # distinct star, 1 overlaps ordinal_adjacent's wording) —
-            # computed directly rather than sampled-and-rejected.
-            var a3_rank: int = pitch_rank_solution[a3]
-            var b3_domain: Array = []
-            for cand in star_count:
-                if cand != a3 and absi(pitch_rank_solution[cand] - a3_rank) >= 2:
-                    b3_domain.append(cand)
-            if b3_domain.is_empty():
-                return {}   # a3's rank has no partner 2+ apart — only possible on tiny constellations
-            var b3: int = _pick_from_domain(b3_domain, false, all_touched_stars, {})
-            if b3 == -1:
-                return {}
-            var offset: int = a3_rank - pitch_rank_solution[b3]
-            var word: String = "later" if offset > 0 else "earlier"
-            return {"kind": "ordinal_offset", "a": a3, "b": b3, "offset": offset,
-                "text": "%s fires exactly %d notes %s than %s." % [star_names[a3], absi(offset), word, star_names[b3]]}
-        "ordinal_adjacent":
-            # Only ranks >= 1 have a predecessor at all — exclude rank 0
-            # from the anchor domain directly rather than sampling it and
-            # discovering it doesn't work.
-            var adj_anchors: Array = []
-            for cand in star_count:
-                if pitch_rank_solution[cand] >= 1:
-                    adj_anchors.append(cand)
-            if adj_anchors.is_empty():
-                return {}
-            var a4: int = _pick_from_domain(adj_anchors, true, all_touched_stars, {})
-            if a4 == -1:
-                return {}
-            var r_a: int = pitch_rank_solution[a4]
-            var star_at_rank: Array = []
-            star_at_rank.resize(star_count)
-            for s9 in star_count:
-                star_at_rank[pitch_rank_solution[s9]] = s9
-            var b4: int = star_at_rank[r_a - 1]
-            return {"kind": "ordinal_adjacent", "a": a4, "b": b4,
-                "text": "%s fires immediately after %s." % [star_names[a4], star_names[b4]]}
-        "proximity_dist_offset":
-            var s10: int = _pick_star(true, all_touched_stars, {})
-            if s10 == -1:
-                return {}
-            var reachable10: Array = []
-            for cand in star_count:
-                if cand != s10 and _distances[s10][cand] >= 0:
-                    reachable10.append(cand)
-            if reachable10.is_empty():
-                return {}
-            var ref_a2: int = _pick_from_domain(reachable10, false, all_touched_stars, {s10: true})
-            if ref_a2 == -1:
-                return {}
-            var da2: int = _distances[s10][ref_a2]
-            var ref_b2_domain: Array = []
-            for cand in reachable10:
-                if cand != ref_a2 and _distances[s10][cand] != da2:
-                    ref_b2_domain.append(cand)
-            if ref_b2_domain.is_empty():
-                return {}
-            var ref_b2: int = _pick_from_domain(ref_b2_domain, false, all_touched_stars, {s10: true, ref_a2: true})
-            if ref_b2 == -1:
-                return {}
-            var db2: int = _distances[s10][ref_b2]
-            var offset2: int = da2 - db2
-            var word2: String = "farther" if offset2 > 0 else "closer"
-            var mag: int = absi(offset2)
-            var unit: String = "star" if mag == 1 else "stars"
-            return {"kind": "proximity_dist_offset", "s": s10, "ref_a": ref_a2, "ref_b": ref_b2, "offset": offset2,
-                "text": "%s is exactly %d %s %s from %s than from %s." % [star_names[s10], mag, unit, word2, star_names[ref_a2], star_names[ref_b2]]}
-        "ordinal_unaligned":
-            var s1u: int = _pick_star(true, all_touched_stars, {})
-            if s1u == -1:
-                return {}
-            var s2u: int = _pick_star(false, all_touched_stars, {s1u: true})
-            if s2u == -1:
-                return {}
-            var r1u: int = pitch_rank_solution[s1u]
-            var r2u: int = pitch_rank_solution[s2u]
-            var lo: int = mini(r1u, r2u)
-            var hi: int = maxi(r1u, r2u)
-            return {"kind": "ordinal_unaligned", "s1": s1u, "s2": s2u, "r1": lo, "r2": hi,
-                "text": "Of %s and %s, one fires %s and the other %s." % [star_names[s1u], star_names[s2u], _ordinal(lo + 1), _ordinal(hi + 1)]}
-        "unique_list_n":
-            return _sample_unique_list_n(all_touched_stars)
-        "tone_all_diff":
-            return _sample_tone_all_diff(all_touched_stars)
-        "proximity_degree_exact":
-            return _sample_degree_exact(all_touched_stars)
-        "proximity_degree_extreme":
-            return _sample_degree_extreme(all_touched_stars)
-        "proximity_degree_group_cmp_color":
-            return _sample_degree_group_cmp(all_touched_stars)
-        "proximity_dist_color":
-            return _sample_dist_color(all_touched_stars)
-        "proximity_dist_tone":
-            return _sample_dist_tone(all_touched_stars)
-        "proximity_dist_degree":
-            return _sample_dist_degree(all_touched_stars)
-        "proximity_dist_label":
-            return _sample_dist_label(all_touched_stars)
-        "proximity_between":
-            return _sample_between(all_touched_stars)
-        "label_extreme_ordinal_color":
-            return _sample_alph_extreme(all_touched_stars)
-        "ordinal_range":
-            return _sample_range(all_touched_stars)
-        "ordinal_extreme":
-            return _sample_extreme(all_touched_stars)
-        "ordinal_group_cmp_color":
-            return _sample_group_cmp_color(all_touched_stars)
-        "ordinal_group_cmp_tone":
-            return _sample_group_cmp_tone(all_touched_stars)
-        "ordinal_count_before":
-            return _sample_count_before(all_touched_stars)
-        "proximity_neg_adjacent":
-            return _sample_neg_adjacent(all_touched_stars)
-        "tone_group_eq":
-            return _sample_tone_group_eq(all_touched_stars)
-        "tone_extreme":
-            return _sample_tone_extreme(all_touched_stars)
-        "tone_group_cmp_color":
-            return _sample_tone_group_cmp_color(all_touched_stars)
-        "proximity_dist_extreme":
-            return _sample_dist_extreme(all_touched_stars)
-        "proximity_degree_group_eq":
-            return _sample_degree_group_eq(all_touched_stars)
-    return {}
-
-
-const CONSTRUCT_RETRY_LIMIT := 10
-
-func _attempt_construct(kind: String, all_touched_stars: Dictionary, generated_texts: Dictionary) -> Dictionary:
-    # Every branch of _sample_and_build restricts its own sampling domain to
-    # combinations ground truth already guarantees are structurally valid
-    # (real neighbors, same connected component, ranks far enough apart,
-    # etc.) — so a single call very rarely comes back empty. The few
-    # remaining {} cases are ones where the specific ANCHOR drawn happens
-    # to have no valid completion at all (e.g. ordinal_exact's anchor has
-    # neighbors, but none of them yields a color-unique pairing) — a fact
-    # about that particular star, not a guess gone wrong. A handful of
-    # retries just tries a different anchor; it is not scanning a stale
-    # candidate list the way the old pool-based picker did.
-    for attempt in CONSTRUCT_RETRY_LIMIT:
-        var cand: Dictionary = _sample_and_build(kind, all_touched_stars)
-        if cand.is_empty():
-            continue
-        if _clue_adds_information(cand, all_touched_stars, generated_texts):
-            return cand
-    return {}
-
-
-func _try_pick_for_category(cat: String, category_kinds: Dictionary, all_touched_stars: Dictionary, pitch_chosen: Array[Dictionary], generated_texts: Dictionary) -> Dictionary:
-    var kinds: Array = (category_kinds.get(cat, []) as Array).duplicate()
-    _shuffle_array(kinds)
-    for kind in kinds:
-        if _kind_home_array(str(kind)) == "pitch" and pitch_chosen.size() >= PITCH_FLAVOR_CLUE_TARGET:
-            continue
-        var picked: Dictionary = _attempt_construct(str(kind), all_touched_stars, generated_texts)
-        if not picked.is_empty():
-            return picked
-    return {}
-
-
-func _attempts_for_category(cat: String) -> int:
-    # True-cell bias (2026-07-19, per the user's earlier-anticipated design
-    # requirement): in an alldiff grid, True/exact cells are vastly
-    # outnumbered by False ones (1 True per row vs N-1 False), and a
-    # negative fact only ever crosses out one cell, never cascading the
-    # way a positive/exact fact does (see the row/column exclusion
-    # example worked through with the user). Giving every primer category
-    # the same one-attempt-per-pass treatment, regardless of how much
-    # information its clues actually carry, systematically overproduces
-    # low-value negation clues relative to high-value exact ones — this is
-    # what the user flagged needed a bias fix before I'd noticed the
-    # symptom myself. Scale attempts-per-pass by the SAME
-    # PRIMER_CATEGORY_ENTROPIC_BIAS table already used for ranking order,
-    # so high-information categories (Multi-Elimination, True, Greater/
-    # Lesser specific, Unaligned Pair) get multiple tries per pass while
-    # weak ones (False, Either/Or, Greater/Lesser vague, Neither/Nor) stay
-    # at one — no new tuning invented, just reusing the existing measure.
-    if not PRIMER_CATEGORY_ENTROPIC_BIAS.has(cat):
-        return 1   # Other/Structural — not in the entropic-bias table yet
-    var bias: float = float(PRIMER_CATEGORY_ENTROPIC_BIAS[cat])
-    return maxi(1, int(round(bias / 4.0)))
-
-
-func _primer_category_min(cat: String) -> int:
-    # Same reasoning as _attempts_for_category, applied to the SURVIVING
-    # floor after trimming instead of the attempt rate during generation:
-    # a flat PRIMER_CATEGORY_MIN=2 let _trim_sequence_pass legitimately
-    # strip Multi-Elimination back to barely anything (2 total, split
-    # across unique_list_n and tone_all_diff) even when generation
-    # produced a dozen-plus candidates, since 2 technically satisfies "the
-    # category isn't empty." Scale the floor itself by the same bias
-    # table: Multi-Elimination and True get a materially higher floor,
-    # everything else keeps the original minimum.
-    if not PRIMER_CATEGORY_ENTROPIC_BIAS.has(cat):
-        return PRIMER_CATEGORY_MIN
-    var bias: float = float(PRIMER_CATEGORY_ENTROPIC_BIAS[cat])
-    return maxi(PRIMER_CATEGORY_MIN, int(round(bias / 3.0)))
-
-
-const KIND_GIVEUP_ATTEMPTS := 8
-# After this many failed _attempt_construct calls for a kind (spread across
-# passes, not consecutive), treat it as structurally infeasible for THIS
-# constellation instance (e.g. proximity_dist_degree on a uniform-degree
-# map) and stop requiring it for coverage — matches the existing "pool
-# empty, could not force" acknowledgment Phase 8 used to log, just reached
-# by direct repeated attempts instead of a pre-built pool being empty.
-
-
-func generate_clues_by_primer_type() -> Dictionary:
-    # Replaces THREE separate axis-specific generators (Sequence's old
-    # entropy-greedy loop, Pitch's old entropy-greedy loop, Name's
-    # "_ensure_and_trim_names add-until-unique" loop) with ONE primer-
-    # ranked, chained pick loop drawing candidates from all three
-    # characteristics at once. Per the corrected design: there is no
-    # pre-built candidate pool here at all. Each pick directly SAMPLES
-    # specific stars (preferring one already-touched "anchor" plus
-    # untouched "fill" stars) and constructs exactly one clue from ground
-    # truth on the spot (_attempt_construct/_sample_and_build) — nothing is
-    # ever built in bulk and then filtered down.
-    #
-    # Repeats ranked passes over all 8 categories (plus OTHER_STRUCTURAL_
-    # CATEGORY, appended last — the 18 non-primer kinds like ordinal_range/
-    # proximity_dist_color/tone_extreme that used to be pool-drain-only
-    # backfill get a turn every pass too now, on the same footing, just at
-    # lower priority since the entropic ranking table doesn't cover them).
-    #
-    # CORRECTED, 2026-07-19: a first attempt at folding coverage into this
-    # loop made it wait for full coverage before ever setting solved=true —
-    # but the ranked-category pass below has no "already have enough" check
-    # (it never needed one, since it used to stop the instant solvability
-    # was reached). Left running for extra passes waiting on coverage, it
-    # kept blindly adding MORE category-driven clues every single pass
-    # (up to ~9 per pass, unbounded — there are O(n^2) distinct ordinal_
-    # unaligned/either_or/offset facts alone), ballooning the clue count
-    # into the hundreds. That, in turn, made the _solve()/_solve_names()
-    # backtracking calls this same loop depends on to DETECT solvability
-    # slower and more likely to exhaust MAX_BACKTRACK_NODES before
-    # confirming uniqueness — a self-defeating spiral: not-yet-detected-
-    # solved caused more clues, more clues made solved harder to detect.
-    # Confirmed in a real run: seq=405, name=133, solved=false after all 60
-    # passes, yet the SAFETY NET at the end (using the exact same
-    # accumulated clues) found it genuinely unique — the puzzle WAS solved,
-    # the loop just never found out because it kept over-generating while
-    # waiting to find out.
-    #
-    # Fix: two phases, not one blended loop. PHASE A is the original
-    # behavior verbatim — ranked-category pass, calling _solve/_solve_names
-    # after every single pick, stopping the INSTANT both are unique. PHASE
-    # B runs only once Phase A actually succeeded, and does ONLY the
-    # coverage/primer-floor sweeps — no ranked-category pass, so no
-    # unbounded per-pass growth, and critically NO solver calls at all,
-    # since adding more true clues can only ever preserve uniqueness once
-    # reached (monotonic — a true fact never un-narrows the solution
-    # space), so there's nothing left to verify. Phase B is bounded by
-    # kind-count × KIND_GIVEUP_ATTEMPTS + category-count × attempts, a
-    # small, fast, fixed amount of work, not a runaway loop.
-    var t_start: float = Time.get_ticks_msec()
-    var category_order: Array[String] = _primer_categories_by_entropic_bias()
-    category_order.append(OTHER_STRUCTURAL_CATEGORY)
-    var category_kinds: Dictionary = _category_kinds()
-    var all_kinds: Array[String] = _all_generatable_kinds()
-    var seq_chosen: Array[Dictionary] = []
-    var pitch_chosen: Array[Dictionary] = []
-    var name_chosen: Array[Dictionary] = []
-    var all_touched_stars: Dictionary = {}   # star_index -> true (set)
-    var generated_texts: Dictionary = {}     # text -> true — the post-saturation dedup gate
-    var order_log: Array[String] = []
-    var has_kind_seen: Dictionary = {}
-    var solved: bool = false
-
-    const MAX_TOTAL_PASSES := 60
-    const MAX_FAIL_STREAK := 5
-
-    # ---- PHASE A: reach solvability ----
-    # CORRECTED, 2026-07-19: completion is now "every cell resolved by pure
-    # propagation" (via _refresh_resolved_stars/_commit_generated_clue's
-    # returned seq_fully_resolved/name_fully_resolved), not "_solve()/
-    # _solve_names() eventually prove uniqueness via backtracking." Those
-    # aren't the same thing — backtracking search can confirm a unique
-    # answer even when propagation alone left the grid open (it just tries
-    # every remaining possibility and finds one survivor), which means a
-    # puzzle could ship needing an "assume and check for contradiction"
-    # step a human wouldn't necessarily think to take. Per Bogaerts/Gamba/
-    # Guns's own ZebraTutor results, well-built clue sets should resolve
-    # via pure propagation ~85-90% of the time, with backtracking-style
-    # reasoning needed only rarely — so backtracking is demoted below to a
-    # safety-net fallback, not the primary completion signal.
-    var fail_streak: int = 0
-    var pass_num: int = 0
-    var seq_fully_resolved: bool = false
-    var name_fully_resolved: bool = false
-    while not solved and pass_num < MAX_TOTAL_PASSES and fail_streak < MAX_FAIL_STREAK:
-        pass_num += 1
-        var pass_made_progress: bool = false
-        for cat in category_order:
-            var attempts_this_cat: int = _attempts_for_category(cat)
-            for _attempt_i in attempts_this_cat:
-                if solved:
-                    break
-                var picked: Dictionary = _try_pick_for_category(cat, category_kinds, all_touched_stars, pitch_chosen, generated_texts)
-                if picked.is_empty():
-                    continue
-                pass_made_progress = true
-                var picked_kind: String = str(picked.get("kind", ""))
-                has_kind_seen[picked_kind] = true
-                var home: String = _kind_home_array(picked_kind)
-                var resolution: Dictionary = _commit_generated_clue(picked, seq_chosen, pitch_chosen, name_chosen, all_touched_stars, generated_texts)
-                order_log.append("%s [%s]: %s" % [cat, home, str(picked.get("text", ""))])
-                seq_fully_resolved = bool(resolution.get("seq_fully_resolved", false))
-                name_fully_resolved = bool(resolution.get("name_fully_resolved", false))
-                if seq_fully_resolved and name_fully_resolved:
-                    solved = true
-            if solved:
-                break
-        if solved:
-            break
-        fail_streak = 0 if pass_made_progress else fail_streak + 1
-
-    # Safety-net fallback: propagation alone never fully closed the grid
-    # within the pass budget — check whether the puzzle is ALREADY
-    # uniquely determined via one contradiction-style step (backtracking
-    # search trying the remaining candidates directly) before giving up.
-    # This should be rare; logged distinctly so it's visible how often the
-    # generator is actually leaning on it.
-    var solved_via_backtracking_fallback: bool = false
-    if not solved:
-        if _solve(seq_chosen, 2).size() == 1 and _solve_names(seq_chosen, pitch_chosen, name_chosen, 2).size() == 1:
-            solved = true
-            solved_via_backtracking_fallback = true
-
-    # ---- PHASE B: top up coverage only — bounded, no solver calls ----
-    if solved:
-        for kind in all_kinds:
-            if has_kind_seen.get(kind, false):
-                continue
-            var kind_attempts: int = 0
-            while kind_attempts < KIND_GIVEUP_ATTEMPTS:
-                kind_attempts += 1
-                if _kind_home_array(kind) == "pitch" and pitch_chosen.size() >= PITCH_FLAVOR_CLUE_TARGET:
-                    break
-                var picked2: Dictionary = _attempt_construct(kind, all_touched_stars, generated_texts)
-                if picked2.is_empty():
-                    continue
-                has_kind_seen[kind] = true
-                _commit_generated_clue(picked2, seq_chosen, pitch_chosen, name_chosen, all_touched_stars, generated_texts)
-                order_log.append("%s [coverage %s]: %s" % [kind, _kind_home_array(kind), str(picked2.get("text", ""))])
-                break
-
-        for cat in category_order:
-            if cat == OTHER_STRUCTURAL_CATEGORY:
-                continue
-            var cat_count: int = 0
-            for c in seq_chosen:
-                if _kind_primer_category(str(c.get("kind", ""))) == cat:
-                    cat_count += 1
-            for c in pitch_chosen:
-                if _kind_primer_category(str(c.get("kind", ""))) == cat:
-                    cat_count += 1
-            for c in name_chosen:
-                if _kind_primer_category(str(c.get("kind", ""))) == cat:
-                    cat_count += 1
-            var cat_min: int = _primer_category_min(cat)
-            var attempts: int = 0
-            var max_attempts: int = maxi(KIND_GIVEUP_ATTEMPTS, cat_min * 3)
-            while cat_count < cat_min and attempts < max_attempts:
-                attempts += 1
-                var picked3: Dictionary = _try_pick_for_category(cat, category_kinds, all_touched_stars, pitch_chosen, generated_texts)
-                if picked3.is_empty():
-                    break
-                has_kind_seen[str(picked3.get("kind", ""))] = true
-                _commit_generated_clue(picked3, seq_chosen, pitch_chosen, name_chosen, all_touched_stars, generated_texts)
-                order_log.append("%s [primer floor]: %s" % [cat, str(picked3.get("text", ""))])
-                cat_count += 1
-
-    var dt: float = Time.get_ticks_msec() - t_start
-    print("[PRIMER_GEN %d] %.0fms, seq=%d pitch=%d name=%d clues, solved=%s (passes=%d), via_backtracking_fallback=%s" % [
-        constellation_id, dt, seq_chosen.size(), pitch_chosen.size(), name_chosen.size(), str(solved), pass_num, str(solved_via_backtracking_fallback)])
-    for line in order_log:
-        print("[PRIMER_GEN %d]   %s" % [constellation_id, line])
-    var infeasible_kinds: Array[String] = []
-    for kind in all_kinds:
-        if not has_kind_seen.get(kind, false):
-            infeasible_kinds.append(kind)
-    if not infeasible_kinds.is_empty():
-        print("[PRIMER_GEN %d] kinds never achieved (structurally infeasible for this constellation): %s" % [
-            constellation_id, str(infeasible_kinds)])
-    if not solved:
-        push_error("ConstellationLogicPuzzle [%d]: STILL NOT UNIQUE after primer-type generation (seq=%d, name=%d) — puzzle unsolvable as configured." % [
-            constellation_id, seq_chosen.size(), name_chosen.size()])
-    return {"seq": seq_chosen, "pitch": pitch_chosen, "name": name_chosen}
-
-
-func generate_clues_async(_manual_clue_count: int = -1) -> void:
-    _generation_complete = false
-    _final_clues.clear()
-    _final_pitch_clues.clear()
-    _final_identity_clues.clear()
-    _difficulty_jitter_salt = _rng.randi()
- 
-    var t_total_start: float = Time.get_ticks_msec()
-
-    # Every clue kind (all 35 of them — 17 primer-mapped + 18 structural)
-    # is now sample-then-constructed on demand by generate_clues_by_primer_type
-    # and _force_primer_coverage. There is no pre-built pool of any kind
-    # here anymore — see constellation_puzzle_sequential_generator_design
-    # memory for the full history of why that used to exist and why it
-    # doesn't now.
-    _compute_alph_rank()
-
-    # TEMPORARY DEBUG — verifying a player-reported concern about whether
-    # proximity_dist_dual_cmp/offset/extreme could compare stars across
-    # disconnected graph components (they shouldn't be able to — all three
-    # pool builders check _distances >= 0 before ever constructing a clue).
-    # Prints every star's name grouped by connected component so this can
-    # be verified directly instead of re-tracing a deduction chain. Safe
-    # to remove once confirmed.
-    var component_of_dbg: Array = []
-    component_of_dbg.resize(star_count)
-    for i_dbg in star_count:
-        component_of_dbg[i_dbg] = -1
-    var next_component_dbg: int = 0
-    for i_dbg in star_count:
-        if component_of_dbg[i_dbg] != -1:
-            continue
-        for j_dbg in star_count:
-            if _distances[i_dbg][j_dbg] != -1:
-                component_of_dbg[j_dbg] = next_component_dbg
-        next_component_dbg += 1
-    var component_report_dbg: Dictionary = {}
-    for i_dbg in star_count:
-        var comp_dbg: int = component_of_dbg[i_dbg]
-        if not component_report_dbg.has(comp_dbg):
-            component_report_dbg[comp_dbg] = []
-        component_report_dbg[comp_dbg].append(star_names[i_dbg])
-    print("[PUZZLE_TIMING %d] DEBUG connected components (star name -> group): %s" % [constellation_id, str(component_report_dbg)])
- 
-    # ==================================================
-    # PHASE 2/3/4 — UNIFIED PRIMER-TYPE GENERATION (2026-07-19)
-    # ==================================================
-    # Sequence, Pitch, and Name no longer have separate generators. One
-    # primer-ranked, chained pick loop (generate_clues_by_primer_type) draws
-    # candidates from all three characteristics at once, per primer
-    # category — matching _kind_primer_category's existing cross-
-    # characteristic groupings (e.g. "True" already spans ordinal_exact +
-    # tone_exact + color_exact together), plus the OTHER_STRUCTURAL_CATEGORY
-    # pseudo-category for the 18 kinds with no primer-category home. The
-    # axis-specific SOLVERS (_solve / _solve_pitch / _solve_names) are
-    # unchanged; only the SELECTION process is unified. Every kind is
-    # sampled and constructed on demand — nothing is pre-built here.
-    var frame_timer: float = Time.get_ticks_msec()
-    var t_gen_start: float = Time.get_ticks_msec()
-    var gen_result: Dictionary = generate_clues_by_primer_type()
-    var chosen: Array[Dictionary] = gen_result["seq"]
-    var pitch_chosen: Array[Dictionary] = gen_result["pitch"]
-    var name_chosen: Array[Dictionary] = gen_result["name"]
-    var gen_dt: float = Time.get_ticks_msec() - t_gen_start
-    print("[PUZZLE_TIMING %d] PHASE2/4 (primer-type gen): %.0fms, seq=%d pitch=%d name=%d" % [
-        constellation_id, gen_dt, chosen.size(), pitch_chosen.size(), name_chosen.size()])
-    if pitch_count > 0:
-        var pitch_explain: Dictionary = _explain_pitch_propagation(pitch_chosen)
-        print("[PUZZLE_TIMING %d] Pitch propagation-only resolution: %d/%d stars, unresolved=%s" % [
-            constellation_id, pitch_explain["resolved_via_propagation"].size(), star_count,
-            str(pitch_explain["unresolved_after_propagation"])])
-    else:
-        print("[PUZZLE_TIMING %d] pitch_count=0, skipping Pitch CSP phase." % constellation_id)
-
-    # ==================================================
-    # PHASE 3/5/7 — CROSS-AXIS TRIM FIXPOINT. Alternates full weakest-first
-    # sweeps of the sequence, pitch, and name clue sets, each one leaning on
-    # the OTHER axes' current (already-trimmed-this-round) clue sets. Repeats
-    # until a full round removes nothing from any side.
-    # ==================================================
-    var t_phase357_start: float = Time.get_ticks_msec()
-    var cross_trim_round: int = 0
-    var frame_timer_box: Array = [frame_timer]
- 
-    chosen.sort_custom(func(clue_a, clue_b):
-        return _score_clue_difficulty(clue_a, pitch_rank_solution) < _score_clue_difficulty(clue_b, pitch_rank_solution))
-    if pitch_count > 0:
-        pitch_chosen.sort_custom(func(clue_a, clue_b):
-            return _score_pitch_clue_difficulty(clue_a) < _score_pitch_clue_difficulty(clue_b))
- 
-    # name_chosen already populated above by generate_clues_by_primer_type;
-    # _compute_alph_rank() already called above too — not repeating either.
-    # There is no more name_pool to build or report on — every Name-axis
-    # kind is sampled on demand now, same as Sequence and Pitch.
-
-    while cross_trim_round < MAX_CROSS_TRIM_ROUNDS:
-        cross_trim_round += 1
-        var round_changed: bool = false
-
-        # Phase 4: the cross-axis restriction functions that used to feed
-        # _trim_sequence_pass/_trim_pitch_pass are gone — they were fixed in
-        # Phase 2 to always return "no restriction" (Pitch and Sequence are
-        # provably independent; no sound restriction was ever derivable
-        # between them — see constellation_puzzle_csp_review_findings),
-        # making them pure no-ops. Passing [] directly is equivalent and
-        # skips rebuilding a full unrestricted grid every round for nothing.
-        if await _trim_sequence_pass(chosen, [], frame_timer_box):
-            round_changed = true
-
-        # _trim_pitch_pass skipped, 2026-07-19: it shrinks a clue set by
-        # checking "still uniquely solvable after removing this clue?",
-        # which only makes sense when pitch is aiming for uniqueness. Pitch
-        # is now a small fixed-budget flavor layer (PITCH_FLAVOR_CLUE_TARGET)
-        # with no uniqueness goal — there's nothing to trim, and running this
-        # check drives _solve_pitch's backtracking search against an
-        # intentionally under-constrained clue set, blowing its node budget
-        # for no benefit.
-
-        # _ensure_and_trim_names removed, 2026-07-19: it was the last
-        # remaining piece of the pre-refactor Name generator (plain
-        # front-to-back pool drain, no primer-category awareness at all —
-        # see constellation_puzzle_sequential_generator_design memory for
-        # why that was a problem). generate_clues_by_primer_type's own
-        # completion check already requires Name-uniqueness before it stops
-        # trying, and _force_primer_coverage (below) now uses the same
-        # sample-then-construct primitives for any remaining backfill — so
-        # there is nothing left for a separate name-trim step to do.
-
-        if not round_changed:
-            break
-
-    if cross_trim_round >= MAX_CROSS_TRIM_ROUNDS:
-        push_warning("ConstellationLogicPuzzle [%d]: cross-axis trim hit MAX_CROSS_TRIM_ROUNDS without reaching a fixpoint." % constellation_id)
-
-    frame_timer = float(frame_timer_box[0])
-    var phase357_dt: float = Time.get_ticks_msec() - t_phase357_start
-    print("[PUZZLE_TIMING %d] PHASE3/5/7 (cross-axis trim, 3-way): %.0fms wall, %d rounds, final_seq_clues=%d, final_pitch_clues=%d, final_name_clues=%d" % [
-        constellation_id, phase357_dt, cross_trim_round, chosen.size(), pitch_chosen.size(), name_chosen.size()])
-
-    # Phase 8 needs the same resolved-star + dedup state the primary
-    # generator tracked internally — reconstruct it from the clues that
-    # actually survived trimming rather than threading it out of
-    # generate_clues_by_primer_type, so Phase 8 stays decoupled from the
-    # primary loop's internals. Uses the same _refresh_resolved_stars
-    # propagation-based check as the primary loop, not the old "mentioned"
-    # proxy, so Phase 8's rare fallback activity reasons about the array
-    # identically to normal generation.
-    var coverage_touched_stars: Dictionary = {}
-    var coverage_generated_texts: Dictionary = {}
-    _refresh_resolved_stars(chosen, pitch_chosen, name_chosen, coverage_touched_stars)
-    for c in chosen:
-        coverage_generated_texts[str(c.get("text", ""))] = true
-    for c in pitch_chosen:
-        coverage_generated_texts[str(c.get("text", ""))] = true
-    for c in name_chosen:
-        coverage_generated_texts[str(c.get("text", ""))] = true
-
-    var coverage_report: Dictionary = _force_primer_coverage(chosen, pitch_chosen, name_chosen, coverage_touched_stars, coverage_generated_texts)
-    print("[PUZZLE_TIMING %d] PHASE8 (primer coverage): forced=%s" % [
-        constellation_id, str(coverage_report["forced"])])
-
-    # Merge any group_cmp clues (ordinal_group_cmp_color/tone, tone_group_
-    # cmp_color) that ended up describing the same target group with
-    # different subjects — two independently-sampled clues like "Selion
-    # fires before every star that plays G4" and "Nyxeai fires before every
-    # star that plays G4" become one "Selion and Nyxeai fire before..."
-    # sentence. Run after Phase 8 since its kind/tab/primer-floor forcing
-    # can itself introduce a fresh duplicate.
-    _merge_group_cmp_duplicates(chosen, pitch_chosen)
-
-    _print_clue_breakdown_diagnostics(chosen, pitch_chosen, name_chosen)
-
-    _final_clues = chosen
-    _final_pitch_clues = pitch_chosen
-    _final_identity_clues = name_chosen
- 
-    var kind_counts: Dictionary = {}
-    for clue in chosen:
-        var kc: String = str(clue.get("kind", ""))
-        kind_counts[kc] = int(kind_counts.get(kc, 0)) + 1
-    print("[PUZZLE_TIMING %d] final sequence composition: %s" % [constellation_id, str(kind_counts)])
- 
-    var pitch_kind_counts: Dictionary = {}
-    for pclue in pitch_chosen:
-        var pkc: String = str(pclue.get("kind", ""))
-        pitch_kind_counts[pkc] = int(pitch_kind_counts.get(pkc, 0)) + 1
-    print("[PUZZLE_TIMING %d] final pitch composition: %s" % [constellation_id, str(pitch_kind_counts)])
- 
-    # ==================================================
-    # SAFETY NET — re-verify each axis is unique from its OWN clue set alone,
-    # with no cross-axis restriction help at all (the cross-axis restriction
-    # functions that used to risk over-trimming were removed entirely in
-    # Phase 4 — see the comment above _trim_sequence_pass's call site). This
-    # check exists so any future regression, or any other unforeseen
-    # over-trim, gets caught here rather than shipping an ambiguous puzzle.
-    # Logged unconditionally, clean or not.
-    # ==================================================
-    var seq_final_solutions: Array = _solve(chosen, 2)
-    var seq_final_unique: bool = seq_final_solutions.size() == 1
-    if not seq_final_unique:
-        push_error("ConstellationLogicPuzzle [%d]: SAFETY NET — sequence clue set is not unique on its own (%d solutions found)." % [constellation_id, seq_final_solutions.size()])
-
-    # NOTE: pitch is deliberately NOT required to be uniquely clue-solvable
-    # (see PITCH_FLAVOR_CLUE_TARGET) — players use the Listen mechanic for
-    # Pitch. Every pitch clue is built directly from ground truth
-    # (star_pitch_index), so a valid solution is guaranteed to exist by
-    # construction — there is nothing to SEARCH for here, only a
-    # propagation-level sanity check (catches a genuine builder bug, which
-    # would show up as a contradiction even before backtracking). Even
-    # cap=1 backtracking still exhausted the node budget against a very
-    # under-constrained clue set (as few as 2 clues for 15 stars) and
-    # returned a false "inconsistent" when it just gave up early — using
-    # the propagation-only grid instead avoids backtracking entirely for
-    # this check.
-    var pitch_final_consistent: bool = true
-    if pitch_count > 0:
-        pitch_final_consistent = _possibility_grid_for_pitch_clues(pitch_chosen) != null
-
-    var name_final_solutions: Array = _solve_names(chosen, pitch_chosen, name_chosen, 2)
-    var name_final_unique: bool = name_final_solutions.size() == 1
-    if not name_final_unique:
-        push_error("ConstellationLogicPuzzle [%d]: SAFETY NET — name binding is not unique (%d solutions found)." % [constellation_id, name_final_solutions.size()])
-
-    print("[PUZZLE_TIMING %d] SAFETY NET: seq_unique=%s pitch_consistent=%s name_unique=%s" % [
-        constellation_id, str(seq_final_unique), str(pitch_final_consistent), str(name_final_unique)])
-
-    # TEMPORARY — Phase 3 verification only. Confirms _propagate_unified
-    # reaches the identical possibility grids as the legacy _propagate/
-    # _propagate_pitch, and _cross_arc_predicate matches legacy
-    # _name_arc_predicate, for this real generated puzzle's clue sets,
-    # before Phase 4 migrates anything onto the new engine. Safe to remove
-    # once confirmed clean across a few constellations.
-    var unified_grid_check: Dictionary = _verify_unified_grid_matches_legacy(chosen, pitch_chosen)
-    print("[PUZZLE_TIMING %d] PHASE3 unified-grid verification: seq_matches=%s pitch_matches=%s mismatches=%s" % [
-        constellation_id, str(unified_grid_check["sequence_matches"]), str(unified_grid_check["pitch_matches"]),
-        str(unified_grid_check["mismatches"])])
-    var cross_arc_check: Dictionary = _verify_cross_arc_predicates_match_legacy(chosen, pitch_chosen)
-    print("[PUZZLE_TIMING %d] PHASE3 cross-arc predicate verification: matches=%s mismatches=%s" % [
-        constellation_id, str(cross_arc_check["matches"]), str(cross_arc_check["mismatches"])])
-    var naked_subset_check: Dictionary = _verify_naked_subset_soundness(chosen, pitch_chosen)
-    print("[PUZZLE_TIMING %d] PHASE3 naked-subset soundness (oracle, real puzzle): sound=%s violations=%s" % [
-        constellation_id, str(naked_subset_check["sound"]), str(naked_subset_check["violations"])])
-    var naked_pair_synth_check: Dictionary = _verify_naked_pair_synthetic()
-    print("[PUZZLE_TIMING %d] PHASE3 naked-pair synthetic test: pass=%s details=%s" % [
-        constellation_id, str(naked_pair_synth_check["pass"]), str(naked_pair_synth_check["details"])])
-
-    var total_dt: float = Time.get_ticks_msec() - t_total_start
-    print("[PUZZLE_TIMING %d] TOTAL wall time: %.0fms" % [constellation_id, total_dt])
-
-    _generation_complete = true
-    emit_signal("generation_complete", constellation_id)
- 
- 
 # ==================================================
 # CACHE SERIALIZATION
 # ==================================================
-# Clue Dictionaries are plain data (no Callables) so they serialize
-# cleanly to JSON via save_manager.gd's existing flow.
- 
+# version 2: chosen_form_clues (the Forms-architecture clue set — each entry
+# {form_id, form_name, text, characteristics}) now round-trips. Old caches
+# (version 1, header-only, predating the Forms clue set entirely) are
+# invalidated below and regenerated — there is nothing meaningful to migrate
+# from a cache that never stored a clue set at all.
+const CACHE_VERSION: int = 2
+
 func to_cache_dict() -> Dictionary:
     return {
-        "version":          13,
-        "constellation_id": constellation_id,
-        "player_seed_used": player_seed_used,
-        "star_count":       star_count,
-        "star_colors":      star_colors.duplicate(),
-        "star_degrees":     star_degrees.duplicate(),
-        "star_names":       star_names.duplicate(),
+        "version":             CACHE_VERSION,
+        "constellation_id":    constellation_id,
+        "player_seed_used":    player_seed_used,
+        "star_count":          star_count,
+        "star_colors":         star_colors.duplicate(),
+        "star_degrees":        star_degrees.duplicate(),
+        "star_names":          star_names.duplicate(),
         "pitch_rank_solution": pitch_rank_solution.duplicate(),
-        "final_clues":      _final_clues.duplicate(true),
         "generation_complete": _generation_complete,
-        "pitch_count":      pitch_count,
-        "pitch_freq_rank":  _pitch_freq_rank.duplicate(),
-        "final_pitch_clues": _final_pitch_clues.duplicate(true),
-        "final_identity_clues": _final_identity_clues.duplicate(true),
+        "pitch_count":         pitch_count,
+        "pitch_freq_rank":     _pitch_freq_rank.duplicate(),
+        "chosen_form_clues":   chosen_form_clues.duplicate(true),
     }
 
 
 func from_cache_dict(data: Dictionary) -> bool:
-    # version 11, 2026-07-19: dropped color_negation_texts — confirmed dead
-    # (computed and cached but never actually read by the overlay).
-    # version 12, same day: ordinal_group_cmp_color/tone and
-    # tone_group_cmp_color switched from a single "s" field to a "subjects"
-    # array, to support merging same-target-group clues into one sentence
-    # naming multiple subjects (_merge_group_cmp_kind).
-    # version 13, same day: unique_list_n participants gained "sign"
-    # ("pos"/"neg") plus per-sign fields (excluded_ranks/excluded_colors/
-    # excluded_pitches/dist) — Sequence/Color/Pitch/Distance participants
-    # can now be negative facts ("a star that does not fire 4th or 6th"),
-    # not just positive ones. Old cached puzzles are invalidated below and
-    # regenerated; no migration needed for any of these bumps since
-    # nothing was reading the old fields correctly across them.
-    if data.get("version", 0) != 13:
+    if int(data.get("version", 0)) != CACHE_VERSION:
         push_warning("ConstellationLogicPuzzle: cache version mismatch, ignoring cached data.")
         return false
-    constellation_id     = int(data.get("constellation_id", -1))
-    player_seed_used     = int(data.get("player_seed_used", 0))
-    star_count           = int(data.get("star_count", 0))
+    constellation_id    = int(data.get("constellation_id", -1))
+    player_seed_used    = int(data.get("player_seed_used", 0))
+    star_count          = int(data.get("star_count", 0))
     _generation_complete = bool(data.get("generation_complete", false))
- 
+
     star_colors = []
     for v in data.get("star_colors", []):
         star_colors.append(int(v))
@@ -5985,265 +1643,2246 @@ func from_cache_dict(data: Dictionary) -> bool:
     star_names = []
     for v in data.get("star_names", []):
         star_names.append(str(v))
- 
+
     pitch_rank_solution = []
     for v in data.get("pitch_rank_solution", []):
         pitch_rank_solution.append(int(v))
- 
+
     pitch_count = int(data.get("pitch_count", 0))
     _pitch_freq_rank = []
-    for v3 in data.get("pitch_freq_rank", []):
-        _pitch_freq_rank.append(int(v3))
- 
-    _final_clues = []
-    for raw_clue in data.get("final_clues", []):
-        var clue: Dictionary = {}
-        var kind: String = str(raw_clue.get("kind", ""))
-        clue["kind"] = kind
-        clue["text"] = str(raw_clue.get("text", ""))
-        match kind:
-            "ordinal_cmp":
-                clue["a"]      = int(raw_clue.get("a", 0))
-                clue["b"]      = int(raw_clue.get("b", 0))
-                clue["a_gt_b"] = bool(raw_clue.get("a_gt_b", false))
-            "ordinal_chain":
-                clue["a"]   = int(raw_clue.get("a", 0))
-                clue["mid"] = int(raw_clue.get("mid", 0))
-                clue["b"]   = int(raw_clue.get("b", 0))
-            "ordinal_adjacent":
-                clue["a"] = int(raw_clue.get("a", 0))
-                clue["b"] = int(raw_clue.get("b", 0))
-            "ordinal_extreme":
-                clue["s"]           = int(raw_clue.get("s", 0))
-                clue["want_lowest"] = bool(raw_clue.get("want_lowest", true))
-                var nb: Array = []
-                for v in raw_clue.get("neighbors", []):
-                    nb.append(int(v))
-                clue["neighbors"] = nb
-            "ordinal_exact":
-                clue["s"] = int(raw_clue.get("s", 0))
-                clue["r"] = int(raw_clue.get("r", 0))
-                clue["n"] = int(raw_clue.get("n", -1))
-            "ordinal_range":
-                clue["s"]  = int(raw_clue.get("s", 0))
-                clue["lo"] = int(raw_clue.get("lo", 0))
-                clue["hi"] = int(raw_clue.get("hi", 0))
-            "ordinal_group_cmp_color":
-                var subj: Array = []
-                for v in raw_clue.get("subjects", []):
-                    subj.append(int(v))
-                clue["subjects"] = subj
-                var gts: Array = []
-                for v in raw_clue.get("targets", []):
-                    gts.append(int(v))
-                clue["targets"] = gts
-                clue["s_first"] = bool(raw_clue.get("s_first", true))
-            "ordinal_group_cmp_tone":
-                var subj2: Array = []
-                for v in raw_clue.get("subjects", []):
-                    subj2.append(int(v))
-                clue["subjects"] = subj2
-                var gts2: Array = []
-                for v in raw_clue.get("targets", []):
-                    gts2.append(int(v))
-                clue["targets"] = gts2
-                clue["s_first"] = bool(raw_clue.get("s_first", true))
-            "ordinal_count_before":
-                clue["s"] = int(raw_clue.get("s", 0))
-                var cnb: Array = []
-                for v in raw_clue.get("neighbors", []):
-                    cnb.append(int(v))
-                clue["neighbors"] = cnb
-                clue["k"] = int(raw_clue.get("k", 0))
-            "ordinal_neg":
-                clue["s"]       = int(raw_clue.get("s", 0))
-                clue["r"]       = int(raw_clue.get("r", 0))
-                clue["has_mix"] = bool(raw_clue.get("has_mix", false))
-                clue["c"]       = int(raw_clue.get("c", -1))
-            "proximity_neg_adjacent":
-                clue["s"] = int(raw_clue.get("s", 0))
-                clue["r"] = int(raw_clue.get("r", 0))
-            "color_exact":
-                clue["s"] = int(raw_clue.get("s", 0))
-                clue["c"] = int(raw_clue.get("c", 0))
-            "ordinal_neither_nor":
-                clue["s1"] = int(raw_clue.get("s1", 0))
-                clue["s2"] = int(raw_clue.get("s2", 0))
-                clue["r"]  = int(raw_clue.get("r", 0))
-            "ordinal_either_or":
-                clue["s"]  = int(raw_clue.get("s", 0))
-                clue["r1"] = int(raw_clue.get("r1", 0))
-                clue["r2"] = int(raw_clue.get("r2", 0))
-            "ordinal_unaligned":
-                clue["s1"] = int(raw_clue.get("s1", 0))
-                clue["s2"] = int(raw_clue.get("s2", 0))
-                clue["r1"] = int(raw_clue.get("r1", 0))
-                clue["r2"] = int(raw_clue.get("r2", 0))
-            "ordinal_offset":
-                clue["a"]      = int(raw_clue.get("a", 0))
-                clue["b"]      = int(raw_clue.get("b", 0))
-                clue["offset"] = int(raw_clue.get("offset", 0))
-            "unique_list_n":
-                clue["n"] = int(raw_clue.get("n", 3))
-                var uparts: Array = []
-                for vp in raw_clue.get("participants", []):
-                    var vp_dict: Dictionary = vp as Dictionary
-                    var part: Dictionary = {
-                        "star": int(vp_dict.get("star", 0)),
-                        "cat": int(vp_dict.get("cat", 0)),
-                        "phrase": str(vp_dict.get("phrase", "")),
-                    }
-                    if vp_dict.has("rank"):
-                        part["rank"] = int(vp_dict.get("rank", 0))
-                    if vp_dict.has("sign"):
-                        part["sign"] = str(vp_dict.get("sign", "pos"))
-                    if vp_dict.has("excluded_ranks"):
-                        var er: Array = []
-                        for v in vp_dict.get("excluded_ranks", []):
-                            er.append(int(v))
-                        part["excluded_ranks"] = er
-                    if vp_dict.has("excluded_colors"):
-                        var ec: Array = []
-                        for v in vp_dict.get("excluded_colors", []):
-                            ec.append(int(v))
-                        part["excluded_colors"] = ec
-                    if vp_dict.has("excluded_pitches"):
-                        var ep: Array = []
-                        for v in vp_dict.get("excluded_pitches", []):
-                            ep.append(int(v))
-                        part["excluded_pitches"] = ep
-                    if vp_dict.has("dist"):
-                        part["dist"] = int(vp_dict.get("dist", 0))
-                    uparts.append(part)
-                clue["participants"] = uparts
-        _final_clues.append(clue)
- 
-    _final_pitch_clues = []
-    for raw_pclue in data.get("final_pitch_clues", []):
-        var pclue: Dictionary = {}
-        var pkind: String = str(raw_pclue.get("kind", ""))
-        pclue["kind"] = pkind
-        pclue["text"] = str(raw_pclue.get("text", ""))
-        match pkind:
-            "tone_exact":
-                pclue["s"] = int(raw_pclue.get("s", 0))
-                pclue["p"] = int(raw_pclue.get("p", 0))
-            "tone_neg":
-                pclue["s"] = int(raw_pclue.get("s", 0))
-                var plist: Array = []
-                for v4 in raw_pclue.get("p_list", []):
-                    plist.append(int(v4))
-                pclue["p_list"] = plist
-            "tone_cmp":
-                pclue["a"]   = int(raw_pclue.get("a", 0))
-                pclue["b"]   = int(raw_pclue.get("b", 0))
-                pclue["rel"] = str(raw_pclue.get("rel", "eq"))
-            "tone_group_eq":
-                var pst: Array = []
-                for v5 in raw_pclue.get("stars", []):
-                    pst.append(int(v5))
-                pclue["stars"] = pst
-            "tone_extreme":
-                pclue["s"] = int(raw_pclue.get("s", 0))
-                var pnb: Array = []
-                for v6 in raw_pclue.get("neighbors", []):
-                    pnb.append(int(v6))
-                pclue["neighbors"] = pnb
-                pclue["want_lowest"] = bool(raw_pclue.get("want_lowest", true))
-            "tone_group_cmp_color":
-                var psubj: Array = []
-                for v9 in raw_pclue.get("subjects", []):
-                    psubj.append(int(v9))
-                pclue["subjects"] = psubj
-                var pgt: Array = []
-                for v7 in raw_pclue.get("targets", []):
-                    pgt.append(int(v7))
-                pclue["targets"] = pgt
-                pclue["s_lower"] = bool(raw_pclue.get("s_lower", true))
-            "tone_all_diff":
-                var pstars: Array = []
-                for v8 in raw_pclue.get("stars", []):
-                    pstars.append(int(v8))
-                pclue["stars"] = pstars
-        _final_pitch_clues.append(pclue)
- 
-    _final_identity_clues = []
-    for raw_iclue in data.get("final_identity_clues", []):
-        var iclue: Dictionary = {}
-        var ikind: String = str(raw_iclue.get("kind", ""))
-        iclue["kind"] = ikind
-        iclue["text"] = str(raw_iclue.get("text", ""))
-        match ikind:
-            # NOTE: _build_dist_pool() (shared by dist_color/tone/degree/label)
-            # writes the shared value under "val", not "c" — this branch used
-            # to read the wrong key and silently reconstruct val=0 every time.
-            "proximity_dist_color", "proximity_dist_tone", "proximity_dist_degree":
-                iclue["s"]    = int(raw_iclue.get("s", 0))
-                iclue["val"]  = int(raw_iclue.get("val", 0))
-                iclue["dist"] = int(raw_iclue.get("dist", 0))
-            "proximity_dist_label":
-                iclue["s"]    = int(raw_iclue.get("s", 0))
-                iclue["val"]  = str(raw_iclue.get("val", ""))
-                iclue["dist"] = int(raw_iclue.get("dist", 0))
-            "proximity_between":
-                iclue["mid"] = int(raw_iclue.get("mid", 0))
-                iclue["a"]   = int(raw_iclue.get("a", 0))
-                iclue["b"]   = int(raw_iclue.get("b", 0))
-            "color_exact":
-                iclue["s"] = int(raw_iclue.get("s", 0))
-                iclue["c"] = int(raw_iclue.get("c", 0))
-            "color_neg":
-                iclue["s"] = int(raw_iclue.get("s", 0))
-                var iexcl: Array = []
-                for v9 in raw_iclue.get("excluded", []):
-                    iexcl.append(int(v9))
-                iclue["excluded"] = iexcl
-            "label_extreme_ordinal_color":
-                iclue["s"] = int(raw_iclue.get("s", 0))
-                var igrp: Array = []
-                for v10 in raw_iclue.get("group", []):
-                    igrp.append(int(v10))
-                iclue["group"] = igrp
-                iclue["want_lowest_rank"] = bool(raw_iclue.get("want_lowest_rank", true))
-            "proximity_degree_exact":
-                iclue["s"] = int(raw_iclue.get("s", 0))
-                iclue["degree"] = int(raw_iclue.get("degree", 0))
-            "proximity_degree_extreme":
-                iclue["s"] = int(raw_iclue.get("s", 0))
-                iclue["is_most"] = bool(raw_iclue.get("is_most", true))
-            "proximity_degree_group_cmp_color":
-                iclue["s"] = int(raw_iclue.get("s", 0))
-                var itgt: Array = []
-                for v11 in raw_iclue.get("targets", []):
-                    itgt.append(int(v11))
-                iclue["targets"] = itgt
-                iclue["s_more"] = bool(raw_iclue.get("s_more", true))
-            "proximity_dist_extreme":
-                iclue["s"] = int(raw_iclue.get("s", 0))
-                iclue["ref"] = int(raw_iclue.get("ref", 0))
-                iclue["want_least"] = bool(raw_iclue.get("want_least", true))
-            "proximity_dist_dual_cmp":
-                iclue["s"] = int(raw_iclue.get("s", 0))
-                iclue["ref_a"] = int(raw_iclue.get("ref_a", 0))
-                iclue["ref_b"] = int(raw_iclue.get("ref_b", 0))
-                iclue["farther_from_a"] = bool(raw_iclue.get("farther_from_a", true))
-            "proximity_dist_offset":
-                iclue["s"] = int(raw_iclue.get("s", 0))
-                iclue["ref_a"] = int(raw_iclue.get("ref_a", 0))
-                iclue["ref_b"] = int(raw_iclue.get("ref_b", 0))
-                iclue["offset"] = int(raw_iclue.get("offset", 0))
-        _final_identity_clues.append(iclue)
- 
+    for v in data.get("pitch_freq_rank", []):
+        _pitch_freq_rank.append(int(v))
+
+    chosen_form_clues = []
+    for raw_clue in data.get("chosen_form_clues", []):
+        var rc: Dictionary = raw_clue
+        var tags: Array[String] = []
+        for t in rc.get("characteristics", []):
+            tags.append(str(t))
+        chosen_form_clues.append({
+            "form_id":         int(rc.get("form_id", 0)),
+            "form_name":       str(rc.get("form_name", "")),
+            "text":            str(rc.get("text", "")),
+            "characteristics": tags,
+        })
+
     return star_count > 0 and _generation_complete
- 
- 
+
+
 # ==================================================
-# VALIDATION HELPER
+# NAME-AXIS SOLVING — NOT PORTED, PENDING REWRITE
 # ==================================================
-func check_solution(candidate: Array) -> bool:
-    if candidate.size() != star_count:
-        return false
-    for i in star_count:
-        if int(candidate[i]) != pitch_rank_solution[i]:
-            return false
-    return true
+# The old file's _apply_one_name_filter (~420 lines) plus its neighbors
+# (_apply_name_single_dot_filters, _name_arcs_from_clues, _name_arc_
+# predicate, _name_arc_consistency, _validate_between_clues,
+# _possibility_grid_for_name_clues, _solve_names, _backtrack_fc_names) are
+# ENTIRELY keyed on the old per-kind kind-strings with bespoke logic per
+# kind — unlike the Sequence/Pitch engine above, this isn't structural
+# dispatch that can be mechanically re-keyed. It has to be rewritten once
+# the finalized Forms table determines what field shapes the new, derived
+# Name-axis-relevant Kinds actually produce. Also depends on
+# _naked_subset_pass, which lived in the old file's Phase-3 unified-grid
+# scaffolding (never wired into live generation there either) — worth
+# revisiting once the record array below is defined, since it may turn out
+# to be the same structure, or may not be needed in the same shape at all.
+
+
+
+
+# ==================================================
+# RECORD ARRAY — Category bijections + Distance relation
+# ==================================================
+# Five categories participate identically: Name/Sequence are already
+# bijective with star; Color/Pitch become bijective via their existing
+# sub-ranks (Task #8); Distance is deliberately NOT reduced to a per-star
+# bijection — it stays a direct relation read off the existing _distances
+# matrix, per the established resolution that trying to force it into a
+# single-scalar-per-star shape is the wrong move; naming its target star
+# directly (see Characteristic below) already removes the ambiguity a raw
+# hop-count alone would have, without needing a parallel sub-rank scheme.
+
+var _cat_star_to_value: Array = []   # [Category] -> Array[int] star -> value_index (Distance slot unused)
+var _cat_value_to_star: Array = []   # [Category] -> Array[int] value_index -> star (Distance slot unused)
+
+func _build_record_array() -> void:
+    _cat_star_to_value.resize(5)
+    _cat_value_to_star.resize(5)
+
+    var name_order: Array = []
+    for s in star_count:
+        name_order.append(s)
+    _cat_value_to_star[Category.NAME] = name_order
+    _cat_star_to_value[Category.NAME] = name_order.duplicate()
+
+    var seq_value_to_star: Array = []
+    seq_value_to_star.resize(star_count)
+    for s in star_count:
+        seq_value_to_star[pitch_rank_solution[s]] = s
+    _cat_value_to_star[Category.SEQUENCE] = seq_value_to_star
+    _cat_star_to_value[Category.SEQUENCE] = pitch_rank_solution.duplicate()
+
+    var color_s2v: Array = _rank_by_raw_and_subrank(star_colors, _color_sub_rank)
+    _cat_star_to_value[Category.COLOR] = color_s2v
+    _cat_value_to_star[Category.COLOR] = _invert_bijection(color_s2v)
+
+    # Sorted by actual frequency rank (with the random sub-rank tie-break),
+    # NOT raw star_pitch_index — that raw table slot carries no frequency
+    # meaning at all (see user correction, 2026-07-21: an artifact of the
+    # earlier Simon-says-style constellation data, never a real ordering).
+    # _order_value() deliberately keeps reading the tie-preserving
+    # _pitch_freq_rank directly rather than this bijection — the matrix
+    # needs every star in a unique cell, but strict-order clues (Betweenness
+    # etc.) need genuine ties to stay visible so they can be rejected.
+    var pitch_freq_rank_per_star2: Array = []
+    for s in star_count:
+        pitch_freq_rank_per_star2.append(_pitch_freq_rank[star_pitch_index[s]])
+    var pitch_s2v: Array = _rank_by_raw_and_subrank(pitch_freq_rank_per_star2, _pitch_sub_rank)
+    _cat_star_to_value[Category.PITCH] = pitch_s2v
+    _cat_value_to_star[Category.PITCH] = _invert_bijection(pitch_s2v)
+
+
+func _rank_by_raw_and_subrank(raw_values: Array, sub_ranks: Array) -> Array:
+    var order: Array = []
+    for s in star_count:
+        order.append(s)
+    order.sort_custom(func(a, b):
+        if raw_values[a] != raw_values[b]:
+            return raw_values[a] < raw_values[b]
+        return sub_ranks[a] < sub_ranks[b])
+    var star_to_value: Array = []
+    star_to_value.resize(star_count)
+    for i in order.size():
+        star_to_value[order[i]] = i
+    return star_to_value
+
+
+func _invert_bijection(star_to_value: Array) -> Array:
+    var value_to_star: Array = []
+    value_to_star.resize(star_to_value.size())
+    for s in star_to_value.size():
+        value_to_star[star_to_value[s]] = s
+    return value_to_star
+
+
+func _freq_for_star(s: int) -> float:
+    return _pitch_freqs[star_pitch_index[s]]
+
+
+func _group_size(cat: int, star: int) -> int:
+    # How many stars share this star's raw value in the given category —
+    # 1 for Name/Sequence (always singleton), variable for Color/Pitch.
+    match cat:
+        Category.COLOR:
+            var n: int = 0
+            for c in star_colors:
+                if c == star_colors[star]:
+                    n += 1
+            return n
+        Category.PITCH:
+            var n2: int = 0
+            for pi in star_pitch_index:
+                if pi == star_pitch_index[star]:
+                    n2 += 1
+            return n2
+    return 1
+
+
+func _category_uniquely_labels(cat: int, star: int) -> bool:
+    # _characteristic_label's Color/Pitch branches append a sub-rank letter
+    # ("marked B") whenever _group_size > 1, to keep the LABEL itself
+    # unambiguous — but that letter is pure internal bookkeeping
+    # (_color_sub_rank/_pitch_sub_rank), never drawn or exposed anywhere in
+    # constellation_overlay.gd or constellation_study_overlay.gd (confirmed
+    # by grep — no draw_string call references them at all). A clue
+    # identifying a star as "the white star marked B" is unverifiable by a
+    # real player, who has no way to see which white star is "B" versus
+    # "A". Name and Sequence are always safe (alldiff, group size 1);
+    # Color/Pitch are only safe to use as an IDENTITY label for a star
+    # whose raw value happens to be unique among all stars — not as a
+    # comparison/equality/group AXIS, which never needs to address one
+    # specific group member and so isn't affected by this at all.
+    return _group_size(cat, star) <= 1
+
+
+# A Characteristic is {"cat": Category, "star": int} for NAME/SEQUENCE/
+# COLOR/PITCH — "star" fully resolves the value via the bijections above.
+# DISTANCE is {"cat": Category.DISTANCE, "star": int, "ref": int}: "star" is
+# the already-named target, "ref" the anchor, value = _distances[ref][star].
+#
+# A Cell pairs two Characteristics from two DIFFERENT categories:
+# {"a": Characteristic, "b": Characteristic}. Truth = a.star == b.star —
+# uniform across all five categories, since every Characteristic resolves
+# to exactly one target star regardless of which category produced it.
+
+func _characteristic_key(ch: Dictionary) -> String:
+    if int(ch["cat"]) == Category.DISTANCE:
+        return "D:%d:%d" % [int(ch["ref"]), int(ch["star"])]
+    return "%d:%d" % [int(ch["cat"]), int(ch["star"])]
+
+
+func _characteristic_from_key(key: String) -> Dictionary:
+    var parts: PackedStringArray = key.split(":")
+    if parts[0] == "D":
+        return {"cat": Category.DISTANCE, "ref": int(parts[1]), "star": int(parts[2])}
+    return {"cat": int(parts[0]), "star": int(parts[1])}
+
+
+func _characteristic_label(ch: Dictionary) -> String:
+    # Always a uniquely-resolving descriptor (sub-rank included whenever the
+    # raw group has more than one member) — a Characteristic always refers
+    # to exactly one star by construction, so "the" is always correct here;
+    # the definite/indefinite distinction matters for OTHER text (group
+    # descriptions, decoy values) built elsewhere, not for this function.
+    var s: int = int(ch["star"])
+    match int(ch["cat"]):
+        Category.NAME:
+            return star_names[s]
+        Category.SEQUENCE:
+            return "the star that fires %s" % _ordinal(pitch_rank_solution[s] + 1)
+        Category.COLOR:
+            if _group_size(Category.COLOR, s) <= 1:
+                return "the %s star" % COLOR_NAMES[star_colors[s]].to_lower()
+            return "the %s star marked %s" % [COLOR_NAMES[star_colors[s]].to_lower(), _sub_rank_letter(_color_sub_rank[s])]
+        Category.PITCH:
+            var pname: String = note_name_for_freq(_freq_for_star(s))
+            if _group_size(Category.PITCH, s) <= 1:
+                return "the star that plays %s" % pname
+            return "the star that plays %s marked %s" % [pname, _sub_rank_letter(_pitch_sub_rank[s])]
+        Category.DISTANCE:
+            var ref: int = int(ch["ref"])
+            var d: int = _distances[ref][s]
+            var article: String = "the" if _stars_at_distance(ref, d).size() <= 1 else "a"
+            return "%s star %d %s from %s" % [article, d, _hop_word(d), star_names[ref]]
+    return "?"
+
+
+func _hop_word(d: int) -> String:
+    return "hop" if d == 1 else "hops"
+
+
+func _stars_at_distance(ref: int, d: int) -> Array:
+    var out: Array = []
+    for s in star_count:
+        if s != ref and _distances[ref][s] == d:
+            out.append(s)
+    return out
+
+
+# ==================================================
+# USED/UNUSED CHARACTERISTIC TRACKING + SAMPLING PRIMITIVES
+# ==================================================
+
+var _used_characteristics: Dictionary = {}
+
+func _is_used(ch: Dictionary) -> bool:
+    return _used_characteristics.has(_characteristic_key(ch))
+
+
+func _mark_used(ch: Dictionary) -> void:
+    _used_characteristics[_characteristic_key(ch)] = true
+
+
+func _unused_pool_size() -> int:
+    # Termination signal for the main loop (Step 13): total Unused cells
+    # across every actual cell in the matrix — every bijective category
+    # pair's full star_count x star_count grid — not the coarser per-
+    # Characteristic count this used to read. Distance stays on its own
+    # separate per-target-star tracking (it isn't part of the matrix at
+    # all — a relation, not a bijective category — so "D:*:N" in
+    # _used_characteristics is still the right mechanism for it).
+    var count: int = 0
+    for key in _matrix.keys():
+        var rows: Array = _matrix[key]
+        for row in rows:
+            for cell in row:
+                if not bool(cell["used"]):
+                    count += 1
+    for s in star_count:
+        if not _used_characteristics.has("D:*:%d" % s):
+            count += 1
+    return count
+
+
+func _mark_distance_used_for_star(target_star: int) -> void:
+    # Distance's termination-counting unit: once ANY distance-fact naming
+    # this star as the target has been asserted, that star's Distance slot
+    # counts used — regardless of which reference star was involved. Keeps
+    # Distance's pool the same star_count size as the other four categories
+    # instead of the much larger full (ref, target) combinatorial space.
+    _used_characteristics["D:*:%d" % target_star] = true
+
+
+var _last_clue_nodes: Array = []
+# Step 9, corrected: chaining draws from the Category-Value pairs
+# INSTALLED INTO NODES for the immediately-previous clue specifically —
+# not the accumulated Used history. Those are different pools: the
+# ZebraTutor pass (Step 7) marks a cell Used whenever it's derivable from
+# a clue (cascade-resolved rows/columns, or a sampled cell's other side
+# that was never actually installed into a node), which is generally much
+# larger than what one clue's Form template actually displayed to the
+# player. _last_clue_nodes holds only the latter — set after each clue
+# commits, to that clue's own "chars" list (see generate_clues_forms()).
+
+func _pick_chain_characteristic() -> Dictionary:
+    if _last_clue_nodes.is_empty():
+        return {}   # the very first clue has no previous clue to chain from
+    return _last_clue_nodes[_rng.randi_range(0, _last_clue_nodes.size() - 1)]
+
+
+
+
+func _commit_characteristics(chars: Array) -> void:
+    for ch in chars:
+        if int(ch["cat"]) == Category.DISTANCE:
+            _mark_distance_used_for_star(int(ch["star"]))
+        else:
+            _mark_used(ch)
+
+
+# ==================================================
+# ARRAY/MATRIX — an actual pre-built, persistent structure
+# ==================================================
+# Populated ONCE, upfront, as real stored data — not computed on demand.
+# For every pair of the four bijective categories, a star_count x
+# star_count array of cell Dictionaries, each holding its own True/False
+# (fixed at build time from ground truth) and Used/Unused (mutable,
+# starts Unused, flips as clues reveal or derive it) fields. This is the
+# literal matrix, built once by _build_matrix() and read/written directly
+# everywhere after — no lazy recomputation, no parallel tracker.
+
+const BIJECTIVE_CATEGORIES: Array = [Category.NAME, Category.SEQUENCE, Category.COLOR, Category.PITCH]
+var _matrix: Dictionary = {}   # "loCat:hiCat" -> Array[star_count][star_count] of {"is_true":bool, "used":bool}
+
+func _pair_key(cat_a: int, cat_b: int) -> String:
+    var lo: int = mini(cat_a, cat_b)
+    var hi: int = maxi(cat_a, cat_b)
+    return "%d:%d" % [lo, hi]
+
+
+func _build_matrix() -> void:
+    _matrix = {}
+    for i in BIJECTIVE_CATEGORIES.size():
+        for j in range(i + 1, BIJECTIVE_CATEGORIES.size()):
+            var ca: int = int(BIJECTIVE_CATEGORIES[i])
+            var cb: int = int(BIJECTIVE_CATEGORIES[j])
+            var rows: Array = []
+            rows.resize(star_count)
+            for v1 in star_count:
+                var row: Array = []
+                row.resize(star_count)
+                var star_a: int = int(_cat_value_to_star[ca][v1])
+                for v2 in star_count:
+                    var star_b: int = int(_cat_value_to_star[cb][v2])
+                    row[v2] = {"is_true": star_a == star_b, "used": false}
+                rows[v1] = row
+            _matrix[_pair_key(ca, cb)] = rows
+
+
+func _matrix_cell(cat_a: int, val_a: int, cat_b: int, val_b: int) -> Dictionary:
+    var rows: Array = _matrix[_pair_key(cat_a, cat_b)]
+    var row: int = val_a if cat_a < cat_b else val_b
+    var col: int = val_b if cat_a < cat_b else val_a
+    return rows[row][col]
+
+
+func _random_bijective_category_pair() -> Array:
+    var pool: Array = BIJECTIVE_CATEGORIES.duplicate()
+    _shuffle_array(pool)
+    return [pool[0], pool[1]]
+
+
+func _sample_grid_cell_from_chain(chain_cat: int, chain_star: int, other_cat: int) -> Dictionary:
+    # Step 9/10: one side is the chain characteristic reused AS-IS from the
+    # previous clue's nodes (not resampled), the other side is a randomly-
+    # picked Unused cell along that fixed row/column — still no steering
+    # toward True or False on the fresh side. Both sides get rendered via
+    # _characteristic_label by every caller of this (Forms 1/2/4), so both
+    # must uniquely label their star — chain_star's own check guards
+    # against a REUSED node that was only ever bookkeeping in its original
+    # clue (e.g. Pairwise Order's axis_a/axis_b are never individually
+    # rendered there, so were never checked at the time they were picked).
+    if not _category_uniquely_labels(chain_cat, chain_star):
+        return {}
+    var chain_val: int = int(_cat_star_to_value[chain_cat][chain_star])
+    var candidates: Array = []
+    for v in star_count:
+        if not bool(_matrix_cell(chain_cat, chain_val, other_cat, v)["used"]) and _category_uniquely_labels(other_cat, int(_cat_value_to_star[other_cat][v])):
+            candidates.append(v)
+    if candidates.is_empty():
+        return {}
+    var other_val: int = int(candidates[_rng.randi_range(0, candidates.size() - 1)])
+    return {
+        "cat_a": chain_cat, "val_a": chain_val, "star_a": chain_star,
+        "cat_b": other_cat, "val_b": other_val, "star_b": int(_cat_value_to_star[other_cat][other_val]),
+        "is_true": bool(_matrix_cell(chain_cat, chain_val, other_cat, other_val)["is_true"]),
+    }
+
+
+func _sample_grid_cell_maybe_chained(chain: Dictionary) -> Dictionary:
+    # Chaining is the standard case, not an occasional preference — every
+    # clue after the first reuses one node from the immediately-previous
+    # clue (Step 9). Falls back to a fresh, unchained pair only when there
+    # is no previous clue yet, or the chain's own category has nothing
+    # left to pair against.
+    if not chain.is_empty() and int(chain["cat"]) != Category.DISTANCE:
+        var chain_cat: int = int(chain["cat"])
+        var other_pool: Array = []
+        for c in BIJECTIVE_CATEGORIES:
+            if int(c) != chain_cat:
+                other_pool.append(c)
+        _shuffle_array(other_pool)
+        for other_cat in other_pool:
+            var cell: Dictionary = _sample_grid_cell_from_chain(chain_cat, int(chain["star"]), int(other_cat))
+            if not cell.is_empty():
+                return cell
+    var pair: Array = _random_bijective_category_pair()
+    return _sample_grid_cell(int(pair[0]), int(pair[1]))
+
+
+func _sample_grid_cell(cat_a: int, cat_b: int) -> Dictionary:
+    # Purely random cell pick — no steering toward True or False. Whatever
+    # status ALREADY STORED in the matrix for the randomly-landed cell is
+    # what gets reported; grammar phrases it "is"/"is not" as a
+    # CONSEQUENCE, never as an input the sampler aims for. Both sides get
+    # rendered via _characteristic_label by every caller (Forms 1/2/4), so
+    # both must uniquely label their star — a Color/Pitch value shared by
+    # 2+ stars would otherwise render as "marked B", a sub-rank letter that
+    # exists purely as internal matrix bookkeeping and is never shown to
+    # the player anywhere in the game (no draw_string call references it
+    # in constellation_overlay.gd or constellation_study_overlay.gd).
+    var candidates: Array = []
+    for v1 in star_count:
+        for v2 in star_count:
+            if not bool(_matrix_cell(cat_a, v1, cat_b, v2)["used"]) \
+            and _category_uniquely_labels(cat_a, int(_cat_value_to_star[cat_a][v1])) \
+            and _category_uniquely_labels(cat_b, int(_cat_value_to_star[cat_b][v2])):
+                candidates.append([v1, v2])
+    if candidates.is_empty():
+        return {}
+    var pick: Array = candidates[_rng.randi_range(0, candidates.size() - 1)]
+    var val_a: int = int(pick[0])
+    var val_b: int = int(pick[1])
+    var is_true: bool = bool(_matrix_cell(cat_a, val_a, cat_b, val_b)["is_true"])
+    return {
+        "cat_a": cat_a, "val_a": val_a, "star_a": int(_cat_value_to_star[cat_a][val_a]),
+        "cat_b": cat_b, "val_b": val_b, "star_b": int(_cat_value_to_star[cat_b][val_b]),
+        "is_true": is_true,
+    }
+
+
+func _apply_grid_cell_result(cat_a: int, val_a: int, cat_b: int, val_b: int, is_true: bool) -> void:
+    _matrix_cell(cat_a, val_a, cat_b, val_b)["used"] = true
+    if not is_true:
+        return   # a False reveal excludes only this one stored cell — no cascade, matches
+                  # how a negative fact never cascades anywhere else in this puzzle's design.
+    # A True reveal: bijection guarantees exactly one True per row and per
+    # column, so every OTHER stored cell involving val_a or val_b is
+    # ALREADY MARKED False in the matrix — just flip their Used flag too.
+    for v in star_count:
+        if v != val_b:
+            _matrix_cell(cat_a, val_a, cat_b, v)["used"] = true
+        if v != val_a:
+            _matrix_cell(cat_a, v, cat_b, val_b)["used"] = true
+    _mark_used({"cat": cat_a, "star": int(_cat_value_to_star[cat_a][val_a])})
+    _mark_used({"cat": cat_b, "star": int(_cat_value_to_star[cat_b][val_b])})
+
+
+func _grid_zebratutor_pass(cat_a: int, cat_b: int) -> void:
+    # Naked-single elimination (if a row/column has exactly one remaining
+    # Unused cell, it's forced True by elimination) PLUS naked-pair/triple
+    # elimination, reusing the already-ported _naked_subset_pass rather than
+    # reimplementing it a second time — this pair's cells aren't stored as
+    # plain booleans (each is a {is_true, used} Dictionary), so a temporary
+    # boolean "possible" view gets built each round (possible = not yet Used,
+    # OR the one cell already confirmed True in its row — matches "hasn't
+    # been ruled out" semantics), fed through the ported algorithm, and any
+    # newly-excluded cell gets translated back into a real matrix Used mark.
+    # Both techniques run in one fixed-point loop since either can unlock
+    # the other (a naked-pair exclusion can create a fresh naked single).
+    var changed: bool = true
+    while changed:
+        changed = false
+        for v1 in star_count:
+            var unused_cols: Array = []
+            for v2 in star_count:
+                if not bool(_matrix_cell(cat_a, v1, cat_b, v2)["used"]):
+                    unused_cols.append(v2)
+            if unused_cols.size() == 1:
+                var forced_v2: int = int(unused_cols[0])
+                if not bool(_matrix_cell(cat_a, v1, cat_b, forced_v2)["used"]):
+                    _apply_grid_cell_result(cat_a, v1, cat_b, forced_v2, true)
+                    changed = true
+        for v2 in star_count:
+            var unused_rows: Array = []
+            for v1 in star_count:
+                if not bool(_matrix_cell(cat_a, v1, cat_b, v2)["used"]):
+                    unused_rows.append(v1)
+            if unused_rows.size() == 1:
+                var forced_v1: int = int(unused_rows[0])
+                if not bool(_matrix_cell(cat_a, forced_v1, cat_b, v2)["used"]):
+                    _apply_grid_cell_result(cat_a, forced_v1, cat_b, v2, true)
+                    changed = true
+
+        var possible: Array = []
+        for v1 in star_count:
+            var row_possible: Array = []
+            for v2 in star_count:
+                var cell: Dictionary = _matrix_cell(cat_a, v1, cat_b, v2)
+                row_possible.append((not bool(cell["used"])) or bool(cell["is_true"]))
+            possible.append(row_possible)
+        if _naked_subset_pass(possible, star_count, true):
+            for v1 in star_count:
+                for v2 in star_count:
+                    if not possible[v1][v2] and not bool(_matrix_cell(cat_a, v1, cat_b, v2)["used"]):
+                        _apply_grid_cell_result(cat_a, v1, cat_b, v2, false)
+                        changed = true
+
+
+# ==================================================
+# ORDERABLE-AXIS HELPERS — shared by Pairwise Order/Offset/Adjacency/Range/
+# Extreme/Betweenness/Group Comparison, which all need "compare two stars'
+# values on some category" rather than a plain True/False identity check.
+# ==================================================
+
+func _orderable_categories() -> Array:
+    # Color deliberately excluded: its record-array bijection index is a
+    # coding artifact (sorted by raw enum value, then sub-rank) with no
+    # player-observable "greater/lesser" meaning, unlike Sequence (temporal)
+    # or Pitch (audibly verifiable via Listen) — a Color comparison clue
+    # would be grammatically fine but semantically unsolvable/arbitrary.
+    # Color still participates elsewhere via equality/group-membership
+    # (Forms 9, 12, 13, 20), just never as a comparison axis.
+    return [Category.SEQUENCE, Category.PITCH]
+
+
+func _order_value(cat: int, star: int) -> int:
+    # A star's position on an orderable axis. Sequence: its rank directly.
+    # Pitch: ascending-frequency rank (ties share a rank, same structure the
+    # pitch solver already uses).
+    match cat:
+        Category.SEQUENCE:
+            return pitch_rank_solution[star]
+        Category.PITCH:
+            return _pitch_freq_rank[star_pitch_index[star]]
+    return 0
+
+
+func _order_word(cat: int, a_gt_b: bool) -> String:
+    match cat:
+        Category.SEQUENCE:
+            return SEQ_WORD_LATER if a_gt_b else SEQ_WORD_EARLIER
+        Category.PITCH:
+            return "higher" if a_gt_b else "lower"
+    return "greater" if a_gt_b else "lesser"
+
+
+func _order_verb(cat: int) -> String:
+    match cat:
+        Category.SEQUENCE:
+            return "fires"
+    return "is"
+
+
+func _order_unit(cat: int, count: int) -> String:
+    # Exact Offset's "exactly N ___ later/higher than" needs an axis-aware
+    # unit noun — "steps" reads naturally for Sequence (discrete melody
+    # positions), but on its own says nothing about what's being counted
+    # for Pitch, which has no equivalent everyday word for "positions in
+    # the frequency ranking." count is always abs(offset), which the 0
+    # guard in _build_form_exact_offset already keeps >= 1.
+    var singular: String = "step" if cat == Category.SEQUENCE else "pitch rank"
+    return singular if count == 1 else singular + "s"
+
+
+func _non_distance_category() -> int:
+    return [Category.NAME, Category.SEQUENCE, Category.COLOR, Category.PITCH][_rng.randi_range(0, 3)]
+
+
+func _is_hidden_category(cat: int) -> bool:
+    # Name and Sequence are the only two axes genuinely unknown to the
+    # player — Color is painted on the map and Pitch is fully recoverable
+    # via the Listen mechanic, both zero-deduction "given" information once
+    # looked at. A Distance-anchored clue (Forms 15/16/19) where every
+    # labeled star is drawn from Color/Pitch is entirely re-derivable by
+    # looking at the map — true, but contributes nothing a player couldn't
+    # already see, and reads as a non-clue. Require at least one labeled
+    # star per Distance-anchored clue to come from a hidden axis.
+    return cat == Category.NAME or cat == Category.SEQUENCE
+
+
+# ==================================================
+# SOLVER FACTS — what a clue's rendered text actually discloses about the
+# Sequence axis, for the Phase C uniqueness check (see generate_clues_forms).
+# Pitch needs no equivalent: it carries no uniqueness requirement (fully
+# recoverable via Listen — see constellation_puzzle_category_facts_CHECK_
+# FIRST memory). These are NOT persisted to chosen_form_clues/cache; they're
+# only needed transiently while generating, to prove the shown clue set
+# pins Sequence (and, via _name_reveal_facts, Name) to one solution.
+#
+# CRITICAL: a clue's "chars" array (used for Used-marking/chaining) is NOT
+# the same thing as what's textually disclosed — chars records everything
+# TOUCHED, including identity-anchor cells used only to pick a star for a
+# comparison-shaped clue, which are never actually rendered into the text
+# (e.g. Pairwise Order's axis_a/axis_b nodes back the "fires later/higher"
+# comparison itself, not a separate exact-value disclosure). Emitting an
+# ordinal_exact fact from a merely-touched cell would silently reintroduce
+# the ground-truth-leak bug class this refactor exists to fix — one level
+# more subtle (leaking bookkeeping as if it were disclosure). Only call
+# _seq_fact_for_label on a characteristic that is ACTUALLY passed through
+# _characteristic_label(...) in the clue's own text-construction line —
+# _characteristic_label renders Category.SEQUENCE as "the star that fires
+# Nth", so any such call genuinely discloses that star's exact rank,
+# independent of which Form produced it.
+# ==================================================
+
+func _capitalize_first(s: String) -> String:
+    if s.is_empty():
+        return s
+    return s[0].to_upper() + s.substr(1)
+
+
+func _seq_fact_for_label(ch: Dictionary) -> Array:
+    if int(ch["cat"]) != Category.SEQUENCE:
+        return []
+    var s: int = int(ch["star"])
+    return [{"kind": "ordinal_exact", "s": s, "r": pitch_rank_solution[s]}]
+
+
+func _validate_sequence_fact(f: Dictionary) -> String:
+    # Every solver_fact is supposed to be derivable straight from ground
+    # truth (see the header note above _seq_fact_for_label) — if _solve()
+    # ever reports 0 solutions, that means one of them is actually wrong,
+    # not that the puzzle is contradictory (every fact here is asserted
+    # about a REAL constellation, which always has at least one consistent
+    # assignment: the true one). This check pinpoints exactly which fact
+    # and why, rather than leaving a bare "0 solutions" to debug blind.
+    match str(f.get("kind", "")):
+        "ordinal_exact":
+            var s: int = int(f["s"])
+            var r: int = int(f["r"])
+            if pitch_rank_solution[s] != r:
+                return "ordinal_exact s=%d claims rank=%d but true rank=%d" % [s, r, pitch_rank_solution[s]]
+        "ordinal_neg":
+            var s2: int = int(f["s"])
+            var r2: int = int(f["r"])
+            if pitch_rank_solution[s2] == r2:
+                return "ordinal_neg s=%d claims rank!=%d but true rank IS %d" % [s2, r2, pitch_rank_solution[s2]]
+        "ordinal_cmp":
+            var a: int = int(f["a"])
+            var b: int = int(f["b"])
+            var a_gt_b: bool = bool(f["a_gt_b"])
+            var actual: bool = pitch_rank_solution[a] > pitch_rank_solution[b]
+            if actual != a_gt_b:
+                return "ordinal_cmp a=%d b=%d claims a_gt_b=%s but true ranks are %d,%d" % [a, b, str(a_gt_b), pitch_rank_solution[a], pitch_rank_solution[b]]
+        "ordinal_chain":
+            var ca: int = int(f["a"])
+            var cmid: int = int(f["mid"])
+            var cb: int = int(f["b"])
+            if not (pitch_rank_solution[ca] < pitch_rank_solution[cmid] and pitch_rank_solution[cmid] < pitch_rank_solution[cb]):
+                return "ordinal_chain a=%d mid=%d b=%d claims a<mid<b but true ranks are %d,%d,%d" % [ca, cmid, cb, pitch_rank_solution[ca], pitch_rank_solution[cmid], pitch_rank_solution[cb]]
+        "ordinal_adjacent", "ordinal_offset":
+            var oa: int = int(f["a"])
+            var ob: int = int(f["b"])
+            var off: int = int(f.get("offset", 1))
+            if pitch_rank_solution[oa] != pitch_rank_solution[ob] + off:
+                return "%s a=%d b=%d offset=%d claims a=b+offset but true ranks are %d,%d" % [str(f["kind"]), oa, ob, off, pitch_rank_solution[oa], pitch_rank_solution[ob]]
+        "ordinal_range":
+            var rs: int = int(f["s"])
+            var lo: int = int(f["lo"])
+            var hi: int = int(f["hi"])
+            if pitch_rank_solution[rs] < lo or pitch_rank_solution[rs] > hi:
+                return "ordinal_range s=%d claims rank in [%d,%d] but true rank=%d" % [rs, lo, hi, pitch_rank_solution[rs]]
+        "ordinal_either_or":
+            var es: int = int(f["s"])
+            var r1: int = int(f["r1"])
+            var r2: int = int(f["r2"])
+            if pitch_rank_solution[es] != r1 and pitch_rank_solution[es] != r2:
+                return "ordinal_either_or s=%d claims rank in {%d,%d} but true rank=%d" % [es, r1, r2, pitch_rank_solution[es]]
+        "ordinal_extreme":
+            var xs: int = int(f["s"])
+            var want_lowest: bool = bool(f["want_lowest"])
+            for n in f["neighbors"]:
+                var nn: int = int(n)
+                if want_lowest and pitch_rank_solution[nn] <= pitch_rank_solution[xs]:
+                    return "ordinal_extreme s=%d (want_lowest) neighbor=%d violates: neighbor true rank %d <= subject true rank %d" % [xs, nn, pitch_rank_solution[nn], pitch_rank_solution[xs]]
+                if not want_lowest and pitch_rank_solution[nn] >= pitch_rank_solution[xs]:
+                    return "ordinal_extreme s=%d (want_highest) neighbor=%d violates: neighbor true rank %d >= subject true rank %d" % [xs, nn, pitch_rank_solution[nn], pitch_rank_solution[xs]]
+        "ordinal_count_before":
+            var cs: int = int(f["s"])
+            var k: int = int(f["k"])
+            var before: int = 0
+            for n2 in f["neighbors"]:
+                if pitch_rank_solution[int(n2)] < pitch_rank_solution[cs]:
+                    before += 1
+            if before != k:
+                return "ordinal_count_before s=%d claims k=%d but actual true before-count=%d" % [cs, k, before]
+    return ""
+
+
+func _clue_characteristics(chars: Array) -> Array[String]:
+    # Replaces the old kind-string -> static-table indirection (_kind_ui_tabs)
+    # with a tag computed straight from a clue's actual node composition —
+    # Kind is derived, not fixed, in this architecture, so the same Form can
+    # touch different categories on different draws. "NameClues" mirrors the
+    # old table's pattern: every legacy kind tagged NameClues was one whose
+    # participants included a Name node.
+    var tags: Array[String] = []
+    var has_name: bool = false
+    for c in chars:
+        var cat: int = int(c["cat"])
+        match cat:
+            Category.NAME:
+                has_name = true
+            Category.SEQUENCE:
+                if not ("Sequence" in tags):
+                    tags.append("Sequence")
+            Category.PITCH:
+                if not ("Pitch" in tags):
+                    tags.append("Pitch")
+            Category.COLOR:
+                if not ("Color" in tags):
+                    tags.append("Color")
+            Category.DISTANCE:
+                if not ("Proximity" in tags):
+                    tags.append("Proximity")
+    if has_name:
+        tags.append("NameClues")
+    return tags
+
+
+# ==================================================
+# FORMS REGISTRY — 22 abstract templates
+# ==================================================
+const FORM_NAMES := {
+    1: "Exact Identity", 2: "Single Negation", 3: "Dual Negation",
+    4: "Disjunction", 5: "Pairwise Order", 6: "Exact Offset",
+    7: "Adjacency", 8: "Range", 9: "Group Order", 10: "Count",
+    11: "Extreme", 12: "Equality Pair", 13: "Mutual Exclusion",
+    14: "Group Comparison", 15: "Distance Existential", 16: "Distance Extreme",
+    17: "Betweenness", 18: "Degree Fact", 19: "Non-Adjacency",
+    20: "Cross-Domain Bridge", 21: "Pseudo-True Pair (Aligned)",
+    22: "Pseudo-True Pair (Staggered)",
+}
+
+const AUTOMATED_FORM_IDS: Array[int] = [
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22,
+]
+# Form 18 (Degree Fact) deliberately excluded from automatic generation —
+# Degree stays hand-tuned per constellation (topology varies too much; some
+# constellations put every star at the same degree, giving it zero
+# discriminating power there), per the standing exclusion rule established
+# earlier this session.
+
+
+func _build_form(form_id: int, chain: Dictionary) -> Dictionary:
+    match form_id:
+        1: return _build_form_exact_identity(chain)
+        2: return _build_form_single_negation(chain)
+        3: return _build_form_dual_negation(chain)
+        4: return _build_form_disjunction(chain)
+        5: return _build_form_pairwise_order(chain)
+        6: return _build_form_exact_offset(chain)
+        7: return _build_form_adjacency(chain)
+        8: return _build_form_range(chain)
+        9: return _build_form_group_order(chain)
+        10: return _build_form_count(chain)
+        11: return _build_form_extreme(chain)
+        12: return _build_form_equality_pair(chain)
+        13: return _build_form_mutual_exclusion(chain)
+        14: return _build_form_group_comparison(chain)
+        15: return _build_form_distance_existential(chain)
+        16: return _build_form_distance_extreme(chain)
+        17: return _build_form_betweenness(chain)
+        19: return _build_form_non_adjacency(chain)
+        20: return _build_form_cross_domain_bridge(chain)
+        21: return _build_form_pseudo_true_pair_aligned(chain)
+        22: return _build_form_pseudo_true_pair_staggered(chain)
+    return {}
+
+
+# ── Shape A: single-cell fact (Forms 1, 2, 4, 8) ─────────────────────────
+
+func _build_form_exact_identity(chain: Dictionary) -> Dictionary:
+    # Purely random landing (no steering toward True) on whichever cell
+    # results from chaining (Step 9/10) or, absent a previous clue, a
+    # fresh category pair. Most random landings are False (only star_count
+    # of star_count^2 cells are True) — that's expected and correct; a
+    # False landing just means THIS attempt isn't an Exact Identity
+    # instance, and the main loop moves on. The grid mutation itself is
+    # deferred to generate_clues_forms(), after the dedup check, so a
+    # discarded attempt never corrupts Used/Unused bookkeeping for a cell
+    # that was never actually shown to the player.
+    var cell: Dictionary = _sample_grid_cell_maybe_chained(chain)
+    if cell.is_empty() or not bool(cell["is_true"]):
+        return {}
+    var ch_a: Dictionary = {"cat": int(cell["cat_a"]), "star": int(cell["star_a"])}
+    var ch_b: Dictionary = {"cat": int(cell["cat_b"]), "star": int(cell["star_b"])}
+    var text: String = "%s is %s." % [_characteristic_label(ch_a), _characteristic_label(ch_b)]
+    var solver_facts: Array = _seq_fact_for_label(ch_a) + _seq_fact_for_label(ch_b)
+    return {"chars": [ch_a, ch_b], "text": text, "grid_updates": [cell], "solver_facts": solver_facts}
+
+
+func _build_form_single_negation(chain: Dictionary) -> Dictionary:
+    # Same purely-random landing as Exact Identity, just needing a False
+    # cell instead of a True one — no steering either direction.
+    var cell: Dictionary = _sample_grid_cell_maybe_chained(chain)
+    if cell.is_empty() or bool(cell["is_true"]):
+        return {}
+    var ch_a: Dictionary = {"cat": int(cell["cat_a"]), "star": int(cell["star_a"])}
+    var ch_b: Dictionary = {"cat": int(cell["cat_b"]), "star": int(cell["star_b"])}
+    var text: String = "%s is not %s." % [_characteristic_label(ch_a), _characteristic_label(ch_b)]
+    # Two facts, when the axis participates: the label itself discloses an
+    # exact rank for whichever side is Sequence-categorized (ch's label is
+    # "the star that fires Nth" regardless of the negation wrapped around
+    # it); separately, "A is not B" with A's exact rank already known means
+    # B's rank is provably NOT that value — a real negative fact on the
+    # OTHER star. cat_a and cat_b are always different categories (cross-
+    # category cell), so at most one side is ever Sequence.
+    var solver_facts: Array = _seq_fact_for_label(ch_a) + _seq_fact_for_label(ch_b)
+    if int(ch_a["cat"]) == Category.SEQUENCE:
+        solver_facts.append({"kind": "ordinal_neg", "s": int(ch_b["star"]), "r": int(cell["val_a"])})
+    elif int(ch_b["cat"]) == Category.SEQUENCE:
+        solver_facts.append({"kind": "ordinal_neg", "s": int(ch_a["star"]), "r": int(cell["val_b"])})
+    return {"chars": [ch_a, ch_b], "text": text, "grid_updates": [cell], "solver_facts": solver_facts}
+
+
+func _build_form_disjunction(chain: Dictionary) -> Dictionary:
+    # Matrix-based, per Steps 3/4/9/10: one cell sampled purely randomly
+    # (chained when available) fixes the subject's row and which category
+    # supplies the two candidate options. Bijection guarantees exactly one
+    # True column per row — so whichever the random draw landed on, the
+    # OTHER option is never itself "sampled toward an outcome": if the
+    # draw was already True, the decoy is a random pick among the
+    # remaining (guaranteed-False) columns in that same row; if the draw
+    # was False, the True option is simply the row's one true column,
+    # looked up directly off the bijection (a ground-truth fact, not
+    # something requiring a second random sample).
+    var cell: Dictionary = _sample_grid_cell_maybe_chained(chain)
+    if cell.is_empty():
+        return {}
+    var cat_a: int = int(cell["cat_a"])
+    var val_a: int = int(cell["val_a"])
+    var cat_b: int = int(cell["cat_b"])
+    var val_b: int = int(cell["val_b"])
+    var star_a: int = int(cell["star_a"])
+    var true_val_b: int = int(_cat_star_to_value[cat_b][star_a])
+    # true_ch below always ends up labeling star_a itself via cat_b (true_val_b
+    # is DEFINED as star_a's own cat_b value, so the inverse bijection lookup
+    # always returns star_a) — regardless of which branch below runs. The
+    # earlier _sample_grid_cell fix only checked whichever value was actually
+    # SAMPLED, which is star_a's true value in the True-cell branch (same
+    # star, redundant-but-harmless) but is the DECOY in the False-cell
+    # branch — never checking star_a's own cat_b-uniqueness in that case,
+    # which is exactly the gap that let "the star that plays C5 marked B"
+    # through as a TRUE option.
+    if not _category_uniquely_labels(cat_b, star_a):
+        return {}
+    var decoy_val_b: int
+    if val_b == true_val_b:
+        var candidates: Array = []
+        for v in star_count:
+            if v != true_val_b and not bool(_matrix_cell(cat_a, val_a, cat_b, v)["used"]) and _category_uniquely_labels(cat_b, int(_cat_value_to_star[cat_b][v])):
+                candidates.append(v)
+        if candidates.is_empty():
+            return {}
+        decoy_val_b = int(candidates[_rng.randi_range(0, candidates.size() - 1)])
+    else:
+        decoy_val_b = val_b
+        if bool(_matrix_cell(cat_a, val_a, cat_b, true_val_b)["used"]):
+            return {}
+    var subject_ch: Dictionary = {"cat": cat_a, "star": star_a}
+    var true_ch: Dictionary = {"cat": cat_b, "star": int(_cat_value_to_star[cat_b][true_val_b])}
+    var decoy_ch: Dictionary = {"cat": cat_b, "star": int(_cat_value_to_star[cat_b][decoy_val_b])}
+    var opts: Array = [true_ch, decoy_ch]
+    _shuffle_array(opts)
+    var text: String = "%s is either %s or %s." % [_characteristic_label(subject_ch), _characteristic_label(opts[0]), _characteristic_label(opts[1])]
+    # Every label actually rendered discloses its own exact rank when
+    # Sequence-categorized (true_ch/decoy_ch's OWN ranks are disclosed by
+    # naming them, regardless of which one turns out to be the subject's
+    # real match) — but do NOT also claim the disjunction resolves WHICH
+    # one the subject is; that's exactly the ambiguity "either/or" leaves
+    # open, captured separately only when cat_b is Sequence.
+    var solver_facts: Array = _seq_fact_for_label(subject_ch) + _seq_fact_for_label(true_ch) + _seq_fact_for_label(decoy_ch)
+    if cat_b == Category.SEQUENCE:
+        solver_facts.append({"kind": "ordinal_either_or", "s": star_a, "r1": true_val_b, "r2": decoy_val_b})
+    return {
+        "chars": [subject_ch, true_ch, decoy_ch],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": cat_a, "val_a": val_a, "cat_b": cat_b, "val_b": true_val_b, "is_true": true},
+            {"cat_a": cat_a, "val_a": val_a, "cat_b": cat_b, "val_b": decoy_val_b, "is_true": false},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+func _build_form_range(chain: Dictionary) -> Dictionary:
+    # Sequence-only first pass: subject's true rank constrained to a
+    # contiguous first/last-N window. Other orderable axes (Pitch/Color)
+    # would need their own "first/last N" phrasing — deferred. Single-cell
+    # form (one TRUE cell gives both the identity label and the rank),
+    # same shape as Forms 1/2 rather than the two-cell Forms 5-7. Note:
+    # generalized the identity label from a fixed Name to the same random
+    # non-axis category the other migrated Forms use, for consistency —
+    # flagging since it's a small behavior change, not just a mechanical port.
+    var a: Dictionary = _sample_identity_axis_cell(Category.SEQUENCE, chain, -1)
+    if a.is_empty():
+        return {}
+    var subject_star: int = int(a["star"])
+    var r: int = _order_value(Category.SEQUENCE, subject_star)
+    var want_first: bool = _rng.randf() < 0.5
+    @warning_ignore("integer_division")
+    var n: int = mini(star_count, 2 + _rng.randi_range(0, maxi(1, star_count / 3)))
+    var fits: bool = (r < n) if want_first else (r >= star_count - n)
+    if not fits:
+        want_first = not want_first
+        fits = (r < n) if want_first else (r >= star_count - n)
+        # r can fall in neither window (e.g. r=10 of 15 with n=2 — not
+        # among the first 2 or the last 2) — flipping want_first only
+        # rescues the case where r was simply checked against the WRONG
+        # window, not the case where it's genuinely in the untouched
+        # middle. The old code assumed the flip always fixed it and
+        # asserted a false range claim when it didn't (caught by
+        # _validate_sequence_fact reporting e.g. "s=12 claims rank in
+        # [0,1] but true rank=10") — bail out like every other Form does
+        # on an infeasible draw, rather than shipping a false fact.
+        if not fits:
+            return {}
+    var id_ch: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
+    var seq_ch: Dictionary = {"cat": Category.SEQUENCE, "star": subject_star}
+    var word: String = "first" if want_first else "last"
+    var text: String = "%s is among the %s %d." % [_characteristic_label(id_ch), word, n]
+    # Only id_ch is ever rendered via _characteristic_label — seq_ch is
+    # bookkeeping (chars/chaining) only, never itself disclosed as an exact
+    # rank. What's actually asserted is range membership, not an exact value.
+    var lo: int = 0 if want_first else star_count - n
+    var hi: int = n - 1 if want_first else star_count - 1
+    var solver_facts: Array = _seq_fact_for_label(id_ch)
+    solver_facts.append({"kind": "ordinal_range", "s": subject_star, "lo": lo, "hi": hi})
+    return {
+        "chars": [id_ch, seq_ch],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": Category.SEQUENCE, "val_b": int(a["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+# ── Shape B: two-star relational fact (Forms 5, 6, 7, 12) ────────────────
+
+
+func _sample_identity_axis_cell(axis_cat: int, chain: Dictionary, exclude_star: int) -> Dictionary:
+    # Establishes one star's identity for a comparison-shaped Form (Pairwise
+    # Order and similar): a TRUE cell pairing some other category against
+    # axis_cat. This is NOT the same "steering" Forms 1/2 avoid — no
+    # player-facing is/is-not assertion is being decided here, only which
+    # physical star an identity label refers to, a prerequisite before the
+    # actual clue content (a pure ground-truth comparison, zero steering)
+    # gets built. Picking directly among candidate stars lands on the same
+    # distribution random-sample-and-discard-on-False would converge to
+    # (exactly one column per row is True, so uniform-over-stars is
+    # uniform-over-True-cells) without the wasted draws — with two such
+    # cells needed per clue here, discard-based sampling would fail this
+    # Form almost every attempt and likely exhaust the main loop's stall
+    # budget before ever succeeding once.
+    if not chain.is_empty() and int(chain["cat"]) != Category.DISTANCE and int(chain["cat"]) != axis_cat and int(chain["star"]) != exclude_star:
+        var chain_star: int = int(chain["star"])
+        var chain_cat: int = int(chain["cat"])
+        if _category_uniquely_labels(chain_cat, chain_star):
+            var chain_val: int = int(_cat_star_to_value[chain_cat][chain_star])
+            var true_axis_val: int = int(_cat_star_to_value[axis_cat][chain_star])
+            if not bool(_matrix_cell(chain_cat, chain_val, axis_cat, true_axis_val)["used"]):
+                return {"id_cat": chain_cat, "id_val": chain_val, "axis_val": true_axis_val, "star": chain_star}
+    var id_cat: int = _non_distance_category()
+    while id_cat == axis_cat:
+        id_cat = _non_distance_category()
+    var candidates: Array = []
+    for s in star_count:
+        if s == exclude_star or not _category_uniquely_labels(id_cat, s):
+            continue
+        var id_val: int = int(_cat_star_to_value[id_cat][s])
+        var axis_val: int = int(_cat_star_to_value[axis_cat][s])
+        if not bool(_matrix_cell(id_cat, id_val, axis_cat, axis_val)["used"]):
+            candidates.append(s)
+    if candidates.is_empty():
+        return {}
+    var star: int = int(candidates[_rng.randi_range(0, candidates.size() - 1)])
+    return {"id_cat": id_cat, "id_val": int(_cat_star_to_value[id_cat][star]), "axis_val": int(_cat_star_to_value[axis_cat][star]), "star": star}
+
+
+func _build_form_pairwise_order(chain: Dictionary) -> Dictionary:
+    var axis: int = _orderable_categories()[_rng.randi_range(0, 1)]
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    if a.is_empty():
+        return {}
+    var star_a: int = int(a["star"])
+    var b: Dictionary = _sample_identity_axis_cell(axis, {}, star_a)   # only one node chains per Step 9 — star_b is always fresh
+    if b.is_empty():
+        return {}
+    var star_b: int = int(b["star"])
+    # _order_value, not the matrix's own bijection index, is what actually
+    # determines direction — Pitch's matrix bijection (raw index + sub-
+    # rank) and its true frequency-rank ordering (with ties) are different
+    # numberings; comparing the wrong one would silently misorder Pitch
+    # clues even though the matrix bookkeeping itself stayed correct.
+    var a_gt_b: bool = _order_value(axis, star_a) > _order_value(axis, star_b)
+    var id_a: Dictionary = {"cat": int(a["id_cat"]), "star": star_a}
+    var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
+    var axis_a: Dictionary = {"cat": axis, "star": star_a}
+    var axis_b: Dictionary = {"cat": axis, "star": star_b}
+    var text: String = "%s %s %s than %s." % [_characteristic_label(id_a), _order_verb(axis), _order_word(axis, a_gt_b), _characteristic_label(id_b)]
+    # id_a/id_b are the only labels actually rendered — axis_a/axis_b back
+    # the comparison itself but are never textually disclosed as exact
+    # values (see the header note on _seq_fact_for_label). The comparison
+    # only matters to the Sequence solve when axis IS Sequence; a Pitch-axis
+    # comparison discloses nothing Sequence-relevant.
+    var solver_facts: Array = _seq_fact_for_label(id_a) + _seq_fact_for_label(id_b)
+    if axis == Category.SEQUENCE:
+        solver_facts.append({"kind": "ordinal_cmp", "a": star_a, "b": star_b, "a_gt_b": a_gt_b})
+    return {
+        "chars": [id_a, id_b, axis_a, axis_b],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+func _build_form_exact_offset(chain: Dictionary) -> Dictionary:
+    var axis: int = Category.SEQUENCE if _rng.randf() < 0.7 else Category.PITCH
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    if a.is_empty():
+        return {}
+    var star_a: int = int(a["star"])
+    var b: Dictionary = _sample_identity_axis_cell(axis, {}, star_a)   # only one node chains per Step 9 — star_b is always fresh
+    if b.is_empty():
+        return {}
+    var star_b: int = int(b["star"])
+    var offset: int = _order_value(axis, star_a) - _order_value(axis, star_b)
+    if offset == 0:
+        return {}   # Pitch can genuinely tie — "exactly 0 steps apart" isn't a meaningful Exact Offset clue.
+    var id_a: Dictionary = {"cat": int(a["id_cat"]), "star": star_a}
+    var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
+    var axis_a: Dictionary = {"cat": axis, "star": star_a}
+    var axis_b: Dictionary = {"cat": axis, "star": star_b}
+    var dir_word: String = _order_word(axis, offset > 0)
+    var text: String = "%s %s exactly %d %s %s than %s." % [_characteristic_label(id_a), _order_verb(axis), abs(offset), _order_unit(axis, abs(offset)), dir_word, _characteristic_label(id_b)]
+    var solver_facts: Array = _seq_fact_for_label(id_a) + _seq_fact_for_label(id_b)
+    if axis == Category.SEQUENCE:
+        solver_facts.append({"kind": "ordinal_offset", "a": star_a, "b": star_b, "offset": offset})
+    return {
+        "chars": [id_a, id_b, axis_a, axis_b],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+func _identity_cell_for_known_star(star: int, axis_cat: int) -> Dictionary:
+    # Like _sample_identity_axis_cell, but for a star whose identity is
+    # already pinned by something OTHER than a free random pick — e.g.
+    # Adjacency's target star, determined by an exact rank offset rather
+    # than chosen among remaining candidates. Same TRUE-cell requirement:
+    # the (id_cat, axis_cat) pairing for this star must not already be
+    # Used, or this attempt fails and the main loop moves on.
+    var id_cat: int = _non_distance_category()
+    while id_cat == axis_cat or not _category_uniquely_labels(id_cat, star):
+        id_cat = _non_distance_category()
+    var id_val: int = int(_cat_star_to_value[id_cat][star])
+    var axis_val: int = int(_cat_star_to_value[axis_cat][star])
+    if bool(_matrix_cell(id_cat, id_val, axis_cat, axis_val)["used"]):
+        return {}
+    return {"id_cat": id_cat, "id_val": id_val, "axis_val": axis_val, "star": star}
+
+
+func _build_form_adjacency(chain: Dictionary) -> Dictionary:
+    var axis: int = Category.SEQUENCE
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    if a.is_empty():
+        return {}
+    var star_a: int = int(a["star"])
+    var val_a: int = _order_value(axis, star_a)
+    var want_next: bool = _rng.randf() < 0.5
+    var target_val: int = val_a + 1 if want_next else val_a - 1
+    if target_val < 0 or target_val >= star_count:
+        want_next = not want_next
+        target_val = val_a + 1 if want_next else val_a - 1
+        if target_val < 0 or target_val >= star_count:
+            return {}
+    var star_b: int = int(_cat_value_to_star[Category.SEQUENCE][target_val])
+    var b: Dictionary = _identity_cell_for_known_star(star_b, axis)
+    if b.is_empty():
+        return {}
+    var id_a: Dictionary = {"cat": int(a["id_cat"]), "star": star_a}
+    var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
+    var axis_a: Dictionary = {"cat": axis, "star": star_a}
+    var axis_b: Dictionary = {"cat": axis, "star": star_b}
+    var word: String = "after" if want_next else "before"
+    var text: String = "%s fires immediately %s %s." % [_characteristic_label(id_a), word, _characteristic_label(id_b)]
+    var solver_facts: Array = _seq_fact_for_label(id_a) + _seq_fact_for_label(id_b)
+    var higher_star: int = star_a if val_a > target_val else star_b
+    var lower_star: int = star_b if val_a > target_val else star_a
+    solver_facts.append({"kind": "ordinal_adjacent", "a": higher_star, "b": lower_star, "offset": 1})
+    return {
+        "chars": [id_a, id_b, axis_a, axis_b],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+func _build_form_equality_pair(chain: Dictionary) -> Dictionary:
+    # Only Color/Pitch can meaningfully hold an equality (Name/Sequence are
+    # alldiff, so two stars can never share a value there by construction).
+    # star_b is a specific, predetermined star (whichever else shares
+    # star_a's raw value), same shape as Form 7's target — not freely
+    # chosen among all remaining candidates like Forms 5/6.
+    var axis: int = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
+    var raw_of: Callable = func(s): return star_colors[s] if axis == Category.COLOR else star_pitch_index[s]
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    if a.is_empty():
+        return {}
+    var star_a: int = int(a["star"])
+    var raw_a = raw_of.call(star_a)
+    var candidates: Array = []
+    for s in star_count:
+        if s != star_a and raw_of.call(s) == raw_a:
+            candidates.append(s)
+    if candidates.is_empty():
+        return {}
+    var star_b: int = int(candidates[_rng.randi_range(0, candidates.size() - 1)])
+    var b: Dictionary = _identity_cell_for_known_star(star_b, axis)
+    if b.is_empty():
+        return {}
+    var id_a: Dictionary = {"cat": int(a["id_cat"]), "star": star_a}
+    var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
+    var axis_a: Dictionary = {"cat": axis, "star": star_a}
+    var axis_b: Dictionary = {"cat": axis, "star": star_b}
+    var noun: String = "color" if axis == Category.COLOR else "pitch"
+    var text: String = "%s and %s have the same %s." % [_characteristic_label(id_a), _characteristic_label(id_b), noun]
+    # axis is always Color/Pitch here — no Sequence-relational content —
+    # but id_cat (excluded only from axis, never from Sequence) can still
+    # be Sequence, in which case its label directly discloses an exact rank.
+    var solver_facts: Array = _seq_fact_for_label(id_a) + _seq_fact_for_label(id_b)
+    return {
+        "chars": [id_a, id_b, axis_a, axis_b],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+# ── Forms 3, 13, 14: comparison-axis derived from the FIRST participant's
+# cell, per the corrected downstream-derivation principle — every
+# subsequent participant's characteristic on that same axis must match. ──
+
+func _build_form_dual_negation(chain: Dictionary) -> Dictionary:
+    # V (the shared negated value) doesn't need its own identity cell — it's
+    # a single, self-sufficient Characteristic (star_v's true value_cat
+    # value), same as any Form 1/2 "value" side. X and Y each need a FALSE
+    # cell pairing their own identity category against (value_cat, star_v's
+    # value) — automatically guaranteed False by bijection for any star !=
+    # star_v, same underlying fact Form 13's participants rely on, just
+    # asserting the negative instead of requiring pairwise-distinct
+    # positives. value_cat restricted to the four bijective categories (was
+    # _random_category, which could hit Distance) — same class of fix as
+    # Form 19's _non_distance_category() switch.
+    var value_cat: int = _non_distance_category()
+    var v_pool: Array = []
+    for sv in star_count:
+        if _category_uniquely_labels(value_cat, sv):
+            v_pool.append(sv)
+    if v_pool.is_empty():
+        return {}
+    var star_v: int = int(v_pool[_rng.randi_range(0, v_pool.size() - 1)])
+    var v_val: int = int(_cat_star_to_value[value_cat][star_v])
+
+    var s1: int = -1
+    var id_cat1: int = -1
+    if not chain.is_empty() and int(chain["cat"]) != Category.DISTANCE and int(chain["cat"]) != value_cat and int(chain["star"]) != star_v:
+        var cs: int = int(chain["star"])
+        var cc: int = int(chain["cat"])
+        if _category_uniquely_labels(cc, cs):
+            var cv: int = int(_cat_star_to_value[cc][cs])
+            if not bool(_matrix_cell(cc, cv, value_cat, v_val)["used"]):
+                s1 = cs
+                id_cat1 = cc
+
+    if s1 == -1:
+        var pool: Array = []
+        for s in star_count:
+            if s != star_v:
+                pool.append(s)
+        _shuffle_array(pool)
+        for cand in pool:
+            var idc: int = _non_distance_category()
+            while idc == value_cat:
+                idc = _non_distance_category()
+            if not _category_uniquely_labels(idc, int(cand)):
+                continue
+            var idv: int = int(_cat_star_to_value[idc][cand])
+            if not bool(_matrix_cell(idc, idv, value_cat, v_val)["used"]):
+                s1 = int(cand)
+                id_cat1 = idc
+                break
+        if s1 == -1:
+            return {}
+
+    var id_cat2: int = _non_distance_category()
+    while id_cat2 == value_cat:
+        id_cat2 = _non_distance_category()
+    var candidates2: Array = []
+    for s in star_count:
+        if s == s1 or s == star_v or not _category_uniquely_labels(id_cat2, s):
+            continue
+        var id_val2: int = int(_cat_star_to_value[id_cat2][s])
+        if not bool(_matrix_cell(id_cat2, id_val2, value_cat, v_val)["used"]):
+            candidates2.append(s)
+    if candidates2.is_empty():
+        return {}
+    var s2: int = int(candidates2[_rng.randi_range(0, candidates2.size() - 1)])
+
+    var false_val: Dictionary = {"cat": value_cat, "star": star_v}
+    var id1: Dictionary = {"cat": id_cat1, "star": s1}
+    var id2: Dictionary = {"cat": id_cat2, "star": s2}
+    var text: String = "Neither %s nor %s is %s." % [_characteristic_label(id1), _characteristic_label(id2), _characteristic_label(false_val)]
+    # All three labels are rendered directly. Additionally, if the shared
+    # negated value is itself Sequence-categorized, "neither is V" means
+    # both s1 and s2 provably do NOT hold V's rank (id_cat1/id_cat2 each
+    # individually exclude value_cat, so at most one side of each pairing
+    # is ever Sequence — the case handled here is disjoint from the label-
+    # based exact facts, not double-counting them).
+    var solver_facts: Array = _seq_fact_for_label(id1) + _seq_fact_for_label(id2) + _seq_fact_for_label(false_val)
+    if value_cat == Category.SEQUENCE:
+        solver_facts.append({"kind": "ordinal_neg", "s": s1, "r": v_val})
+        solver_facts.append({"kind": "ordinal_neg", "s": s2, "r": v_val})
+    return {
+        "chars": [id1, id2, false_val],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": id_cat1, "val_a": int(_cat_star_to_value[id_cat1][s1]), "cat_b": value_cat, "val_b": v_val, "is_true": false},
+            {"cat_a": id_cat2, "val_a": int(_cat_star_to_value[id_cat2][s2]), "cat_b": value_cat, "val_b": v_val, "is_true": false},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+func _join_names_and(labels: Array) -> String:
+    if labels.size() == 1:
+        return str(labels[0])
+    if labels.size() == 2:
+        return "%s and %s" % [labels[0], labels[1]]
+    var head: Array = labels.slice(0, labels.size() - 1)
+    return "%s, and %s" % [", ".join(head), labels[labels.size() - 1]]
+
+
+# ── Form 13: Mutual Exclusion — comparison axis derived from the FIRST
+# participant, every subsequent one identified via any category but forced
+# to share the same axis-side and be pairwise distinct on it. The full
+# multi-axis abstraction, not the same-axis-only special case. ──────────
+
+func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
+    # Each participant needs its own TRUE identity-establishing cell on the
+    # shared axis, exactly like Forms 5-12's single-star case, just N times
+    # over with an added pairwise-distinct-raw-value constraint. Matrix-
+    # checking each candidate here (via _matrix_cell(...)["used"]) is also
+    # a real correctness fix, not just a mechanical port: the old code
+    # never checked participants against the global Used state at all —
+    # only against this-clue-local used_stars/used_raw — so it could have
+    # silently reused an already-committed characteristic as a "new"
+    # participant. Also guards id_cat != axis for the chain participant,
+    # which the old code never checked either — with real cells, pairing
+    # a category against itself isn't just redundant, it's not a grid that
+    # exists at all.
+    var axis: int = Category.COLOR if _rng.randf() < 0.6 else Category.PITCH
+    var raw_of: Callable = func(s): return star_colors[s] if axis == Category.COLOR else star_pitch_index[s]
+    var max_n: int = 4 if axis == Category.COLOR else mini(5, pitch_count)
+    var n: int = maxi(3, mini(max_n, 3 + _rng.randi_range(0, 2)))
+    var participants: Array = []   # each: {id_cat, id_val, axis_val, star}
+    var used_raw: Dictionary = {}
+    var used_stars: Dictionary = {}
+
+    if not chain.is_empty() and int(chain["cat"]) != Category.DISTANCE and int(chain["cat"]) != axis and _category_uniquely_labels(int(chain["cat"]), int(chain["star"])):
+        var cs: int = int(chain["star"])
+        var cc: int = int(chain["cat"])
+        var cv: int = int(_cat_star_to_value[cc][cs])
+        var av: int = int(_cat_star_to_value[axis][cs])
+        if not bool(_matrix_cell(cc, cv, axis, av)["used"]):
+            participants.append({"id_cat": cc, "id_val": cv, "axis_val": av, "star": cs})
+            used_raw[raw_of.call(cs)] = true
+            used_stars[cs] = true
+
+    # TODO (deferred, out of scope for now — flagged 2026-07-21): id_cat
+    # below is drawn independently per participant, so two participants
+    # CAN already end up sharing the same identity category purely by
+    # chance (e.g. both identified via Name). What's still missing is a
+    # DELIBERATE double-category mode — a weighted randomizer controlling
+    # how OFTEN two participants are intentionally forced to share an
+    # identity category, for clue variability in service of player
+    # enjoyment — rather than leaving it to uncontrolled per-participant
+    # chance the way it works today. Revisit once the Forms/matrix
+    # architecture itself is fully locked in; not a priority before then.
+    var attempts: int = 0
+    while participants.size() < n and attempts < 60:
+        attempts += 1
+        var s: int = _rng.randi_range(0, star_count - 1)
+        if used_stars.has(s):
+            continue
+        var raw2 = raw_of.call(s)
+        if used_raw.has(raw2):
+            continue
+        var id_cat: int = _non_distance_category()
+        while id_cat == axis:
+            id_cat = _non_distance_category()
+        if not _category_uniquely_labels(id_cat, s):
+            continue
+        var id_val: int = int(_cat_star_to_value[id_cat][s])
+        var axis_val: int = int(_cat_star_to_value[axis][s])
+        if bool(_matrix_cell(id_cat, id_val, axis, axis_val)["used"]):
+            continue
+        participants.append({"id_cat": id_cat, "id_val": id_val, "axis_val": axis_val, "star": s})
+        used_raw[raw2] = true
+        used_stars[s] = true
+
+    if participants.size() < 3:
+        return {}
+
+    var chars: Array = []
+    var labels: Array = []
+    var grid_updates: Array = []
+    var solver_facts: Array = []
+    for p in participants:
+        var id_ch: Dictionary = {"cat": int(p["id_cat"]), "star": int(p["star"])}
+        chars.append(id_ch)
+        chars.append({"cat": axis, "star": int(p["star"])})
+        labels.append(_characteristic_label(id_ch))
+        grid_updates.append({"cat_a": int(p["id_cat"]), "val_a": int(p["id_val"]), "cat_b": axis, "val_b": int(p["axis_val"]), "is_true": true})
+        # axis is always Color/Pitch here (no Sequence relational content),
+        # but each participant's id_cat only excludes axis, never Sequence.
+        solver_facts.append_array(_seq_fact_for_label(id_ch))
+    var noun: String = "colors" if axis == Category.COLOR else "pitches"
+    var text: String = "%s all have different %s." % [_join_names_and(labels), noun]
+    return {"chars": chars, "text": text, "grid_updates": grid_updates, "solver_facts": solver_facts}
+
+
+# ── Form 14: Group Comparison — multi-axis abstraction (explicit list of
+# individually-referenced targets, not only an implicit shared-value group). ──
+
+func _group_comparison_noun(axis: int) -> String:
+    match axis:
+        Category.SEQUENCE:
+            return "sequence position"
+        Category.PITCH:
+            return "frequency"
+    return "color rank"
+
+
+func _build_form_group_comparison(chain: Dictionary) -> Dictionary:
+    # Subject uses the free-choice pattern (Forms 5/6/8/10/11); each group
+    # member is a specific, predetermined star (whichever passed the
+    # greater/lesser filter), so it uses the Form 7/12 pattern instead —
+    # its own TRUE identity-establishing cell via _identity_cell_for_known_star.
+    var axis: int = _orderable_categories()[_rng.randi_range(0, 1)]
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    if a.is_empty():
+        return {}
+    var subject_star: int = int(a["star"])
+    var subject_val: int = _order_value(axis, subject_star)
+    var s_more: bool = _rng.randf() < 0.5
+    var candidates: Array = []
+    for s in star_count:
+        if s == subject_star:
+            continue
+        var v: int = _order_value(axis, s)
+        if s_more and v >= subject_val:
+            continue
+        if not s_more and v <= subject_val:
+            continue
+        candidates.append(s)
+    if candidates.size() < 2:
+        return {}
+    _shuffle_array(candidates)
+    var n: int = mini(4, candidates.size())
+    var group_stars: Array = candidates.slice(0, n)
+
+    var group_cells: Array = []
+    for gs in group_stars:
+        var g: Dictionary = _identity_cell_for_known_star(int(gs), axis)
+        if g.is_empty():
+            return {}
+        group_cells.append(g)
+
+    var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
+    var subject_axis_ch: Dictionary = {"cat": axis, "star": subject_star}
+    var chars: Array = [subject_id, subject_axis_ch]
+    var labels: Array = []
+    var grid_updates: Array = [
+        {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+    ]
+    var solver_facts: Array = _seq_fact_for_label(subject_id)
+    for g in group_cells:
+        var gid: Dictionary = {"cat": int(g["id_cat"]), "star": int(g["star"])}
+        var gaxis: Dictionary = {"cat": axis, "star": int(g["star"])}
+        chars.append(gid)
+        chars.append(gaxis)
+        labels.append(_characteristic_label(gid))
+        grid_updates.append({"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": axis, "val_b": int(g["axis_val"]), "is_true": true})
+        solver_facts.append_array(_seq_fact_for_label(gid))
+        if axis == Category.SEQUENCE:
+            solver_facts.append({"kind": "ordinal_cmp", "a": subject_star, "b": int(g["star"]), "a_gt_b": s_more})
+    var noun: String = _group_comparison_noun(axis)
+    var word: String = "higher" if s_more else "lower"
+    var text: String = "%s has a %s %s than %s." % [_characteristic_label(subject_id), word, noun, _join_names_and(labels)]
+    return {"chars": chars, "text": text, "grid_updates": grid_updates, "solver_facts": solver_facts}
+
+
+# ── Form 9: Group Order — direct case only (first pass): group = every
+# star sharing one raw Color/Pitch value, derived downstream from a single
+# sampled group-defining characteristic. The multi-axis explicit-list
+# variant (like Group Comparison got) wasn't clarified for this specific
+# Form, so it's deferred rather than guessed at. ─────────────────────────
+
+func _build_form_group_order(chain: Dictionary) -> Dictionary:
+    # Group derivation stays downstream, per the established principle: we
+    # don't pick "a group," we sample a TRUE cell pairing group_cat against
+    # some other random category, and the group falls out as "every star
+    # sharing THAT star's raw group_cat value" — a trivial, no-choice
+    # consequence of which cell landed, not an upstream decision.
+    var group_cat: int = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
+    var g: Dictionary = _sample_identity_axis_cell(group_cat, chain, -1)
+    if g.is_empty():
+        return {}
+    var def_star: int = int(g["star"])
+    var raw_of: Callable = func(s): return star_colors[s] if group_cat == Category.COLOR else star_pitch_index[s]
+    var raw_val = raw_of.call(def_star)
+    var group_stars: Array = []
+    for s in star_count:
+        if raw_of.call(s) == raw_val:
+            group_stars.append(s)
+    var axis: int = Category.SEQUENCE
+    var subject_star: int = -1
+    var subj_id_cat: int = -1
+    var subj_id_val: int = -1
+    var subj_axis_val: int = -1
+    if not chain.is_empty() and int(chain["cat"]) != Category.DISTANCE and int(chain["cat"]) != axis and not group_stars.has(int(chain["star"])) and _category_uniquely_labels(int(chain["cat"]), int(chain["star"])):
+        var cs: int = int(chain["star"])
+        var cc: int = int(chain["cat"])
+        var cv: int = int(_cat_star_to_value[cc][cs])
+        var av: int = int(_cat_star_to_value[axis][cs])
+        if not bool(_matrix_cell(cc, cv, axis, av)["used"]):
+            subject_star = cs
+            subj_id_cat = cc
+            subj_id_val = cv
+            subj_axis_val = av
+    if subject_star == -1:
+        var id_cat: int = _non_distance_category()
+        while id_cat == axis:
+            id_cat = _non_distance_category()
+        var candidates: Array = []
+        for s in star_count:
+            if group_stars.has(s) or not _category_uniquely_labels(id_cat, s):
+                continue
+            var id_val: int = int(_cat_star_to_value[id_cat][s])
+            var axis_val: int = int(_cat_star_to_value[axis][s])
+            if not bool(_matrix_cell(id_cat, id_val, axis, axis_val)["used"]):
+                candidates.append(s)
+        if candidates.is_empty():
+            return {}
+        subject_star = int(candidates[_rng.randi_range(0, candidates.size() - 1)])
+        subj_id_cat = id_cat
+        subj_id_val = int(_cat_star_to_value[id_cat][subject_star])
+        subj_axis_val = int(_cat_star_to_value[axis][subject_star])
+    var subj_val: int = _order_value(axis, subject_star)
+    var precedes: bool = true
+    for gs in group_stars:
+        if _order_value(axis, int(gs)) < subj_val:
+            precedes = false
+            break
+    if not precedes:
+        var follows: bool = true
+        for gs2 in group_stars:
+            if _order_value(axis, int(gs2)) > subj_val:
+                follows = false
+                break
+        if not follows:
+            return {}
+    var subject_id: Dictionary = {"cat": subj_id_cat, "star": subject_star}
+    var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
+    var group_def_ch: Dictionary = {"cat": group_cat, "star": def_star}
+    var group_phrase: String = ("every %s star" % COLOR_NAMES[star_colors[def_star]].to_lower()) if group_cat == Category.COLOR else ("every star that plays %s" % note_name_for_freq(_freq_for_star(def_star)))
+    var verb_word: String = "precedes" if precedes else "follows"
+    var text: String = "%s %s %s." % [_characteristic_label(subject_id), verb_word, group_phrase]
+    # Group members are never individually labeled (group_phrase is a raw
+    # collective description, not built via _characteristic_label) — only
+    # the disclosed relation matters: subject precedes/follows EVERY member.
+    var solver_facts: Array = _seq_fact_for_label(subject_id)
+    for gs3 in group_stars:
+        solver_facts.append({"kind": "ordinal_cmp", "a": subject_star, "b": int(gs3), "a_gt_b": not precedes})
+    return {
+        "chars": [subject_id, subject_axis, group_def_ch],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": group_cat, "val_b": int(g["axis_val"]), "is_true": true},
+            {"cat_a": subj_id_cat, "val_a": subj_id_val, "cat_b": axis, "val_b": subj_axis_val, "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+# ── Forms 10, 11: local-neighborhood facts (map-adjacency via proximity[]) ──
+
+func _build_form_extreme(chain: Dictionary) -> Dictionary:
+    var axis: int = Category.SEQUENCE
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    if a.is_empty():
+        return {}
+    var subject_star: int = int(a["star"])
+    var neighbors: Array = proximity[subject_star]
+    if neighbors.is_empty():
+        return {}
+    var subj_val: int = _order_value(axis, subject_star)
+    var want_lowest: bool = true
+    for n in neighbors:
+        if _order_value(axis, int(n)) < subj_val:
+            want_lowest = false
+            break
+    if not want_lowest:
+        var is_highest: bool = true
+        for n2 in neighbors:
+            if _order_value(axis, int(n2)) > subj_val:
+                is_highest = false
+                break
+        if not is_highest:
+            return {}
+    var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
+    var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
+    var word: String = "earliest" if want_lowest else "latest"
+    var text: String = "%s is the %s to fire among its connected stars." % [_characteristic_label(subject_id), word]
+    var solver_facts: Array = _seq_fact_for_label(subject_id)
+    solver_facts.append({"kind": "ordinal_extreme", "s": subject_star, "want_lowest": want_lowest, "neighbors": neighbors})
+    return {
+        "chars": [subject_id, subject_axis],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+func _build_form_count(chain: Dictionary) -> Dictionary:
+    var axis: int = Category.SEQUENCE
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    if a.is_empty():
+        return {}
+    var subject_star: int = int(a["star"])
+    var neighbors: Array = proximity[subject_star]
+    if neighbors.is_empty():
+        return {}
+    var subj_val: int = _order_value(axis, subject_star)
+    var k: int = 0
+    for n in neighbors:
+        if _order_value(axis, int(n)) < subj_val:
+            k += 1
+    var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
+    var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
+    var text: String = "Exactly %d of %s's connected stars fire before it." % [k, _characteristic_label(subject_id)]
+    var solver_facts: Array = _seq_fact_for_label(subject_id)
+    solver_facts.append({"kind": "ordinal_count_before", "s": subject_star, "k": k, "neighbors": neighbors})
+    return {
+        "chars": [subject_id, subject_axis],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+# ── Forms 15, 16, 19: Distance-anchored facts ────────────────────────────
+
+func _build_form_distance_existential(chain: Dictionary) -> Dictionary:
+    # No comparison axis here (unlike Forms 5-14) — subject_cat just plays
+    # the axis-parameter role for _sample_identity_axis_cell so the subject
+    # gets a real TRUE-cell identity establishment instead of a bare,
+    # matrix-incompatible single-Characteristic pick.
+    var subject_cat: int = _non_distance_category()
+    var a: Dictionary = _sample_identity_axis_cell(subject_cat, chain, -1)
+    if a.is_empty():
+        return {}
+    # prop_cat below is always Color/Pitch (given axes) — if the subject's
+    # own label also lands on a given axis, the whole clue is re-derivable
+    # from the map alone. Reject and let the caller retry with a fresh draw.
+    if not _is_hidden_category(int(a["id_cat"])):
+        return {}
+    var subject_star: int = int(a["star"])
+    var prop_cat: int = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
+    var candidates: Array = []
+    for s in star_count:
+        if s != subject_star and _distances[subject_star][s] != -1:
+            candidates.append(s)
+    if candidates.is_empty():
+        return {}
+    var target: int = int(candidates[_rng.randi_range(0, candidates.size() - 1)])
+    var hop: int = _distances[subject_star][target]
+    var prop_noun: String = ("a %s star" % COLOR_NAMES[star_colors[target]].to_lower()) if prop_cat == Category.COLOR else ("a star that plays %s" % note_name_for_freq(_freq_for_star(target)))
+    var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
+    var dist_ch: Dictionary = {"cat": Category.DISTANCE, "star": target, "ref": subject_star}
+    var text: String = "%s is %d %s from %s." % [_characteristic_label(subject_id), hop, _hop_word(hop), prop_noun]
+    # prop_noun is a raw custom string (color/pitch description), never
+    # built via _characteristic_label — only subject_id's label discloses
+    # anything Sequence-relevant, and only if subject_cat happens to be it.
+    var solver_facts: Array = _seq_fact_for_label(subject_id)
+    return {
+        "chars": [subject_id, dist_ch],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": subject_cat, "val_b": int(a["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+func _build_form_distance_extreme(chain: Dictionary) -> Dictionary:
+    # ref_star: free-choice identity establishment (Form 15's pattern),
+    # displayed via ref_cat itself (preserving the original's label
+    # convention here, rather than the paired id_cat side other migrated
+    # Forms display through — both sides are equally valid/true labels for
+    # the same star; this Form just happened to use the other one).
+    var ref_cat: int = _non_distance_category()
+    var r: Dictionary = _sample_identity_axis_cell(ref_cat, chain, -1)
+    if r.is_empty():
+        return {}
+    var ref_star: int = int(r["star"])
+    # ref_cat plays the AXIS role inside _sample_identity_axis_cell, which
+    # only guards the PAIRED id_cat side's uniqueness — ref_cat itself is
+    # used directly as ref_ch2's label below, so its own group size for
+    # THIS star still needs checking (unlike Form 15, which labels via
+    # a["id_cat"] instead of the axis category, and so doesn't need this).
+    if not _category_uniquely_labels(ref_cat, ref_star):
+        return {}
+    var best_star: int = -1
+    var best_d: int = -1
+    var want_closest: bool = _rng.randf() < 0.5
+    for s in star_count:
+        if s == ref_star:
+            continue
+        var d: int = _distances[ref_star][s]
+        if d == -1:
+            continue
+        if best_star == -1 or (want_closest and d < best_d) or (not want_closest and d > best_d):
+            best_star = s
+            best_d = d
+    if best_star == -1:
+        return {}
+    for s2 in star_count:
+        if s2 == ref_star or s2 == best_star:
+            continue
+        if _distances[ref_star][s2] == best_d:
+            return {}
+    # target: a specific, predetermined star (the extreme-distance winner),
+    # same Form 7/12/14 pattern. Minor behavior note: its identity category
+    # is now guaranteed different from ref_cat (a side effect of reusing
+    # _identity_cell_for_known_star's id_cat != axis_cat guard) rather than
+    # being a fully free random pick that could coincidentally match —
+    # arguably an improvement (avoids "the yellow star is farthest from the
+    # red star"-style redundancy), flagging since it's still a behavior change.
+    var t: Dictionary = _identity_cell_for_known_star(best_star, ref_cat)
+    if t.is_empty():
+        return {}
+    var ref_ch2: Dictionary = {"cat": ref_cat, "star": ref_star}
+    var target_dist_ch: Dictionary = {"cat": Category.DISTANCE, "star": best_star, "ref": ref_star}
+    var target_id: Dictionary = {"cat": int(t["id_cat"]), "star": best_star}
+    # Both ends can independently land on Color/Pitch — reject only when
+    # NEITHER side touches a hidden axis (see _is_hidden_category), same
+    # "at least one labeled star must be genuinely unknown" rule as
+    # Form 15/19.
+    if not _is_hidden_category(ref_cat) and not _is_hidden_category(int(t["id_cat"])):
+        return {}
+    var word: String = "closest" if want_closest else "farthest"
+    var text: String = "%s is the %s star to %s." % [_characteristic_label(target_id), word, _characteristic_label(ref_ch2)]
+    # Both labels are rendered; no Sequence-relational content either way —
+    # closest/farthest is a hop-distance fact, unrelated to Sequence order.
+    var solver_facts: Array = _seq_fact_for_label(ref_ch2) + _seq_fact_for_label(target_id)
+    return {
+        "chars": [ref_ch2, target_id, target_dist_ch],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(r["id_cat"]), "val_a": int(r["id_val"]), "cat_b": ref_cat, "val_b": int(r["axis_val"]), "is_true": true},
+            {"cat_a": int(t["id_cat"]), "val_a": int(t["id_val"]), "cat_b": ref_cat, "val_b": int(t["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+func _build_form_non_adjacency(chain: Dictionary) -> Dictionary:
+    # subject: free-choice identity establishment (Form 15's pattern). value:
+    # a star that must be neither subject_star nor one of its map-neighbors
+    # — a whole-set exclusion _sample_identity_axis_cell doesn't support
+    # (single exclude_star only), so this needs its own inline candidate
+    # loop, same reason Forms 9/17 needed one. value_cat now restricted to
+    # the four bijective categories (was _random_other_category, which could
+    # land on Distance) — the old Distance branch of
+    # _unused_characteristics_for always returned empty without a
+    # reference star, so roughly 1/4 of attempts silently auto-failed;
+    # removing that dead branch outright rather than replicating the waste.
+    var subject_cat: int = _non_distance_category()
+    var a: Dictionary = _sample_identity_axis_cell(subject_cat, chain, -1)
+    if a.is_empty():
+        return {}
+    var subject_star: int = int(a["star"])
+    # subject_id below is labeled via subject_cat directly (not a["id_cat"]),
+    # so — like Form 16's ref_ch2 — subject_cat's own uniqueness for this
+    # star needs its own check; _sample_identity_axis_cell only guarded
+    # a["id_cat"]'s side.
+    if not _category_uniquely_labels(subject_cat, subject_star):
+        return {}
+    var neighbor_set: Dictionary = {}
+    for n in proximity[subject_star]:
+        neighbor_set[int(n)] = true
+    var value_cat: int = _non_distance_category()
+    while value_cat == subject_cat:
+        value_cat = _non_distance_category()
+    # Same "at least one labeled star must be genuinely unknown" rule as
+    # Form 15/16 — reject before the expensive candidate search below if
+    # both ends would land on Color/Pitch.
+    if not _is_hidden_category(subject_cat) and not _is_hidden_category(value_cat):
+        return {}
+    var id_cat2: int = _non_distance_category()
+    while id_cat2 == value_cat:
+        id_cat2 = _non_distance_category()
+    var candidates: Array = []
+    for s in star_count:
+        if s == subject_star or neighbor_set.has(s) or not _category_uniquely_labels(value_cat, s):
+            continue
+        var id_val2: int = int(_cat_star_to_value[id_cat2][s])
+        var val_val2: int = int(_cat_star_to_value[value_cat][s])
+        if not bool(_matrix_cell(id_cat2, id_val2, value_cat, val_val2)["used"]):
+            candidates.append(s)
+    if candidates.is_empty():
+        return {}
+    var value_star: int = int(candidates[_rng.randi_range(0, candidates.size() - 1)])
+    var value_ch: Dictionary = {"cat": value_cat, "star": value_star}
+    var subject_id: Dictionary = {"cat": subject_cat, "star": subject_star}
+    var text: String = "%s is not connected to %s." % [_characteristic_label(subject_id), _characteristic_label(value_ch)]
+    # Map-adjacency, not Sequence-adjacency — no relational Sequence content;
+    # only the two rendered labels can disclose anything Sequence-relevant.
+    var solver_facts: Array = _seq_fact_for_label(subject_id) + _seq_fact_for_label(value_ch)
+    return {
+        "chars": [subject_id, value_ch],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": subject_cat, "val_b": int(a["axis_val"]), "is_true": true},
+            {"cat_a": id_cat2, "val_a": int(_cat_star_to_value[id_cat2][value_star]), "cat_b": value_cat, "val_b": int(_cat_star_to_value[value_cat][value_star]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+func _build_form_betweenness(chain: Dictionary) -> Dictionary:
+    # Three stars, all freely chosen among remaining candidates (none is
+    # predetermined the way Form 7/12/14/16's targets are). s1/s2 reuse
+    # _sample_identity_axis_cell; s3 needs its own inline pick since that
+    # helper only supports a single exclude_star and this needs to exclude
+    # both s1 and s2 at once.
+    var axis: int = Category.SEQUENCE if _rng.randf() < 0.7 else Category.PITCH
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    if a.is_empty():
+        return {}
+    var s1: int = int(a["star"])
+    var b: Dictionary = _sample_identity_axis_cell(axis, {}, s1)   # only one node chains per Step 9
+    if b.is_empty():
+        return {}
+    var s2: int = int(b["star"])
+    var id_cat3: int = _non_distance_category()
+    while id_cat3 == axis:
+        id_cat3 = _non_distance_category()
+    var candidates3: Array = []
+    for s in star_count:
+        if s == s1 or s == s2 or not _category_uniquely_labels(id_cat3, s):
+            continue
+        var id_val3: int = int(_cat_star_to_value[id_cat3][s])
+        var axis_val3: int = int(_cat_star_to_value[axis][s])
+        if not bool(_matrix_cell(id_cat3, id_val3, axis, axis_val3)["used"]):
+            candidates3.append(s)
+    if candidates3.is_empty():
+        return {}
+    var s3: int = int(candidates3[_rng.randi_range(0, candidates3.size() - 1)])
+    var c: Dictionary = {"id_cat": id_cat3, "id_val": int(_cat_star_to_value[id_cat3][s3]), "axis_val": int(_cat_star_to_value[axis][s3]), "star": s3}
+
+    if _order_value(axis, s1) == _order_value(axis, s2) or _order_value(axis, s2) == _order_value(axis, s3) or _order_value(axis, s1) == _order_value(axis, s3):
+        return {}   # Pitch ranks can genuinely tie (unlike Sequence, which never does) —
+                     # a tied pair can't support a strict betweenness claim.
+
+    var stars_info: Dictionary = {s1: a, s2: b, s3: c}
+    var ranked: Array = [s1, s2, s3]
+    ranked.sort_custom(func(x, y): return _order_value(axis, x) < _order_value(axis, y))
+    var lo: int = int(ranked[0])
+    var mid: int = int(ranked[1])
+    var hi: int = int(ranked[2])
+    var lo_info: Dictionary = stars_info[lo]
+    var mid_info: Dictionary = stars_info[mid]
+    var hi_info: Dictionary = stars_info[hi]
+    var lo_id: Dictionary = {"cat": int(lo_info["id_cat"]), "star": lo}
+    var mid_id: Dictionary = {"cat": int(mid_info["id_cat"]), "star": mid}
+    var hi_id: Dictionary = {"cat": int(hi_info["id_cat"]), "star": hi}
+    var axis_lo: Dictionary = {"cat": axis, "star": lo}
+    var axis_mid: Dictionary = {"cat": axis, "star": mid}
+    var axis_hi: Dictionary = {"cat": axis, "star": hi}
+    var verb: String = _order_verb(axis)
+    var text: String
+    match _rng.randi() % 3:
+        0:
+            text = "%s %s between %s and %s." % [_characteristic_label(mid_id), verb, _characteristic_label(lo_id), _characteristic_label(hi_id)]
+        1:
+            text = "%s %s before %s, which %s before %s." % [_characteristic_label(lo_id), verb, _characteristic_label(mid_id), verb, _characteristic_label(hi_id)]
+        _:
+            text = "%s %s after %s, which %s after %s." % [_characteristic_label(hi_id), verb, _characteristic_label(mid_id), verb, _characteristic_label(lo_id)]
+    var solver_facts: Array = _seq_fact_for_label(lo_id) + _seq_fact_for_label(mid_id) + _seq_fact_for_label(hi_id)
+    if axis == Category.SEQUENCE:
+        solver_facts.append({"kind": "ordinal_chain", "a": lo, "mid": mid, "b": hi})
+    return {
+        "chars": [lo_id, mid_id, hi_id, axis_lo, axis_mid, axis_hi],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
+            {"cat_a": int(c["id_cat"]), "val_a": int(c["id_val"]), "cat_b": axis, "val_b": int(c["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+# ── Form 20: Cross-Domain Bridge — first pass ────────────────────────────
+
+func _build_form_cross_domain_bridge(chain: Dictionary) -> Dictionary:
+    # Group derivation stays downstream (Form 9/13's pattern): sample a TRUE
+    # cell pairing group_cat against some other category, group falls out
+    # as "every star sharing that raw value." extreme_star is then fully
+    # determined (the group's Sequence-extreme member), so d2's TRUE cell
+    # is a direct (d1, d2) pairing for that already-known star, not a fresh
+    # identity establishment. Also cleaned up d2's selection: the old
+    # fallback ("if d2 lands on Distance, silently swap to Name") only
+    # worked by coincidence (Name never equals group_cat/d1 here); using
+    # _non_distance_category() directly removes the coincidence dependency.
+    var group_cat: int = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
+    var g: Dictionary = _sample_identity_axis_cell(group_cat, chain, -1)
+    if g.is_empty():
+        return {}
+    var def_star: int = int(g["star"])
+    var raw_of: Callable = func(s): return star_colors[s] if group_cat == Category.COLOR else star_pitch_index[s]
+    var raw_val = raw_of.call(def_star)
+    var group_stars: Array = []
+    for s in star_count:
+        if raw_of.call(s) == raw_val:
+            group_stars.append(s)
+    if group_stars.size() < 2:
+        return {}
+    var d1: int = Category.SEQUENCE
+    var want_lowest: bool = _rng.randf() < 0.5
+    var extreme_star: int = int(group_stars[0])
+    for gs in group_stars:
+        var v: int = _order_value(d1, int(gs))
+        var cur: int = _order_value(d1, extreme_star)
+        if (want_lowest and v < cur) or (not want_lowest and v > cur):
+            extreme_star = int(gs)
+    var d2: int = _non_distance_category()
+    while d2 == group_cat or d2 == d1 or not _category_uniquely_labels(d2, extreme_star):
+        d2 = _non_distance_category()
+    var d1_val: int = int(_cat_star_to_value[d1][extreme_star])
+    var d2_val: int = int(_cat_star_to_value[d2][extreme_star])
+    if bool(_matrix_cell(d1, d1_val, d2, d2_val)["used"]):
+        return {}
+    var d2_ch: Dictionary = {"cat": d2, "star": extreme_star}
+    var d1_ch: Dictionary = {"cat": d1, "star": extreme_star}
+    var group_def_ch: Dictionary = {"cat": group_cat, "star": def_star}
+    var group_phrase: String = ("the %s stars" % COLOR_NAMES[star_colors[def_star]].to_lower()) if group_cat == Category.COLOR else ("the stars that play %s" % note_name_for_freq(_freq_for_star(def_star)))
+    var extreme_word: String = "earliest-firing" if want_lowest else "latest-firing"
+    var text: String = "Among %s, the %s one is %s." % [group_phrase, extreme_word, _characteristic_label(d2_ch)]
+    # group_phrase is a raw custom string, never through _characteristic_
+    # label; d1_ch (the Sequence node) is bookkeeping only, never rendered
+    # either — "earliest/latest-firing among the group" discloses only a
+    # RELATIVE extreme fact (like Forms 9/11/14), never extreme_star's
+    # absolute rank, so this needs ordinal_extreme, not ordinal_exact.
+    var extreme_neighbors: Array = []
+    for gs4 in group_stars:
+        if int(gs4) != extreme_star:
+            extreme_neighbors.append(int(gs4))
+    var solver_facts: Array = _seq_fact_for_label(d2_ch)
+    solver_facts.append({"kind": "ordinal_extreme", "s": extreme_star, "want_lowest": want_lowest, "neighbors": extreme_neighbors})
+    return {
+        "chars": [group_def_ch, d1_ch, d2_ch],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": group_cat, "val_b": int(g["axis_val"]), "is_true": true},
+            {"cat_a": d1, "val_a": d1_val, "cat_b": d2, "val_b": d2_val, "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+# ── Forms 21, 22: Pseudo-True Pair — read directly off two stars' actual
+# ground-truth values, presented as a domain restriction. ────────────────
+
+func _build_form_pseudo_true_pair_aligned(chain: Dictionary) -> Dictionary:
+    # Two freely-chosen stars, same shape as Forms 5/6.
+    var axis: int = Category.SEQUENCE if _rng.randf() < 0.6 else Category.PITCH
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    if a.is_empty():
+        return {}
+    var s1: int = int(a["star"])
+    var b: Dictionary = _sample_identity_axis_cell(axis, {}, s1)   # only one node chains per Step 9
+    if b.is_empty():
+        return {}
+    var s2: int = int(b["star"])
+    # v1_ch/v2_ch below label s1/s2 via the AXIS category directly (not the
+    # paired id_cat side _sample_identity_axis_cell already guards) — same
+    # special case as Form 16/19/20's direct-axis labeling, needed here
+    # because axis can be Pitch, where a shared-note group would otherwise
+    # render an unverifiable "marked B" sub-rank letter.
+    if not _category_uniquely_labels(axis, s1) or not _category_uniquely_labels(axis, s2):
+        return {}
+    var id1: Dictionary = {"cat": int(a["id_cat"]), "star": s1}
+    var id2: Dictionary = {"cat": int(b["id_cat"]), "star": s2}
+    var v1_ch: Dictionary = {"cat": axis, "star": s1}
+    var v2_ch: Dictionary = {"cat": axis, "star": s2}
+    var text: String = "%s and %s can only be %s or %s." % [_characteristic_label(id1), _characteristic_label(id2), _characteristic_label(v1_ch), _characteristic_label(v2_ch)]
+    # v1_ch/v2_ch are each star's OWN true value (never a decoy, unlike Form
+    # 22) — when axis is Sequence, a Sequence label is always unambiguous
+    # (alldiff), so this "can only be X or Y" phrasing discloses both stars'
+    # exact ranks directly via their labels, same as any other rendered
+    # Sequence label; no separate relational fact is needed or would add
+    # anything beyond what the four label-facts already capture.
+    var solver_facts: Array = _seq_fact_for_label(id1) + _seq_fact_for_label(id2) + _seq_fact_for_label(v1_ch) + _seq_fact_for_label(v2_ch)
+    return {
+        "chars": [id1, id2, v1_ch, v2_ch],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+func _build_form_pseudo_true_pair_staggered(chain: Dictionary) -> Dictionary:
+    # s_x/s_y: two freely-chosen stars (Forms 5/6/21's pattern). decoy: a
+    # FALSE cell in s_x's own row (same axis, different column) — same
+    # shape as Form 4's Disjunction decoy, just also excluded from
+    # matching s_y's actual value so the two "either/or" pairs genuinely
+    # stagger (share exactly one option) rather than coincidentally align.
+    var axis: int = Category.SEQUENCE if _rng.randf() < 0.6 else Category.PITCH
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    if a.is_empty():
+        return {}
+    var s_x: int = int(a["star"])
+    var b: Dictionary = _sample_identity_axis_cell(axis, {}, s_x)   # only one node chains per Step 9
+    if b.is_empty():
+        return {}
+    var s_y: int = int(b["star"])
+    # vx_ch/vy_ch/decoy_ch below all label their star via the AXIS category
+    # directly — same special case as Form 21 above; s_x/s_y need checking
+    # here, and the decoy candidate (a third, genuinely different star)
+    # needs the same check in the loop below.
+    if not _category_uniquely_labels(axis, s_x) or not _category_uniquely_labels(axis, s_y):
+        return {}
+    var id_cat_a: int = int(a["id_cat"])
+    var id_val_a: int = int(a["id_val"])
+    var true_axis_val: int = int(a["axis_val"])
+    var y_axis_val: int = int(_cat_star_to_value[axis][s_y])
+    var decoy_candidates: Array = []
+    for v in star_count:
+        if v == true_axis_val or v == y_axis_val:
+            continue
+        if not bool(_matrix_cell(id_cat_a, id_val_a, axis, v)["used"]) and _category_uniquely_labels(axis, int(_cat_value_to_star[axis][v])):
+            decoy_candidates.append(v)
+    if decoy_candidates.is_empty():
+        return {}
+    var decoy_val: int = int(decoy_candidates[_rng.randi_range(0, decoy_candidates.size() - 1)])
+    var decoy_ch: Dictionary = {"cat": axis, "star": int(_cat_value_to_star[axis][decoy_val])}
+    var id_x: Dictionary = {"cat": id_cat_a, "star": s_x}
+    var id_y: Dictionary = {"cat": int(b["id_cat"]), "star": s_y}
+    var vx_ch: Dictionary = {"cat": axis, "star": s_x}
+    var vy_ch: Dictionary = {"cat": axis, "star": s_y}
+    var order_word: String = _order_word(axis, _order_value(axis, s_x) > _order_value(axis, s_y))
+    var verb: String = _order_verb(axis)
+    var text: String = "%s can be %s or %s, %s can be %s or %s, and %s %s %s than %s." % [
+        _characteristic_label(id_x), _characteristic_label(vx_ch), _characteristic_label(decoy_ch),
+        _characteristic_label(id_y), _characteristic_label(decoy_ch), _characteristic_label(vy_ch),
+        _characteristic_label(id_x), verb, order_word, _characteristic_label(id_y)]
+    # vx_ch/vy_ch are s_x's/s_y's OWN true values; decoy_ch is a third,
+    # genuinely different star's own true value — every one of these labels
+    # discloses an exact rank on its own star when axis is Sequence (a
+    # Sequence label is never ambiguous), regardless of the "can be X or Y"
+    # framing built around them. The trailing comparison is a real,
+    # independent fact too (redundant with the exact facts when axis is
+    # Sequence, but sound to include either way).
+    var solver_facts: Array = _seq_fact_for_label(id_x) + _seq_fact_for_label(id_y) \
+        + _seq_fact_for_label(vx_ch) + _seq_fact_for_label(vy_ch) + _seq_fact_for_label(decoy_ch)
+    if axis == Category.SEQUENCE:
+        solver_facts.append({"kind": "ordinal_cmp", "a": s_x, "b": s_y, "a_gt_b": _order_value(axis, s_x) > _order_value(axis, s_y)})
+    return {
+        "chars": [id_x, id_y, vx_ch, vy_ch, decoy_ch],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": id_cat_a, "val_a": id_val_a, "cat_b": axis, "val_b": true_axis_val, "is_true": true},
+            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": y_axis_val, "is_true": true},
+            {"cat_a": id_cat_a, "val_a": id_val_a, "cat_b": axis, "val_b": decoy_val, "is_true": false},
+        ],
+        "solver_facts": solver_facts,
+    }
+
+
+# ==================================================
+# ZEBRATUTOR PASS — retired, 2026-07-22: this Sequence-only standalone
+# tracker was mathematically redundant with the matrix's own Name x
+# Sequence pair the moment every Form started producing grid_updates.
+# Name's bijection is a trivial identity mapping (_cat_value_to_star
+# [Category.NAME][i] == i), so the Name x Sequence matrix grid IS the same
+# star x rank grid this used to maintain separately — same shape, same
+# semantics, same algorithms (_apply_exact_clues-equivalent cascade +
+# _naked_subset_pass), just duplicated across two data structures instead
+# of one. Removed rather than "extended to more Forms," since extending it
+# would have meant keeping two parallel trackers for the identical fact —
+# the same class of redundancy already corrected twice this session (the
+# ten possibility grids, then the separate cell-used dict). All Sequence
+# derivability now flows through _grid_zebratutor_pass on the Name x
+# Sequence (and Sequence x Color, Sequence x Pitch) matrix pairs, which
+# also now has naked-pair/triple elimination this standalone version
+# already had — see _grid_zebratutor_pass above.
+
+
+# ==================================================
+# FORM TIERS — Perception axis (target clueset composition) vs. Engine
+# Execution axis (proportional-fair scheduling with opportunistic fallback)
+# ==================================================
+# Tier 1 (Entry Anchors), Tier 2 (Relational Workhorses), Tier 3 (Systemic
+# Constraints) are a PERCEPTION classification — how a clue reads/scans to
+# a player during simultaneous-reveal, co-solving play — not a mechanical
+# hit-rate ranking. Several Tier 1/2/3 forms actually have very different
+# real construction success rates (e.g. Betweenness needs 3 True cells,
+# Distance Existential needs 1), which is exactly why a separate execution
+# strategy (below) exists rather than folding hit-rate into the tiers
+# themselves. Six forms (4, 5, 8, 12, 16, 19) weren't in the user's
+# original breakdown — placed by matching the experiential character of
+# forms already assigned to each tier; flagged for adjustment, especially
+# Non-Adjacency (19), the least confident placement.
+const FORM_TIER := {
+    1: 1, 2: 1, 4: 1, 6: 1, 8: 1, 10: 1, 11: 1,             # Entry Anchors
+    5: 2, 7: 2, 12: 2, 15: 2, 16: 2, 17: 2, 19: 2, 21: 2, 22: 2,  # Relational Workhorses
+    3: 3, 9: 3, 13: 3, 14: 3, 20: 3,                        # Systemic Constraints
+}
+# Single target composition for the finished clueset (collapsed from the
+# three phase-based ratios via simple averaging — a starting point, not a
+# measured result; easy to retune once real generation output is visible).
+const TIER_TARGET_RATIO := {1: 0.25, 2: 0.45, 3: 0.30}
+const TIER_OPPORTUNISTIC_ATTEMPTS := 4
+# Per-tier attempts before falling through to the next-most-underrepresented
+# tier, rather than exhausting the whole stall budget hammering one tier
+# that's currently out of constructible cells.
+
+
+func _tiers_by_underrepresentation(tier_counts: Dictionary) -> Array:
+    var total: int = 0
+    for t in tier_counts.values():
+        total += int(t)
+    var tiers: Array = [1, 2, 3]
+    tiers.sort_custom(func(a, b):
+        var actual_a: float = (float(tier_counts[a]) / float(total)) if total > 0 else 0.0
+        var actual_b: float = (float(tier_counts[b]) / float(total)) if total > 0 else 0.0
+        var gap_a: float = float(TIER_TARGET_RATIO[a]) - actual_a
+        var gap_b: float = float(TIER_TARGET_RATIO[b]) - actual_b
+        return gap_a > gap_b)
+    return tiers
+
+
+func _forms_in_tier(tier: int) -> Array:
+    var out: Array = []
+    for form_id in AUTOMATED_FORM_IDS:
+        if int(FORM_TIER.get(int(form_id), 2)) == tier:
+            out.append(form_id)
+    return out
+
+
+# ==================================================
+# GENERATION PIPELINE
+# ==================================================
+
+var chosen_form_clues: Array[Dictionary] = []
+
+const MAX_GENERATION_ATTEMPTS := 5
+# A failed uniqueness gate (see _generate_clues_forms_attempt's return)
+# means this specific random draw's clue set didn't happen to pin down
+# Sequence and Name — not that the constellation itself is unsolvable.
+# Retrying with a fresh draw (the _rng stream has already advanced, so a
+# retry is a genuinely different attempt, not a repeat) resolves it in
+# all but the most structurally constrained cases; 5 attempts matches the
+# same bounded-retry pattern already used elsewhere (TIER_OPPORTUNISTIC_
+# ATTEMPTS, MAX_BACKTRACK_NODES) rather than looping indefinitely.
+func generate_clues_forms() -> void:
+    var result: Dictionary = {}
+    var attempt: int = 0
+    while attempt < MAX_GENERATION_ATTEMPTS:
+        attempt += 1
+        result = _generate_clues_forms_attempt()
+        if bool(result["seq_unique"]) and bool(result["name_unique"]):
+            break
+        print("[FORMS_GEN %d] attempt %d/%d not yet unique (sequence_solutions=%d, all_names_revealed=%s) — retrying with a fresh draw." % [
+            constellation_id, attempt, MAX_GENERATION_ATTEMPTS, int(result["seq_solutions_count"]), str(result["name_unique"])])
+    if not (bool(result["seq_unique"]) and bool(result["name_unique"])):
+        push_error("ConstellationLogicPuzzle [%d]: STILL NOT UNIQUE after %d generation attempts (sequence_solutions=%d, all_names_revealed=%s) — puzzle unsolvable as configured." % [
+            constellation_id, MAX_GENERATION_ATTEMPTS, int(result["seq_solutions_count"]), str(result["name_unique"])])
+    _generation_complete = true
+    print("[FORMS_GEN %d] generated %d clues after %d attempt(s), unused pool remaining=%d, tier composition=%s, sequence_unique=%s, name_unique=%s" % [
+        constellation_id, chosen_form_clues.size(), attempt, _unused_pool_size(), str(result["tier_counts"]), str(result["seq_unique"]), str(result["name_unique"])])
+
+
+func _generate_clues_forms_attempt() -> Dictionary:
+    _build_record_array()
+    _build_matrix()
+    _used_characteristics = {}
+    _last_clue_nodes = []
+    chosen_form_clues = []
+    # Phase C — uniqueness verification inputs, accumulated alongside the
+    # clue set itself (not persisted to cache; only needed transiently
+    # here). sequence_solver_facts feeds the already-correct, already-
+    # ported _solve() (shown-clues-only CSP, never ground truth) to prove
+    # Sequence has exactly one consistent solution. name_revealed tracks,
+    # per star, whether any committed clue's Name node co-occurred with a
+    # DIFFERENT-category node describing that SAME star — sufficient once
+    # Sequence-uniqueness holds, since every other category is then either
+    # directly observable (Color/Pitch/Distance) or itself derivable
+    # (Sequence, by the very uniqueness just proven) — see the header note
+    # above _seq_fact_for_label for why this can't be approximated from
+    # matrix Used-state directly.
+    var sequence_solver_facts: Array[Dictionary] = []
+    var name_revealed: Array[bool] = []
+    for _s in star_count:
+        name_revealed.append(false)
+    var tier_counts: Dictionary = {1: 0, 2: 0, 3: 0}
+    var stall_count: int = 0
+    # Step 13's termination target grew a lot (every real matrix cell, not
+    # the old coarse per-Characteristic count) — the old flat stall budget
+    # was sized against the smaller number and would almost certainly cut
+    # generation short well before the pool was actually exhausted.
+    var max_stall: int = maxi(400, _unused_pool_size() * 2)
+    while _unused_pool_size() > 0 and stall_count < max_stall:
+        var tier_order: Array = _tiers_by_underrepresentation(tier_counts)
+        var committed: bool = false
+        for tier in tier_order:
+            var tier_forms: Array = _forms_in_tier(int(tier))
+            if tier_forms.is_empty():
+                continue
+            _shuffle_array(tier_forms)
+            var tier_attempts: int = 0
+            var succeeded: bool = false
+            while tier_attempts < TIER_OPPORTUNISTIC_ATTEMPTS and not succeeded:
+                tier_attempts += 1
+                var form_id: int = int(tier_forms[tier_attempts % tier_forms.size()])
+                var chain: Dictionary = _pick_chain_characteristic()
+                var result: Dictionary = _build_form(form_id, chain)
+                if result.is_empty():
+                    continue
+                # Most Forms' templates start with a rendered star label
+                # ("the white star...", "a star that plays..."), which is
+                # correct mid-sentence but needs sentence-initial
+                # capitalization here — a handful of Forms (3, 10, 20)
+                # already start with a literal capitalized word ("Neither",
+                # "Exactly", "Among"), for which this is a harmless no-op.
+                var text: String = _capitalize_first(str(result.get("text", "")))
+                var dupe: bool = false
+                for c in chosen_form_clues:
+                    if str(c.get("text", "")) == text:
+                        dupe = true
+                        break
+                if dupe:
+                    continue
+                var chars: Array = result["chars"]
+                _commit_characteristics(chars)
+                chosen_form_clues.append({
+                    "form_id": form_id,
+                    "form_name": str(FORM_NAMES.get(form_id, "")),
+                    "text": text,
+                    "characteristics": _clue_characteristics(chars),
+                })
+                if result.has("solver_facts"):
+                    for f in result["solver_facts"]:
+                        sequence_solver_facts.append(f)
+                # A Name node only reveals its star if THIS SAME clue also
+                # has a different-category node describing the SAME star —
+                # not merely "some other node exists somewhere in chars"
+                # (the old check), which wrongly credited a reveal even
+                # when the other node described a DIFFERENT star entirely
+                # (e.g. Dual Negation with id_cat1==id_cat2==Name: id1
+                # names s1, id2 names s2, and neither co-occurs with any
+                # other characteristic of ITS OWN star in that clue).
+                var stars_with_name: Dictionary = {}
+                var stars_with_other: Dictionary = {}
+                for ch2 in chars:
+                    var ch2_star: int = int(ch2["star"])
+                    if int(ch2["cat"]) == Category.NAME:
+                        stars_with_name[ch2_star] = true
+                    else:
+                        stars_with_other[ch2_star] = true
+                for named_star in stars_with_name.keys():
+                    if stars_with_other.has(named_star):
+                        name_revealed[int(named_star)] = true
+                if result.has("grid_updates"):
+                    var touched_pairs: Dictionary = {}
+                    for gu in result["grid_updates"]:
+                        var g: Dictionary = gu
+                        _apply_grid_cell_result(int(g["cat_a"]), int(g["val_a"]), int(g["cat_b"]), int(g["val_b"]), bool(g["is_true"]))
+                        touched_pairs[_pair_key(int(g["cat_a"]), int(g["cat_b"]))] = [int(g["cat_a"]), int(g["cat_b"])]
+                    for key in touched_pairs.keys():
+                        var pair: Array = touched_pairs[key]
+                        _grid_zebratutor_pass(int(pair[0]), int(pair[1]))
+                _last_clue_nodes = chars
+                tier_counts[int(tier)] = int(tier_counts[int(tier)]) + 1
+                succeeded = true
+            if succeeded:
+                committed = true
+                break
+        if committed:
+            stall_count = 0
+        else:
+            stall_count += 1
+
+    # Phase C — uniqueness gate for THIS attempt. Whether a failure here
+    # gets retried with a fresh draw (rather than shipped as-is) is decided
+    # by the caller, generate_clues_forms().
+    for f in sequence_solver_facts:
+        var violation: String = _validate_sequence_fact(f)
+        if violation != "":
+            push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT SEQUENCE FACT — %s" % [constellation_id, violation])
+    var seq_solutions: Array = _solve(sequence_solver_facts, 2)
+    var seq_unique: bool = seq_solutions.size() == 1
+    var name_unique: bool = true
+    for revealed in name_revealed:
+        if not revealed:
+            name_unique = false
+            break
+    return {
+        "seq_unique": seq_unique,
+        "name_unique": name_unique,
+        "seq_solutions_count": seq_solutions.size(),
+        "tier_counts": tier_counts,
+    }
+
+
+func get_form_clue_texts() -> Array[String]:
+    var texts: Array[String] = []
+    for c in chosen_form_clues:
+        texts.append(str(c.get("text", "")))
+    return texts

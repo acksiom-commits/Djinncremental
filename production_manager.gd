@@ -1273,8 +1273,9 @@ func get_consumption_network() -> Dictionary:
         "particle": [{"op": "iota_assemble",     "cost": 4},
                      {"op": "grain_assemble",    "cost": 16}],
         "iota":     [{"op": "mote_compress",     "cost": 5}],
-        "mote":     [{"op": "grain_assemble",    "cost": 4}],
-        "grain":    [{"op": "uonite_create",     "cost": 20}],
+        "mote":     [{"op": "grain_assemble",    "cost": 4},
+                     {"op": "uonite_create",     "cost": 20}],
+        "grain":    [],
         "uonite":   [],
     }
 

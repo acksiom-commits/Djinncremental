@@ -22,9 +22,9 @@
 [ext_resource type="PackedScene" uid="uid://3biuj3blqqca" path="res://UoniteIcosahedron.tscn" id="17_12345"]
 [ext_resource type="Script" uid="uid://en5fyk5h6uma" path="res://storage_display.gd" id="17_nvahd"]
 [ext_resource type="Shader" uid="uid://bwd7ediqhrse" path="res://uonite_fill.gdshader" id="19_vou2s"]
-[ext_resource type="Script" uid="uid://bjhdsykofwppd" path="res://dialogue_journal_popout.gd" id="23_p3b26"]
+[ext_resource type="Script" uid="uid://28melt7ee4d2" path="res://journal_popout.gd" id="23_p3b26"]
 [ext_resource type="Script" uid="uid://dw4xgcxeoktp8" path="res://ages_popout.gd" id="24_ubeuf"]
-[ext_resource type="PackedScene" uid="uid://0btet4jdfswa" path="res://MenuPopout.tscn" id="25_34no1"]
+[ext_resource type="PackedScene" uid="uid://07ufmjn6n2o1" path="res://MenuPopout.tscn" id="25_34no1"]
 [ext_resource type="Script" uid="uid://djvx7uirw5be7" path="res://constellation_overlay.gd" id="26_21pfi"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_hloqn"]

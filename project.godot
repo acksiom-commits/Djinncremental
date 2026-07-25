@@ -33,6 +33,10 @@ window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/ai_game_builder/plugin.cfg")
+
 [gui]
 
 theme/custom="res://djinncremental_theme.tres"

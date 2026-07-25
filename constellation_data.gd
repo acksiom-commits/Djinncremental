@@ -1,5 +1,13 @@
 extends Node
-# ================= CONSTELLATION DATA v0.3.1 =================
+# ================= CONSTELLATION DATA v0.3.2 =================
+# v0.3.2: Added 6th built-in constellation, The Djinn (id 5) — represents
+#         the Player, themed around the vessel (Ring/Jar/Lamp/etc.) chosen
+#         during the pre-game intro's training-period selection. Bonus key
+#         "endowment_multiplier" reduces the Constellation Endowment
+#         bottleneck directly (not yet wired into ProductionManager — data
+#         placeholder only). fixed_star_positions/line_pairs pending one
+#         art variant per vessel choice; puzzle_sequence has 15 of 17
+#         required notes. Six built-ins total now (was five).
 # v0.3.1  1st Constellation changed to The Archon, in Octant 0. Lore
 #         altered. The Hourglass changed to 2nd Constellation in Octant 1.
 #         We're going to spread the first 8 Constellations across 4 to 6
@@ -46,6 +54,8 @@ extends Node
 #   "archon_foci_bonus"       — extra archon foci (flat)
 #   "purity_lock_slots"       — extra purity lock slots
 #   "cooldown_multiplier"     — tiered cooldown reduction via bonus_levels
+#   "endowment_multiplier"    — reduces Constellation Endowment bottleneck
+#                                (data placeholder; not yet read by ProductionManager)
 #
 # MECHANIC UNLOCK KEYS (string keys read by ProductionManager):
 #   ""                        — no mechanic unlock
@@ -502,7 +512,79 @@ const BUILT_IN = [
         ],
     },
 
-# IDs 5-16: reserved for future built-in constellations
+
+# ==================================================
+# CONSTELLATION 6-6: THE DJINN
+# ==================================================
+# The Player's own constellation. Themed around the vessel (Ring, Jar, Lamp,
+# etc.) the player favored during the pre-game intro's training-period
+# selection — one art/lore variant is intended per vessel choice, not yet
+# designed. Bonus is meant to ease the Constellation Endowment bottleneck
+# directly so Mid-Game reads as reasonably attainable. Designation "ENIGMA"
+# is deliberate: the Djinn's true form is undecided at this stage of design.
+#
+# TODO (Boss): placeholder/incomplete —
+#   - puzzle_sequence/note_freqs has only 15 of the 17 note-events star_count
+#     needs; indices 15-16 are unwritten (source melody: C4 G4 C5 E4 G4 C5
+#     C4 E5 G3 G4 C5 D#5 C4 D#4 G3).
+#   - response_freqs below stores the "drums alternate C3/D3" percussion
+#     pattern as given, but response_freqs elsewhere in this file is a
+#     melodic echo phrase, not a drum voice — may deserve its own field
+#     once a real percussion channel exists (see the unused `perc` voice on
+#     PuzzleSequenceResource in puzzle_sequence_resource.gd). Array length
+#     (17) is arbitrary/placeholder since no exact count was given.
+#   - fixed_star_positions / line_pairs not yet designed — pending the
+#     per-vessel art choice.
+#   - unlock is "achievement:fifth_prestige", identical to The Bellows (id
+#     4)'s unlock key — confirm whether that's intentional (parallel
+#     unlock, different octant) or should instead key off the intro
+#     vessel-choice event.
+
+    {
+        "id": 5,
+        "name": "The Djinn",
+        "designation": "ENIGMA",
+        "octant": 5,
+        "star_count": 17,
+        "unlock": "achievement:fifth_prestige",
+        "bonus_key": "endowment_multiplier",
+        "bonus_value": 1.0,
+        "mechanic_key": "",
+        "snap_horiz_stars": [1, 2],
+        "bonus_levels": {"stars": 1.5, "lines": 2.0, "art": 3.0},
+        "spark_cap":      75025,
+        "line_threshold": 0.3819,   # 28,657 / 75,025
+
+        # 15 of 17 note-events (see TODO above).
+        # C4 G4 C5 E4 G4 C5 C4 E5 G3 G4 C5 D#5 C4 D#4 G3
+        "puzzle_sequence": [0, 1, 2, 3, 1, 2, 0, 4, 5, 1, 2, 6, 0, 7, 5],
+        "note_freqs": [
+            261.63,  # 0: C4
+            392.00,  # 1: G4
+            523.25,  # 2: C5
+            329.63,  # 3: E4
+            659.26,  # 4: E5
+            196.00,  # 5: G3
+            622.25,  # 6: D#5
+            311.13,  # 7: D#4
+        ],
+        # TODO (Boss): placeholder durations, uniform until real timing is set.
+        "note_durations": [
+            0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25,
+            0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25,
+        ],
+        # Drum voice: alternates C3/D3 consistently (see TODO above re: field fit).
+        "response_freqs": [
+            130.81, 146.83, 130.81, 146.83, 130.81, 146.83, 130.81,
+            146.83, 130.81, 146.83, 130.81, 146.83, 130.81, 146.83,
+            130.81, 146.83, 130.81,
+        ],
+
+        # fixed_star_positions / line_pairs: pending per-vessel art design.
+    },
+
+
+# IDs 6-16: reserved for future built-in constellations
 ]
  
 const PATRON_DATA_PATH = "res://data/patron_constellations.json"

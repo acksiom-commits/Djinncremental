@@ -1,0 +1,40 @@
+[gd_scene format=3 uid="uid://bm6jxg43ecqm5"]
+
+[ext_resource type="Script" uid="uid://caouke18vm4xd" path="res://StaffPopupRow.gd" id="1_script"]
+
+[node name="StaffPopupRow" type="HBoxContainer" unique_id=87103261]
+theme_override_constants/separation = 4
+script = ExtResource("1_script")
+
+[node name="Label" type="Label" parent="." unique_id=1675627374]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.82, 0.78, 0.92, 1)
+theme_override_font_sizes/font_size = 16
+text = "Label"
+
+[node name="CountLabel" type="Label" parent="." unique_id=1247909959]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(22, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.55, 0.5, 0.65, 1)
+theme_override_font_sizes/font_size = 16
+text = "(0)"
+
+[node name="BtnCheck" type="Button" parent="." unique_id=1822639990]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 24)
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 16
+text = "✓"
+
+[node name="BtnX" type="Button" parent="." unique_id=683756693]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(28, 24)
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 16
+text = "✗"

@@ -1,0 +1,207 @@
+[gd_scene load_steps=2 format=3 uid="uid://staff_popup"]
+
+[ext_resource type="Script" path="res://staff_popup.gd" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_popup_bg"]
+bg_color = Color(0.12, 0.10, 0.18, 0.95)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.35, 0.30, 0.50, 0.8)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+
+[node name="StaffPopup" type="PopupPanel"]
+custom_minimum_size = Vector2(200, 0)
+theme_override_styles/panel = SubResource("StyleBoxFlat_popup_bg")
+script = ExtResource("1_script")
+
+[node name="VBox" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TitleLabel" type="Label" parent="VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.82, 0.78, 0.92, 1)
+horizontal_alignment = 1
+text = "Note 1"
+
+[node name="Sep1" type="HSeparator" parent="VBox"]
+layout_mode = 2
+
+[node name="PitchHeader" type="Label" parent="VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
+text = "PITCH"
+
+[node name="PitchColumns" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PitchLeftCol" type="VBoxContainer" parent="VBox/PitchColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="PitchRightCol" type="VBoxContainer" parent="VBox/PitchColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="PitchUndoRow" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="PitchBtnUndoSelects" type="Button" parent="VBox/PitchUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 10
+text = "Undo selects"
+
+[node name="PitchBtnUndoBlocks" type="Button" parent="VBox/PitchUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 10
+text = "Undo blocks"
+
+[node name="PitchBtnUndoAll" type="Button" parent="VBox/PitchUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 10
+text = "Undo all"
+
+[node name="Sep2" type="HSeparator" parent="VBox"]
+layout_mode = 2
+
+[node name="ColorHeader" type="Label" parent="VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
+text = "COLOR"
+
+[node name="ColorColumns" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ColorLeftCol" type="VBoxContainer" parent="VBox/ColorColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="ColorRightCol" type="VBoxContainer" parent="VBox/ColorColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="ColorUndoRow" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="ColorBtnUndoSelects" type="Button" parent="VBox/ColorUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 10
+text = "Undo selects"
+
+[node name="ColorBtnUndoBlocks" type="Button" parent="VBox/ColorUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 10
+text = "Undo blocks"
+
+[node name="ColorBtnUndoAll" type="Button" parent="VBox/ColorUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 10
+text = "Undo all"
+
+[node name="Sep3" type="HSeparator" parent="VBox"]
+layout_mode = 2
+
+[node name="NameHeader" type="Label" parent="VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
+text = "NAME"
+
+[node name="NameColumns" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="NameLeftCol" type="VBoxContainer" parent="VBox/NameColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="NameRightCol" type="VBoxContainer" parent="VBox/NameColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="NameUndoRow" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="NameBtnUndoSelects" type="Button" parent="VBox/NameUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 10
+text = "Undo selects"
+
+[node name="NameBtnUndoBlocks" type="Button" parent="VBox/NameUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 10
+text = "Undo blocks"
+
+[node name="NameBtnUndoAll" type="Button" parent="VBox/NameUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 10
+text = "Undo all"

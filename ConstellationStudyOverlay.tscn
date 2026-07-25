@@ -83,20 +83,28 @@ theme_override_constants/separation = 8
 
 [node name="TitleLabel" type="Label" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=1015319127]
 layout_mode = 2
-size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.92, 0.88, 0.78, 1)
 theme_override_font_sizes/font_size = 20
 text = "The Constellation"
-horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="TuningForkButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=2140373983]
 layout_mode = 2
-text = "     ♪     "
+text = "  SOLVE  "
 
 [node name="PitchListenButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=1256225004]
 layout_mode = 2
-text = "     👂     "
+text = "  LISTEN  "
+
+[node name="SelectedClueDisplay" type="RichTextLabel" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=1600000001]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_colors/default_color = Color(0.82, 0.78, 0.92, 1)
+theme_override_font_sizes/normal_font_size = 16
+bbcode_enabled = true
+text = "Select a clue below to pin it here."
 
 [node name="CloseButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=1515545597]
 custom_minimum_size = Vector2(32, 32)
@@ -192,7 +200,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_font_sizes/font_size = 16
-text = "Adjacency"
+text = "Proximity"
 
 [node name="MarkerTabSep" type="Panel" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=1186065417]
 custom_minimum_size = Vector2(0, 1)

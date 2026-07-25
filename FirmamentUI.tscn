@@ -22,7 +22,7 @@
 [ext_resource type="PackedScene" path="res://CooldownBar.tscn" id="20_du3js"]
 [ext_resource type="PackedScene" uid="uid://3biuj3blqqca" path="res://UoniteIcosahedron.tscn" id="21_vw7vn"]
 [ext_resource type="Shader" uid="uid://bwd7ediqhrse" path="res://uonite_fill.gdshader" id="22_srksv"]
-[ext_resource type="Script" uid="uid://bjhdsykofwppd" path="res://dialogue_journal_popout.gd" id="23_s8nrt"]
+[ext_resource type="Script" uid="uid://28melt7ee4d2" path="res://journal_popout.gd" id="23_s8nrt"]
 [ext_resource type="Script" uid="uid://dw4xgcxeoktp8" path="res://ages_popout.gd" id="24_ion1c"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_q6d5h"]

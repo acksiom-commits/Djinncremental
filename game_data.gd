@@ -112,7 +112,7 @@ const RECIPES = {
     "iota_assemble":     {"inputs": {"sparks": 5, "monad": 16, "particle": 4},        "outputs": {"iota": 1}},
     "mote_compress":     {"inputs": {"iota": 5},                                      "outputs": {"mote": 1}},
     "grain_assemble":    {"inputs": {"sparks": 25, "monad": 64, "particle": 16, "mote": 4}, "outputs": {"grain": 1}},
-    "uonite_assemble":   {"inputs": {"grain": 20, "sparks": 1},                       "outputs": {"uonite": 1}},
+    "uonite_assemble":   {"inputs": {"mote": 20, "sparks": 1},                        "outputs": {"uonite": 1}},
 }
 
 
