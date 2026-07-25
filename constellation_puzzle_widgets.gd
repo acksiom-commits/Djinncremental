@@ -3,25 +3,25 @@ extends RefCounted
 
 # Widget-construction half of the Constellation Study Overlay split
 # (see docs/early_game_architecture_overview.md, §4, and the refactor plan
-# this executes). Owns nothing of its own beyond a back-reference to the
-# host script — everything else (Control node refs, ground-truth arrays,
-# _match_records, style boxes) still lives on the host for now. Calls back
-# into the host via _host.<member> for anything not yet moved out here;
-# as later slices/stages relocate more code, some of those _host.<x> calls
-# will get pointed at local functions instead (mechanical cleanup, tracked
-# per-slice, not attempted until every consumer of a given symbol has moved).
+# this executes). Holds a back-reference to the host script for Control
+# node refs, ground-truth arrays, and style boxes, plus a direct reference
+# to the deduction engine (_deduction) — widget construction calls into it
+# constantly (get-or-create/effective-state/etc.), so it's handed directly
+# rather than reached through _host, per the original plan's design.
 #
-# Being built up incrementally, one self-contained UI cluster ("slice") at
-# a time, each independently headless-boot-verified before the next.
-# Progress: Slice 1 (markers panel), Slice 2 (Sort:tab record widgets,
+# Was built up incrementally, one self-contained UI cluster ("slice") at a
+# time, each independently headless-boot-verified before the next.
+# Complete: Slice 1 (markers panel), Slice 2 (Sort:tab record widgets,
 # clue/fact helpers, _show_conflict_choice), Slice 3 (melody staff + Staff
-# popup), Slice 4 (floating star widgets) done. Stage 2 complete.
+# popup), Slice 4 (floating star widgets). Stage 2 complete.
 
 var _host: ConstellationStudyOverlay = null
+var _deduction: ConstellationPuzzleDeduction = null
 
 
-func setup(host: ConstellationStudyOverlay) -> void:
+func setup(host: ConstellationStudyOverlay, deduction: ConstellationPuzzleDeduction) -> void:
     _host = host
+    _deduction = deduction
 
 
 # ==================================================
@@ -248,7 +248,7 @@ func _on_proximity_check(edge_key: String, btn_check: Button, btn_x: Button) -> 
     _host._proximity_states[edge_key] = new_state
     btn_check.modulate = Color(0.3, 1.0, 0.4, 1.0) if new_state == 1 else Color(1,1,1,1.0)
     btn_x.modulate = Color(1,1,1,1.0)
-    _host._save_puzzle_notes()
+    _deduction._save_puzzle_notes()
 
 
 func _on_proximity_x(edge_key: String, btn_check: Button, btn_x: Button) -> void:
@@ -257,11 +257,11 @@ func _on_proximity_x(edge_key: String, btn_check: Button, btn_x: Button) -> void
     _host._proximity_states[edge_key] = new_state
     btn_x.modulate = Color(1.0, 0.35, 0.25, 1.0) if new_state == 2 else Color(1,1,1,1.0)
     btn_check.modulate = Color(1,1,1,1.0)
-    _host._save_puzzle_notes()
+    _deduction._save_puzzle_notes()
 
 
 # ==================================================
-# CONFLICT DIALOG (bound to _host._conflict_dialog_fn — see that member's
+# CONFLICT DIALOG (bound to _deduction._conflict_dialog_fn — see that member's
 # comment for why the deduction-engine half calls through a Callable
 # instead of reaching into this file directly)
 # ==================================================
@@ -297,7 +297,7 @@ func _make_name_checklist_trigger_button(record_idx: int) -> Button:
     btn.custom_minimum_size = Vector2(110, 0)
     btn.add_theme_font_size_override("font_size", 13)
     btn.focus_mode = Control.FOCUS_NONE
-    var current_name: String = str(_host._match_records[record_idx].get("name", ""))
+    var current_name: String = str(_deduction._match_records[record_idx].get("name", ""))
     btn.text = current_name if current_name != "" else "Select Name"
     var ridx := record_idx
     var btn_ref := btn
@@ -317,13 +317,13 @@ func _open_name_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     names_sorted.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
     for n in names_sorted:
         var name_str: String = str(n)
-        var state: int = _host._record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
+        var state: int = _deduction._record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
         _host._name_checklist_popup.add_name_row(name_str, state, Color(0.82, 0.78, 0.92, 1))
     _host._name_checklist_popup.open(record_idx, screen_pos)
 
 
 func _on_slot_name_check(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var name_states: Dictionary = r.get("name_states", {})
     var cur: int = int(name_states.get(star_name, 0))
     if cur == 1:
@@ -332,36 +332,36 @@ func _on_slot_name_check(record_idx: int, star_name: String, _row: StaffPopupRow
         name_states[star_name] = 0
         r["name_states"] = name_states
     else:
-        _host._propagate_name_states_confirmed_same_record(record_idx, star_name)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+        _deduction._propagate_name_states_confirmed_same_record(record_idx, star_name)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_name_checklist_popup(record_idx, _host._name_checklist_popup.position)
 
 
 func _on_slot_name_undo_selects(record_idx: int) -> void:
-    _host._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _host._star_names.duplicate())
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _host._star_names.duplicate())
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_name_checklist_popup(record_idx, _host._name_checklist_popup.position)
 
 
 func _on_slot_name_undo_blocks(record_idx: int) -> void:
-    _host._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_name_checklist_popup(record_idx, _host._name_checklist_popup.position)
 
 
 func _on_slot_name_undo_all(record_idx: int) -> void:
-    _host._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _host._star_names.duplicate())
-    _host._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _host._star_names.duplicate())
+    _deduction._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_name_checklist_popup(record_idx, _host._name_checklist_popup.position)
 
 
 func _on_slot_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var name_states: Dictionary = r.get("name_states", {})
     var cur: int = int(name_states.get(star_name, 0))
     name_states[star_name] = 0 if cur == 2 else 2
@@ -374,13 +374,13 @@ func _on_slot_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) ->
     else:
         manual[star_name] = true
     r["manual_name_blocks"] = manual
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_name_checklist_popup(record_idx, _host._name_checklist_popup.position)
 
 
 func _on_slot_name_protect(record_idx: int, star_name: String) -> void:
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var states: Dictionary = r.get("name_states", {})
     if int(states.get(star_name, 0)) != 0:
         return   # already hard-confirmed or hard-eliminated; right-click no-ops
@@ -390,8 +390,8 @@ func _on_slot_name_protect(record_idx: int, star_name: String) -> void:
     else:
         protected[star_name] = true
     r["protected_staff_names"] = protected
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_name_checklist_popup(record_idx, _host._name_checklist_popup.position)
 
 
@@ -404,7 +404,7 @@ func _make_pitch_checklist_trigger_button(record_idx: int) -> Button:
     btn.add_theme_font_size_override("font_size", 13)
     btn.focus_mode = Control.FOCUS_NONE
     var confirmed_note: String = ""
-    var pitch_states: Dictionary = _host._match_records[record_idx].get("pitch_states", {})
+    var pitch_states: Dictionary = _deduction._match_records[record_idx].get("pitch_states", {})
     for f in _host._pitch_freqs:
         var n: String = ConstellationLogicPuzzle.note_name_for_freq(f)
         if int(pitch_states.get(n, 0)) == 1:
@@ -428,32 +428,32 @@ func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
         for sp in _host._star_pitch_index:
             if int(sp) == pitch_idx:
                 incidence_count += 1
-        var state: int = _host._record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", note_name)
+        var state: int = _deduction._record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", note_name)
         _host._pitch_checklist_popup.add_pitch_row(note_name, incidence_count, state, Color(0.82, 0.78, 0.92, 1))
     _host._pitch_checklist_popup.open(record_idx, screen_pos)
 
 
 func _on_pitch_checklist_check(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    var pitch_states: Dictionary = _host._match_records[record_idx].get("pitch_states", {})
+    var pitch_states: Dictionary = _deduction._match_records[record_idx].get("pitch_states", {})
     var cur: int = int(pitch_states.get(note_name, 0))
     if cur == 1:
         # Toggling back off — see _on_staff_name_check for why siblings
         # aren't restored here.
         pitch_states[note_name] = 0
-        _host._match_records[record_idx]["pitch_states"] = pitch_states
+        _deduction._match_records[record_idx]["pitch_states"] = pitch_states
     else:
-        _host._propagate_pitch_confirmed_same_record(record_idx, note_name)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+        _deduction._propagate_pitch_confirmed_same_record(record_idx, note_name)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_pitch_checklist_popup(record_idx, _host._pitch_checklist_popup.position)
 
 
 func _on_pitch_checklist_x(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var pitch_states: Dictionary = r.get("pitch_states", {})
     var cur: int = int(pitch_states.get(note_name, 0))
     pitch_states[note_name] = 0 if cur == 2 else 2
@@ -466,15 +466,15 @@ func _on_pitch_checklist_x(record_idx: int, note_name: String, _row: StaffPopupR
     else:
         manual[note_name] = true
     r["manual_pitch_blocks"] = manual
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_pitch_checklist_popup(record_idx, _host._pitch_checklist_popup.position)
 
 
 func _on_pitch_checklist_protect(record_idx: int, note_name: String) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var states: Dictionary = r.get("pitch_states", {})
     if int(states.get(note_name, 0)) != 0:
         return   # already hard-confirmed or hard-eliminated; right-click no-ops
@@ -484,44 +484,44 @@ func _on_pitch_checklist_protect(record_idx: int, note_name: String) -> void:
     else:
         protected[note_name] = true
     r["protected_pitch_notes"] = protected
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_pitch_checklist_popup(record_idx, _host._pitch_checklist_popup.position)
 
 
 func _on_pitch_checklist_undo_selects(record_idx: int) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    _host._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
+    _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
     # The confirmed note (if any) no longer exists once selects are undone —
     # same staleness fix _propagate_pitch_confirmed_same_record applies.
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     if str(r.get("pitch_slot_label", "")) != "":
         r["pitch_slot_label"] = ""
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_pitch_checklist_popup(record_idx, _host._pitch_checklist_popup.position)
 
 
 func _on_pitch_checklist_undo_blocks(record_idx: int) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    _host._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_pitch_checklist_popup(record_idx, _host._pitch_checklist_popup.position)
 
 
 func _on_pitch_checklist_undo_all(record_idx: int) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    _host._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
-    _host._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
-    var r: Dictionary = _host._match_records[record_idx]
+    _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
+    _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
+    var r: Dictionary = _deduction._match_records[record_idx]
     if str(r.get("pitch_slot_label", "")) != "":
         r["pitch_slot_label"] = ""
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_pitch_checklist_popup(record_idx, _host._pitch_checklist_popup.position)
 
 
@@ -543,32 +543,32 @@ func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
                 _on_record_color_eliminate(ridx, cidx, btn)
                 btn.get_viewport().set_input_as_handled())
         # Effective state so a staff-popup "still possible" mark shows here too.
-        var cur_state: int = _host._record_effective_state(record_idx, "color_states", "protected_color_idxs", ci)
+        var cur_state: int = _deduction._record_effective_state(record_idx, "color_states", "protected_color_idxs", ci)
         _style_color_toggle_btn(btn, ci, cur_state)
         row.add_child(btn)
     return row
 
 
 func _on_record_color_toggle(record_idx: int, color_idx: int, btn: Button) -> void:
-    if record_idx < 0 or record_idx >= _host._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
         return
-    if not await _host._confirm_color_against_ground_truth(record_idx, color_idx, true):
+    if not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, true):
         return
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     r["color_states"][color_idx] = 1
     _style_color_toggle_btn(btn, color_idx, 1)
-    _host._apply_color_elimination_to_names(record_idx, color_idx, 1)
-    _host._propagate_color_confirmed_same_record(record_idx, color_idx)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._apply_color_elimination_to_names(record_idx, color_idx, 1)
+    _deduction._propagate_color_confirmed_same_record(record_idx, color_idx)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _on_record_color_eliminate(record_idx: int, color_idx: int, btn: Button) -> void:
-    if record_idx < 0 or record_idx >= _host._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
         return
-    if not await _host._confirm_color_against_ground_truth(record_idx, color_idx, false):
+    if not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, false):
         return
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     r["color_states"][color_idx] = 2
     # Same manual-block bookkeeping as _on_staff_color_x — this toggle row
     # writes the same color_states/manual_color_blocks dict on the same
@@ -577,9 +577,9 @@ func _on_record_color_eliminate(record_idx: int, color_idx: int, btn: Button) ->
     manual[color_idx] = true
     r["manual_color_blocks"] = manual
     _style_color_toggle_btn(btn, color_idx, 2)
-    _host._apply_color_elimination_to_names(record_idx, color_idx, 2)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._apply_color_elimination_to_names(record_idx, color_idx, 2)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _make_degree_toggle_row_for_record(record_idx: int) -> HBoxContainer:
@@ -604,7 +604,7 @@ func _make_degree_toggle_row_for_record(record_idx: int) -> HBoxContainer:
             if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
                 _on_record_degree_eliminate(ridx, deg_val, btn)
                 btn.get_viewport().set_input_as_handled())
-        var cur_state: int = int(_host._match_records[record_idx]["degree_states"].get(deg, 0))
+        var cur_state: int = int(_deduction._match_records[record_idx]["degree_states"].get(deg, 0))
         _style_degree_toggle_btn(btn, deg_val, cur_state)
         row.add_child(btn)
     return row
@@ -629,35 +629,35 @@ func _style_degree_toggle_btn(btn: Button, _degree: int, state: int) -> void:
 
 
 func _on_record_degree_toggle(record_idx: int, degree: int, btn: Button) -> void:
-    if record_idx < 0 or record_idx >= _host._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
         return
-    _host._propagate_degree_confirmed_same_record(record_idx, degree)
+    _deduction._propagate_degree_confirmed_same_record(record_idx, degree)
     _style_degree_toggle_btn(btn, degree, 1)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _on_record_degree_eliminate(record_idx: int, degree: int, btn: Button) -> void:
-    if record_idx < 0 or record_idx >= _host._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
         return
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     r["degree_states"][degree] = 2
     _style_degree_toggle_btn(btn, degree, 2)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> HBoxContainer:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
 
-    var bounds: Array = _host._effective_seq_bounds(record_idx)
+    var bounds: Array = _deduction._effective_seq_bounds(record_idx)
 
     var edit_lo := LineEdit.new()
     edit_lo.custom_minimum_size = Vector2(20, 24)
     edit_lo.max_length = 2
     edit_lo.placeholder_text = "–"
-    var lo_val: int = _host._exclusive_display_lo(int(bounds[0]), int(bounds[1]))
+    var lo_val: int = _deduction._exclusive_display_lo(int(bounds[0]), int(bounds[1]))
     edit_lo.text = str(lo_val) if lo_val > 0 else ""
     edit_lo.add_theme_font_size_override("font_size", 12)
     edit_lo.add_theme_constant_override("minimum_character_width", 2)
@@ -674,7 +674,7 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     edit_mid.custom_minimum_size = Vector2(58, 24)
     edit_mid.max_length = 12
     edit_mid.placeholder_text = "–"
-    edit_mid.text = _host._compressed_possible_positions_str(record_idx)
+    edit_mid.text = _deduction._compressed_possible_positions_str(record_idx)
     edit_mid.add_theme_font_size_override("font_size", 11)
     edit_mid.alignment = HORIZONTAL_ALIGNMENT_CENTER
     _style_range_edit(edit_mid, row_color)
@@ -690,7 +690,7 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     edit_hi.custom_minimum_size = Vector2(20, 24)
     edit_hi.max_length = 2
     edit_hi.placeholder_text = "–"
-    var hi_val: int = _host._exclusive_display_hi(int(bounds[0]), int(bounds[1]))
+    var hi_val: int = _deduction._exclusive_display_hi(int(bounds[0]), int(bounds[1]))
     edit_hi.text = str(hi_val) if hi_val > 0 else ""
     edit_hi.add_theme_font_size_override("font_size", 12)
     edit_hi.add_theme_constant_override("minimum_character_width", 2)
@@ -709,7 +709,7 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
 
 
 func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
-    if record_idx < 0 or record_idx >= _host._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
         return
     var raw_lo: String = lo_edit.text.strip_edges()
     var raw_hi: String = hi_edit.text.strip_edges()
@@ -723,11 +723,11 @@ func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: Lin
     if typed_lo > 0 and typed_hi > 0 and typed_lo > typed_hi:
         var tmp := typed_lo; typed_lo = typed_hi; typed_hi = tmp
 
-    var converted: Array = _host._parse_exclusive_bounds(typed_lo, typed_hi)
+    var converted: Array = _deduction._parse_exclusive_bounds(typed_lo, typed_hi)
     var lo: int = int(converted[0])
     var hi: int = int(converted[1])
 
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
 
     # Same self-conflict protection _confirm_match_record_identity already
     # gives star identity: if this record was already pinned to an exact
@@ -737,44 +737,44 @@ func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: Lin
     var old_lo: int = int(r.get("seq_lo", 0))
     var old_hi: int = int(r.get("seq_hi", 0))
     if old_lo > 0 and old_lo == old_hi and lo > 0 and lo == hi and old_lo != lo:
-        var winner: String = await _host._conflict_dialog_fn.call("sequence position", str(old_lo), str(lo))
+        var winner: String = await _deduction._conflict_dialog_fn.call("sequence position", str(old_lo), str(lo))
         if winner == str(old_lo):
-            lo_edit.text = str(_host._exclusive_display_lo(old_lo, old_hi))
-            hi_edit.text = str(_host._exclusive_display_hi(old_lo, old_hi))
-            _host._full_propagation_refresh()
+            lo_edit.text = str(_deduction._exclusive_display_lo(old_lo, old_hi))
+            hi_edit.text = str(_deduction._exclusive_display_hi(old_lo, old_hi))
+            _deduction._full_propagation_refresh()
             return
 
     r["seq_lo"] = lo
     r["seq_hi"] = hi
     r["seq_candidates"] = []
 
-    lo_edit.text = str(_host._exclusive_display_lo(lo, hi)) if lo > 0 else ""
-    hi_edit.text = str(_host._exclusive_display_hi(lo, hi)) if hi > 0 else ""
+    lo_edit.text = str(_deduction._exclusive_display_lo(lo, hi)) if lo > 0 else ""
+    hi_edit.text = str(_deduction._exclusive_display_hi(lo, hi)) if hi > 0 else ""
 
     if lo > 0 and lo == hi:
-        var existing_idx: int = _host._find_match_record_by_exact_seq(lo)
+        var existing_idx: int = _deduction._find_match_record_by_exact_seq(lo)
         if existing_idx >= 0 and existing_idx != record_idx:
-            record_idx = await _host._merge_match_records(record_idx, existing_idx)
+            record_idx = await _deduction._merge_match_records(record_idx, existing_idx)
 
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _on_record_middle_committed(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
     var raw: String = mid_edit.text.strip_edges()
     if raw == "":
-        _host._match_records[record_idx]["seq_candidates"] = []
-        mid_edit.text = _host._compressed_possible_positions_str(record_idx)
+        _deduction._match_records[record_idx]["seq_candidates"] = []
+        mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
         return
 
-    var parsed: Array = _host._parse_candidate_list(raw)
+    var parsed: Array = _deduction._parse_candidate_list(raw)
     var valid: Array = []
     for p in parsed:
         if p >= 1 and p <= _host._star_count:
             valid.append(p)
 
     if valid.is_empty():
-        mid_edit.text = _host._compressed_possible_positions_str(record_idx)
+        mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
         return
 
     if valid.size() == 1:
@@ -783,43 +783,43 @@ func _on_record_middle_committed(record_idx: int, lo_edit: LineEdit, mid_edit: L
         _on_record_range_committed(record_idx, lo_edit, hi_edit)
         return
 
-    _host._match_records[record_idx]["seq_candidates"] = valid
-    _host._match_records[record_idx]["seq_lo"] = 0
-    _host._match_records[record_idx]["seq_hi"] = 0
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._match_records[record_idx]["seq_candidates"] = valid
+    _deduction._match_records[record_idx]["seq_lo"] = 0
+    _deduction._match_records[record_idx]["seq_hi"] = 0
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _on_record_name_selected(record_idx: int, selected_name: String) -> void:
-    if record_idx < 0 or record_idx >= _host._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
         return
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var old_name: String = str(r.get("name", ""))
     if old_name == selected_name:
         return
 
     if selected_name == "":
         r["name"] = ""
-        _host._save_puzzle_notes()
-        _host._full_propagation_refresh()
+        _deduction._save_puzzle_notes()
+        _deduction._full_propagation_refresh()
         return
 
     # Same self-conflict protection as the sequence commit above: this
     # record was already given a different name, ask before overwriting.
     if old_name != "" and old_name != selected_name:
-        var winner: String = await _host._conflict_dialog_fn.call("name", old_name, selected_name)
+        var winner: String = await _deduction._conflict_dialog_fn.call("name", old_name, selected_name)
         if winner == old_name:
-            _host._full_propagation_refresh()
+            _deduction._full_propagation_refresh()
             return
 
     r["name"] = selected_name
 
-    var existing_idx: int = _host._find_match_record_by_name(selected_name)
+    var existing_idx: int = _deduction._find_match_record_by_name(selected_name)
     if existing_idx >= 0 and existing_idx != record_idx:
-        record_idx = await _host._merge_match_records(record_idx, existing_idx)
+        record_idx = await _deduction._merge_match_records(record_idx, existing_idx)
 
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 # ==================================================
@@ -841,12 +841,12 @@ func _on_widget_range_committed(star_idx: int, lo_edit: LineEdit, hi_edit: LineE
     if typed_lo > 0 and typed_hi > 0 and typed_lo > typed_hi:
         var tmp := typed_lo; typed_lo = typed_hi; typed_hi = tmp
 
-    var converted: Array = _host._parse_exclusive_bounds(typed_lo, typed_hi)
+    var converted: Array = _deduction._parse_exclusive_bounds(typed_lo, typed_hi)
     var lo: int = int(converted[0])
     var hi: int = int(converted[1])
 
-    var record_idx: int = _host._get_or_create_match_record_for_star_idx(star_idx)
-    var r: Dictionary = _host._match_records[record_idx]
+    var record_idx: int = _deduction._get_or_create_match_record_for_star_idx(star_idx)
+    var r: Dictionary = _deduction._match_records[record_idx]
 
     # Same self-conflict protection as the sequence-slot row's own commit
     # handler above — this star's record was already pinned to an exact
@@ -854,54 +854,54 @@ func _on_widget_range_committed(star_idx: int, lo_edit: LineEdit, hi_edit: LineE
     var old_lo: int = int(r.get("seq_lo", 0))
     var old_hi: int = int(r.get("seq_hi", 0))
     if old_lo > 0 and old_lo == old_hi and lo > 0 and lo == hi and old_lo != lo:
-        var winner: String = await _host._conflict_dialog_fn.call("sequence position", str(old_lo), str(lo))
+        var winner: String = await _deduction._conflict_dialog_fn.call("sequence position", str(old_lo), str(lo))
         if winner == str(old_lo):
-            lo_edit.text = str(_host._exclusive_display_lo(old_lo, old_hi))
-            hi_edit.text = str(_host._exclusive_display_hi(old_lo, old_hi))
-            _host._full_propagation_refresh()
+            lo_edit.text = str(_deduction._exclusive_display_lo(old_lo, old_hi))
+            hi_edit.text = str(_deduction._exclusive_display_hi(old_lo, old_hi))
+            _deduction._full_propagation_refresh()
             return
 
-    lo_edit.text = str(_host._exclusive_display_lo(lo, hi)) if lo > 0 else ""
-    hi_edit.text = str(_host._exclusive_display_hi(lo, hi)) if hi > 0 else ""
+    lo_edit.text = str(_deduction._exclusive_display_lo(lo, hi)) if lo > 0 else ""
+    hi_edit.text = str(_deduction._exclusive_display_hi(lo, hi)) if hi > 0 else ""
 
     r["seq_lo"] = lo
     r["seq_hi"] = hi
     r["seq_candidates"] = []
 
     if lo > 0 and lo == hi:
-        var existing_idx: int = _host._find_match_record_by_exact_seq(lo)
+        var existing_idx: int = _deduction._find_match_record_by_exact_seq(lo)
         if existing_idx >= 0 and existing_idx != record_idx:
-            record_idx = await _host._merge_match_records(record_idx, existing_idx)
+            record_idx = await _deduction._merge_match_records(record_idx, existing_idx)
 
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _on_widget_middle_committed(star_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
-    var record_idx: int = _host._get_or_create_match_record_for_star_idx(star_idx)
+    var record_idx: int = _deduction._get_or_create_match_record_for_star_idx(star_idx)
     var raw: String = mid_edit.text.strip_edges()
     if raw == "":
-        _host._match_records[record_idx]["seq_candidates"] = []
-        mid_edit.text = _host._compressed_possible_positions_str(record_idx)
+        _deduction._match_records[record_idx]["seq_candidates"] = []
+        mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
         return
-    var parsed: Array = _host._parse_candidate_list(raw)
+    var parsed: Array = _deduction._parse_candidate_list(raw)
     var valid: Array = []
     for p in parsed:
         if p >= 1 and p <= _host._star_count:
             valid.append(p)
     if valid.is_empty():
-        mid_edit.text = _host._compressed_possible_positions_str(record_idx)
+        mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
         return
     if valid.size() == 1:
         lo_edit.text = str(valid[0])
         hi_edit.text = str(valid[0])
         _on_widget_range_committed(star_idx, lo_edit, hi_edit)
         return
-    _host._match_records[record_idx]["seq_candidates"] = valid
-    _host._match_records[record_idx]["seq_lo"] = 0
-    _host._match_records[record_idx]["seq_hi"] = 0
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._match_records[record_idx]["seq_candidates"] = valid
+    _deduction._match_records[record_idx]["seq_lo"] = 0
+    _deduction._match_records[record_idx]["seq_hi"] = 0
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 # ==================================================
@@ -989,8 +989,8 @@ func _make_fact_line(text: String, color: Color) -> Label:
 # §4 for why these never got a section header of their own before this split
 # ==================================================
 func _build_sequence_slot_row(slot: int) -> void:
-    var record_idx: int = _host._get_or_create_match_record_for_seq(slot)
-    var row_color: Color = _host._display_color_for_record(record_idx)
+    var record_idx: int = _deduction._get_or_create_match_record_for_seq(slot)
+    var row_color: Color = _deduction._display_color_for_record(record_idx)
 
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 8)
@@ -1022,8 +1022,8 @@ func _populate_sequence_slot_rows() -> void:
 
 
 func _build_color_group_row(color_idx: int, position_in_group: int) -> void:
-    var record_idx: int = _host._get_or_create_match_record_for_color_slot(color_idx, position_in_group)
-    var row_color: Color = _host._display_color_for_record(record_idx)
+    var record_idx: int = _deduction._get_or_create_match_record_for_color_slot(color_idx, position_in_group)
+    var row_color: Color = _deduction._display_color_for_record(record_idx)
 
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 8)
@@ -1050,7 +1050,7 @@ func _build_color_group_row(color_idx: int, position_in_group: int) -> void:
 
 
 func _populate_color_group_rows() -> void:
-    _host._debug_dump_named_records()
+    _deduction._debug_dump_named_records()
     var color_order: Array = range(_host.COLOR_NAME_LABELS.size())
     color_order.sort_custom(func(a, b):
         return String(_host.COLOR_NAME_LABELS[a]).nocasecmp_to(String(_host.COLOR_NAME_LABELS[b])) > 0)
@@ -1064,13 +1064,13 @@ func _populate_color_group_rows() -> void:
 
 
 func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
-    var record_idx: int = _host._get_or_create_match_record_for_pitch_slot(pitch_freq, position_in_group)
-    var row_color: Color = _host._display_color_for_record(record_idx)
-    var known_star_color: int = _host._known_color_for_record(record_idx)
+    var record_idx: int = _deduction._get_or_create_match_record_for_pitch_slot(pitch_freq, position_in_group)
+    var row_color: Color = _deduction._display_color_for_record(record_idx)
+    var known_star_color: int = _deduction._known_color_for_record(record_idx)
     print("[DEBUG] pitch row %s pos=%d record=%d star_idx=%d known_color=%d color_states=%s" %
         [ConstellationLogicPuzzle.note_name_for_freq(pitch_freq), position_in_group, record_idx,
-         int(_host._match_records[record_idx].get("star_idx", -1)), known_star_color,
-         str(_host._match_records[record_idx].get("color_states", {}))])
+         int(_deduction._match_records[record_idx].get("star_idx", -1)), known_star_color,
+         str(_deduction._match_records[record_idx].get("color_states", {}))])
 
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 8)
@@ -1121,7 +1121,7 @@ func _populate_pitch_group_rows() -> void:
 
 
 func _populate_degree_group_rows() -> void:
-    _host._debug_dump_named_records()
+    _deduction._debug_dump_named_records()
     var degree_order: Array = []
     var degrees_set: Dictionary = {}
     for i in _host._star_count:
@@ -1140,8 +1140,8 @@ func _populate_degree_group_rows() -> void:
 
 
 func _build_degree_group_row(degree: int, position_in_group: int) -> void:
-    var record_idx: int = _host._get_or_create_match_record_for_degree_slot(degree, position_in_group)
-    var row_color: Color = _host._display_color_for_record(record_idx)
+    var record_idx: int = _deduction._get_or_create_match_record_for_degree_slot(degree, position_in_group)
+    var row_color: Color = _deduction._display_color_for_record(record_idx)
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 8)
     row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1164,8 +1164,8 @@ func _build_degree_group_row(degree: int, position_in_group: int) -> void:
 
 
 func _build_name_row(name_str: String) -> void:
-    var record_idx: int = _host._get_or_create_match_record_for_name(name_str)
-    var row_color: Color = _host._display_color_for_record(record_idx)
+    var record_idx: int = _deduction._get_or_create_match_record_for_name(name_str)
+    var row_color: Color = _deduction._display_color_for_record(record_idx)
 
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 8)
@@ -1258,7 +1258,7 @@ func _draw_melody_staff() -> void:
 
     for seq_pos in range(1, _host._star_count + 1):
         var x: float = margin_x + step_x * float(seq_pos - 1)
-        var marker: Dictionary = _host._melody_marker_for_position(seq_pos)
+        var marker: Dictionary = _deduction._melody_marker_for_position(seq_pos)
 
         if marker["has_position"] and marker["pitch_known"]:
             var freq: float = _freq_for_note_name(str(marker["note_name"]))
@@ -1276,7 +1276,7 @@ func _draw_melody_staff() -> void:
 
         var num_label: String = str(seq_pos)
         var nw: float = font.get_string_size(num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
-        var known_color: int = _host._known_color_for_seq_position(seq_pos)
+        var known_color: int = _deduction._known_color_for_seq_position(seq_pos)
         var num_col: Color = _host.STAR_COLORS_BY_IDX[known_color] if known_color >= 0 else _host.UNKNOWN_SEQ_COLOR
         _host._melody_staff_panel.draw_string(font, Vector2(x - nw * 0.5, margin_top + usable_h + 14.0),
             num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, num_col)
@@ -1318,7 +1318,7 @@ func _on_melody_staff_input(event: InputEvent) -> void:
 
 func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
     _host._staff_popup_seq_pos = seq_pos
-    var record_idx: int = _host._get_or_create_match_record_for_seq(seq_pos)
+    var record_idx: int = _deduction._get_or_create_match_record_for_seq(seq_pos)
 
     _host._staff_popup.clear_all_rows()
 
@@ -1330,12 +1330,12 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
         for sp in _host._star_pitch_index:
             if int(sp) == pitch_idx:
                 incidence_count += 1
-        var state: int = _host._record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", note_name)
+        var state: int = _deduction._record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", note_name)
         _host._staff_popup.add_pitch_row(note_name, incidence_count, state, Color(0.82, 0.78, 0.92, 1))
 
     # Add color rows
     for ci in _host.COLOR_NAME_LABELS.size():
-        var cstate: int = _host._record_effective_state(record_idx, "color_states", "protected_color_idxs", ci)
+        var cstate: int = _deduction._record_effective_state(record_idx, "color_states", "protected_color_idxs", ci)
         _host._staff_popup.add_color_row(_host.COLOR_NAME_LABELS[ci], ci, cstate, _host.STAR_COLORS_BY_IDX[ci])
 
     # Add name rows
@@ -1344,32 +1344,32 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
         all_names.append(_host._star_names[j] if j < _host._star_names.size() else "?")
     all_names.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
     for name_str in all_names:
-        var state: int = _host._record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
+        var state: int = _deduction._record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
         _host._staff_popup.add_name_row(name_str, state, Color(0.82, 0.78, 0.92, 1))
 
     _host._staff_popup.open(seq_pos, record_idx, screen_pos)
 
 
 func _on_staff_pitch_check(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    var pitch_states: Dictionary = _host._match_records[record_idx].get("pitch_states", {})
+    var pitch_states: Dictionary = _deduction._match_records[record_idx].get("pitch_states", {})
     var cur: int = int(pitch_states.get(note_name, 0))
     var new_state: int = 0 if cur == 1 else 1
     if new_state == 1:
-        _host._propagate_pitch_confirmed_same_record(record_idx, note_name)
+        _deduction._propagate_pitch_confirmed_same_record(record_idx, note_name)
     else:
         pitch_states[note_name] = new_state
-        _host._match_records[record_idx]["pitch_states"] = pitch_states
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+        _deduction._match_records[record_idx]["pitch_states"] = pitch_states
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_pitch_x(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var pitch_states: Dictionary = r.get("pitch_states", {})
     var cur: int = int(pitch_states.get(note_name, 0))
     pitch_states[note_name] = 0 if cur == 2 else 2
@@ -1382,36 +1382,36 @@ func _on_staff_pitch_x(record_idx: int, note_name: String, _row: StaffPopupRow) 
     else:
         manual[note_name] = true
     r["manual_pitch_blocks"] = manual
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_pitch_protect(record_idx: int, note_name: String) -> void:
-    if not bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if not bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         _on_record_value_protect_toggle(record_idx, "pitch_states", "protected_pitch_notes", note_name)
 
 
 func _on_staff_color_check(record_idx: int, color_idx: int, _row: StaffPopupRow) -> void:
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var cur: int = int(r["color_states"].get(color_idx, 0))
     var new_state: int = 0 if cur == 1 else 1
-    if new_state == 1 and not await _host._confirm_color_against_ground_truth(record_idx, color_idx, true):
+    if new_state == 1 and not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, true):
         return
     r["color_states"][color_idx] = new_state
     if new_state == 1:
-        _host._propagate_color_confirmed_same_record(record_idx, color_idx)
-    _host._apply_color_elimination_to_names(record_idx, color_idx, new_state)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+        _deduction._propagate_color_confirmed_same_record(record_idx, color_idx)
+    _deduction._apply_color_elimination_to_names(record_idx, color_idx, new_state)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_color_x(record_idx: int, color_idx: int, _row: StaffPopupRow) -> void:
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var cur: int = int(r["color_states"].get(color_idx, 0))
     var new_state: int = 0 if cur == 2 else 2
-    if new_state == 2 and not await _host._confirm_color_against_ground_truth(record_idx, color_idx, false):
+    if new_state == 2 and not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, false):
         return
     r["color_states"][color_idx] = new_state
     # Track this as a player-driven block (vs. sibling-clearing fallout from
@@ -1422,9 +1422,9 @@ func _on_staff_color_x(record_idx: int, color_idx: int, _row: StaffPopupRow) -> 
     else:
         manual[color_idx] = true
     r["manual_color_blocks"] = manual
-    _host._apply_color_elimination_to_names(record_idx, color_idx, new_state)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._apply_color_elimination_to_names(record_idx, color_idx, new_state)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
@@ -1433,7 +1433,7 @@ func _on_staff_color_protect(record_idx: int, color_idx: int) -> void:
 
 
 func _on_staff_name_check(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var name_states: Dictionary = r.get("name_states", {})
     var cur: int = int(name_states.get(star_name, 0))
     if cur == 1:
@@ -1443,14 +1443,14 @@ func _on_staff_name_check(record_idx: int, star_name: String, _row: StaffPopupRo
         name_states[star_name] = 0
         r["name_states"] = name_states
     else:
-        _host._propagate_name_states_confirmed_same_record(record_idx, star_name)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+        _deduction._propagate_name_states_confirmed_same_record(record_idx, star_name)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var name_states: Dictionary = r.get("name_states", {})
     var cur: int = int(name_states.get(star_name, 0))
     name_states[star_name] = 0 if cur == 2 else 2
@@ -1463,8 +1463,8 @@ func _on_staff_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) -
     else:
         manual[star_name] = true
     r["manual_name_blocks"] = manual
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
@@ -1483,36 +1483,36 @@ func _all_star_names_padded() -> Array:
 
 
 func _on_staff_pitch_undo_selects(record_idx: int) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    _host._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
-    var r: Dictionary = _host._match_records[record_idx]
+    _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
+    var r: Dictionary = _deduction._match_records[record_idx]
     if str(r.get("pitch_slot_label", "")) != "":
         r["pitch_slot_label"] = ""
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_pitch_undo_blocks(record_idx: int) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    _host._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_pitch_undo_all(record_idx: int) -> void:
-    if bool(_host._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
-    _host._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
-    _host._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
-    var r: Dictionary = _host._match_records[record_idx]
+    _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
+    _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
+    var r: Dictionary = _deduction._match_records[record_idx]
     if str(r.get("pitch_slot_label", "")) != "":
         r["pitch_slot_label"] = ""
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
@@ -1520,19 +1520,19 @@ func _on_staff_color_undo_selects(record_idx: int) -> void:
     var color_values: Array = []
     for ci in _host.COLOR_NAME_LABELS.size():
         color_values.append(ci)
-    _host._undo_category_selects(record_idx, "color_states", "manual_color_blocks", "protected_color_idxs", color_values)
-    var r: Dictionary = _host._match_records[record_idx]
+    _deduction._undo_category_selects(record_idx, "color_states", "manual_color_blocks", "protected_color_idxs", color_values)
+    var r: Dictionary = _deduction._match_records[record_idx]
     if str(r.get("color_slot_label", "")) != "":
         r["color_slot_label"] = ""
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_color_undo_blocks(record_idx: int) -> void:
-    _host._undo_category_blocks(record_idx, "color_states", "manual_color_blocks")
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._undo_category_blocks(record_idx, "color_states", "manual_color_blocks")
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
@@ -1540,40 +1540,40 @@ func _on_staff_color_undo_all(record_idx: int) -> void:
     var color_values: Array = []
     for ci in _host.COLOR_NAME_LABELS.size():
         color_values.append(ci)
-    _host._undo_category_selects(record_idx, "color_states", "manual_color_blocks", "protected_color_idxs", color_values)
-    _host._undo_category_blocks(record_idx, "color_states", "manual_color_blocks")
-    var r: Dictionary = _host._match_records[record_idx]
+    _deduction._undo_category_selects(record_idx, "color_states", "manual_color_blocks", "protected_color_idxs", color_values)
+    _deduction._undo_category_blocks(record_idx, "color_states", "manual_color_blocks")
+    var r: Dictionary = _deduction._match_records[record_idx]
     if str(r.get("color_slot_label", "")) != "":
         r["color_slot_label"] = ""
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_name_undo_selects(record_idx: int) -> void:
-    _host._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _all_star_names_padded())
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _all_star_names_padded())
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_name_undo_blocks(record_idx: int) -> void:
-    _host._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_name_undo_all(record_idx: int) -> void:
-    _host._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _all_star_names_padded())
-    _host._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _all_star_names_padded())
+    _deduction._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_record_value_protect_toggle(record_idx: int, states_key: String, protect_key: String, value_key, reopen_staff_popup: bool = true) -> void:
-    var r: Dictionary = _host._match_records[record_idx]
+    var r: Dictionary = _deduction._match_records[record_idx]
     var states: Dictionary = r.get(states_key, {})
     var base: int = int(states.get(value_key, 0))
     if base != 0:
@@ -1584,8 +1584,8 @@ func _on_record_value_protect_toggle(record_idx: int, states_key: String, protec
     else:
         protected[value_key] = true
     r[protect_key] = protected
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
     # Sort:tab checklists pass reopen_staff_popup = false — there's no
     # popup open to refresh, and this would otherwise pop one open
     # unexpectedly using a stale _staff_popup_seq_pos.
@@ -1637,14 +1637,14 @@ func _build_star_widgets_impl() -> void:
         range_row.mouse_filter = Control.MOUSE_FILTER_PASS
         range_row.add_theme_constant_override("separation", 3)
 
-        var existing_record: int = _host._get_or_create_match_record_for_star_idx(i)
-        var star_bounds: Array = _host._effective_seq_bounds(existing_record)
+        var existing_record: int = _deduction._get_or_create_match_record_for_star_idx(i)
+        var star_bounds: Array = _deduction._effective_seq_bounds(existing_record)
 
         var edit_lo := LineEdit.new()
         edit_lo.custom_minimum_size = Vector2(20, 28)
         edit_lo.max_length = 2
         edit_lo.placeholder_text = "–"
-        var display_lo: int = _host._exclusive_display_lo(int(star_bounds[0]), int(star_bounds[1]))
+        var display_lo: int = _deduction._exclusive_display_lo(int(star_bounds[0]), int(star_bounds[1]))
         edit_lo.text = str(display_lo) if display_lo > 0 else ""
         edit_lo.add_theme_font_size_override("font_size", 13)
         edit_lo.add_theme_constant_override("minimum_character_width", 2)
@@ -1662,7 +1662,7 @@ func _build_star_widgets_impl() -> void:
         edit_mid.custom_minimum_size = Vector2(62, 28)
         edit_mid.max_length = 12
         edit_mid.placeholder_text = "–"
-        edit_mid.text = _host._compressed_possible_positions_str(existing_record)
+        edit_mid.text = _deduction._compressed_possible_positions_str(existing_record)
         edit_mid.add_theme_font_size_override("font_size", 11)
         edit_mid.alignment = HORIZONTAL_ALIGNMENT_CENTER
         _style_range_edit(edit_mid, star_color)
@@ -1679,7 +1679,7 @@ func _build_star_widgets_impl() -> void:
         edit_hi.custom_minimum_size = Vector2(20, 28)
         edit_hi.max_length = 2
         edit_hi.placeholder_text = "–"
-        var display_hi: int = _host._exclusive_display_hi(int(star_bounds[0]), int(star_bounds[1]))
+        var display_hi: int = _deduction._exclusive_display_hi(int(star_bounds[0]), int(star_bounds[1]))
         edit_hi.text = str(display_hi) if display_hi > 0 else ""
         edit_hi.add_theme_font_size_override("font_size", 13)
         edit_hi.add_theme_constant_override("minimum_character_width", 2)
@@ -1711,7 +1711,7 @@ func _build_star_widgets_impl() -> void:
         var pitch_lbl := Label.new()
         pitch_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         pitch_lbl.add_theme_font_size_override("font_size", 13)
-        if bool(_host._match_records[existing_record].get("pitch_revealed", false)):
+        if bool(_deduction._match_records[existing_record].get("pitch_revealed", false)):
             pitch_lbl.text = _confirmed_pitch_str_for_star(i)
             pitch_lbl.add_theme_color_override("font_color", star_color)
         else:
@@ -1889,11 +1889,11 @@ func _sequence_number(star_idx: int) -> int:
 func _confirmed_sequence_str(star_idx: int) -> String:
     if star_idx < 0:
         return "?"
-    var idx: int = _host._find_match_record_by_star_idx(star_idx)
+    var idx: int = _deduction._find_match_record_by_star_idx(star_idx)
     if idx < 0:
         return "?"
-    var lo_i: int = int(_host._match_records[idx].get("seq_lo", 0))
-    var hi_i: int = int(_host._match_records[idx].get("seq_hi", 0))
+    var lo_i: int = int(_deduction._match_records[idx].get("seq_lo", 0))
+    var hi_i: int = int(_deduction._match_records[idx].get("seq_hi", 0))
     if lo_i > 0 and lo_i == hi_i:
         return str(lo_i)
     return "?"
@@ -1902,10 +1902,10 @@ func _confirmed_sequence_str(star_idx: int) -> String:
 func _confirmed_pitch_str_for_star(star_idx: int) -> String:
     if star_idx < 0:
         return "?"
-    var idx: int = _host._find_match_record_by_star_idx(star_idx)
+    var idx: int = _deduction._find_match_record_by_star_idx(star_idx)
     if idx < 0:
         return "?"
-    var pitch_states: Dictionary = _host._match_records[idx].get("pitch_states", {})
+    var pitch_states: Dictionary = _deduction._match_records[idx].get("pitch_states", {})
     for note in pitch_states:
         if int(pitch_states[note]) == 1:
             return str(note)
@@ -1974,10 +1974,10 @@ func _style_color_toggle_btn(btn: Button, color_idx: int, state: int) -> void:
 func _confirmed_name_for_star(star_idx: int) -> String:
     if star_idx < 0:
         return ""
-    var idx: int = _host._find_match_record_by_star_idx(star_idx)
+    var idx: int = _deduction._find_match_record_by_star_idx(star_idx)
     if idx < 0:
         return ""
-    return str(_host._match_records[idx].get("name", ""))
+    return str(_deduction._match_records[idx].get("name", ""))
 
 
 func _reposition_star_widgets() -> void:
@@ -2129,7 +2129,7 @@ func _refresh_name_widget(star_idx: int, name_vbox: VBoxContainer,
         var btn_check: Button = row.get_child(1)
         var btn_x: Button = row.get_child(2)
         var captured_name: String = all_star_names[name_idx]
-        var state: int = _host._effective_name_display_state(star_idx, captured_name, all_star_names)
+        var state: int = _deduction._effective_name_display_state(star_idx, captured_name, all_star_names)
         _apply_name_row_visual(state, name_lbl, btn_check, btn_x, star_color)
 
 
@@ -2173,34 +2173,34 @@ func _on_name_check(star_idx: int, star_name: String,
     var color_idx: int = _host._star_colors[star_idx] if star_idx < _host._star_colors.size() else 1
     var star_color: Color = _host.STAR_COLORS_BY_IDX[clamp(color_idx, 0, 3)]
 
-    var cur: int = _host._star_elim_state(star_idx, star_name)
+    var cur: int = _deduction._star_elim_state(star_idx, star_name)
     var new_state: int = 0 if cur == 1 else 1
 
     if new_state == 1:
-        var name_record: int = _host._find_match_record_by_name(star_name)
+        var name_record: int = _deduction._find_match_record_by_name(star_name)
         if name_record >= 0:
-            var existing_star: int = int(_host._match_records[name_record].get("star_idx", -1))
+            var existing_star: int = int(_deduction._match_records[name_record].get("star_idx", -1))
             if existing_star >= 0 and existing_star != star_idx:
                 _apply_name_row_visual(2, name_lbl, btn_check, btn_x, star_color)
                 return
-        var record_idx: int = _host._get_or_create_match_record_for_name(star_name)
-        record_idx = await _host._confirm_match_record_identity(record_idx, star_idx, star_name)
+        var record_idx: int = _deduction._get_or_create_match_record_for_name(star_name)
+        record_idx = await _deduction._confirm_match_record_identity(record_idx, star_idx, star_name)
         if record_idx < 0:
-            _apply_name_row_visual(_host._star_elim_state(star_idx, star_name), name_lbl, btn_check, btn_x, star_color)
+            _apply_name_row_visual(_deduction._star_elim_state(star_idx, star_name), name_lbl, btn_check, btn_x, star_color)
             return
-        var resolved_name: String = str(_host._match_records[record_idx]["name"])
-        _host._propagate_name_confirmed(star_idx, resolved_name)
-        _host._save_puzzle_notes()
-        _host._full_propagation_refresh()
+        var resolved_name: String = str(_deduction._match_records[record_idx]["name"])
+        _deduction._propagate_name_confirmed(star_idx, resolved_name)
+        _deduction._save_puzzle_notes()
+        _deduction._full_propagation_refresh()
         return
 
-    var record_idx2: int = _host._get_or_create_match_record_for_name(star_name)
-    var elim2: Dictionary = _host._match_records[record_idx2].get("star_elim", {})
+    var record_idx2: int = _deduction._get_or_create_match_record_for_name(star_name)
+    var elim2: Dictionary = _deduction._match_records[record_idx2].get("star_elim", {})
     elim2[star_idx] = new_state
-    _host._match_records[record_idx2]["star_elim"] = elim2
+    _deduction._match_records[record_idx2]["star_elim"] = elim2
     _apply_name_row_visual(new_state, name_lbl, btn_check, btn_x, star_color)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _on_name_x(star_idx: int, star_name: String,
@@ -2208,32 +2208,32 @@ func _on_name_x(star_idx: int, star_name: String,
     var color_idx: int = _host._star_colors[star_idx] if star_idx < _host._star_colors.size() else 1
     var star_color: Color = _host.STAR_COLORS_BY_IDX[clamp(color_idx, 0, 3)]
 
-    var cur: int = _host._star_elim_state(star_idx, star_name)
+    var cur: int = _deduction._star_elim_state(star_idx, star_name)
     var new_state: int = 0 if cur == 2 else 2
 
-    var record_idx: int = _host._get_or_create_match_record_for_name(star_name)
-    var elim: Dictionary = _host._match_records[record_idx].get("star_elim", {})
+    var record_idx: int = _deduction._get_or_create_match_record_for_name(star_name)
+    var elim: Dictionary = _deduction._match_records[record_idx].get("star_elim", {})
     elim[star_idx] = new_state
-    _host._match_records[record_idx]["star_elim"] = elim
+    _deduction._match_records[record_idx]["star_elim"] = elim
     _apply_name_row_visual(new_state, name_lbl, btn_check, btn_x, star_color)
 
     var ukey: String = "%d:%s" % [star_idx, star_name]
     if new_state == 2:
-        _host._user_blocks[ukey] = true
+        _deduction._user_blocks[ukey] = true
     else:
-        _host._user_blocks.erase(ukey)
+        _deduction._user_blocks.erase(ukey)
 
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 # ==================================================
 # UNDO NAME-SELECTION/NAME-BLOCK CALLBACKS
 # ==================================================
 func _on_undo_name_selects(star_idx: int) -> void:
-    var own_record: int = _host._find_match_record_by_star_idx(star_idx)
+    var own_record: int = _deduction._find_match_record_by_star_idx(star_idx)
     if own_record >= 0:
-        var r: Dictionary = _host._match_records[own_record]
+        var r: Dictionary = _deduction._match_records[own_record]
         r["star_idx"] = -1
         # color_states was fully overwritten by _sync_color_states_from_star_idx
         # when this identity was confirmed — with the binding now undone,
@@ -2244,48 +2244,48 @@ func _on_undo_name_selects(star_idx: int) -> void:
         if own_elim.has(star_idx):
             own_elim.erase(star_idx)
             r["star_elim"] = own_elim
-    for i in _host._match_records.size():
+    for i in _deduction._match_records.size():
         if i == own_record:
             continue
-        var other: Dictionary = _host._match_records[i]
+        var other: Dictionary = _deduction._match_records[i]
         var other_star: int = int(other.get("star_idx", -1))
         if other_star >= 0 and other_star != star_idx:
             continue
         var other_name: String = str(other.get("name", ""))
         var ukey: String = "%d:%s" % [star_idx, other_name]
-        if _host._user_blocks.has(ukey):
+        if _deduction._user_blocks.has(ukey):
             continue
         var elim2: Dictionary = other.get("star_elim", {})
         if int(elim2.get(star_idx, 0)) == 2:
             elim2.erase(star_idx)
             other["star_elim"] = elim2
-    _host._clear_protected_names_for_star(star_idx)
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._clear_protected_names_for_star(star_idx)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _on_undo_name_blocks(star_idx: int) -> void:
     var user_blocked_names: Array[String] = []
-    for ukey in _host._user_blocks.keys():
+    for ukey in _deduction._user_blocks.keys():
         var parts: PackedStringArray = ukey.split(":")
         if parts.size() == 2 and parts[0].is_valid_int() and int(parts[0]) == star_idx:
             user_blocked_names.append(parts[1])
     for name_str in user_blocked_names:
-        var rec: int = _host._find_match_record_by_name(name_str)
+        var rec: int = _deduction._find_match_record_by_name(name_str)
         if rec >= 0:
-            var elim: Dictionary = _host._match_records[rec].get("star_elim", {})
+            var elim: Dictionary = _deduction._match_records[rec].get("star_elim", {})
             if elim.has(star_idx):
                 elim.erase(star_idx)
-                _host._match_records[rec]["star_elim"] = elim
-        _host._user_blocks.erase("%d:%s" % [star_idx, name_str])
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+                _deduction._match_records[rec]["star_elim"] = elim
+        _deduction._user_blocks.erase("%d:%s" % [star_idx, name_str])
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _on_undo_name_all(star_idx: int) -> void:
-    var own_record: int = _host._find_match_record_by_star_idx(star_idx)
+    var own_record: int = _deduction._find_match_record_by_star_idx(star_idx)
     if own_record >= 0:
-        var r: Dictionary = _host._match_records[own_record]
+        var r: Dictionary = _deduction._match_records[own_record]
         r["star_idx"] = -1
         # color_states was fully overwritten by _sync_color_states_from_star_idx
         # when this identity was confirmed — with the binding now undone,
@@ -2300,10 +2300,10 @@ func _on_undo_name_all(star_idx: int) -> void:
     # Union of "Undo selects" + "Undo blocks", scoped to this star's row only.
     # Names confirmed at a DIFFERENT star are left alone — that elimination
     # is structural (the name belongs elsewhere), not part of this star's row.
-    for i in _host._match_records.size():
+    for i in _deduction._match_records.size():
         if i == own_record:
             continue
-        var other: Dictionary = _host._match_records[i]
+        var other: Dictionary = _deduction._match_records[i]
         var other_star: int = int(other.get("star_idx", -1))
         if other_star >= 0 and other_star != star_idx:
             continue
@@ -2312,28 +2312,28 @@ func _on_undo_name_all(star_idx: int) -> void:
             elim2.erase(star_idx)
             other["star_elim"] = elim2
 
-    _host._clear_protected_names_for_star(star_idx)
+    _deduction._clear_protected_names_for_star(star_idx)
 
     var user_blocked_names: Array[String] = []
-    for ukey in _host._user_blocks.keys():
+    for ukey in _deduction._user_blocks.keys():
         var parts: PackedStringArray = ukey.split(":")
         if parts.size() == 2 and parts[0].is_valid_int() and int(parts[0]) == star_idx:
             user_blocked_names.append(parts[1])
     for name_str in user_blocked_names:
-        _host._user_blocks.erase("%d:%s" % [star_idx, name_str])
+        _deduction._user_blocks.erase("%d:%s" % [star_idx, name_str])
 
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _on_name_protect_toggle(star_idx: int, star_name: String) -> void:
-    var base: int = _host._star_elim_state(star_idx, star_name)
+    var base: int = _deduction._star_elim_state(star_idx, star_name)
     if base != 0:
         return   # already hard-confirmed or hard-eliminated; right-click no-ops
-    var key: String = _host._protect_key(star_idx, star_name)
-    if _host._protected_names.has(key):
-        _host._protected_names.erase(key)
+    var key: String = _deduction._protect_key(star_idx, star_name)
+    if _deduction._protected_names.has(key):
+        _deduction._protected_names.erase(key)
     else:
-        _host._protected_names[key] = true
-    _host._save_puzzle_notes()
-    _host._full_propagation_refresh()
+        _deduction._protected_names[key] = true
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
