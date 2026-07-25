@@ -94,6 +94,13 @@ const OP_LOCK_KEYS = {
     "grain_assemble":    [],
 }
 
+# Single source of truth for a recipe's per-input cost, used by the manual
+# single-unit assembly functions below instead of hand-typed BigNum literals
+# (those literals had drifted from game_data.RECIPES once already — see §0
+# of the architecture doc's Uonite Grain/Mote note).
+func _recipe_cost(op: String, resource_key: String) -> int:
+    return game_data.RECIPES[op]["inputs"].get(resource_key, 0)
+
 # ===================== NODE REFERENCES ====================
 var gc:        Node = null
 var game_data: Node = null
@@ -908,7 +915,7 @@ func get_sparks_multiplier() -> float:
 func manual_monad_compress() -> bool:
     if gc.get_storage_total().is_greater_or_equal(gc.get_effective_storage_cap()):
         return false
-    if not gc.spend_sparks(5): return false
+    if not gc.spend_sparks(_recipe_cost("monad_compress", "sparks")): return false
     _roll_monad()
     return true
 
@@ -918,18 +925,19 @@ func manual_tetrad_assemble() -> bool:
 
 
 func manual_particle_compress() -> bool:
+    var tetrad_cost: int = _recipe_cost("particle_compress", "tetrad")
     # First pass: total availability check
     var total_available := BigNum.zero()
     for t in gc.tetrad:
         if not gc.is_locked(t):
             total_available = total_available.add(gc.tetrad[t])
-    if total_available.is_less_than(BigNum.from_int(5)): return false
+    if total_available.is_less_than(BigNum.from_int(tetrad_cost)): return false
 
-    # Draw 5 tetrads, rebuilding the eligible pool each step to
+    # Draw tetrad_cost tetrads, rebuilding the eligible pool each step to
     # respect per-type stock as we accumulate draws — matching
     # the same pattern used by _try_assemble_tetrad for monads.
     var drawn = {}
-    for j in 5:
+    for j in tetrad_cost:
         var remaining_pool = []
         for t in gc.tetrad:
             if not gc.is_locked(t):
@@ -954,7 +962,7 @@ func manual_iota_assemble() -> bool:
 
 func manual_mote_compress() -> bool:
     if gc.is_locked("iota"): return false
-    if not gc.spend_iota(5): return false
+    if not gc.spend_iota(_recipe_cost("mote_compress", "iota")): return false
     gc.mote = gc.mote.add(BigNum.from_int(1))
     gc.add_to_total("mote", BigNum.one())
     return true
@@ -1035,23 +1043,25 @@ func dev_inject_ten_grains() -> void:
 
 
 func manual_create_uonite() -> bool:
-    # TEST (grains-out-experiment): requirement changed from 20 grain to 20 mote.
-    # Guard: need at least 20 mote, 1 spark, and headroom in the cycle cap.
-    if gc.mote.is_less_than(BigNum.from_int(20)): return false
-    if gc.sparks.is_less_than(BigNum.from_int(1)):  return false
+    # Guard: need at least mote_cost mote, sparks_cost sparks, and headroom
+    # in the cycle cap.
+    var mote_cost:   int = _recipe_cost("uonite_assemble", "mote")
+    var sparks_cost: int = _recipe_cost("uonite_assemble", "sparks")
+    if gc.mote.is_less_than(BigNum.from_int(mote_cost)): return false
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)):  return false
     var headroom: int = gc.get_uonite_cycle_cap() - gc.uonites_this_cycle
     if headroom <= 0: return false
     # Batch: create as many uonites as mote, sparks, and cap headroom allow.
-    var possible_by_mote:   int = gc.mote.div_int_floor(20).to_int()
-    var possible_by_sparks: int = gc.sparks.to_int()
+    var possible_by_mote:   int = gc.mote.div_int_floor(mote_cost).to_int()
+    var possible_by_sparks: int = gc.sparks.div_int_floor(sparks_cost).to_int()
     var count: int = mini(possible_by_mote, mini(possible_by_sparks, headroom))
     print("[UONITE-TEST] mote=", gc.mote.to_int(), " sparks=", gc.sparks.to_int(),
           " cap=", gc.get_uonite_cycle_cap(), " this_cycle=", gc.uonites_this_cycle,
           " headroom=", headroom, " by_mote=", possible_by_mote,
           " by_sparks=", possible_by_sparks, " count=", count)
     if count <= 0: return false
-    gc.mote   = gc.mote.sub(BigNum.from_int(count * 20))
-    gc.sparks = gc.sparks.sub(BigNum.from_int(count))
+    gc.mote   = gc.mote.sub(BigNum.from_int(count * mote_cost))
+    gc.sparks = gc.sparks.sub(BigNum.from_int(count * sparks_cost))
     gc.uonite = gc.uonite.add(BigNum.from_int(count))
     gc.add_to_total("uonite", BigNum.from_int(count))
     gc.uonites_this_cycle    += count
@@ -1064,14 +1074,16 @@ func manual_create_uonite() -> bool:
 # SINGLE-UNIT ASSEMBLY HELPERS (used by manual actions)
 # ==================================================
 func _try_assemble_tetrad() -> bool:
-    if gc.sparks.is_less_than(BigNum.from_int(1)): return false
+    var sparks_cost: int = _recipe_cost("tetrad_assemble", "sparks")
+    var monad_draws: int = _recipe_cost("tetrad_assemble", "monad")
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
     var pool = []
     if not gc.is_locked("monad_solid")  and not gc.monad["solid"].is_zero():  pool.append("solid")
     if not gc.is_locked("monad_liquid") and not gc.monad["liquid"].is_zero(): pool.append("liquid")
     if not gc.is_locked("monad_gas")    and not gc.monad["gas"].is_zero():    pool.append("gas")
     if pool.is_empty(): return false
     var drawn = []
-    for i in 4:
+    for i in monad_draws:
         # Rebuild pool each draw to respect remaining stock
         var remaining_pool = []
         for k in ["solid", "liquid", "gas"]:
@@ -1088,7 +1100,7 @@ func _try_assemble_tetrad() -> bool:
         return false
     var result = _resolve_tetrad(s, l, g)
     if result == "": return false
-    gc.spend_sparks(1)
+    gc.spend_sparks(sparks_cost)
     gc.spend_monad(s, l, g)
     gc.tetrad[result] = gc.tetrad[result].add(BigNum.from_int(1))
     gc.add_to_total(result, BigNum.one())
@@ -1098,28 +1110,35 @@ func _try_assemble_tetrad() -> bool:
 
 
 func _try_assemble_iota() -> bool:
+    var sparks_cost:   int = _recipe_cost("iota_assemble", "sparks")
+    var monad_cost:    int = _recipe_cost("iota_assemble", "monad")
+    var particle_cost: int = _recipe_cost("iota_assemble", "particle")
     if gc.is_locked("sparks") or gc.is_locked("particle"): return false
-    if gc.sparks.is_less_than(BigNum.from_int(5)): return false
-    if gc.get_monad_unlocked_total().is_less_than(BigNum.from_int(16)): return false
-    if gc.particle.is_less_than(BigNum.from_int(4)): return false
-    if not _draw_monads(16): return false
-    gc.spend_sparks(5)
-    gc.spend_particle(4)
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
+    if gc.get_monad_unlocked_total().is_less_than(BigNum.from_int(monad_cost)): return false
+    if gc.particle.is_less_than(BigNum.from_int(particle_cost)): return false
+    if not _draw_monads(monad_cost): return false
+    gc.spend_sparks(sparks_cost)
+    gc.spend_particle(particle_cost)
     gc.iota = gc.iota.add(BigNum.from_int(1))
     gc.add_to_total("iota", BigNum.one())
     return true
 
 
 func _try_assemble_grain() -> bool:
+    var sparks_cost:   int = _recipe_cost("grain_assemble", "sparks")
+    var monad_cost:    int = _recipe_cost("grain_assemble", "monad")
+    var particle_cost: int = _recipe_cost("grain_assemble", "particle")
+    var mote_cost:     int = _recipe_cost("grain_assemble", "mote")
     if gc.is_locked("sparks") or gc.is_locked("particle") or gc.is_locked("mote"): return false
-    if gc.sparks.is_less_than(BigNum.from_int(25)): return false
-    if gc.get_monad_unlocked_total().is_less_than(BigNum.from_int(64)): return false
-    if gc.particle.is_less_than(BigNum.from_int(16)): return false
-    if gc.mote.is_less_than(BigNum.from_int(4)): return false
-    if not _draw_monads(64): return false
-    gc.spend_sparks(25)
-    gc.spend_particle(16)
-    gc.spend_mote(4)
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
+    if gc.get_monad_unlocked_total().is_less_than(BigNum.from_int(monad_cost)): return false
+    if gc.particle.is_less_than(BigNum.from_int(particle_cost)): return false
+    if gc.mote.is_less_than(BigNum.from_int(mote_cost)): return false
+    if not _draw_monads(monad_cost): return false
+    gc.spend_sparks(sparks_cost)
+    gc.spend_particle(particle_cost)
+    gc.spend_mote(mote_cost)
     gc.grain = gc.grain.add(BigNum.from_int(1))
     gc.add_to_total("grain", BigNum.one())
     gc.grains_this_cycle = mini(gc.grains_this_cycle + 1, 20)
@@ -1127,6 +1146,10 @@ func _try_assemble_grain() -> bool:
 
 
 func _resolve_tetrad(s: int, l: int, g: int) -> String:
+    # Partition table for exactly 4 draws — tied to tetrad_assemble's
+    # RECIPES monad cost (see _try_assemble_tetrad's monad_draws), not an
+    # independent constant. If that recipe cost ever changes, this table
+    # needs to change with it.
     if s == 4: return "adaemant"
     if l == 4: return "aquae"
     if g == 4: return "aethyr"
