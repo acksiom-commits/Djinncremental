@@ -169,15 +169,13 @@ var star_pitch_index: Array[int] = []     # star_pitch_index[i] = pitch-table in
 var _pitch_sub_rank: Array[int] = []      # frequency-rank-relative sub-rank (0,1,2.. -> "A","B","C") — grouped by actual pitch (_pitch_freq_rank), not raw star_pitch_index; same purpose as _color_sub_rank
 var _pitch_freqs: Array[float] = []       # this constellation's Hz table, indexed by pitch index
 var _distances: Array[Array] = []         # _distances[a][b] = shortest graph-hop count, -1 if unreachable
-var _final_identity_clues: Array[Dictionary] = []   # promoted dist_color/between identity anchors
 var _alph_rank: Array[int] = []   # star_index -> alphabetical rank among star_names, 0..star_count-1
  
 # ── Pitch CSP domain — parallel to the Sequence-rank domain above, but NOT
 # alldiff: multiple stars can legitimately share a pitch class. ──────────
 var pitch_count: int = 0                # distinct pitch classes = _pitch_freqs.size()
 var _pitch_freq_rank: Array[int] = []   # pitch_index -> ascending-frequency rank, ties share a rank
-var _final_pitch_clues: Array[Dictionary] = []
- 
+
 var _rng := RandomNumberGenerator.new()
  
  
@@ -193,9 +191,7 @@ func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
     player_seed_used = p_player_seed
     _generation_complete = false
     _final_clues.clear()
-    _final_pitch_clues.clear()
-    _final_identity_clues.clear()
- 
+
     # Offset seed so color assignment never shares RNG stream with
     # get_note_assignment() or ConstellationStarNamer.
     _rng.seed = p_player_seed ^ (p_constellation_id * 0x9E3779B9) ^ 0x4C50_5A5A
@@ -413,12 +409,12 @@ func _set_pitch_ranks_from_sequence(correct_star_sequence: Array) -> void:
 # ==================================================
 # SEQUENCE-AXIS PROPAGATION + SOLVER — ported verbatim
 # ==================================================
-# Kind-string matches below (ordinal_exact/ordinal_neg/ordinal_cmp/etc, plus
-# the pitch-axis tone_* equivalents further down) are STRUCTURAL dispatch —
-# "this clue has an exact-identity shape," "this clue has a comparison
-# shape" — not per-kind bespoke logic. They will be re-keyed to whatever
-# names the finalized Forms table assigns once that exists; the algorithm
-# bodies themselves don't change.
+# Kind-string matches below (ordinal_exact/ordinal_neg/ordinal_cmp/etc) are
+# STRUCTURAL dispatch — "this clue has an exact-identity shape," "this clue
+# has a comparison shape" — not per-kind bespoke logic. This is the live
+# Phase C uniqueness gate for the Forms pipeline (see header, ~51-66); there
+# is no Pitch-axis equivalent — that solver was confirmed dead code and
+# deleted 2026-07-25 (Pitch needs no uniqueness proof, unlike Sequence).
 func _init_possibility_grid() -> Array:
     var grid: Array = []
     for i in star_count:
