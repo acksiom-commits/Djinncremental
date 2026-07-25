@@ -462,6 +462,61 @@ func get_resource_storage_fraction(resource_key: String) -> float:
     return clamp(resource_val.to_float() / total.to_float(), 0.0, 1.0)
 
 
+func get_resource(key: String) -> BigNum:
+    # Generic string-keyed resource read, added to let recipe-cost checking
+    # (see ProductionManager._op_has_inputs) read off GameData.RECIPES
+    # instead of re-hardcoding amounts. "monad"/"tetrad" return the
+    # UNLOCKED aggregate total — matches exactly what _op_has_inputs already
+    # checked via get_monad_unlocked_total()/get_tetrad_unlocked_total()
+    # before this existed; there's no single scalar for a multi-subtype
+    # pool otherwise.
+    match key:
+        "sparks":       return sparks
+        "particle":     return particle
+        "iota":         return iota
+        "mote":         return mote
+        "grain":        return grain
+        "uonite":       return uonite
+        "phlogiston":   return phlogiston
+        "quintessence": return quintessence
+        "monad":        return get_monad_unlocked_total()
+        "tetrad":       return get_tetrad_unlocked_total()
+        _:
+            if solid_stocks.has(key):
+                return solid_stocks[key]
+            if liquid_stocks.has(key):
+                return liquid_stocks[key]
+            if gas_stocks.has(key):
+                return gas_stocks[key]
+            push_warning("GameContext.get_resource: unknown key " + key)
+            return BigNum.zero()
+
+
+func set_resource(key: String, value: BigNum) -> void:
+    # Mirror of get_resource(), used only by load_save_data()'s generic
+    # flat-resource restore loop. Deliberately does NOT support "monad"/
+    # "tetrad" (multi-subtype, no single value to restore into) — those
+    # keep their existing per-subtype load code untouched.
+    match key:
+        "sparks":       sparks = value
+        "particle":     particle = value
+        "iota":         iota = value
+        "mote":         mote = value
+        "grain":        grain = value
+        "uonite":       uonite = value
+        "phlogiston":   phlogiston = value
+        "quintessence": quintessence = value
+        _:
+            if solid_stocks.has(key):
+                solid_stocks[key] = value
+            elif liquid_stocks.has(key):
+                liquid_stocks[key] = value
+            elif gas_stocks.has(key):
+                gas_stocks[key] = value
+            else:
+                push_warning("GameContext.set_resource: unknown key " + key)
+
+
 func expand_storage_cap(remaining_sparks: BigNum) -> BigNum:
     var l: float     = remaining_sparks.to_float()
     var s: float     = storage_cap_at_prestige_start.to_float()
@@ -1090,11 +1145,8 @@ func get_save_data() -> Dictionary:
     data["creation_order"]   = creation_order.duplicate()
     for k in tetrad:
         data["tetrad_" + k] = tetrad[k].to_save_string()
-    data["particle"]              = particle.to_save_string()
-    data["iota"]                  = iota.to_save_string()
-    data["mote"]                  = mote.to_save_string()
-    data["grain"]                 = grain.to_save_string()
-    data["uonite"]                = uonite.to_save_string()
+    for key in ["particle", "iota", "mote", "grain", "uonite"]:
+        data[key] = get_resource(key).to_save_string()
     data["archon_foci"]           = archon_foci
     data["volitions"]             = volitions
     data["refinements_completed"] = refinements_completed
@@ -1256,22 +1308,16 @@ func load_save_data(data: Dictionary) -> void:
 
     for k in tetrad:
         tetrad[k] = BigNum.from_string(data.get("tetrad_" + k, "0:0"))
-    particle = BigNum.from_string(data.get("particle", "0:0"))
-    iota     = BigNum.from_string(data.get("iota",     "0:0"))
-    mote     = BigNum.from_string(data.get("mote",     "0:0"))
-    grain    = BigNum.from_string(data.get("grain",    "0:0"))
-    uonite   = BigNum.from_string(data.get("uonite",   "0:0"))
-    
+    for key in ["particle", "iota", "mote", "grain", "uonite"]:
+        set_resource(key, BigNum.from_string(data.get(key, "0:0")))
+
     # Scrub fractional remnants from all stored resource types
     for k in monad:
         monad[k] = BigNum.from_int(monad[k].to_int())
     for k in tetrad:
         tetrad[k] = BigNum.from_int(tetrad[k].to_int())
-    particle = BigNum.from_int(particle.to_int())
-    iota     = BigNum.from_int(iota.to_int())
-    mote     = BigNum.from_int(mote.to_int())
-    grain    = BigNum.from_int(grain.to_int())
-    uonite   = BigNum.from_int(uonite.to_int())
+    for key in ["particle", "iota", "mote", "grain", "uonite"]:
+        set_resource(key, BigNum.from_int(get_resource(key).to_int()))
 
     var _af   = data.get("archon_foci");           archon_foci               = _af as int  if _af != null else 1
     var _vo   = data.get("volitions");             volitions                 = _vo as int  if _vo != null else 0

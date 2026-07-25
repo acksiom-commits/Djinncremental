@@ -79,6 +79,21 @@ const GENERIC_OPS = {
     },
 }
 
+# Lock keys checked by _op_has_inputs() for every op it's ever called with,
+# including the two (monad_compress, tetrad_assemble) that aren't in
+# GENERIC_OPS at all since they use their own bespoke production functions.
+# Deliberately preserves the existing inconsistency where most ops check no
+# locks — this mirrors exactly what _op_has_inputs hardcoded before it
+# became RECIPES-driven, not a design choice made here.
+const OP_LOCK_KEYS = {
+    "monad_compress":    ["sparks"],
+    "tetrad_assemble":   [],
+    "particle_compress": [],
+    "iota_assemble":     [],
+    "mote_compress":     ["iota"],
+    "grain_assemble":    [],
+}
+
 # ===================== NODE REFERENCES ====================
 var gc:        Node = null
 var game_data: Node = null
@@ -551,28 +566,17 @@ func _add_resource(key: String, amount: BigNum) -> void:
 # STORAGE CAP HELPER
 # ==================================================
 func _op_has_inputs(op: String) -> bool:
-    match op:
-        "grain_assemble":
-            return gc.sparks.is_greater_or_equal(BigNum.from_int(25)) \
-                and gc.get_monad_unlocked_total().is_greater_or_equal(BigNum.from_int(64)) \
-                and gc.particle.is_greater_or_equal(BigNum.from_int(16)) \
-                and gc.mote.is_greater_or_equal(BigNum.from_int(4))
-        "mote_compress":
-            return not gc.is_locked("iota") \
-                and gc.iota.is_greater_or_equal(BigNum.from_int(5))
-        "iota_assemble":
-            return gc.sparks.is_greater_or_equal(BigNum.from_int(5)) \
-                and gc.get_monad_unlocked_total().is_greater_or_equal(BigNum.from_int(16)) \
-                and gc.particle.is_greater_or_equal(BigNum.from_int(4))
-        "particle_compress":
-            return gc.get_tetrad_unlocked_total().is_greater_or_equal(BigNum.from_int(5))
-        "tetrad_assemble":
-            return gc.sparks.is_greater_or_equal(BigNum.from_int(1)) \
-                and gc.get_monad_unlocked_total().is_greater_or_equal(BigNum.from_int(4))
-        "monad_compress":
-            return not gc.is_locked("sparks") \
-                and gc.sparks.is_greater_or_equal(BigNum.from_int(5))
-    return false
+    if not game_data.RECIPES.has(op):
+        return false
+    for lock_key in OP_LOCK_KEYS.get(op, []):
+        if gc.is_locked(lock_key):
+            return false
+    var inputs: Dictionary = game_data.RECIPES[op]["inputs"]
+    for input_key in inputs:
+        var cost: int = inputs[input_key]
+        if gc.get_resource(input_key).is_less_than(BigNum.from_int(cost)):
+            return false
+    return true
 
 
 func _get_storage_headroom() -> BigNum:
@@ -1261,23 +1265,22 @@ func get_timer_intervals() -> Dictionary:
 
 
 func get_consumption_network() -> Dictionary:
-    return {
-        "sparks":   [{"op": "monad_compress",   "cost": 5},
-                     {"op": "tetrad_assemble",   "cost": 1},
-                     {"op": "iota_assemble",     "cost": 5},
-                     {"op": "grain_assemble",    "cost": 25}],
-        "monad":    [{"op": "tetrad_assemble",   "cost": 4},
-                     {"op": "iota_assemble",     "cost": 16},
-                     {"op": "grain_assemble",    "cost": 64}],
-        "tetrad":   [{"op": "particle_compress", "cost": 5}],
-        "particle": [{"op": "iota_assemble",     "cost": 4},
-                     {"op": "grain_assemble",    "cost": 16}],
-        "iota":     [{"op": "mote_compress",     "cost": 5}],
-        "mote":     [{"op": "grain_assemble",    "cost": 4},
-                     {"op": "uonite_create",     "cost": 20}],
-        "grain":    [],
-        "uonite":   [],
-    }
+    # Built by inverting game_data.RECIPES (op -> inputs) into a resource ->
+    # consumers view. "uonite_assemble" is translated to "uonite_create"
+    # since RECIPES uses the data/display name while gc.rates/timers use the
+    # internal timer op name — same op, two names, preserved from the old
+    # hand-written version of this function.
+    var network: Dictionary = {}
+    for key in game_data.RESOURCES:
+        network[key] = []
+    for op in game_data.RECIPES:
+        var rate_op: String = "uonite_create" if op == "uonite_assemble" else op
+        var inputs: Dictionary = game_data.RECIPES[op]["inputs"]
+        for input_key in inputs:
+            if not network.has(input_key):
+                network[input_key] = []
+            network[input_key].append({"op": rate_op, "cost": inputs[input_key]})
+    return network
 
 
 func get_resource_drain_per_second(resource_key: String) -> float:
