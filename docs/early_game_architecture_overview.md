@@ -82,13 +82,15 @@ Signal: `manifold_ticked`. Entry points: `manual_summon_spark/monad_compress/tet
 ### `constellation_data.gd`
 Owns constellation definitions (`BUILT_IN`, see §0), octant geometry, unlock/mechanic-unlock logic, seeded star positions, patron-JSON loading, and save/load including puzzle-cache passthrough. No constellation currently sets the optional `name_theme` field, so `ConstellationStarNamer.DEFAULT_THEME` is the only theme ever exercised in practice — a built feature that's never actually used.
 
-### `constellation_logic_puzzle.gd` — where the 3860 lines go
+### `constellation_logic_puzzle.gd` — where the (now 3398) lines go — **RESOLVED 2026-07-25**
+Line numbers below are from the original 3860-line audit; the file is now 3398 lines after the change described next, so treat these as approximate/historical.
+
 | Lines | Section |
 |---|---|
-| 1-81 | Header docstring — **stale**, describes the Forms as "not yet built" when 21/22 are fully implemented and live. Rewrite or delete before using this file top-down. |
+| 1-81 | Header docstring — **stale**, describes the Forms as "not yet built" when 21/22 are fully implemented and live. Rewrite or delete before using this file top-down. (The one specific stale claim about the Pitch solver's literal strings "will be re-keyed to Form names" was fixed as part of the change below; the rest of the header is still stale.) |
 | 84-400 | Ground-truth generation (colors, degrees, distances, name shuffle, pitch rank) |
-| 403-941 | Sequence-axis CSP solver (possibility grid, arc-consistency, backtracking) |
-| 942-1530 | Pitch-axis CSP solver — **structurally a near-total clone** of the Sequence solver with `_pitch_` prefixes |
+| 403-941 | Sequence-axis CSP solver (possibility grid, arc-consistency, backtracking) — **live**, the Phase C uniqueness gate; untouched. |
+| ~~942-1530~~ | ~~Pitch-axis CSP solver — structurally a near-total clone of the Sequence solver with `_pitch_` prefixes~~ **DELETED 2026-07-25, on branch `remove-dead-pitch-solver`** (not yet merged to `grains-out-experiment`). Three parallel exploration passes confirmed this was never live — no Form builder in the Forms/Cells pipeline ever emits a `tone_*` clue; Pitch carries no uniqueness requirement (fully recoverable via Listen), a design property that predates the Forms rewrite. Building it out would have been a regression to the old per-axis-solver architecture the Forms rewrite replaced, not a missing feature. See [[refactor_branches_in_flight_2026-07-24]] memory for details. Two smaller, separately-confirmed-dead pockets found alongside it were removed in the same pass: the Sequence-side `_possibility_grid_for_clues` front-end and four generic `_domain_*` helpers (all zero callers). |
 | 1565-1690 | Public generation entry point, cache (de)serialization, dead-stub comment for the never-ported Name-axis solver |
 | 1692-2140 | Record arrays, clue-text rendering (`_characteristic_label`), the True/False/Used matrix and its sampling primitives |
 | 2141-2340 | Orderable-axis helpers, solver-fact extraction |
@@ -103,7 +105,7 @@ Owns constellation definitions (`BUILT_IN`, see §0), octant geometry, unlock/me
 **Dead public API** (declared, zero external callers, confirmed via project-wide grep): `is_generation_complete()` (1576), `check_solution()` (1590), `get_form_clue_texts()` (3856). `constellation_study_overlay.gd` bypasses the puzzle object entirely and reads `chosen_form_clues` straight out of `ConstellationData.get_puzzle_cache()`.
 
 ### Pain points
-- `constellation_logic_puzzle.gd:942-1530` vs `403-941` — a generic solver parameterized on "alldiff or not" would remove roughly 500 lines of duplication between the Sequence and Pitch solvers.
+- ~~`constellation_logic_puzzle.gd:942-1530` vs `403-941` — a generic solver parameterized on "alldiff or not" would remove roughly 500 lines of duplication between the Sequence and Pitch solvers.~~ **RESOLVED 2026-07-25** — turned out not to be live duplication to merge: the Pitch solver was confirmed dead code (zero callers in the Forms pipeline; Pitch needs no uniqueness proof, unlike Sequence) and deleted outright, ~500 lines, on branch `remove-dead-pitch-solver`. See the file-structure table above.
 - Four separate small helpers for one concept: `_order_value`/`_order_word`/`_order_verb`/`_order_unit` (2141-2200) — fine individually, not discoverable as a group.
 - `_seq_fact_for_label` (2201-2223) is load-bearing for not leaking ground truth, but its contract lives only in a 20-line prose comment rather than being structurally enforced — a future edit could silently reintroduce a leak here (this is the same failure class described in `constellation_puzzle_csp_review_findings`).
 - Magic constants scattered with no single tunables block: `MAX_GENERATION_ATTEMPTS = 5`, `TIER_OPPORTUNISTIC_ATTEMPTS = 4`, `max_stall`, `FRAME_BUDGET_MSEC = 2`.
@@ -157,7 +159,7 @@ Owns constellation definitions (`BUILT_IN`, see §0), octant geometry, unlock/me
 
 1. Resolve the two open questions in §0 (constellation count, the two stale-recipe-data bugs) — small, concrete, and everything downstream benefits from correct answers here first.
 2. Split `constellation_study_overlay.gd` into deduction-engine / widget-UI / (retire or isolate) Fork-mode-duplicate — highest line-count payoff, clearest natural seams.
-3. Split or de-duplicate `constellation_logic_puzzle.gd`'s Sequence/Pitch solver clone and Form-builder near-duplicates — second highest payoff, more delicate because of the correctness properties already verified (don't touch without re-running the uniqueness checks memory already documents).
+3. ~~Split or de-duplicate `constellation_logic_puzzle.gd`'s Sequence/Pitch solver clone~~ — **DONE 2026-07-25** (branch `remove-dead-pitch-solver`): the Pitch solver was confirmed dead code, not live duplication, and was deleted rather than merged. The Form-builder near-duplicates half of this item (`_build_form_exact_identity`/`_build_form_single_negation`, the "reuse chain node or scan pool" pattern in `_build_form_dual_negation`/`_build_form_mutual_exclusion`, etc. — see §3's Form-builder duplication note above) is still open and unstarted.
 4. Decide FirmamentUI vs TESTFirmamentUI and constellation_selector vs constellation_popout — delete or finish, not both living forever.
 5. `root_ui.gd`'s `_check_*_trigger` sprawl and Archon poke-minigame extraction — lower urgency, same "god object" pattern.
 6. `resource_registry.gd` — finish or delete.
