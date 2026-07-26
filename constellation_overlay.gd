@@ -1,5 +1,5 @@
 extends Control
-# ================ CONSTELLATION OVERLAY v1.0.0 ================
+# ================ CONSTELLATION OVERLAY v2.0.0 ================
 # Fullscreen transparent Control (Mouse Filter: Pass) that sits
 # between the starfield and the UI in the CanvasLayer.
 #
@@ -11,6 +11,12 @@ extends Control
 #
 # The starfield shader renders the star dots/glows.
 # This overlay renders lines and owns all puzzle state.
+#
+# v2.0.0: the click-sequence state machine + audio now delegate to
+# ClickSequencePuzzleEngine, shared with constellation_fork_puzzle.gd's
+# Fork mode — see docs/early_game_architecture_overview.md §4,
+# refactor-order item #9. Projection/drawing/input and the Q/P debug
+# hotkeys (no Fork equivalent) stay here.
 
 # ===================== AUTOLOAD REFS =============
 var _cd: Node = null
@@ -22,7 +28,6 @@ var _starfield: Node = null
 # ===================== TUNING ===================
 const HIT_RADIUS:            float = 22.0
 const SUCCESS_NOTE_DURATION: float = 0.16
-const WRONG_FLASH_DURATION:  float = 0.6
 const LINE_COLOR_DIM:        Color = Color(0.7,  0.65, 0.5,  0.25)
 const LINE_COLOR_BRIGHT:     Color = Color(0.9,  0.85, 0.65, 0.65)
 const WRONG_FLASH_COLOR:     Color = Color(1.0,  0.2,  0.2,  0.5)
@@ -39,18 +44,8 @@ const STAR_COLORS_BY_IDX: Array = [
 ]
 
 # ===================== PUZZLE STATE ==============
-enum PuzzleState { IDLE, ACTIVE, SUCCESS }
-
-var _puzzle_target_id:   int         = 0
-var _puzzle_state:       PuzzleState = PuzzleState.IDLE
-var _puzzle_step:        int         = 0
-var _puzzle_progress:    float       = 0.0
-var _note_assignment:    Array       = []
-var _tone_players:       Array       = []
-var _wrong_flash_timer:  float       = 0.0
-var _wrong_star_index:   int         = -1
-var _correct_star_sequence: Array    = []
-var _fanfare_lit_star:   int = -1
+var _puzzle_target_id: int = 0
+var _engine: ClickSequencePuzzleEngine = ClickSequencePuzzleEngine.new()
 
 @onready var _synth: Node = get_node_or_null("../RootUI/PuzzleSynths")
 @onready var _study_overlay: Node = get_node_or_null("../ConstellationStudyOverlay")
@@ -61,15 +56,6 @@ var _debug_seq_step:    int   = 0
 var _debug_seq_timer:   float = 0.0
 var _debug_lit_star:    int   = -1
 var _debug_current_gap:  float = 0.65
-
-# ===================== REPLAY ON WRONG NOTE ======
-var _replay_active:      bool  = false
-var _replay_step:        int   = 0
-var _replay_limit:       int   = 0
-var _replay_timer:       float = 0.0
-var _replay_current_gap: float = 0.0
-var _replay_lit_star:    int   = -1
-var _puzzle_high_water:  int   = 0
 
 # ===================== PROJECTION CACHE ==========
 # constellation_id -> Array[Vector2] of screen positions
@@ -87,9 +73,9 @@ func _ready() -> void:
     _starfield = get_node_or_null("../ColorRect")
     if _cd:
         _cd.active_constellation_changed.connect(_on_active_constellation_changed)
-    _check_puzzle_availability()
-    if _synth and _synth.has_signal("sequence_note_played"):
-        _synth.sequence_note_played.connect(_on_fanfare_note)
+    _engine.configure_io(_synth, Callable(self, "queue_redraw"))
+    _engine.set_constellation(_puzzle_target_id, _cd, _gc)
+    _engine.check_availability()
 
 
 func _process(delta: float) -> void:
@@ -98,13 +84,10 @@ func _process(delta: float) -> void:
 
     _update_projected_positions()
     queue_redraw()
-    
-    if _puzzle_state == PuzzleState.IDLE:
-        _check_puzzle_availability()
 
-    if _wrong_flash_timer > 0.0:
-        _wrong_flash_timer -= delta
-                
+    if _engine.state == ClickSequencePuzzleEngine.State.IDLE:
+        _engine.check_availability()
+
     if _debug_seq_active:
         _debug_seq_timer += delta
         if _debug_seq_timer >= _debug_current_gap:
@@ -118,10 +101,10 @@ func _process(delta: float) -> void:
                 _debug_current_gap  = 0.65
             else:
                 var pitch_idx: int = sequence[_debug_seq_step]
-                _play_note_by_pitch_index(pitch_idx)
+                _engine.play_note_by_pitch_index(pitch_idx)
                 _debug_lit_star = -1
-                for si in _note_assignment.size():
-                    if _note_assignment[si] == pitch_idx:
+                for si in _engine.note_assignment.size():
+                    if _engine.note_assignment[si] == pitch_idx:
                         _debug_lit_star = si
                         break
                 if _debug_seq_step < durations.size():
@@ -130,25 +113,7 @@ func _process(delta: float) -> void:
                     _debug_current_gap = 0.65
                 _debug_seq_step += 1
 
-    if _replay_active:
-        _replay_timer += delta
-        if _replay_timer >= _replay_current_gap:
-            _replay_timer = 0.0
-            var def:       Dictionary = _cd.get_constellation_def(_puzzle_target_id)
-            var sequence:  Array      = def.get("puzzle_sequence", [])
-            var durations: Array      = def.get("note_durations", [])
-            if _replay_step >= _replay_limit:
-                _replay_active   = false
-                _replay_lit_star = -1
-            else:
-                var pitch_idx: int = sequence[_replay_step]
-                _play_note_by_pitch_index(pitch_idx)
-                _replay_lit_star = _correct_star_sequence[_replay_step]
-                if _replay_step < durations.size():
-                    _replay_current_gap = durations[_replay_step]
-                else:
-                    _replay_current_gap = 0.65
-                _replay_step += 1
+    _engine.tick(delta)
 
 # ==================================================
 # PROJECTION
@@ -175,8 +140,8 @@ func _update_projected_positions() -> void:
             for i in screen_positions.size():
                 screen_positions[i] = screen_positions[i] + snap_offset
         _projected_positions[id] = screen_positions
-        
-        
+
+
 func set_constellations_visible(vis: bool) -> void:
     _constellations_visible = vis
     visible = vis
@@ -254,7 +219,7 @@ func _draw() -> void:
         )
         var puzzle_active: bool = (
             id == _puzzle_target_id and
-            _puzzle_state in [PuzzleState.ACTIVE, PuzzleState.SUCCESS]
+            _engine.state in [ClickSequencePuzzleEngine.State.ACTIVE, ClickSequencePuzzleEngine.State.SUCCESS]
         )
 
         if show_stars or puzzle_active:
@@ -283,14 +248,14 @@ func _draw() -> void:
                 if i == _debug_lit_star:
                     draw_circle(p, HIT_RADIUS * 1.4, Color(1.0, 1.0, 0.2, 0.45))
                     draw_circle(p, 6.0,               Color(1.0, 1.0, 0.2, 1.00))
-                if i == _replay_lit_star:
+                if i == _engine.replay_lit_star:
                     draw_circle(p, HIT_RADIUS * 1.4, Color(0.3, 0.8, 1.0, 0.45))
                     draw_circle(p, 6.0,               Color(0.3, 0.8, 1.0, 1.00))
-                if i == _wrong_star_index and _wrong_flash_timer > 0.0:
-                    var t: float = _wrong_flash_timer / WRONG_FLASH_DURATION
+                if i == _engine.wrong_star and _engine.wrong_flash_timer > 0.0:
+                    var t: float = _engine.wrong_flash_timer / ClickSequencePuzzleEngine.WRONG_FLASH_DURATION
                     draw_circle(p, HIT_RADIUS * 1.6, Color(1.0, 0.2, 1.0, 0.4 * t))
                     draw_circle(p, 5.0,               Color(1.0, 0.2, 1.0, 0.9 * t))
-                if i == _fanfare_lit_star and _puzzle_state == PuzzleState.SUCCESS:
+                if i == _engine.fanfare_lit_star and _engine.state == ClickSequencePuzzleEngine.State.SUCCESS:
                     draw_circle(p, HIT_RADIUS * 1.6, Color(1.0, 0.9, 0.3, 0.50))
                     draw_circle(p, 7.0,               Color(1.0, 0.95, 0.5, 1.00))
 
@@ -308,7 +273,7 @@ func _input(event: InputEvent) -> void:
             return
     if _study_overlay and is_instance_valid(_study_overlay) and _study_overlay.visible:
         return
-    if _puzzle_state != PuzzleState.ACTIVE or not _constellations_visible or _replay_active:
+    if _engine.state != ClickSequencePuzzleEngine.State.ACTIVE or not _constellations_visible or _engine.replay_active:
         return
     if not event is InputEventMouseButton:
         return
@@ -326,7 +291,7 @@ func _input(event: InputEvent) -> void:
             best_dist = d
             best_idx  = i
     if best_idx >= 0:
-        _on_star_clicked(best_idx)
+        _engine.on_star_clicked(best_idx)
         get_viewport().set_input_as_handled()
 
 # ==================================================
@@ -339,191 +304,26 @@ func _on_active_constellation_changed(_octant: int, constellation_id: int) -> vo
 
 
 func _reset_puzzle() -> void:
-    _puzzle_step     = 0
-    _puzzle_progress = 0.0
-    _note_assignment.clear()
-    _correct_star_sequence.clear()
-    _puzzle_state = PuzzleState.IDLE
-    _check_puzzle_availability()
-
-
-func _check_puzzle_availability() -> void:
-    if not _cd or not _gc:
-        return
-    var def: Dictionary = _cd.get_constellation_def(_puzzle_target_id)
-    if not def.has("puzzle_sequence"):
-        _puzzle_state = PuzzleState.IDLE
-        return
-    var solve_key: String = "constellation_%d_solve_count" % _puzzle_target_id
-    var solves:    int    = _gc.assignments.get(solve_key, 0)
-    if solves > 0:
-        _puzzle_state = PuzzleState.IDLE
-        return
-    var visual: String = _cd.get_visual_state(_puzzle_target_id)
-    if visual == "dark":
-        _puzzle_state = PuzzleState.IDLE
-        return
-    _puzzle_state = PuzzleState.ACTIVE
-    _puzzle_step  = 0
-    if _gc:
-        var hw_key := "constellation_%d_high_water" % _puzzle_target_id
-        _puzzle_high_water = _gc.assignments.get(hw_key, 0)
-    if _note_assignment.is_empty():
-        _note_assignment = _cd.get_note_assignment(_puzzle_target_id)
-    if _correct_star_sequence.is_empty():
-        _build_correct_star_sequence()
-    if _tone_players.is_empty():
-        _build_tone_players()
-
-
-func _build_correct_star_sequence() -> void:
-    _correct_star_sequence.clear()
-    if not _cd or _note_assignment.is_empty():
-        return
-    var def: Dictionary = _cd.get_constellation_def(_puzzle_target_id)
-    var sequence: Array = def.get("puzzle_sequence", [])
-    var used: Array = []
-    for step in sequence.size():
-        var pitch: int = sequence[step]
-        var best_star: int = -1
-        for si in _note_assignment.size():
-            if _note_assignment[si] == pitch and si not in used:
-                best_star = si
-                break
-        if best_star == -1:
-            for si in _note_assignment.size():
-                if _note_assignment[si] == pitch:
-                    best_star = si
-                    break
-        if best_star >= 0:
-            used.append(best_star)
-        _correct_star_sequence.append(best_star)
+    _engine.set_constellation(_puzzle_target_id, _cd, _gc)
+    _engine.check_availability()
 
 
 func get_correct_star_sequence(for_constellation_id: int) -> Array:
-    if _puzzle_target_id != for_constellation_id or _correct_star_sequence.is_empty():
-        var prev_target: int = _puzzle_target_id
-        _puzzle_target_id = for_constellation_id
-        if _note_assignment.is_empty() or prev_target != for_constellation_id:
-            _note_assignment = _cd.get_note_assignment(for_constellation_id)
-        _build_correct_star_sequence()
-    return _correct_star_sequence
+    return _engine.get_correct_star_sequence(for_constellation_id)
 
 
 # ==================================================
-# PUZZLE — STAR CLICK
+# PUZZLE — DEBUG HOTKEYS (Q/P — no Fork equivalent)
 # ==================================================
-func _on_star_clicked(star_index: int) -> void:
-    if _replay_active:
-        return
-    if _correct_star_sequence.is_empty() or not _cd:
-        return
-    var def: Dictionary = _cd.get_constellation_def(_puzzle_target_id)
-    if not def.has("puzzle_sequence"):
-        return
-    var sequence: Array = def["puzzle_sequence"]
-    var clicked:  int   = _note_assignment[star_index]
-    var correct_star: int = _correct_star_sequence[_puzzle_step]
-    print("[PUZZLE] step=%d correct_star=%d clicked_star=%d match=%s" % [_puzzle_step, correct_star, star_index, star_index == correct_star])
-
-    _play_note_by_pitch_index(clicked)
-
-    if star_index == correct_star:
-        _puzzle_step     += 1
-        _puzzle_progress  = float(_puzzle_step) / float(sequence.size())
-        _wrong_star_index  = -1
-        _wrong_flash_timer = 0.0
-        if _puzzle_step > _puzzle_high_water:
-            _puzzle_high_water = _puzzle_step
-            if _gc:
-                var hw_key := "constellation_%d_high_water" % _puzzle_target_id
-                _gc.assignments[hw_key] = _puzzle_high_water
-        if _puzzle_step >= sequence.size():
-            _on_puzzle_complete()
-    else:
-        _wrong_star_index  = star_index
-        _wrong_flash_timer = WRONG_FLASH_DURATION
-        _puzzle_step       = 0
-        _puzzle_progress   = 0.0
-        if _puzzle_high_water > 0:
-            _replay_active      = true
-            _replay_step        = 0
-            _replay_limit       = _puzzle_high_water
-            _replay_timer       = 0.0
-            _replay_current_gap = WRONG_FLASH_DURATION + 0.3
-            _replay_lit_star    = -1
-
-
-func _on_puzzle_complete() -> void:
-    _puzzle_state    = PuzzleState.SUCCESS
-    _puzzle_progress = 1.0
-    if _gc:
-        var solve_key: String = "constellation_%d_solve_count" % _puzzle_target_id
-        _gc.assignments[solve_key] = 1
-
-    # Play solve fanfare, then completion reward, then reset
-    var solve_path: String = "res://sequences/constellation_%d_solve.tres" % _puzzle_target_id
-    var solve_seq = load(solve_path) as PuzzleSequenceResource
-    if solve_seq and _synth and _synth.has_method("play_sequence"):
-        _synth.play_sequence(solve_seq, _play_completion_reward)
-    else:
-        # No sequence file — fall back to immediate reset
-        _finish_puzzle_sequences()
-        
-        
-func _on_fanfare_note(freq: float) -> void:
-    if _puzzle_state != PuzzleState.SUCCESS:
-        return
-    _fanfare_lit_star = _freq_to_star(freq)
-    queue_redraw()
-
-
-func _freq_to_star(freq: float) -> int:
-    var freqs: Array = _cd.get_note_freqs(_puzzle_target_id)
-    var best_pitch: int = -1
-    var best_diff: float = 2.0
-    for pitch_idx in freqs.size():
-        var f: float = freqs[pitch_idx]
-        if f <= 0.0:
-            continue
-        if absf(f - freq) < best_diff:
-            best_diff = absf(f - freq)
-            best_pitch = pitch_idx
-    if best_pitch == -1:
-        return -1
-    for si in _note_assignment.size():
-        if _note_assignment[si] == best_pitch:
-            return si
-    return -1
-
-
-func _play_completion_reward() -> void:
-    var reward_path: String = "res://sequences/constellation_%d_reward.tres" % _puzzle_target_id
-    var reward_seq = load(reward_path) as PuzzleSequenceResource
-    if reward_seq and _synth and _synth.has_method("play_sequence"):
-        _synth.play_sequence(reward_seq, _finish_puzzle_sequences)
-    else:
-        _finish_puzzle_sequences()
-
-
-func _finish_puzzle_sequences() -> void:
-    _fanfare_lit_star = -1
-    _puzzle_state     = PuzzleState.IDLE
-    _puzzle_progress  = 0.0
-    _check_puzzle_availability()
-    
-    
 func _debug_play_sequence() -> void:
-    if _note_assignment.is_empty():
-        _note_assignment = _cd.get_note_assignment(_puzzle_target_id)
-    if _tone_players.is_empty():
-        _build_tone_players()
+    if _engine.note_assignment.is_empty():
+        _engine.note_assignment = _cd.get_note_assignment(_puzzle_target_id)
     _debug_seq_active = true
     _debug_seq_step   = 0
     _debug_seq_timer  = 0.0
     _debug_lit_star   = -1
-    
-    
+
+
 func _debug_solve_puzzle() -> void:
     if not _cd or not _gc:
         return
@@ -537,70 +337,9 @@ func _debug_solve_puzzle() -> void:
         _gc.assignments[solve_key] = 0
         _reset_puzzle()
         return
-    if _puzzle_state != PuzzleState.ACTIVE:
+    if _engine.state != ClickSequencePuzzleEngine.State.ACTIVE:
         print("[DEBUG] Puzzle not ACTIVE (visual state: %s). Invest more sparks first." % _cd.get_visual_state(_puzzle_target_id))
         return
     print("[DEBUG] Force-solving constellation %d." % _puzzle_target_id)
-    _puzzle_step     = def["puzzle_sequence"].size()
-    _puzzle_progress = 1.0
-    _on_puzzle_complete()
-
-
-# ==================================================
-# AUDIO
-# ==================================================
-func _make_tone_wav(freq: float, duration: float) -> AudioStreamWAV:
-    const SAMPLE_RATE: int = 22050
-    var n:   int           = int(duration * SAMPLE_RATE)
-    var buf: PackedByteArray = PackedByteArray()
-    buf.resize(n * 2)
-    for i in n:
-        var t:   float = float(i) / SAMPLE_RATE
-        var env: float = 1.0
-        if t < 0.01:
-            env = t / 0.01
-        elif t > duration - 0.05:
-            env = clamp((duration - t) / 0.05, 0.0, 1.0)
-        var s: int = int(sin(TAU * freq * t) * 32767.0 * env * 0.38)
-        s = clamp(s, -32768, 32767)
-        buf[i * 2]     = s & 0xFF
-        buf[i * 2 + 1] = (s >> 8) & 0xFF
-    var wav: AudioStreamWAV = AudioStreamWAV.new()
-    wav.data     = buf
-    wav.format   = AudioStreamWAV.FORMAT_16_BITS
-    wav.mix_rate = SAMPLE_RATE
-    wav.stereo   = false
-    return wav
-    
-    
-func _play_note_by_pitch_index(pitch_index: int) -> void:
-    if not _synth:
-        # Fallback to old WAV system
-        if pitch_index < 0 or pitch_index >= _tone_players.size():
-            return
-        _tone_players[pitch_index].stop()
-        _tone_players[pitch_index].play()
-        return
-    var freqs: Array = _cd.get_note_freqs(_puzzle_target_id)
-    if pitch_index < 0 or pitch_index >= freqs.size():
-        return
-    var freq: float = freqs[pitch_index]
-    if freq == 0.0:
-        if _synth.has_method("play_thud"):
-            _synth.play_thud()
-        return
-    if _synth.has_method("play_bell_note"):
-        _synth.play_bell_note(freq)
-
-
-func _build_tone_players() -> void:
-    for p in _tone_players:
-        p.queue_free()
-    _tone_players.clear()
-    var freqs: Array = _cd.get_note_freqs(_puzzle_target_id)
-    for freq in freqs:
-        var p: AudioStreamPlayer = AudioStreamPlayer.new()
-        p.stream    = _make_tone_wav(freq, 0.35)
-        p.volume_db = -6.0
-        add_child(p)
-        _tone_players.append(p)
+    _engine.step = def["puzzle_sequence"].size()
+    _engine.force_complete()

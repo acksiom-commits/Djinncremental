@@ -124,7 +124,7 @@ func on_star_clicked(star_index: int) -> void:
     var clicked: int = note_assignment[star_index]
     var correct_star: int = correct_sequence[step]
 
-    _play_note_by_pitch_index(clicked)
+    play_note_by_pitch_index(clicked)
 
     if star_index == correct_star:
         step += 1
@@ -151,6 +151,12 @@ func on_star_clicked(star_index: int) -> void:
     _redraw_cb.call()
 
 
+## Force the puzzle to its completion state — used by constellation_overlay.gd's
+## debug P-key force-solve hotkey, which has no Fork equivalent.
+func force_complete() -> void:
+    _on_puzzle_complete()
+
+
 func tick(delta: float) -> void:
     if wrong_flash_timer > 0.0:
         wrong_flash_timer -= delta
@@ -168,7 +174,7 @@ func tick(delta: float) -> void:
                 replay_lit_star = -1
             else:
                 var pitch_idx: int = sequence[replay_step]
-                _play_note_by_pitch_index(pitch_idx)
+                play_note_by_pitch_index(pitch_idx)
                 replay_lit_star = correct_sequence[replay_step]
                 if replay_step < durations.size():
                     replay_gap = durations[replay_step]
@@ -265,9 +271,10 @@ func _finish_sequences() -> void:
 
 
 # ==================================================
-# INTERNAL — AUDIO
+# AUDIO — public: also called directly by constellation_overlay.gd's
+# debug Q-key sequence-playback hotkey, which has no Fork equivalent.
 # ==================================================
-func _play_note_by_pitch_index(pitch_index: int) -> void:
+func play_note_by_pitch_index(pitch_index: int) -> void:
     if not synth:
         return
     var freqs: Array = cd.get_note_freqs(constellation_id)
