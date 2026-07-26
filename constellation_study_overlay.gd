@@ -1,4 +1,4 @@
-﻿extends Control
+extends Control
 class_name ConstellationStudyOverlay
 # ================ CONSTELLATION STUDY OVERLAY v1.0.0 ================
 # Modal overlay presenting an enlarged, interactive star map for a
@@ -206,7 +206,7 @@ func _ready() -> void:
     _star_map_control.resized.connect(_on_star_map_resized)
     _close_btn.pressed.connect(_on_close)
     _fork = ConstellationForkPuzzle.new()
-    _fork.setup(_synth, _star_map_control, _fork_btn, self)
+    _fork.setup(_synth, _star_map_control, _fork_btn)
     _fork_btn.pressed.connect(_on_fork_toggle_pressed)
 
     _pitch_listen_btn.pressed.connect(_on_pitch_listen_toggle_pressed)
@@ -685,8 +685,3 @@ func _input(event: InputEvent) -> void:
         if not local_panel_rect.has_point(mpos):
             visible = false
             get_viewport().set_input_as_handled()
-
-
-
-
-
