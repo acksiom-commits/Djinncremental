@@ -18,6 +18,8 @@ extends Control
 # refactor-order item #9. Projection/drawing/input and the Q/P debug
 # hotkeys (no Fork equivalent) stay here.
 
+signal puzzle_star_clicked(star_index: int)
+
 # ===================== AUTOLOAD REFS =============
 var _cd: Node = null
 var _gc: Node = null
@@ -292,6 +294,7 @@ func _input(event: InputEvent) -> void:
             best_idx  = i
     if best_idx >= 0:
         _engine.on_star_clicked(best_idx)
+        puzzle_star_clicked.emit(best_idx)
         get_viewport().set_input_as_handled()
 
 # ==================================================
