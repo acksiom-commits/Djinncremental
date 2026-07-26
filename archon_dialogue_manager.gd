@@ -1,6 +1,10 @@
 extends Node
 
-# ================== ARCHON DIALOGUE MANAGER v1.9.0 ==================
+# ================== ARCHON DIALOGUE MANAGER v1.10.0 ==================
+# v1.10.0: enqueue_study_panel_reveal() added — fires after the player's
+#          first click on a constellation star in the main UI, revealing
+#          ConstellationPanel's Study Constellation button. Placeholder
+#          dialogue text, pending final narrative pass.
 # v1.9.0: enqueue_tetrad_upgrade now emits sequence_complete("First Tetrad
 #         Created") via dialogue_ended callback instead of immediately on
 #         enqueue — prevents Volumition panel revealing at dialogue start.
@@ -74,6 +78,7 @@ var first_constellation_done:           bool = false
 var constellation_panel_creation_done:  bool = false
 var open_constellation_panel_done:      bool = false
 var close_constellation_panel_done:     bool = false
+var study_panel_reveal_done:            bool = false
 
 var _name_entry_pending:     bool = false
 
@@ -137,6 +142,7 @@ signal first_constellation_sequence_complete()
 signal constellation_panel_creation_sequence_complete()
 signal open_constellation_panel_sequence_complete()
 signal close_constellation_panel_sequence_complete()
+signal study_panel_reveal_sequence_complete()
 
 signal ui_reveal_requested(panel_key: String)
 signal tetrad_category_complete(category_name: String)
@@ -331,6 +337,11 @@ func _on_star_chase_ended() -> void:
 func _on_tier1_archon_complete_ended() -> void:
     dialogue_ended.disconnect(_on_tier1_archon_complete_ended)
     emit_signal("tier1_archon_complete_sequence_complete")
+
+
+func _on_study_panel_reveal_ended() -> void:
+    dialogue_ended.disconnect(_on_study_panel_reveal_ended)
+    emit_signal("study_panel_reveal_sequence_complete")
 
     
 func _on_first_constellation_ended() -> void:
@@ -868,6 +879,20 @@ func enqueue_tier1_archon_complete() -> void:
     emit_signal("sequence_complete", "Tier 1 Archon Complete", lines)
 
 
+func enqueue_study_panel_reveal() -> void:
+    if study_panel_reveal_done:
+        return
+    study_panel_reveal_done = true
+    var lines = [
+        "Imma charging my laser!||YOU DO YOU, BRO.",
+        "Study Panel Button Activate!||AND I'LL FORM THE HEAD.",
+    ]
+    if not dialogue_ended.is_connected(_on_study_panel_reveal_ended):
+        dialogue_ended.connect(_on_study_panel_reveal_ended)
+    enqueue_dialogue(lines, true)
+    emit_signal("sequence_complete", "Study Panel Reveal", lines)
+
+
 func enqueue_star_chase() -> void:
     if star_chase_done:
         return
@@ -1071,6 +1096,7 @@ func get_save_data() -> Dictionary:
         "close_constellation_panel_done":       close_constellation_panel_done,
         "star_chase_done":                      star_chase_done,
         "tier1_archon_complete_done":           tier1_archon_complete_done,
+        "study_panel_reveal_done":              study_panel_reveal_done,
         "monad_panel_done":         monad_panel_done,
         "monad_random_done":        monad_random_done,
         "category_notified":        _category_notified.duplicate(),
@@ -1103,6 +1129,7 @@ func load_save_data(data: Dictionary) -> void:
     spark_movement_done     = data.get("spark_movement_done",       false)
     star_chase_done         = data.get("star_chase_done",           false)
     tier1_archon_complete_done  = data.get("tier1_archon_complete_done",  false)
+    study_panel_reveal_done     = data.get("study_panel_reveal_done",     false)
     first_constellation_done = data.get("first_constellation_done", false)
     constellation_panel_creation_done = data.get("constellation_panel_creation_done", false)
     open_constellation_panel_done = data.get("open_constellation_panel_done", false)

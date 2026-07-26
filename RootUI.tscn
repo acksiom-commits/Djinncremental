@@ -219,6 +219,7 @@ grow_vertical = 2
 mouse_filter = 2
 
 [node name="StudyButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/AllocationConstellationVBox/ConstellationLeftMargin/ConstellationPanel" unique_id=623479079]
+visible = false
 layout_mode = 2
 text = "Study Constellation"
 

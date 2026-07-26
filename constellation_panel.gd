@@ -1,5 +1,7 @@
 extends Control
-# ================= CONSTELLATION PANEL v1.1.0 =================
+# ================= CONSTELLATION PANEL v1.2.0 =================
+# v1.2.0: StudyButton hidden by default (see RootUI.tscn); reveal_study_button()
+#         added, called by root_ui.gd after the study_panel_reveal dialogue.
 # v1.1.0: Lazy starfield search, background color rect removed,
 #         starfield snap triggered on constellation selection.
 # Selector machinery removed. Pure display node.
@@ -86,3 +88,10 @@ func _on_study_pressed() -> void:
     var overlay := get_tree().root.find_child("ConstellationStudyOverlay", true, false)
     if overlay and overlay.has_method("show_for_constellation"):
         overlay.show_for_constellation(_active_id)
+
+
+## Reveals the Study Constellation button, hidden by default until the
+## player's first constellation-star click (see root_ui.gd's
+## study_panel_reveal dialogue trigger).
+func reveal_study_button() -> void:
+    _study_btn.visible = true

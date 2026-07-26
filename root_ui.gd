@@ -99,6 +99,7 @@ var _first_constellation_triggered: bool = false
 var _post_constellation_spark_count:            int  = 0
 var _constellation_panel_creation_triggered:    bool = false
 var _open_constellation_panel_triggered:        bool = false
+var _study_panel_reveal_triggered:              bool = false
 
 var _monad_type_triggered: Dictionary = {
     "solid":  false,
@@ -343,6 +344,10 @@ func _ready() -> void:
             _constellation_popout.panel_first_opened.connect(_on_constellation_first_opened)
     else:
         push_warning("RootUI: ConstellationPopout not found")
+
+    var _overlay := get_node_or_null("/root/Node2D/CanvasLayer/ConstellationOverlay")
+    if _overlay:
+        _overlay.puzzle_star_clicked.connect(_on_puzzle_star_clicked)
         
     if save_manager:
         save_manager.game_loaded.connect(_on_game_loaded)
@@ -379,6 +384,7 @@ func _ready() -> void:
         archon_dialogue_manager.first_constellation_sequence_complete.connect(_on_first_constellation_complete)
         archon_dialogue_manager.constellation_panel_creation_sequence_complete.connect(_on_constellation_panel_created)
         archon_dialogue_manager.open_constellation_panel_sequence_complete.connect(_on_constellation_panel_opened)
+        archon_dialogue_manager.study_panel_reveal_sequence_complete.connect(_on_study_panel_reveal_complete)
     _setup_panel_nodes()
     _hide_all_panels()
     _apply_unlock_visibility()
@@ -857,6 +863,19 @@ func _on_constellation_first_opened() -> void:
         archon_dialogue_manager.enqueue_open_constellation_panel()
 
 
+func _on_puzzle_star_clicked(_star_index: int) -> void:
+    if _study_panel_reveal_triggered or not archon_dialogue_manager:
+        return
+    _study_panel_reveal_triggered = true
+    archon_dialogue_manager.enqueue_study_panel_reveal()
+
+
+func _on_study_panel_reveal_complete() -> void:
+    var cp := find_child("ConstellationPanel", true, false)
+    if cp and cp.has_method("reveal_study_button"):
+        cp.reveal_study_button()
+
+
 func _on_constellation_panel_opened() -> void:
     if _constellation_popout:
         _constellation_popout.set_close_locked(false)
@@ -1105,6 +1124,11 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     _first_constellation_triggered = archon_dialogue_manager.first_constellation_done
     _constellation_panel_creation_triggered = archon_dialogue_manager.constellation_panel_creation_done
     _open_constellation_panel_triggered     = archon_dialogue_manager.open_constellation_panel_done
+    _study_panel_reveal_triggered           = archon_dialogue_manager.study_panel_reveal_done
+    if _study_panel_reveal_triggered:
+        var _cp_reveal := find_child("ConstellationPanel", true, false)
+        if _cp_reveal and _cp_reveal.has_method("reveal_study_button"):
+            _cp_reveal.reveal_study_button()
     if _constellation_panel_creation_triggered and _constellation_popout:
         _constellation_popout.show_tab()
     if _open_constellation_panel_triggered and _constellation_popout:
