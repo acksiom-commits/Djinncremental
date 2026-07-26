@@ -53,38 +53,27 @@ const OVERFLOW_PRIORITY: Array[String] = [
 
 
 # ===================== GENERIC OPERATION TABLE ============
-# Drives _produce_generic() for the four data-driven operations.
-# inputs: resource_key -> cost per output unit
-# lock_keys: any of these being locked aborts production entirely
-const GENERIC_OPS = {
-    "particle_compress": {
-        "inputs":     {"tetrad": 5},
-        "output_key": "particle",
-        "lock_keys":  [],
-    },
-    "iota_assemble": {
-        "inputs":     {"sparks": 5, "monad": 16, "particle": 4},
-        "output_key": "iota",
-        "lock_keys":  ["particle"],
-    },
-    "mote_compress": {
-        "inputs":     {"iota": 5},
-        "output_key": "mote",
-        "lock_keys":  ["iota"],
-    },
-    "grain_assemble": {
-        "inputs":     {"sparks": 25, "monad": 64, "particle": 16, "mote": 4},
-        "output_key": "grain",
-        "lock_keys":  ["particle", "mote"],
-    },
+# Drives _produce_generic() for the four data-driven operations. Inputs and
+# output key come from game_data.RECIPES (single source of truth) — this
+# table holds only the one thing RECIPES doesn't: which locked resources
+# should abort production entirely. Deliberately NOT merged with
+# OP_LOCK_KEYS below despite the similar shape — the two tables serve
+# different call sites (_produce_generic vs. _op_has_inputs) and
+# intentionally disagree for iota_assemble/grain_assemble; see the comment
+# above OP_LOCK_KEYS.
+const GENERIC_OPS_LOCK_KEYS = {
+    "particle_compress": [],
+    "iota_assemble":     ["particle"],
+    "mote_compress":     ["iota"],
+    "grain_assemble":    ["particle", "mote"],
 }
 
 # Lock keys checked by _op_has_inputs() for every op it's ever called with,
 # including the two (monad_compress, tetrad_assemble) that aren't in
-# GENERIC_OPS at all since they use their own bespoke production functions.
-# Deliberately preserves the existing inconsistency where most ops check no
-# locks — this mirrors exactly what _op_has_inputs hardcoded before it
-# became RECIPES-driven, not a design choice made here.
+# GENERIC_OPS_LOCK_KEYS at all since they use their own bespoke production
+# functions. Deliberately preserves the existing inconsistency where most
+# ops check no locks — this mirrors exactly what _op_has_inputs hardcoded
+# before it became RECIPES-driven, not a design choice made here.
 const OP_LOCK_KEYS = {
     "monad_compress":    ["sparks"],
     "tetrad_assemble":   [],
@@ -484,13 +473,12 @@ func _produce_tetrad_assemble(requested: BigNum) -> BigNum:
 func _produce_generic(op: String, requested: BigNum) -> BigNum:
     if requested.is_zero():
         return BigNum.zero()
-    var def: Dictionary = GENERIC_OPS.get(op, {})
-    if def.is_empty():
+    if not GENERIC_OPS_LOCK_KEYS.has(op) or not game_data.RECIPES.has(op):
         push_warning("ProductionManager: _produce_generic called with unknown op: " + op)
         return BigNum.zero()
 
     # Check locks on flagged input resources
-    for lock_key in def["lock_keys"]:
+    for lock_key in GENERIC_OPS_LOCK_KEYS[op]:
         if gc.is_locked(lock_key):
             return BigNum.zero()
 
@@ -499,9 +487,12 @@ func _produce_generic(op: String, requested: BigNum) -> BigNum:
     if headroom.is_zero():
         return BigNum.zero()
 
+    var recipe: Dictionary = game_data.RECIPES[op]
+    var inputs: Dictionary = recipe["inputs"]
+    var output_key: String = recipe["outputs"].keys()[0]
+
     # Calculate max producible from each input and headroom
     var actual = _bignum_min(requested, headroom)
-    var inputs: Dictionary = def["inputs"]
     for input_key in inputs:
         var cost: int = inputs[input_key]
         actual = _bignum_min(actual, _get_resource_available(input_key).div_int_floor(cost))
@@ -514,7 +505,7 @@ func _produce_generic(op: String, requested: BigNum) -> BigNum:
         _spend_resource(input_key, actual.mul_int(inputs[input_key]))
 
     # Add output
-    _add_resource(def["output_key"], actual)
+    _add_resource(output_key, actual)
     return actual
 
 
