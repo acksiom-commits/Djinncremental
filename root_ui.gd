@@ -82,12 +82,7 @@ var _nineteenth_grain_triggered:    bool = false
 var _twentieth_grain_triggered:     bool = false
 var _first_uonite_triggered:        bool = false
 
-@warning_ignore("unused_private_class_variable")
-var _first_prestige_triggered:      bool = false
 var _end_first_prestige_triggered:  bool = false
-var _third_prestige_triggered:      bool = false
-var _fourth_prestige_triggered:     bool = false
-var _fifth_prestige_triggered:      bool = false
 var _archon_volition_constellation_triggered: bool = false
 var _no_archon_volition_constellation_triggered: bool = false
 
@@ -388,6 +383,7 @@ func _ready() -> void:
         archon_dialogue_manager.constellation_panel_creation_sequence_complete.connect(_on_constellation_panel_created)
         archon_dialogue_manager.open_constellation_panel_sequence_complete.connect(_on_constellation_panel_opened)
         archon_dialogue_manager.study_panel_reveal_sequence_complete.connect(_on_study_panel_reveal_complete)
+    _build_simple_triggers()
     _setup_panel_nodes()
     _hide_all_panels()
     _apply_unlock_visibility()
@@ -1015,12 +1011,6 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     _twentieth_grain_triggered  = uonite_ever_made or (not game_context.grain.is_zero() and game_context.grain.is_greater_or_equal(BigNum.from_int(20)))
     _end_first_prestige_triggered   = game_context.expansions >= 1 and \
         (archon_dialogue_manager.second_prestige_done if archon_dialogue_manager else false)
-    _third_prestige_triggered  = game_context.expansions >= 3 and \
-        (archon_dialogue_manager.third_prestige_done if archon_dialogue_manager else false)
-    _fourth_prestige_triggered = game_context.expansions >= 4 and \
-        (archon_dialogue_manager.fourth_prestige_done if archon_dialogue_manager else false)
-    _fifth_prestige_triggered  = game_context.expansions >= 5 and \
-        (archon_dialogue_manager.fifth_prestige_done if archon_dialogue_manager else false)
     _archon_volition_constellation_triggered = archon_dialogue_manager.archon_volition_constellation_done if archon_dialogue_manager else false
     _no_archon_volition_constellation_triggered = archon_dialogue_manager.no_archon_volition_constellation_done if archon_dialogue_manager else false
     _star_in_view_triggered         = archon_dialogue_manager.star_chase_done
@@ -1041,8 +1031,16 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     if (_archon_volition_constellation_triggered or _no_archon_volition_constellation_triggered) \
             and _constellation_popout:
         _constellation_popout.show_slot_grid()
-        
-        
+    # _firmament_threshold_revealed had no re-derivation here previously —
+    # confirmed gap during the refactor-order item #10 research: it reset
+    # to false on every load, so a save with Uonite already produced would
+    # never re-apply the Firmament age reveal/unlock after reloading.
+    _firmament_threshold_revealed = not game_context.uonite.is_zero()
+    if _firmament_threshold_revealed and _ages_popout:
+        _ages_popout.reveal()
+        _ages_popout.unlock_age("firmament")
+
+
 func _transition_to_age(scene_path: String) -> void:
     if save_manager:
         save_manager.save_game()
@@ -1069,31 +1067,160 @@ func _get_completing_category() -> String:
     return ""
 
 
+# ==================================================
+# DATA-DRIVEN TRIGGER TABLE
+# ==================================================
+# The ~16 _check_*_trigger functions that fit a uniform "guard bool ->
+# single condition -> effect" shape were collapsed into this table
+# (refactor-order item #10 in docs/early_game_architecture_overview.md).
+# Functions needing a loop (multiple fires per tick), extra parameters,
+# or a per-frame accumulator stayed hand-written and are still called
+# directly from _process(): _check_monad_upgrade_trigger,
+# _check_totals_milestones, _check_star_in_view_trigger.
+#
+# Each entry: {"guard": <String field name>, "condition": Callable[]->bool,
+# "effect": Callable[]->void}. _run_simple_triggers() checks each guard
+# field via get()/set() dynamic property access (the field names are all
+# real `var` members) and fires effect() the one time condition() first
+# becomes true.
+var _simple_triggers: Array[Dictionary] = []
+
+func _build_simple_triggers() -> void:
+    _simple_triggers = [
+        {
+            "guard": "_firmament_threshold_revealed",
+            "condition": func(): return _ages_popout != null and not game_context.uonite.is_zero(),
+            "effect": func():
+                _ages_popout.reveal()
+                _ages_popout.unlock_age("firmament"),
+        },
+        {
+            "guard": "_all_fundaments_triggered",
+            "condition": func(): return _tetrad_variety_triggered["adaemant"] and _tetrad_variety_triggered["aquae"] and _tetrad_variety_triggered["aethyr"],
+            "effect": func(): archon_dialogue_manager.enqueue_all_fundaments(),
+        },
+        {
+            "guard": "_first_non_fundament_category_triggered",
+            "condition": func():
+                if _all_fundaments_triggered:
+                    return false
+                var cat = _get_completing_category()
+                return cat != "" and cat != "fundament",
+            "effect": func(): archon_dialogue_manager.enqueue_first_non_fundament(_get_completing_category()),
+        },
+        {
+            "guard": "_first_particle_triggered",
+            "condition": func(): return not game_context.particle.is_zero(),
+            "effect": func():
+                _grant_foci()
+                archon_dialogue_manager.notification_queue.append("First Particle: +1 Focus.")
+                archon_dialogue_manager.enqueue_first_particle(),
+        },
+        {
+            "guard": "_first_iota_triggered",
+            "condition": func(): return not game_context.iota.is_zero(),
+            "effect": func():
+                _grant_foci()
+                archon_dialogue_manager.notification_queue.append("First Iota: +1 Focus.")
+                archon_dialogue_manager.try_show_next_notification(),
+        },
+        {
+            "guard": "_first_mote_triggered",
+            "condition": func(): return not game_context.mote.is_zero(),
+            "effect": func():
+                _grant_foci()
+                archon_dialogue_manager.notification_queue.append("First Mote: +1 Focus.")
+                archon_dialogue_manager.try_show_next_notification(),
+        },
+        {
+            "guard": "_first_grain_triggered",
+            "condition": func(): return not game_context.grain.is_zero(),
+            "effect": func():
+                _grant_foci()
+                archon_dialogue_manager.notification_queue.append("First Grain: +1 Focus.")
+                archon_dialogue_manager.enqueue_first_grain(),
+        },
+        {
+            "guard": "_nineteenth_grain_triggered",
+            "condition": func(): return game_context.grain.is_greater_or_equal(BigNum.from_int(19)) and game_context.uonite.is_zero(),
+            "effect": func(): archon_dialogue_manager.enqueue_nineteenth_grain(),
+        },
+        {
+            "guard": "_twentieth_grain_triggered",
+            "condition": func(): return game_context.grain.is_greater_or_equal(BigNum.from_int(20)) and game_context.uonite.is_zero(),
+            "effect": func(): archon_dialogue_manager.enqueue_twentieth_grain(),
+        },
+        {
+            "guard": "_end_first_prestige_triggered",
+            "condition": func(): return game_context.expansions >= 1 and game_context.grains_this_cycle >= 20,
+            "effect": func(): archon_dialogue_manager.enqueue_end_first_prestige(),
+        },
+        {
+            "guard": "_archon_volition_constellation_triggered",
+            "condition": func(): return game_context.expansions >= 2 and game_context.sparks.is_greater_or_equal(BigNum.from_int(150)) and game_context.has_parent_volition_for_constellation(0),
+            "effect": func(): archon_dialogue_manager.enqueue_archon_volition_constellation(),
+        },
+        {
+            "guard": "_no_archon_volition_constellation_triggered",
+            "condition": func(): return game_context.expansions >= 2 and game_context.sparks.is_greater_or_equal(BigNum.from_int(1500)) and not game_context.has_parent_volition_for_constellation(0),
+            "effect": func(): archon_dialogue_manager.enqueue_no_archon_volition_constellation(),
+        },
+        {
+            "guard": "_first_uonite_triggered",
+            "condition": func(): return not game_context.uonite.is_zero(),
+            "effect": func():
+                game_context.refinements_completed += 1
+                _grant_foci()
+                archon_dialogue_manager.notification_queue.append("First Uonite: +1 Focus, +1 Refinement.")
+                archon_dialogue_manager.try_show_next_notification()
+                var cd := get_node_or_null("/root/ConstellationData")
+                if cd and cd.has_method("on_achievement"):
+                    cd.on_achievement("first_uonite"),
+        },
+        {
+            "guard": "_spark_movement_triggered",
+            "condition": func(): return game_context.expansions > 0 and game_context.sparks_since_first_prestige >= 1000.0,
+            "effect": func(): archon_dialogue_manager.enqueue_spark_movement(),
+        },
+        {
+            "guard": "_tier1_archon_complete_triggered",
+            "condition": func():
+                var cd := get_node_or_null("/root/ConstellationData")
+                return cd != null and cd.get_spark_fraction(0) >= cd.THRESHOLD_STARS,
+            "effect": func(): archon_dialogue_manager.enqueue_tier1_archon_complete(),
+        },
+        {
+            "guard": "_first_constellation_triggered",
+            "condition": func(): return archon_dialogue_manager.spark_movement_done and game_context.expansions > 0 and game_context.sparks.is_greater_or_equal(BigNum.from_int(3000)),
+            "effect": func():
+                _reveal_panel("constellation")
+                var cd := get_node_or_null("/root/ConstellationData")
+                if cd:
+                    cd._unlock_constellation(0)
+                    cd.set_active_constellation(0, 0)
+                    game_context.constellation_spark_totals["0"] = 150.0
+                archon_dialogue_manager.enqueue_first_constellation(),
+        },
+    ]
+
+
+func _run_simple_triggers() -> void:
+    if not game_context or not archon_dialogue_manager:
+        return
+    for entry in _simple_triggers:
+        if get(entry["guard"]):
+            continue
+        if entry["condition"].call():
+            set(entry["guard"], true)
+            entry["effect"].call()
+
+
 func _check_first_fundament_trigger(variety_key: String) -> void:
     if _first_fundament_triggered:
         return
     if variety_key in ["adaemant", "aquae", "aethyr"]:
         _first_fundament_triggered = true
         archon_dialogue_manager.enqueue_first_fundament(variety_key)
-
-
-func _check_all_fundaments_trigger() -> void:
-    if _all_fundaments_triggered:
-        return
-    if _tetrad_variety_triggered["adaemant"] and \
-       _tetrad_variety_triggered["aquae"]    and \
-       _tetrad_variety_triggered["aethyr"]:
-        _all_fundaments_triggered = true
-        archon_dialogue_manager.enqueue_all_fundaments()
-        
-
-func _check_first_non_fundament_category_trigger() -> void:
-    if _first_non_fundament_category_triggered or _all_fundaments_triggered:
-        return
-    var completing_category = _get_completing_category()
-    if completing_category and completing_category != "fundament":
-        _first_non_fundament_category_triggered = true
-        archon_dialogue_manager.enqueue_first_non_fundament(completing_category)
 
 
 func _check_tetrad_upgrade_trigger() -> void:
@@ -1114,108 +1241,15 @@ func _check_tetrad_upgrade_trigger() -> void:
                 archon_dialogue_manager.notify_tetrad_created(variety_key, _tetrad_variety_triggered)
             _grant_foci()
 
-func _check_particle_trigger() -> void:
-    if _first_particle_triggered or not archon_dialogue_manager or not game_context:
-        return
-    if not game_context.particle.is_zero():
-        _first_particle_triggered = true
-        _grant_foci()
-        archon_dialogue_manager.notification_queue.append("First Particle: +1 Focus.")
-        archon_dialogue_manager.enqueue_first_particle()
-
-
-func _check_iota_trigger() -> void:
-    if _first_iota_triggered or not archon_dialogue_manager or not game_context:
-        return
-    if not game_context.iota.is_zero():
-        _first_iota_triggered = true
-        _grant_foci()
-        archon_dialogue_manager.notification_queue.append("First Iota: +1 Focus.")
-        archon_dialogue_manager.try_show_next_notification()
-
-
-func _check_mote_trigger() -> void:
-    if _first_mote_triggered or not archon_dialogue_manager or not game_context:
-        return
-    if not game_context.mote.is_zero():
-        _first_mote_triggered = true
-        _grant_foci()
-        archon_dialogue_manager.notification_queue.append("First Mote: +1 Focus.")
-        archon_dialogue_manager.try_show_next_notification()
-
-
-func _check_grain_trigger() -> void:
-    if _first_grain_triggered or not archon_dialogue_manager or not game_context:
-        return
-    if not game_context.grain.is_zero():
-        _first_grain_triggered = true
-        _grant_foci()
-        archon_dialogue_manager.notification_queue.append("First Grain: +1 Focus.")
-        archon_dialogue_manager.enqueue_first_grain()
-        
-        
-func _check_nineteenth_grain_trigger() -> void:
-    if _nineteenth_grain_triggered or not archon_dialogue_manager or not game_context:
-        return
-    if game_context.grain.is_greater_or_equal(BigNum.from_int(19)) and game_context.uonite.is_zero():
-        _nineteenth_grain_triggered = true
-        archon_dialogue_manager.enqueue_nineteenth_grain()
-        
-
-func _check_twentieth_grain_trigger() -> void:
-    if _twentieth_grain_triggered or not archon_dialogue_manager or not game_context:
-        return
-    if game_context.grain.is_greater_or_equal(BigNum.from_int(20)) and game_context.uonite.is_zero():
-        _twentieth_grain_triggered = true
-        archon_dialogue_manager.enqueue_twentieth_grain()
-
-
-func _check_end_first_prestige_trigger() -> void:
-    #if not _end_first_prestige_triggered and game_context and _time > 5.0:
-        #if int(_time) % 5 == 0:
-            #print("END_FIRST_PRESTIGE CHECK: flag=", _end_first_prestige_triggered,
-                  #" expansions=", game_context.expansions,
-                  #" grains_this_cycle=", game_context.grains_this_cycle)
-    if _end_first_prestige_triggered or not archon_dialogue_manager or not game_context:
-        return
-    # Fires once the player has produced 20 Grains in the cycle after their first Expansion.
-    if game_context.expansions >= 1 and game_context.grains_this_cycle >= 20:
-        _end_first_prestige_triggered = true
-        archon_dialogue_manager.enqueue_end_first_prestige()
-
-
-func _check_archon_volition_constellation_trigger() -> void:
-    if _archon_volition_constellation_triggered or not archon_dialogue_manager or not game_context:
-        return
-    # Fires in second Expansion when Archon has 1+ Volitions assigned AND 150+ Sparks stockpiled.
-    if game_context.expansions >= 2 and game_context.sparks.is_greater_or_equal(BigNum.from_int(150)):
-        if game_context.has_parent_volition_for_constellation(0):  # Archon is id 0
-            _archon_volition_constellation_triggered = true
-            archon_dialogue_manager.enqueue_archon_volition_constellation()
-
-
-func _check_no_archon_volition_constellation_trigger() -> void:
-    if _no_archon_volition_constellation_triggered or not archon_dialogue_manager or not game_context:
-        return
-    # Fires in second Expansion when Archon has NO Volitions assigned AND 1500+ Sparks stockpiled.
-    if game_context.expansions >= 2 and game_context.sparks.is_greater_or_equal(BigNum.from_int(1500)):
-        if not game_context.has_parent_volition_for_constellation(0):  # Archon is id 0
-            _no_archon_volition_constellation_triggered = true
-            archon_dialogue_manager.enqueue_no_archon_volition_constellation()
-
-
-func _check_uonite_trigger() -> void:
-    if _first_uonite_triggered or not archon_dialogue_manager or not game_context:
-        return
-    if not game_context.uonite.is_zero():
-        _first_uonite_triggered = true
-        game_context.refinements_completed += 1
-        _grant_foci()
-        archon_dialogue_manager.notification_queue.append("First Uonite: +1 Focus, +1 Refinement.")
-        archon_dialogue_manager.try_show_next_notification()
-        var cd := get_node_or_null("/root/ConstellationData")
-        if cd and cd.has_method("on_achievement"):
-            cd.on_achievement("first_uonite")
+# _check_particle_trigger, _check_iota_trigger, _check_mote_trigger,
+# _check_grain_trigger, _check_nineteenth_grain_trigger,
+# _check_twentieth_grain_trigger, _check_end_first_prestige_trigger,
+# _check_archon_volition_constellation_trigger,
+# _check_no_archon_volition_constellation_trigger, and _check_uonite_trigger
+# used to live here as hand-written functions — folded into
+# _simple_triggers (see _build_simple_triggers(), refactor-order item #10)
+# 2026-07-26. _check_end_first_prestige_trigger's commented-out debug
+# print block was dropped as dead scaffolding, not carried into the table.
 
 
 func _do_prestige_reset() -> void:
@@ -1354,25 +1388,9 @@ func _check_totals_milestones() -> void:
     archon_dialogue_manager.try_show_next_notification()
 
 
-func _check_spark_movement_trigger() -> void:
-    if _spark_movement_triggered or not game_context or not archon_dialogue_manager:
-        return
-    if game_context.expansions > 0 and \
-       game_context.sparks_since_first_prestige >= 1000.0:
-        _spark_movement_triggered = true
-        archon_dialogue_manager.enqueue_spark_movement()
-        
-    
-func _check_tier1_archon_complete_trigger() -> void:
-    if _tier1_archon_complete_triggered or not game_context or not archon_dialogue_manager:
-        return
-    var cd := get_node_or_null("/root/ConstellationData")
-    if not cd:
-        return
-    var fraction: float = cd.get_spark_fraction(0)
-    if fraction >= cd.THRESHOLD_STARS:
-        _tier1_archon_complete_triggered = true
-        archon_dialogue_manager.enqueue_tier1_archon_complete()
+# _check_spark_movement_trigger and _check_tier1_archon_complete_trigger
+# used to live here — folded into _simple_triggers, see
+# _build_simple_triggers() (refactor-order item #10, 2026-07-26).
 
 
 func _check_star_in_view_trigger(delta: float) -> void:
@@ -1411,25 +1429,9 @@ func _check_star_in_view_trigger(delta: float) -> void:
             archon_dialogue_manager.enqueue_star_chase()
 
 
-func _check_constellation_trigger() -> void:
-    if _first_constellation_triggered or not game_context or not archon_dialogue_manager:
-        return
-    # Requires the Spark Movement dialogue to have completed first —
-    # that dialogue asks the player to stockpile 3000 Sparks.
-    if not archon_dialogue_manager.spark_movement_done:
-        return
-    if game_context.expansions > 0 and \
-       game_context.sparks.is_greater_or_equal(BigNum.from_int(3000)):
-        _first_constellation_triggered = true
-        _reveal_panel("constellation")
-        var cd := get_node_or_null("/root/ConstellationData")
-        if cd:
-            cd._unlock_constellation(0)
-            cd.set_active_constellation(0, 0)
-            # Pre-seed 150 Sparks to give the first star ~0.1 luminosity.
-            # 150 is 1/20th of the 3000 stockpile — fits Kaleb's "trickle" phrasing.
-            game_context.constellation_spark_totals["0"] = 150.0
-        archon_dialogue_manager.enqueue_first_constellation()
+# _check_constellation_trigger used to live here — folded into
+# _simple_triggers, see _build_simple_triggers() (refactor-order item #10,
+# 2026-07-26).
 
 
 # ==================================================
@@ -2116,25 +2118,10 @@ func _process(delta: float) -> void:
     _update_counters()
     _update_tetrad_display()
     _update_bars(delta)
-    _check_firmament_threshold()
     _check_monad_upgrade_trigger()
-    _check_all_fundaments_trigger()
-    _check_first_non_fundament_category_trigger()
-    _check_particle_trigger()
-    _check_iota_trigger()
-    _check_mote_trigger()
-    _check_grain_trigger()
-    _check_nineteenth_grain_trigger()
-    _check_twentieth_grain_trigger()
-    _check_end_first_prestige_trigger()
-    _check_archon_volition_constellation_trigger()
-    _check_no_archon_volition_constellation_trigger()
-    _check_uonite_trigger()
+    _run_simple_triggers()
     _check_totals_milestones()
-    _check_tier1_archon_complete_trigger()
     _check_star_in_view_trigger(delta)
-    _check_spark_movement_trigger()
-    _check_constellation_trigger()
     _tooltip_accum += delta
     if _tooltip_accum >= 1.0:
         _tooltip_accum = 0.0
@@ -2145,19 +2132,12 @@ func _process(delta: float) -> void:
         if save_manager:
             save_manager.save_game()
 
-func _check_firmament_threshold() -> void:
-    if _firmament_threshold_revealed or not game_context or not _ages_popout:
-        return
-    if not game_context.uonite.is_zero():
-        _firmament_threshold_revealed = true
-        _ages_popout.reveal()
-        _ages_popout.unlock_age("firmament")
-        #archon_dialogue_manager.enqueue_dialogue([
-            #"The Primordial Stage nears its close.",
-            #"You may carry what endures into the Firmament."
-        #])
-        
-        
+# _check_firmament_threshold used to live here — folded into
+# _simple_triggers, see _build_simple_triggers() (refactor-order item #10,
+# 2026-07-26). The dead commented-out enqueue_dialogue(...) call it had
+# was dropped, not carried into the table.
+
+
 # ==================================================
 # COUNTERS
 # ==================================================

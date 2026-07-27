@@ -40,8 +40,9 @@ var _fork_mode: bool = false
 # ── COMPUTED PASS-THROUGHS (preserve v1.0.0 external field names) ────
 # Read only from constellation_study_overlay.gd (_fork.<name>), never from
 # within this class, so Godot's static analyzer can't see the external use
-# and flags each as unused — same false-positive class as root_ui.gd's
-# _first_prestige_triggered.
+# and flags each as unused — the same "written but never internally read"
+# false-positive class root_ui.gd's dead _first_prestige_triggered field
+# used to be an example of, before it was deleted 2026-07-26.
 @warning_ignore("unused_private_class_variable")
 var _fork_state: ForkState:
     get: return _engine.state as ForkState
