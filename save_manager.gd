@@ -7,10 +7,15 @@ signal save_reset()
 
 
 func save_game() -> void:
-    var gc:  Node = get_node_or_null("/root/GameContext")
-    var cd:  Node = get_node_or_null("/root/ConstellationData")
-    var adm: Node = get_node_or_null("/root/ArchonDialogueManager")
-    var ar:  Node = get_node_or_null("/root/AchievementRegistry")
+    var gc:      Node = get_node_or_null("/root/GameContext")
+    var cd:      Node = get_node_or_null("/root/ConstellationData")
+    var adm:     Node = get_node_or_null("/root/ArchonDialogueManager")
+    var ar:      Node = get_node_or_null("/root/AchievementRegistry")
+    # JournalPopout is a scene node owned by the current age's UI scene, not
+    # an autoload — reach it the same way root_ui.gd itself does.
+    var journal: Node = null
+    if get_tree().current_scene:
+        journal = get_tree().current_scene.find_child("JournalPopout", true, false)
     if not gc:
         push_error("SaveManager: GameContext not found.")
         return
@@ -21,6 +26,8 @@ func save_game() -> void:
         data["dialogue"] = adm.get_save_data()
     if ar and ar.has_method("get_save_data"):
         data["achievements"] = ar.get_save_data()
+    if journal and journal.has_method("get_save_data"):
+        data["journal"] = journal.get_save_data()
     data["save_timestamp"] = Time.get_unix_time_from_system()
     var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
     if not file:
@@ -31,10 +38,13 @@ func save_game() -> void:
 
 
 func load_game() -> void:
-    var gc:  Node = get_node_or_null("/root/GameContext")
-    var cd:  Node = get_node_or_null("/root/ConstellationData")
-    var adm: Node = get_node_or_null("/root/ArchonDialogueManager")
-    var ar:  Node = get_node_or_null("/root/AchievementRegistry")
+    var gc:      Node = get_node_or_null("/root/GameContext")
+    var cd:      Node = get_node_or_null("/root/ConstellationData")
+    var adm:     Node = get_node_or_null("/root/ArchonDialogueManager")
+    var ar:      Node = get_node_or_null("/root/AchievementRegistry")
+    var journal: Node = null
+    if get_tree().current_scene:
+        journal = get_tree().current_scene.find_child("JournalPopout", true, false)
     if not gc:
         push_error("SaveManager: GameContext not found.")
         return
@@ -60,6 +70,8 @@ func load_game() -> void:
         adm.load_save_data(data["dialogue"])
     if ar and ar.has_method("load_save_data") and data.has("achievements"):
         ar.load_save_data(data["achievements"])
+    if journal and journal.has_method("load_save_data") and data.has("journal"):
+        journal.load_save_data(data["journal"])
     var timestamp: float = float(data.get("save_timestamp", -1.0))
     var elapsed := 0.0
     if timestamp > 0.0:
