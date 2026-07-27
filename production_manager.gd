@@ -715,30 +715,19 @@ func _roll_monads_simplex(amount: BigNum, unlocked: Array) -> void:
 
 
 func _assemble_tetrads_true_random(count: int, available_types: Array) -> void:
-    # FIXED 2026-07-27 — was diverging from _try_assemble_tetrad's manual
-    # single-unit path (see the comment there for the bug history this
-    # exact class of issue caused before): used to draw all 4 monads from
-    # a single static available_types pool, checking sufficiency only
-    # after the fact, and `break` on failure abandoned every REMAINING
-    # unit in the batch, not just the one that came up short. Now each
-    # unit rebuilds its own remaining-stock pool per draw — same as the
-    # manual path, so it's structurally impossible to draw more of a type
-    # than exists — and a unit that can't complete its 4-draw just skips
-    # to the next one instead of killing the whole batch. Locked types
-    # never appear in available_types in the first place (filtered by the
-    # caller, _batch_assemble_tetrads), so no per-draw lock check is
-    # needed here the way the manual path needs one.
+    # DEDUPED 2026-07-27 — the per-unit draw loop here used to be a second,
+    # independently-fixed copy of _try_assemble_tetrad's rebuild-per-draw
+    # logic (see that function's comment for the bug history). Both now
+    # call the shared _draw_monad_composition() so there's exactly one
+    # implementation of "draw N monads from a live categorized pool
+    # without over-drawing" to keep correct. Locked types never appear in
+    # available_types (pre-filtered by the caller, _batch_assemble_tetrads),
+    # so unlike the manual path this call site needs no lock filtering
+    # of its own.
+    var monad_draws: int = _recipe_cost("tetrad_assemble", "monad")
     for i in count:
-        var drawn = []
-        for j in 4:
-            var remaining_pool = []
-            for k in available_types:
-                if not gc.monad[k].is_less_than(BigNum.from_int(drawn.count(k) + 1)):
-                    remaining_pool.append(k)
-            if remaining_pool.is_empty():
-                break
-            drawn.append(remaining_pool[gc.rng.randi_range(0, remaining_pool.size() - 1)])
-        if drawn.size() < 4:
+        var drawn = _draw_monad_composition(monad_draws, available_types)
+        if drawn.is_empty():
             continue
         var s = drawn.count("solid")
         var l = drawn.count("liquid")
@@ -1081,33 +1070,45 @@ func manual_create_uonite() -> bool:
 # ==================================================
 # SINGLE-UNIT ASSEMBLY HELPERS (used by manual actions)
 # ==================================================
+## Draws `count` monads one at a time from `candidate_keys`, rebuilding the
+## remaining-stock pool on every draw against LIVE gc.monad values so a type
+## running low mid-draw can never be over-drawn. Returns the drawn
+## composition (e.g. ["solid","solid","liquid","gas"]) on success, or an
+## empty array if the pool runs dry before `count` draws complete.
+##
+## Shared 2026-07-27 by _try_assemble_tetrad and _assemble_tetrads_true_random
+## — both used to hand-roll this exact loop independently, and both
+## independently had (and were fixed for) the same over-draw bug when it
+## used a single static pool built once instead of rebuilding per draw. Keep
+## this the one place that logic lives; don't re-inline it at a new call site.
+##
+## `candidate_keys` must already be lock-filtered by the caller — locks can't
+## change mid-call (synchronous, no yields), so callers filter once up front
+## rather than re-checking gc.is_locked() on every draw.
+func _draw_monad_composition(count: int, candidate_keys: Array) -> Array:
+    var drawn: Array = []
+    for i in count:
+        var remaining_pool: Array = []
+        for k in candidate_keys:
+            if not gc.monad[k].is_less_than(BigNum.from_int(drawn.count(k) + 1)):
+                remaining_pool.append(k)
+        if remaining_pool.is_empty():
+            return []
+        drawn.append(remaining_pool[gc.rng.randi_range(0, remaining_pool.size() - 1)])
+    return drawn
+
+
 func _try_assemble_tetrad() -> bool:
     var sparks_cost: int = _recipe_cost("tetrad_assemble", "sparks")
     var monad_draws: int = _recipe_cost("tetrad_assemble", "monad")
     if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
-    var pool = []
-    if not gc.is_locked("monad_solid")  and not gc.monad["solid"].is_zero():  pool.append("solid")
-    if not gc.is_locked("monad_liquid") and not gc.monad["liquid"].is_zero(): pool.append("liquid")
-    if not gc.is_locked("monad_gas")    and not gc.monad["gas"].is_zero():    pool.append("gas")
-    if pool.is_empty(): return false
-    var drawn = []
-    for i in monad_draws:
-        # Rebuild pool each draw to respect remaining stock. This is
-        # deliberate, not defensive style: an earlier version drew all 4
-        # monads up front from a single static pool (built once), which
-        # could draw more of a type than actually remained once a type
-        # ran low — a real, repeatedly-chased bug where production would
-        # halt or misbehave. _assemble_tetrads_true_random (the batch
-        # counterpart below) had the same bug independently and was fixed
-        # 2026-07-27 to match this same per-draw-rebuild approach.
-        # Rebuilding per-draw closes it here too. Don't collapse
-        # this back into a single up-front pool build.
-        var remaining_pool = []
-        for k in ["solid", "liquid", "gas"]:
-            if not gc.is_locked("monad_" + k) and not gc.monad[k].is_less_than(BigNum.from_int(drawn.count(k) + 1)):
-                remaining_pool.append(k)
-        if remaining_pool.is_empty(): return false
-        drawn.append(remaining_pool[gc.rng.randi_range(0, remaining_pool.size() - 1)])
+    var candidate_keys = []
+    if not gc.is_locked("monad_solid")  and not gc.monad["solid"].is_zero():  candidate_keys.append("solid")
+    if not gc.is_locked("monad_liquid") and not gc.monad["liquid"].is_zero(): candidate_keys.append("liquid")
+    if not gc.is_locked("monad_gas")    and not gc.monad["gas"].is_zero():    candidate_keys.append("gas")
+    if candidate_keys.is_empty(): return false
+    var drawn = _draw_monad_composition(monad_draws, candidate_keys)
+    if drawn.is_empty(): return false
     var s = drawn.count("solid")
     var l = drawn.count("liquid")
     var g = drawn.count("gas")
