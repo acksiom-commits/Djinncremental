@@ -103,6 +103,27 @@ func append_notification(text: String) -> void:
 
 
 # ==================================================
+# SAVE / LOAD — called by SaveManager, which finds this node via
+# get_tree().current_scene.find_child("JournalPopout", ...) since it's a
+# scene node, not an autoload. _sequences/_notifications are both plain
+# String/Array/Dictionary data, so they round-trip through JSON as-is.
+# ==================================================
+func get_save_data() -> Dictionary:
+    return {
+        "sequences":     _sequences,
+        "notifications": _notifications,
+    }
+
+
+func load_save_data(data: Dictionary) -> void:
+    _sequences     = data.get("sequences", [])
+    _notifications = data.get("notifications", [])
+    _rebuild_sequence_list()
+    if _active_tab == "notices":
+        _rebuild_notices()
+
+
+# ==================================================
 # HISTORY — sequence list and detail view
 # ==================================================
 func _rebuild_sequence_list() -> void:
