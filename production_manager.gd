@@ -715,17 +715,34 @@ func _roll_monads_simplex(amount: BigNum, unlocked: Array) -> void:
 
 
 func _assemble_tetrads_true_random(count: int, available_types: Array) -> void:
+    # FIXED 2026-07-27 — was diverging from _try_assemble_tetrad's manual
+    # single-unit path (see the comment there for the bug history this
+    # exact class of issue caused before): used to draw all 4 monads from
+    # a single static available_types pool, checking sufficiency only
+    # after the fact, and `break` on failure abandoned every REMAINING
+    # unit in the batch, not just the one that came up short. Now each
+    # unit rebuilds its own remaining-stock pool per draw — same as the
+    # manual path, so it's structurally impossible to draw more of a type
+    # than exists — and a unit that can't complete its 4-draw just skips
+    # to the next one instead of killing the whole batch. Locked types
+    # never appear in available_types in the first place (filtered by the
+    # caller, _batch_assemble_tetrads), so no per-draw lock check is
+    # needed here the way the manual path needs one.
     for i in count:
         var drawn = []
         for j in 4:
-            drawn.append(available_types[gc.rng.randi_range(0, available_types.size() - 1)])
+            var remaining_pool = []
+            for k in available_types:
+                if not gc.monad[k].is_less_than(BigNum.from_int(drawn.count(k) + 1)):
+                    remaining_pool.append(k)
+            if remaining_pool.is_empty():
+                break
+            drawn.append(remaining_pool[gc.rng.randi_range(0, remaining_pool.size() - 1)])
+        if drawn.size() < 4:
+            continue
         var s = drawn.count("solid")
         var l = drawn.count("liquid")
         var g = drawn.count("gas")
-        if gc.monad["solid"].is_less_than(BigNum.from_int(s))  or \
-           gc.monad["liquid"].is_less_than(BigNum.from_int(l)) or \
-           gc.monad["gas"].is_less_than(BigNum.from_int(g)):
-            break
         if not gc.spend_sparks(1): break
         gc.spend_monad(s, l, g)
         var result = _resolve_tetrad(s, l, g)
@@ -1075,7 +1092,16 @@ func _try_assemble_tetrad() -> bool:
     if pool.is_empty(): return false
     var drawn = []
     for i in monad_draws:
-        # Rebuild pool each draw to respect remaining stock
+        # Rebuild pool each draw to respect remaining stock. This is
+        # deliberate, not defensive style: an earlier version drew all 4
+        # monads up front from a single static pool (built once), which
+        # could draw more of a type than actually remained once a type
+        # ran low — a real, repeatedly-chased bug where production would
+        # halt or misbehave. _assemble_tetrads_true_random (the batch
+        # counterpart below) had the same bug independently and was fixed
+        # 2026-07-27 to match this same per-draw-rebuild approach.
+        # Rebuilding per-draw closes it here too. Don't collapse
+        # this back into a single up-front pool build.
         var remaining_pool = []
         for k in ["solid", "liquid", "gas"]:
             if not gc.is_locked("monad_" + k) and not gc.monad[k].is_less_than(BigNum.from_int(drawn.count(k) + 1)):
