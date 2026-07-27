@@ -495,7 +495,7 @@ func _produce_generic(op: String, requested: BigNum) -> BigNum:
     var actual = _bignum_min(requested, headroom)
     for input_key in inputs:
         var cost: int = inputs[input_key]
-        actual = _bignum_min(actual, _get_resource_available(input_key).div_int_floor(cost))
+        actual = _bignum_min(actual, gc.get_resource(input_key).div_int_floor(cost))
 
     if actual.is_zero():
         return BigNum.zero()
@@ -512,19 +512,6 @@ func _produce_generic(op: String, requested: BigNum) -> BigNum:
 # ==================================================
 # GENERIC HELPERS — resource access by string key
 # ==================================================
-func _get_resource_available(key: String) -> BigNum:
-    match key:
-        "sparks":   return gc.sparks
-        "monad":    return gc.get_monad_unlocked_total()
-        "tetrad":   return gc.get_tetrad_unlocked_total()
-        "particle": return gc.particle
-        "iota":     return gc.iota
-        "mote":     return gc.mote
-        "grain":    return gc.grain
-    push_warning("ProductionManager: unknown key in _get_resource_available: " + key)
-    return BigNum.zero()
-
-
 func _spend_resource(key: String, amount: BigNum) -> void:
     match key:
         "sparks":   gc.sparks   = gc.sparks.sub(amount)
