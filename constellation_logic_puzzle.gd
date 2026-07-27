@@ -177,17 +177,24 @@ var pitch_count: int = 0                # distinct pitch classes = _pitch_freqs.
 var _pitch_freq_rank: Array[int] = []   # pitch_index -> ascending-frequency rank, ties share a rank
 
 var _rng := RandomNumberGenerator.new()
- 
- 
+
+# Injected only so generate_clues_forms() can yield a frame between
+# generation attempts instead of blocking — same reason ArchonPokeMinigame
+# etc. take a host reference. Optional: null is safe (generation just runs
+# fully synchronously, as it always used to), so no existing caller breaks.
+var _host: Node = null
+
+
 # ==================================================
 # SETUP — call before generate_clues_async()
 # ==================================================
 func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
         p_player_seed: int, p_constellation_id: int,
         name_theme: Dictionary = {}, p_star_pitch_index: Array = [],
-        p_pitch_freqs: Array = []) -> void:
+        p_pitch_freqs: Array = [], p_host: Node = null) -> void:
     star_count       = p_star_count
     constellation_id = p_constellation_id
+    _host            = p_host
     player_seed_used = p_player_seed
     _generation_complete = false
     _final_clues.clear()
@@ -1071,9 +1078,21 @@ func _shuffle_dict_array(arr: Array[Dictionary]) -> void:
 # ==================================================
 # GENERATION ENTRY POINT — matches root_ui.gd's calling convention
 # (puzzle.generate_clues_async.call_deferred(), then listens for
-# generation_complete). generate_clues_forms() itself is synchronous;
-# call_deferred() only defers *when* this runs, not whether it yields
-# internally, so no per-frame chunking is needed for that call shape to work.
+# generation_complete).
+#
+# FIXED 2026-07-27 — generate_clues_forms() used to be fully synchronous
+# despite the "_async" name: call_deferred() only defers *when* it starts,
+# not how long it blocks once running. With 4 constellations now pre-
+# generated one per prestige-cycle (see root_ui.gd's _on_*_prestige_complete
+# handlers), the harder/larger later constellations needing multiple
+# uniqueness-retry attempts (MAX_GENERATION_ATTEMPTS, below) could stall
+# the whole game for several seconds right after a prestige dialogue. Since
+# there's a full prestige cycle's worth of real time before the result is
+# actually needed, generate_clues_forms() now yields a frame between
+# attempts (when a host is available — see _host above) so generation
+# happens spread across frames instead of blocking one. Deliberately NOT
+# touched: the attempt's own internal Forms/tier logic — only the
+# already-existing, already-instrumented outer retry-loop boundary yields.
 # ==================================================
 # Check puzzle.is_generation_complete() before reading get_form_clue_texts().
 
@@ -1084,7 +1103,7 @@ func is_generation_complete() -> bool:
 
 
 func generate_clues_async() -> void:
-    generate_clues_forms()
+    await generate_clues_forms()
     generation_complete.emit(constellation_id)
 
  
@@ -3247,6 +3266,12 @@ func generate_clues_forms() -> void:
             break
         print("[FORMS_GEN %d] attempt %d/%d not yet unique (sequence_solutions=%d, all_names_revealed=%s) — retrying with a fresh draw." % [
             constellation_id, attempt, MAX_GENERATION_ATTEMPTS, int(result["seq_solutions_count"]), str(result["name_unique"])])
+        # Yield a frame before the next attempt instead of blocking straight
+        # through up to MAX_GENERATION_ATTEMPTS in one go — see the header
+        # comment above generation_complete for why. No-op (old synchronous
+        # behavior) if no host was set at setup() time.
+        if _host:
+            await _host.get_tree().process_frame
     if not (bool(result["seq_unique"]) and bool(result["name_unique"])):
         push_error("ConstellationLogicPuzzle [%d]: STILL NOT UNIQUE after %d generation attempts (sequence_solutions=%d, all_names_revealed=%s) — puzzle unsolvable as configured." % [
             constellation_id, MAX_GENERATION_ATTEMPTS, int(result["seq_solutions_count"]), str(result["name_unique"])])

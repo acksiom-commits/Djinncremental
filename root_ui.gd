@@ -829,7 +829,7 @@ func _start_puzzle_generation(constellation_id: int) -> void:
     var puzzle := ConstellationLogicPuzzle.new()
     puzzle.setup(star_count, line_pairs, correct_star_sequence,
             cd.player_seed, constellation_id, name_theme,
-            star_pitch_index, pitch_freqs)
+            star_pitch_index, pitch_freqs, self)
     puzzle.generation_complete.connect(
         func(cid: int): _on_puzzle_generation_complete(cid, puzzle))
     puzzle.generate_clues_async.call_deferred()
@@ -878,7 +878,7 @@ func _dev_recompute_puzzle(constellation_id: int) -> void:
     var puzzle := ConstellationLogicPuzzle.new()
     puzzle.setup(star_count, line_pairs, correct_star_sequence,
             dev_seed, constellation_id, name_theme,
-            star_pitch_index, pitch_freqs)
+            star_pitch_index, pitch_freqs, self)
     puzzle.generation_complete.connect(
         func(cid: int):
             cd.set_puzzle_cache(cid, puzzle.to_cache_dict())
