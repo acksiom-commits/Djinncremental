@@ -228,6 +228,7 @@ var _saved_mouse_filters: Dictionary = {}
 
 # === KALEB TIME OUT UI LOCK
 var _ui_lock_blocker: Control = null
+var _archon_minigame: ArchonPokeMinigame = null
 
 # === MINIMAL UI MODE ===
 var _ui_minimal_active: bool  = false
@@ -286,9 +287,11 @@ func _ready() -> void:
     _storage_display        = find_child("StorageDisplay",    true, false)
     _archon_tetra           = find_child("ArchonTetrahedron", true, false)
     var _archon_panel_node := find_child("ArchonGraphicPanel", true, false)
-    if _archon_panel_node:
-        _archon_panel_node.gui_input.connect(_on_archon_panel_gui_input)
     _ui_lock_blocker = get_node_or_null("../UILockBlocker")
+    _archon_minigame = ArchonPokeMinigame.new()
+    _archon_minigame.setup(self, game_context, archon_dialogue_manager, _archon_tetra, _ui_lock_blocker)
+    if _archon_panel_node:
+        _archon_panel_node.gui_input.connect(_archon_minigame.on_gui_input)
     var _picker_base := "TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox/"
     _name_picker_vbox    = get_node_or_null(_picker_base + "NamePickerVBox")
     _name_picker_label   = get_node_or_null(_picker_base + "NamePickerVBox/NamePickerHBox/NamePickerCurrentLabel")
@@ -390,99 +393,6 @@ func _ready() -> void:
     _apply_unlock_visibility()
     
     
-func _on_archon_panel_gui_input(event: InputEvent) -> void:
-    if not (event is InputEventMouseButton \
-    and event.button_index == MOUSE_BUTTON_LEFT \
-    and event.pressed):
-        return
-
-    get_viewport().set_input_as_handled()
-
-    if not game_context or not archon_dialogue_manager:
-        return
-
-    # Block input during lockdown
-    var now: float = Time.get_unix_time_from_system()
-    if game_context.archon_lockdown_end_time > now:
-        return
-
-    # Post-lockdown window expired: enter reentry grind if threshold not yet set
-    if game_context.archon_warning_window_end > 0.0 \
-    and now > game_context.archon_warning_window_end \
-    and game_context.archon_lockdown_level > 0 \
-    and game_context.archon_lockdown_level < 6:
-        if game_context.archon_reentry_threshold == 0:
-            game_context.archon_reentry_threshold = game_context.archon_poke_count \
-                + 166 + game_context.archon_lockdown_level
-        game_context.archon_warning_window_end = 0.0
-
-    game_context.archon_poke_count += 1
-    var poke: int = game_context.archon_poke_count
-
-    # Clear reentry threshold once met
-    if game_context.archon_reentry_threshold > 0 \
-    and poke >= game_context.archon_reentry_threshold:
-        game_context.archon_reentry_threshold  = 0
-        game_context.archon_warning_window_end = 0.0
-
-    var response: Dictionary = archon_dialogue_manager.get_poke_response(
-        poke, game_context.archon_reentry_threshold)
-
-    if _archon_tetra:
-        if response["tantrum"]:
-            _archon_tetra.play_tantrum()
-        else:
-            if response["shiver"]:
-                _archon_tetra.play_shiver()
-            if response["wiggle"]:
-                _archon_tetra.play_wiggle_y()
-
-    if response["dialogue"] != "":
-        archon_dialogue_manager.enqueue_dialogue([response["dialogue"]])
-
-    # === LOCKDOWN HANDLING ===
-    if response["tantrum"] and game_context.archon_lockdown_level < 6:
-        var level: int = game_context.archon_lockdown_level
-        var durations:  Array = [60.0, 120.0, 180.0, 300.0, 300.0, 300.0]
-        var lock_dur:   float = durations[level]
-        game_context.archon_lockdown_end_time  = now + lock_dur
-        game_context.archon_lockdown_level    += 1
-        game_context.archon_warning_window_end = now + lock_dur + 900.0
-
-        _engage_ui_lock(lock_dur)
-
-        var post_messages: Array = [
-            "I hope you've learned your lesson.",
-            "That was a nice rest. And the next one will be even longer.",
-            "", "", "", ""
-        ]
-        var post_msg: String = post_messages[level]
-        if post_msg != "":
-            get_tree().create_timer(lock_dur).timeout.connect(
-                func(): archon_dialogue_manager.enqueue_dialogue([post_msg]), CONNECT_ONE_SHOT)
-
-        if game_context.archon_lockdown_level == 4:
-            _grant_poke_achievement("persistence_is_rewarded")
-        elif game_context.archon_lockdown_level == 6:
-            _grant_poke_achievement("pesteristence_is_rewarded")
-
-
-func _grant_poke_achievement(achievement_key: String) -> void:
-    var ar: Node = get_node_or_null("/root/AchievementRegistry")
-    if ar and ar.has_method("earn"):
-        ar.earn(achievement_key)
-    
-    
-func _engage_ui_lock(duration: float) -> void:
-    if _ui_lock_blocker:
-        _ui_lock_blocker.visible = true
-    get_tree().create_timer(duration).timeout.connect(_release_ui_lock, CONNECT_ONE_SHOT)
-
-func _release_ui_lock() -> void:
-    if _ui_lock_blocker:
-        _ui_lock_blocker.visible = false
-
-
 # ==================================================
 # PROGRESSIVE UI REVEAL
 # ==================================================
@@ -1044,12 +954,7 @@ func _on_game_loaded(offline_seconds: float) -> void:
         if cached_boot.is_empty() or not seed_matches or not version_matches:
             cd_boot.clear_puzzle_cache(0)
             _start_puzzle_generation(0)
-    var now: float = Time.get_unix_time_from_system()
-    if game_context and game_context.archon_lockdown_end_time > now:
-        var remaining: float = game_context.archon_lockdown_end_time - now
-        _engage_ui_lock(remaining)
-    elif _ui_lock_blocker:
-        _ui_lock_blocker.visible = false
+    _archon_minigame.restore_on_load()
     if offline_seconds < 30.0 or not production_manager:
         return
     var results: Dictionary = production_manager.apply_offline_progress(offline_seconds)
