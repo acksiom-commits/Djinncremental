@@ -215,6 +215,16 @@ var _name_picker_next:    Button  = null
 var _name_picker_confirm: Button  = null
 var _name_picker_index:   int     = 0
 
+# === CACHED REFS — extracted 2026-07-27 to close out refactor-order
+# item #10's leftover trigger-sprawl note (docs/early_game_architecture_
+# overview.md §2): each of these was independently re-derived via a full
+# hardcoded path at 3-4 separate call sites instead of being looked up
+# once and cached like _uonite_icosa/_storage_display/_archon_tetra above.
+const DIALOGUE_PANEL_BASE_PATH: String = "TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox/"
+var _dialogue_label:    RichTextLabel = null   # set once in _setup_dialogue()
+var _study_overlay:     Node          = null   # set once in _ready()
+var _summon_spark_btn:  Button        = null   # set once in _connect_action_buttons()
+
 # === DEV ===
 const DEV_UONITE_CHUNK = [1.11, 33]
 
@@ -287,11 +297,11 @@ func _ready() -> void:
     _archon_minigame.setup(self, game_context, archon_dialogue_manager, _archon_tetra, _ui_lock_blocker)
     if _archon_panel_node:
         _archon_panel_node.gui_input.connect(_archon_minigame.on_gui_input)
-    var _picker_base := "TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox/"
-    _name_picker_vbox    = get_node_or_null(_picker_base + "NamePickerVBox")
-    _name_picker_label   = get_node_or_null(_picker_base + "NamePickerVBox/NamePickerHBox/NamePickerCurrentLabel")
-    _name_picker_next    = get_node_or_null(_picker_base + "NamePickerVBox/NamePickerHBox/NamePickerNextButton")
-    _name_picker_confirm = get_node_or_null(_picker_base + "NamePickerVBox/NamePickerConfirmButton")
+    _name_picker_vbox    = get_node_or_null(DIALOGUE_PANEL_BASE_PATH + "NamePickerVBox")
+    _name_picker_label   = get_node_or_null(DIALOGUE_PANEL_BASE_PATH + "NamePickerVBox/NamePickerHBox/NamePickerCurrentLabel")
+    _name_picker_next    = get_node_or_null(DIALOGUE_PANEL_BASE_PATH + "NamePickerVBox/NamePickerHBox/NamePickerNextButton")
+    _name_picker_confirm = get_node_or_null(DIALOGUE_PANEL_BASE_PATH + "NamePickerVBox/NamePickerConfirmButton")
+    _study_overlay       = get_node_or_null("/root/Node2D/CanvasLayer/ConstellationStudyOverlay")
     if _name_picker_next:
         _name_picker_next.pressed.connect(_on_name_picker_next)
     if _name_picker_confirm:
@@ -508,14 +518,13 @@ func _setup_dialogue() -> void:
         push_warning("RootUI: ArchonDialogueManager not found")
         return
 
-    var dialogue_base = "TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox/"
-    var label = get_node_or_null(dialogue_base + "ArchonDialogueRichTextLabel")
-    if not label:
+    _dialogue_label = get_node_or_null(DIALOGUE_PANEL_BASE_PATH + "ArchonDialogueRichTextLabel")
+    if not _dialogue_label:
         push_warning("RootUI: ArchonDialogueRichTextLabel not found")
         return
 
-    label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    archon_dialogue_manager.set_display_nodes(label, null)
+    _dialogue_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    archon_dialogue_manager.set_display_nodes(_dialogue_label, null)
 
     var panel = get_node_or_null("TopBandHBox/RightStackVBox/DialoguePanelContainer")
     if panel:
@@ -822,11 +831,10 @@ func _on_puzzle_generation_complete(constellation_id: int,
     if not cd:
         return
     cd.set_puzzle_cache(constellation_id, puzzle.to_cache_dict())
-    var study := get_node_or_null("/root/Node2D/CanvasLayer/ConstellationStudyOverlay")
-    if study and study.visible and study.has_method("show_for_constellation") \
-            and study.has_method("get_current_constellation_id") \
-            and study.get_current_constellation_id() == constellation_id:
-        study.show_for_constellation(constellation_id)
+    if _study_overlay and _study_overlay.visible and _study_overlay.has_method("show_for_constellation") \
+            and _study_overlay.has_method("get_current_constellation_id") \
+            and _study_overlay.get_current_constellation_id() == constellation_id:
+        _study_overlay.show_for_constellation(constellation_id)
 
 
 func _dev_recompute_puzzle(constellation_id: int) -> void:
@@ -846,9 +854,8 @@ func _dev_recompute_puzzle(constellation_id: int) -> void:
         func(cid: int, puzzle: ConstellationLogicPuzzle):
             cd.set_puzzle_cache(cid, puzzle.to_cache_dict())
             print("[DEV] Constellation %d puzzle recomputed, seed=%d" % [cid, dev_seed])
-            var study := get_node_or_null("/root/Node2D/CanvasLayer/ConstellationStudyOverlay")
-            if study and study.visible and study.has_method("show_for_constellation"):
-                study.show_for_constellation(cid))
+            if _study_overlay and _study_overlay.visible and _study_overlay.has_method("show_for_constellation"):
+                _study_overlay.show_for_constellation(cid))
 
 
 # ==================================================
@@ -888,10 +895,8 @@ func _generate_puzzle(constellation_id: int, cd: Node, def: Dictionary,
 func _on_uonite_name_requested() -> void:
     _name_picker_index = 0
     _update_name_picker_display()
-    var dialogue_label = get_node_or_null(
-        "TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox/ArchonDialogueRichTextLabel")
-    if dialogue_label:
-        dialogue_label.visible = false
+    if _dialogue_label:
+        _dialogue_label.visible = false
     if _name_picker_vbox:
         _name_picker_vbox.visible = true
 
@@ -917,10 +922,8 @@ func _on_name_picker_confirm() -> void:
     game_context.uonite_name = UONITE_NAMES[_name_picker_index]
     if _name_picker_vbox:
         _name_picker_vbox.visible = false
-    var dialogue_label = get_node_or_null(
-        "TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox/ArchonDialogueRichTextLabel")
-    if dialogue_label:
-        dialogue_label.visible = true
+    if _dialogue_label:
+        _dialogue_label.visible = true
     if archon_dialogue_manager:
         archon_dialogue_manager.advance_dialogue()
 
@@ -1497,10 +1500,9 @@ func _input(event: InputEvent) -> void:
                         game_context.constellation_spark_totals["0"] = cd.get_spark_cap(0) * 0.15
                     cd.active_constellation_changed.emit(0, cd.active_per_octant[0])
         if event.keycode == KEY_U:
-            var study_overlay := get_node_or_null("/root/Node2D/CanvasLayer/ConstellationStudyOverlay")
             var target_id: int = 0
-            if study_overlay and study_overlay.has_method("get_current_constellation_id"):
-                var open_id: int = study_overlay.get_current_constellation_id()
+            if _study_overlay and _study_overlay.has_method("get_current_constellation_id"):
+                var open_id: int = _study_overlay.get_current_constellation_id()
                 if open_id >= 0:
                     target_id = open_id
             _dev_recompute_puzzle(target_id)
@@ -1580,6 +1582,7 @@ func _on_tetrad_label_gui_input(event: InputEvent, label: RichTextLabel, line_ma
 # BUTTON CONNECTIONS
 # ==================================================
 func _connect_action_buttons() -> void:
+    _summon_spark_btn = find_child("SummonSparkButton", true, false)
     _try_connect_button("SummonSparkButton",      "pressed", _on_summon_spark_pressed)
     _try_connect_button("MonadCompressButton",    "pressed", _on_monad_compress_pressed)
     _try_connect_button("IotaAssembleButton",     "pressed", _on_iota_assemble_pressed)
@@ -1973,7 +1976,7 @@ func _show_subtree(node: Node) -> void:
 # SPARK EFFECT
 # ==================================================
 func _spawn_spark_effect() -> void:
-    var btn = get_node_or_null("TopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/SummonSparkButton")
+    var btn = _summon_spark_btn
     if not btn: return
     var canvas_layer = get_parent()
     if not canvas_layer: return
