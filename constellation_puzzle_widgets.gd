@@ -18,6 +18,11 @@ extends RefCounted
 var _host: ConstellationStudyOverlay = null
 var _deduction: ConstellationPuzzleDeduction = null
 
+# Shared puzzle-state color palette (confirmed/eliminated/protected/neutral/
+# muted) — see puzzle_state_colors.gd for the full rationale. Single
+# Inspector-editable source instead of ~25 duplicated Color(...) literals.
+const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
+
 
 func setup(host: ConstellationStudyOverlay, deduction: ConstellationPuzzleDeduction) -> void:
     _host = host
@@ -63,7 +68,7 @@ func _all_final_clues_for_tabs() -> Array[Dictionary]:
 
 func _populate_color_markers() -> void:
     var shown: bool = false
-    var neutral_col := Color(0.55, 0.50, 0.65, 1)
+    var neutral_col := STATE_COLORS.muted
     for clue in _all_final_clues_for_tabs():
         var characteristics: Array = clue.get("characteristics", [])
         if not ("Color" in characteristics):
@@ -71,7 +76,7 @@ func _populate_color_markers() -> void:
         var text: String = str(clue.get("text", ""))
         if text == "":
             continue
-        var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else Color(0.82, 0.78, 0.92, 1)
+        var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
         _host._markers_content.add_child(_make_clue_label(text, col))
         shown = true
 
@@ -93,7 +98,7 @@ func _populate_sequence_markers() -> void:
         var text: String = str(clue.get("text", ""))
         if text == "":
             continue
-        _host._markers_content.add_child(_make_clue_label(text, Color(0.82, 0.78, 0.92, 1)))
+        _host._markers_content.add_child(_make_clue_label(text, STATE_COLORS.neutral))
         shown = true
 
     if not shown:
@@ -107,7 +112,7 @@ func _populate_sequence_markers() -> void:
 
 func _populate_pitch_markers() -> void:
     var shown: bool = false
-    var neutral_col := Color(0.55, 0.50, 0.65, 1)
+    var neutral_col := STATE_COLORS.muted
     for clue in _all_final_clues_for_tabs():
         var characteristics: Array = clue.get("characteristics", [])
         if not ("Pitch" in characteristics):
@@ -115,7 +120,7 @@ func _populate_pitch_markers() -> void:
         var text: String = str(clue.get("text", ""))
         if text == "":
             continue
-        var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else Color(0.82, 0.78, 0.92, 1)
+        var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
         _host._markers_content.add_child(_make_clue_label(text, col))
         shown = true
 
@@ -137,7 +142,7 @@ func _populate_proximity_markers() -> void:
         var text: String = str(clue.get("text", ""))
         if text == "":
             continue
-        _host._markers_content.add_child(_make_clue_label(text, Color(0.82, 0.78, 0.92, 1)))
+        _host._markers_content.add_child(_make_clue_label(text, STATE_COLORS.neutral))
         shown = true
 
     if not shown:
@@ -158,7 +163,7 @@ func _populate_name_clues_markers() -> void:
             continue
         if not ("NameClues" in characteristics or _text_mentions_star_name(text)):
             continue
-        _host._markers_content.add_child(_make_clue_label(text, Color(0.82, 0.78, 0.92, 1)))
+        _host._markers_content.add_child(_make_clue_label(text, STATE_COLORS.neutral))
         shown = true
 
     if not shown:
@@ -246,7 +251,7 @@ func _on_proximity_check(edge_key: String, btn_check: Button, btn_x: Button) -> 
     var cur: int = int(_host._proximity_states.get(edge_key, 0))
     var new_state: int = 0 if cur == 1 else 1
     _host._proximity_states[edge_key] = new_state
-    btn_check.modulate = Color(0.3, 1.0, 0.4, 1.0) if new_state == 1 else Color(1,1,1,1.0)
+    btn_check.modulate = STATE_COLORS.confirmed if new_state == 1 else Color(1,1,1,1.0)
     btn_x.modulate = Color(1,1,1,1.0)
     _deduction._save_puzzle_notes()
 
@@ -255,7 +260,7 @@ func _on_proximity_x(edge_key: String, btn_check: Button, btn_x: Button) -> void
     var cur: int = int(_host._proximity_states.get(edge_key, 0))
     var new_state: int = 0 if cur == 2 else 2
     _host._proximity_states[edge_key] = new_state
-    btn_x.modulate = Color(1.0, 0.35, 0.25, 1.0) if new_state == 2 else Color(1,1,1,1.0)
+    btn_x.modulate = STATE_COLORS.eliminated if new_state == 2 else Color(1,1,1,1.0)
     btn_check.modulate = Color(1,1,1,1.0)
     _deduction._save_puzzle_notes()
 
@@ -318,7 +323,7 @@ func _open_name_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     for n in names_sorted:
         var name_str: String = str(n)
         var state: int = _deduction._record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
-        _host._name_checklist_popup.add_name_row(name_str, state, Color(0.82, 0.78, 0.92, 1))
+        _host._name_checklist_popup.add_name_row(name_str, state, STATE_COLORS.neutral)
     _host._name_checklist_popup.open(record_idx, screen_pos)
 
 
@@ -429,7 +434,7 @@ func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
             if int(sp) == pitch_idx:
                 incidence_count += 1
         var state: int = _deduction._record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", note_name)
-        _host._pitch_checklist_popup.add_pitch_row(note_name, incidence_count, state, Color(0.82, 0.78, 0.92, 1))
+        _host._pitch_checklist_popup.add_pitch_row(note_name, incidence_count, state, STATE_COLORS.neutral)
     _host._pitch_checklist_popup.open(record_idx, screen_pos)
 
 
@@ -617,11 +622,11 @@ func _style_degree_toggle_btn(btn: Button, _degree: int, state: int) -> void:
             btn.add_theme_stylebox_override("normal",
                 btn.get_theme_stylebox("normal", "Button"))
         1:
-            btn.modulate = Color(0.3, 1.0, 0.4, 1.0)
+            btn.modulate = STATE_COLORS.confirmed
             btn.add_theme_stylebox_override("normal",
                 btn.get_theme_stylebox("normal", "Button"))
         2:
-            btn.modulate = Color(1.0, 0.35, 0.25, 1.0)
+            btn.modulate = STATE_COLORS.eliminated
             btn.add_theme_stylebox_override("normal",
                 btn.get_theme_stylebox("normal", "Button"))
         _:
@@ -935,7 +940,7 @@ func _make_clue_label(text: String, _color: Color) -> PanelContainer:
     rtl.scroll_active = false
     rtl.mouse_filter = Control.MOUSE_FILTER_PASS
     rtl.text = _bbcode_for_clue_text(text)
-    rtl.add_theme_color_override("default_color", Color(0.2, 0.9, 0.2, 1))
+    rtl.add_theme_color_override("default_color", STATE_COLORS.unresolved_fallback)
     rtl.add_theme_font_size_override("normal_font_size", 18)
     rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     rtl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1236,14 +1241,14 @@ func _draw_melody_staff() -> void:
     var step_x: float = usable_w / float(maxi(_host._star_count - 1, 1))
 
     var baseline_y: float = margin_top + usable_h * 0.5
-    var baseline_col := Color(0.55, 0.50, 0.65, 1.0)
+    var baseline_col := STATE_COLORS.muted
     _host._melody_staff_panel.draw_line(
         Vector2(margin_x, baseline_y), Vector2(margin_x + usable_w, baseline_y), baseline_col, 1.0)
 
     # Faint measure dividers, every 4 notes — a piano-roll rhythm cue, not
     # tied to the actual melody's real phrase structure (which varies per
     # constellation and isn't something the UI should assume it knows).
-    var bar_col := Color(0.55, 0.50, 0.65, 1.0)
+    var bar_col := STATE_COLORS.muted
     var pos: int = 4
     while pos < _host._star_count:
         var bx: float = margin_x + step_x * float(pos)
@@ -1251,8 +1256,8 @@ func _draw_melody_staff() -> void:
             Vector2(bx, margin_top), Vector2(bx, margin_top + usable_h), bar_col, 1.0)
         pos += 4
 
-    var note_col := Color(0.82, 0.78, 0.92, 1.0)
-    var unknown_col := Color(0.55, 0.50, 0.65, 1.0)
+    var note_col := STATE_COLORS.neutral
+    var unknown_col := STATE_COLORS.muted
     var font := ThemeDB.fallback_font
     var font_size_small := 16
 
@@ -1331,7 +1336,7 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
             if int(sp) == pitch_idx:
                 incidence_count += 1
         var state: int = _deduction._record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", note_name)
-        _host._staff_popup.add_pitch_row(note_name, incidence_count, state, Color(0.82, 0.78, 0.92, 1))
+        _host._staff_popup.add_pitch_row(note_name, incidence_count, state, STATE_COLORS.neutral)
 
     # Add color rows
     for ci in _host.COLOR_NAME_LABELS.size():
@@ -1345,7 +1350,7 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
     all_names.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
     for name_str in all_names:
         var state: int = _deduction._record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
-        _host._staff_popup.add_name_row(name_str, state, Color(0.82, 0.78, 0.92, 1))
+        _host._staff_popup.add_name_row(name_str, state, STATE_COLORS.neutral)
 
     _host._staff_popup.open(seq_pos, record_idx, screen_pos)
 
@@ -1964,7 +1969,7 @@ func _style_color_toggle_btn(btn: Button, color_idx: int, state: int) -> void:
             btn.modulate = Color(base_col.r, base_col.g, base_col.b, 0.5)
             btn.text = letter + "✗"
         4:  # protected — "still possible"
-            btn.modulate = Color(1, 0, 1, 1)
+            btn.modulate = STATE_COLORS.protected
             btn.text = letter
         _:  # neutral
             btn.modulate = Color(base_col.r, base_col.g, base_col.b, 1.0)
@@ -2140,23 +2145,23 @@ func _apply_name_row_visual(state: int, name_lbl: Label,
             name_lbl.add_theme_color_override("font_color",
                 Color(star_color.r, star_color.g, star_color.b, 1.0))
             name_lbl.modulate = Color(1, 1, 1, 1)
-            btn_check.modulate = Color(0.3, 1.0, 0.4, 1.0)
+            btn_check.modulate = STATE_COLORS.confirmed
             btn_x.modulate = Color(1, 1, 1, 1.0)
         2:  # eliminated ✗ (hard)
             name_lbl.add_theme_color_override("font_color", Color(0.35, 0.30, 0.45, 1.0))
             name_lbl.modulate = Color(1, 1, 1, 1.0)
             btn_check.modulate = Color(1, 1, 1, 1.0)
-            btn_x.modulate = Color(1.0, 0.35, 0.25, 1.0)
+            btn_x.modulate = STATE_COLORS.eliminated
         3:  # soft-eliminated — another candidate in this row is protected
-            name_lbl.add_theme_color_override("font_color", Color(0.45, 0.40, 0.55, 1.0))
+            name_lbl.add_theme_color_override("font_color", STATE_COLORS.soft_eliminated)
             name_lbl.modulate = Color(1, 1, 1, 1.0)
             btn_check.modulate = Color(1, 1, 1, 1.0)
             btn_x.modulate = Color(1.0, 0.6, 0.5, 1.0)
         4:  # protected — TEMP debug: impossible to miss
-            name_lbl.add_theme_color_override("font_color", Color(1, 0, 1, 1))
+            name_lbl.add_theme_color_override("font_color", STATE_COLORS.protected)
             name_lbl.modulate = Color(1, 1, 1, 1)
-            btn_check.modulate = Color(1, 0, 1, 1)
-            btn_x.modulate = Color(1, 0, 1, 1)
+            btn_check.modulate = STATE_COLORS.protected
+            btn_x.modulate = STATE_COLORS.protected
         _:  # neutral
             name_lbl.add_theme_color_override("font_color",
                 Color(star_color.r, star_color.g, star_color.b, 1.0))

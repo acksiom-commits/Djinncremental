@@ -29,6 +29,9 @@ const FORK_COLOR_WRONG:   Color = Color(1.0, 0.2, 1.0, 1.0)
 const FORK_COLOR_REPLAY:  Color = Color(0.3, 0.8, 1.0, 1.0)
 const FORK_COLOR_FANFARE: Color = Color(1.0, 0.95, 0.5, 1.0)
 
+# Shared puzzle-state color palette — see puzzle_state_colors.gd.
+const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
+
 # ── DEPENDENCIES (injected via setup()/set_constellation()) ───────────
 var _star_map_control:  Control = null
 var _fork_btn:          Button  = null
@@ -80,7 +83,7 @@ func set_constellation(constellation_id: int, cd: Node, gc: Node) -> void:
 
 func toggle_mode() -> void:
     _fork_mode = not _fork_mode
-    _fork_btn.modulate = Color(0.3, 1.0, 0.4, 1.0) if _fork_mode else Color(1, 1, 1, 1)
+    _fork_btn.modulate = STATE_COLORS.confirmed if _fork_mode else Color(1, 1, 1, 1)
     if _fork_mode:
         _engine.check_availability()
     if is_instance_valid(_star_map_control):

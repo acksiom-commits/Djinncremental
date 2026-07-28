@@ -19,6 +19,9 @@ extends RefCounted
 
 var _host: ConstellationStudyOverlay = null
 
+# Shared puzzle-state color palette — see puzzle_state_colors.gd.
+const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
+
 # Deduction code (_merge_match_records/_confirm_match_record_identity) asks
 # for a conflict choice through this instead of calling the widgets file's
 # _show_conflict_choice directly — keeps this file's only "put something on
@@ -1002,12 +1005,12 @@ func _load_match_records(data: Array) -> void:
 
 func _display_color_for_record(record_idx: int) -> Color:
     if record_idx < 0 or record_idx >= _match_records.size():
-        return Color(0.2, 0.9, 0.2, 1)
+        return STATE_COLORS.unresolved_fallback
     var r: Dictionary = _match_records[record_idx]
     for ck in r["color_states"]:
         if int(r["color_states"][ck]) == 1:
             return _host.STAR_COLORS_BY_IDX[int(ck)]
-    return Color(0.2, 0.9, 0.2, 1)
+    return STATE_COLORS.unresolved_fallback
 
 
 func _debug_dump_named_records() -> void:

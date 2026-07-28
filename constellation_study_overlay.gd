@@ -52,6 +52,9 @@ var _widgets: ConstellationPuzzleWidgets = null
 var _deduction: ConstellationPuzzleDeduction = null
 
 const UNKNOWN_SEQ_COLOR := Color(0.35, 0.75, 0.45, 1.0)
+
+# Shared puzzle-state color palette — see puzzle_state_colors.gd.
+const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
 @onready var _tab_color:           Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar/TabColor
 @onready var _tab_sequence:        Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar/TabSequence
 
@@ -571,7 +574,7 @@ func _on_map_input(event: InputEvent) -> void:
 # ==================================================
 func _on_pitch_listen_toggle_pressed() -> void:
     _pitch_listen_mode = not _pitch_listen_mode
-    _pitch_listen_btn.modulate = Color(0.3, 1.0, 0.4, 1.0) if _pitch_listen_mode else Color(1, 1, 1, 1)
+    _pitch_listen_btn.modulate = STATE_COLORS.confirmed if _pitch_listen_mode else Color(1, 1, 1, 1)
     if _pitch_listen_mode:
         _fork.force_off()
         _selected_star = -1
