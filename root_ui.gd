@@ -811,28 +811,9 @@ func _start_puzzle_generation(constellation_id: int) -> void:
     if not cd:
         return
     var def: Dictionary = cd.get_constellation_def(constellation_id)
-    if def.is_empty():
-        return
-    var star_count: int = def.get("star_count", 0)
-    if star_count <= 0:
-        return
-    var overlay := get_parent().find_child("ConstellationOverlay", true, false)
-    if not overlay or not overlay.has_method("get_correct_star_sequence"):
-        push_warning("RootUI: ConstellationOverlay not found for puzzle generation.")
-        return
-    var line_pairs: Array = def.get("line_pairs", [])
-    var correct_star_sequence: Array = overlay.get_correct_star_sequence(constellation_id)
-    var name_theme: Dictionary = def.get("name_theme", {})
-    var star_pitch_index: Array = cd.get_note_assignment(constellation_id)
-    var pitch_freqs: Array = cd.get_note_freqs(constellation_id)
-
-    var puzzle := ConstellationLogicPuzzle.new()
-    puzzle.setup(star_count, line_pairs, correct_star_sequence,
-            cd.player_seed, constellation_id, name_theme,
-            star_pitch_index, pitch_freqs)
-    puzzle.generation_complete.connect(
-        func(cid: int): _on_puzzle_generation_complete(cid, puzzle))
-    puzzle.generate_clues_async.call_deferred()
+    _generate_puzzle(constellation_id, cd, def, cd.player_seed,
+        "puzzle generation",
+        func(cid: int, puzzle: ConstellationLogicPuzzle): _on_puzzle_generation_complete(cid, puzzle))
 
 
 func _on_puzzle_generation_complete(constellation_id: int,
@@ -859,6 +840,27 @@ func _dev_recompute_puzzle(constellation_id: int) -> void:
     game_context.assignments.erase(hw_key)
 
     var def: Dictionary = cd.get_constellation_def(constellation_id)
+    var dev_seed: int = randi()
+    _generate_puzzle(constellation_id, cd, def, dev_seed,
+        "puzzle recompute",
+        func(cid: int, puzzle: ConstellationLogicPuzzle):
+            cd.set_puzzle_cache(cid, puzzle.to_cache_dict())
+            print("[DEV] Constellation %d puzzle recomputed, seed=%d" % [cid, dev_seed])
+            var study := get_node_or_null("/root/Node2D/CanvasLayer/ConstellationStudyOverlay")
+            if study and study.visible and study.has_method("show_for_constellation"):
+                study.show_for_constellation(cid))
+
+
+# ==================================================
+# SHARED — validates a constellation def, builds a ConstellationLogicPuzzle,
+# and kicks off async generation. Extracted 2026-07-27 from
+# _start_puzzle_generation/_dev_recompute_puzzle, which used to reimplement
+# this ~17-line block near-verbatim; each caller keeps its own guard,
+# pre-work (cache/state reset or none), seed, and completion callback —
+# only the mechanical lookup+construction part was shared.
+# ==================================================
+func _generate_puzzle(constellation_id: int, cd: Node, def: Dictionary,
+        puzzle_seed: int, warning_context: String, on_complete: Callable) -> void:
     if def.is_empty():
         return
     var star_count: int = def.get("star_count", 0)
@@ -866,26 +868,20 @@ func _dev_recompute_puzzle(constellation_id: int) -> void:
         return
     var overlay := get_parent().find_child("ConstellationOverlay", true, false)
     if not overlay or not overlay.has_method("get_correct_star_sequence"):
-        push_warning("RootUI: ConstellationOverlay not found for puzzle recompute.")
+        push_warning("RootUI: ConstellationOverlay not found for %s." % warning_context)
         return
     var line_pairs: Array = def.get("line_pairs", [])
     var correct_star_sequence: Array = overlay.get_correct_star_sequence(constellation_id)
     var name_theme: Dictionary = def.get("name_theme", {})
     var star_pitch_index: Array = cd.get_note_assignment(constellation_id)
     var pitch_freqs: Array = cd.get_note_freqs(constellation_id)
-    var dev_seed: int = randi()
 
     var puzzle := ConstellationLogicPuzzle.new()
     puzzle.setup(star_count, line_pairs, correct_star_sequence,
-            dev_seed, constellation_id, name_theme,
-            star_pitch_index, pitch_freqs)
+            puzzle_seed, constellation_id, name_theme,
+            star_pitch_index, pitch_freqs, self)
     puzzle.generation_complete.connect(
-        func(cid: int):
-            cd.set_puzzle_cache(cid, puzzle.to_cache_dict())
-            print("[DEV] Constellation %d puzzle recomputed, seed=%d" % [cid, dev_seed])
-            var study := get_node_or_null("/root/Node2D/CanvasLayer/ConstellationStudyOverlay")
-            if study and study.visible and study.has_method("show_for_constellation"):
-                study.show_for_constellation(cid))
+        func(cid: int): on_complete.call(cid, puzzle))
     puzzle.generate_clues_async.call_deferred()
 
 
