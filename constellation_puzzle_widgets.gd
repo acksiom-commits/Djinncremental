@@ -565,10 +565,25 @@ func _on_record_color_toggle(record_idx: int, color_idx: int, btn: Button) -> vo
     var new_state: int = 0 if cur == 1 else 1
     if new_state == 1 and not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, true):
         return
-    r["color_states"][color_idx] = new_state
-    _style_color_toggle_btn(btn, color_idx, new_state)
-    if new_state == 1:
+    if new_state == 0:
+        # FIXED 2026-07-27 — deselecting a CONFIRM needs to release the
+        # sibling-clearing fallout too, not just this button's own state.
+        # Confirming color_idx forced every other color to eliminated
+        # (_propagate_color_confirmed_same_record); undoing just color_idx's
+        # own state left those siblings stuck red forever, only fixable one
+        # at a time by re-confirming a different color. _undo_category_selects
+        # is exactly the existing whole-record tool for this — releases the
+        # confirm plus every non-manually-blocked eliminated sibling, while
+        # correctly leaving alone any color the player independently
+        # right-click-eliminated (tracked in manual_color_blocks).
+        var color_values: Array = []
+        for ci in _host.COLOR_NAME_LABELS.size():
+            color_values.append(ci)
+        _deduction._undo_category_selects(record_idx, "color_states", "manual_color_blocks", "protected_color_idxs", color_values)
+    else:
+        r["color_states"][color_idx] = new_state
         _deduction._propagate_color_confirmed_same_record(record_idx, color_idx)
+    _style_color_toggle_btn(btn, color_idx, new_state)
     _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
@@ -1416,8 +1431,15 @@ func _on_staff_color_check(record_idx: int, color_idx: int, _row: StaffPopupRow)
     var new_state: int = 0 if cur == 1 else 1
     if new_state == 1 and not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, true):
         return
-    r["color_states"][color_idx] = new_state
-    if new_state == 1:
+    if new_state == 0:
+        # FIXED 2026-07-27 — same sibling-fallout gap as
+        # _on_record_color_toggle; see that function's comment.
+        var color_values: Array = []
+        for ci in _host.COLOR_NAME_LABELS.size():
+            color_values.append(ci)
+        _deduction._undo_category_selects(record_idx, "color_states", "manual_color_blocks", "protected_color_idxs", color_values)
+    else:
+        r["color_states"][color_idx] = new_state
         _deduction._propagate_color_confirmed_same_record(record_idx, color_idx)
     _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
