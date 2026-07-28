@@ -565,6 +565,8 @@ func _on_record_color_toggle(record_idx: int, color_idx: int, btn: Button) -> vo
     var new_state: int = 0 if cur == 1 else 1
     if new_state == 1 and not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, true):
         return
+    if new_state == 1 and not await _deduction._confirm_color_against_cap(record_idx, color_idx):
+        return
     if new_state == 0:
         # FIXED 2026-07-27 — deselecting a CONFIRM needs to release the
         # sibling-clearing fallout too, not just this button's own state.
@@ -1430,6 +1432,8 @@ func _on_staff_color_check(record_idx: int, color_idx: int, _row: StaffPopupRow)
     var cur: int = int(r["color_states"].get(color_idx, 0))
     var new_state: int = 0 if cur == 1 else 1
     if new_state == 1 and not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, true):
+        return
+    if new_state == 1 and not await _deduction._confirm_color_against_cap(record_idx, color_idx):
         return
     if new_state == 0:
         # FIXED 2026-07-27 — same sibling-fallout gap as
