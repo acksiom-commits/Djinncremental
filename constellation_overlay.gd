@@ -34,16 +34,11 @@ const LINE_COLOR_DIM:        Color = Color(0.7,  0.65, 0.5,  0.25)
 const LINE_COLOR_BRIGHT:     Color = Color(0.9,  0.85, 0.65, 0.65)
 const WRONG_FLASH_COLOR:     Color = Color(1.0,  0.2,  0.2,  0.5)
 
-const STAR_COLOR_BLUE:          Color = Color(0.45, 0.65, 1.00, 1.0)
-const STAR_COLOR_WHITE:         Color = Color(1.00, 1.00, 1.00, 1.0)
-const STAR_COLOR_YELLOW_ORANGE: Color = Color(1.00, 0.80, 0.30, 1.0)
-const STAR_COLOR_RED:           Color = Color(1.00, 0.35, 0.25, 1.0)
-const STAR_COLORS_BY_IDX: Array = [
-    Color(0.45, 0.65, 1.00, 1.0),  # 0 BLUE
-    Color(1.00, 1.00, 1.00, 1.0),  # 1 WHITE
-    Color(1.00, 0.80, 0.30, 1.0),  # 2 YELLOW_ORANGE
-    Color(1.00, 0.35, 0.25, 1.0),  # 3 RED
-]
+# Shared with constellation_study_overlay.gd — see star_color_palette.gd.
+# (STAR_COLOR_BLUE/WHITE/YELLOW_ORANGE/RED individually-named consts
+# removed 2026-07-27 — confirmed dead, unused anywhere in the project,
+# redundant with the array below even where they were declared.)
+const STAR_COLORS_BY_IDX: Array = preload("res://star_color_palette.tres").by_idx
 
 # ===================== PUZZLE STATE ==============
 var _puzzle_target_id: int = 0

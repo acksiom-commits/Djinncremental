@@ -63,13 +63,8 @@ const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres"
 @onready var _tab_name_clues:      Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar/TabPlaceholder
 
 # ── STYLE CACHE ──────────────────────────────────────────────────────
-# Pulled from the scene's sub-resources rather than duplicated here.
-const STAR_COLORS_BY_IDX: Array = [
-    Color(0.45, 0.65, 1.00, 1.0),   # 0 BLUE
-    Color(1.00, 1.00, 1.00, 1.0),   # 1 WHITE
-    Color(1.00, 0.80, 0.30, 1.0),   # 2 YELLOW_ORANGE
-    Color(1.00, 0.35, 0.25, 1.0),   # 3 RED
-]
+# Shared with constellation_overlay.gd — see star_color_palette.gd.
+const STAR_COLORS_BY_IDX: Array = preload("res://star_color_palette.tres").by_idx
 const COLOR_NAME_LABELS: Array = ["Blue", "White", "Yellow", "Red"]
 
 const STAR_RADIUS:        float = 7.0
