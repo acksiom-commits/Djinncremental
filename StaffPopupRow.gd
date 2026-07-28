@@ -1,6 +1,12 @@
 class_name StaffPopupRow
 extends HBoxContainer
 
+# Shared puzzle-state color palette — see puzzle_state_colors.gd. Used as
+# the default value for label_color/count_color below, and directly in
+# set_visual_state() for the confirmed/eliminated/soft-eliminated/protected
+# states — the same colors constellation_puzzle_widgets.gd etc. use.
+const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
+
 ## Emitted when the checkmark button is pressed.
 signal check_pressed
 ## Emitted when the X button is pressed.
@@ -26,7 +32,7 @@ signal row_right_clicked
         if _count_label:
             _count_label.text = "(%d)" % value
 
-@export var label_color: Color = Color(0.82, 0.78, 0.92, 1):
+@export var label_color: Color = STATE_COLORS.neutral:
     set(value):
         label_color = value
         if _label:
@@ -44,7 +50,7 @@ signal row_right_clicked
         if _count_label:
             _count_label.add_theme_font_size_override("font_size", value)
 
-@export var count_color: Color = Color(0.55, 0.50, 0.65, 1):
+@export var count_color: Color = STATE_COLORS.muted:
     set(value):
         count_color = value
         if _count_label:
@@ -118,29 +124,29 @@ func set_visual_state(state: int) -> void:
             _btn_check.disabled = false
             _btn_x.disabled = false
         1:  # Selected (check)
-            _label.add_theme_color_override("font_color", Color(0.3, 1.0, 0.4, 1.0))
-            _btn_check.add_theme_color_override("font_color", Color(0.3, 1.0, 0.4, 1.0))
+            _label.add_theme_color_override("font_color", STATE_COLORS.confirmed)
+            _btn_check.add_theme_color_override("font_color", STATE_COLORS.confirmed)
             _btn_x.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
             _btn_check.disabled = false
             _btn_x.disabled = false
         2:  # Eliminated (X)
-            _label.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25, 1.0))
+            _label.add_theme_color_override("font_color", STATE_COLORS.eliminated)
             _btn_check.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
-            _btn_x.add_theme_color_override("font_color", Color(1.0, 0.35, 0.25, 1.0))
+            _btn_x.add_theme_color_override("font_color", STATE_COLORS.eliminated)
             _btn_check.disabled = false
             _btn_x.disabled = false
         3:  # Soft-eliminated (a sibling value on this row is protected) —
             # dimmer than a hard X, distinguishing "leaning eliminated" from
             # a confirmed one.
-            _label.add_theme_color_override("font_color", Color(0.45, 0.40, 0.55, 1.0))
+            _label.add_theme_color_override("font_color", STATE_COLORS.soft_eliminated)
             _btn_check.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
             _btn_x.add_theme_color_override("font_color", Color(1.0, 0.6, 0.5, 1.0))
             _btn_check.disabled = false
             _btn_x.disabled = false
         4:  # Protected (magenta)
-            _label.add_theme_color_override("font_color", Color(1, 0, 1, 1))
-            _btn_check.add_theme_color_override("font_color", Color(1, 0, 1, 1))
-            _btn_x.add_theme_color_override("font_color", Color(1, 0, 1, 1))
+            _label.add_theme_color_override("font_color", STATE_COLORS.protected)
+            _btn_check.add_theme_color_override("font_color", STATE_COLORS.protected)
+            _btn_x.add_theme_color_override("font_color", STATE_COLORS.protected)
             _btn_check.disabled = false
             _btn_x.disabled = false
         _:  # Fallback to neutral
