@@ -60,8 +60,8 @@ func _ready() -> void:
 
     _reset_confirm.get_ok_button().text = "Yes, Reset"
     _reset_confirm.get_cancel_button().text = "Keep Playing"
-    _style_dialog_button(_reset_confirm.get_ok_button())
-    _style_dialog_button(_reset_confirm.get_cancel_button())
+    _reset_confirm.get_ok_button().theme_type_variation     = "DialogConfirmButton"
+    _reset_confirm.get_cancel_button().theme_type_variation = "DialogConfirmButton"
     
 
 func _on_reset_btn_pressed() -> void:
@@ -115,35 +115,3 @@ func _input(event: InputEvent) -> void:
         and not _tab_btn.get_global_rect().has_point(event.global_position):
             _close()
             get_viewport().set_input_as_handled()
-            
-            
-func _style_dialog_button(btn: Button) -> void:
-    var style := StyleBoxFlat.new()
-    style.bg_color                   = Color(0.12, 0.09, 0.22, 0.95)
-    style.border_color               = Color(0.4, 0.28, 0.62, 0.9)
-    style.border_width_left          = 1
-    style.border_width_right         = 1
-    style.border_width_top           = 1
-    style.border_width_bottom        = 1
-    style.corner_radius_top_left     = 4
-    style.corner_radius_top_right    = 4
-    style.corner_radius_bottom_left  = 4
-    style.corner_radius_bottom_right = 4
-    style.content_margin_left        = 16
-    style.content_margin_right       = 16
-    style.content_margin_top         = 8
-    style.content_margin_bottom      = 8
-    btn.add_theme_stylebox_override("normal", style)
-
-    var hover := style.duplicate()
-    hover.bg_color = Color(0.18, 0.13, 0.30, 0.96)
-    hover.border_color = Color(0.55, 0.38, 0.80, 1.0)
-    btn.add_theme_stylebox_override("hover", hover)
-
-    var pressed := style.duplicate()
-    pressed.bg_color = Color(0.25, 0.18, 0.42, 1.0)
-    pressed.border_color = Color(0.65, 0.45, 0.90, 1.0)
-    btn.add_theme_stylebox_override("pressed", pressed)
-
-    btn.add_theme_color_override("font_color", Color(0.82, 0.82, 0.95, 1.0))
-    btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0, 1.0))
