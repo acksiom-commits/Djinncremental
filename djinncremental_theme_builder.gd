@@ -1,5 +1,5 @@
 extends Node
-# ================= DJINNCREMENTAL THEME BUILDER v0.3.0 =================
+# ================= DJINNCREMENTAL THEME BUILDER v0.4.0 =================
 # Run this script once to generate djinncremental_theme.tres
 # Attach to ThemeBuilderPanel, run the scene, then detach the script.
 #
@@ -7,6 +7,9 @@ extends Node
 # Project Settings -> GUI -> Theme -> Custom Theme
 # pointing to res://djinncremental_theme.tres
 #
+# CHANGELOG v0.4.0:
+# - Added "DialogConfirmButton" type variation, porting settings_popout.gd's
+#   former per-instance _style_dialog_button() StyleBoxFlat construction.
 # CHANGELOG v0.3.0:
 # - LineEdit content margins top/bottom: 0 -> 6 (taller SpinBox arrows)
 # - SpinBox minimum_grab_thickness: 28
@@ -83,6 +86,33 @@ func build_theme() -> void:
     theme.set_color("font_pressed_color",  "Button", TEXT_PRIMARY)
     theme.set_color("font_disabled_color", "Button", TEXT_DISABLED)
     theme.set_font_size("font_size", "Button", 15)
+
+    # ================================================
+    # DIALOG CONFIRM BUTTON — type variation for confirmation-dialog
+    # buttons (e.g. settings_popout.gd's Reset confirmation OK/Cancel).
+    # Ported from settings_popout.gd's former _style_dialog_button(),
+    # which hand-built these StyleBoxFlats at runtime per-instance
+    # instead of going through the shared Theme. Only normal/hover/
+    # pressed + font_color/font_hover_color are set here, matching what
+    # that function used to override — disabled/focus/font_pressed_color
+    # still fall through to the base "Button" type above, same as before.
+    # ================================================
+    theme.set_type_variation("DialogConfirmButton", "Button")
+
+    var dcb_normal  = _make_stylebox(Color(0.12, 0.09, 0.22, 0.95), Color(0.4, 0.28, 0.62, 0.9), 1, 4)
+    var dcb_hover   = _make_stylebox(Color(0.18, 0.13, 0.30, 0.96), Color(0.55, 0.38, 0.80, 1.0), 1, 4)
+    var dcb_pressed = _make_stylebox(Color(0.25, 0.18, 0.42, 1.0),  Color(0.65, 0.45, 0.90, 1.0), 1, 4)
+    for sb in [dcb_normal, dcb_hover, dcb_pressed]:
+        sb.content_margin_left   = 16
+        sb.content_margin_right  = 16
+        sb.content_margin_top    = 8
+        sb.content_margin_bottom = 8
+
+    theme.set_stylebox("normal",  "DialogConfirmButton", dcb_normal)
+    theme.set_stylebox("hover",   "DialogConfirmButton", dcb_hover)
+    theme.set_stylebox("pressed", "DialogConfirmButton", dcb_pressed)
+    theme.set_color("font_color",       "DialogConfirmButton", Color(0.82, 0.82, 0.95, 1.0))
+    theme.set_color("font_hover_color", "DialogConfirmButton", Color(1.0, 1.0, 1.0, 1.0))
 
     # ================================================
     # LABEL

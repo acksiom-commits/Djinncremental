@@ -148,6 +148,54 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dcbnrm"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(0.12, 0.09, 0.22, 0.95)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.28, 0.62, 0.9)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dcbhov"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(0.18, 0.13, 0.3, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.55, 0.38, 0.8, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_dcbprs"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(0.25, 0.18, 0.42, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.65, 0.45, 0.9, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [resource]
 default_font_size = 18
 Button/colors/font_color = Color(0.92, 0.92, 0.95, 1)
@@ -160,6 +208,12 @@ Button/styles/focus = SubResource("StyleBoxFlat_hfstf")
 Button/styles/hover = SubResource("StyleBoxFlat_m7uay")
 Button/styles/normal = SubResource("StyleBoxFlat_fofam")
 Button/styles/pressed = SubResource("StyleBoxFlat_mtsep")
+DialogConfirmButton/base_type = &"Button"
+DialogConfirmButton/colors/font_color = Color(0.82, 0.82, 0.95, 1)
+DialogConfirmButton/colors/font_hover_color = Color(1, 1, 1, 1)
+DialogConfirmButton/styles/hover = SubResource("StyleBoxFlat_dcbhov")
+DialogConfirmButton/styles/normal = SubResource("StyleBoxFlat_dcbnrm")
+DialogConfirmButton/styles/pressed = SubResource("StyleBoxFlat_dcbprs")
 Label/colors/font_color = Color(0.92, 0.92, 0.95, 1)
 Label/colors/font_shadow_color = Color(0, 0, 0, 0.5)
 Label/font_sizes/font_size = 18
