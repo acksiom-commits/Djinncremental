@@ -3261,7 +3261,7 @@ func generate_clues_forms() -> void:
     var attempt: int = 0
     while attempt < MAX_GENERATION_ATTEMPTS:
         attempt += 1
-        result = _generate_clues_forms_attempt()
+        result = await _generate_clues_forms_attempt()
         if bool(result["seq_unique"]) and bool(result["name_unique"]):
             break
         print("[FORMS_GEN %d] attempt %d/%d not yet unique (sequence_solutions=%d, all_names_revealed=%s) — retrying with a fresh draw." % [
@@ -3309,6 +3309,17 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # was sized against the smaller number and would almost certainly cut
     # generation short well before the pool was actually exhausted.
     var max_stall: int = maxi(400, _unused_pool_size() * 2)
+    # Yields a frame every YIELD_INTERVAL passes through this outer loop —
+    # see the FIXED 2026-07-27 note above generation_complete. This is the
+    # loop that can run into the hundreds of iterations building up a
+    # single attempt; without this, a single attempt could still block one
+    # frame for its entire duration even with the between-attempts yield in
+    # generate_clues_forms(). Local state (tier_counts, chosen_form_clues,
+    # stall_count, etc.) survives the pause untouched — awaiting mid-loop
+    # suspends this exact call, it doesn't restart it — so this naturally
+    # spreads one attempt's work across as many frames as it needs.
+    const YIELD_INTERVAL: int = 20
+    var _since_yield: int = 0
     while _unused_pool_size() > 0 and stall_count < max_stall:
         var tier_order: Array = _tiers_by_underrepresentation(tier_counts)
         var committed: bool = false
@@ -3389,6 +3400,10 @@ func _generate_clues_forms_attempt() -> Dictionary:
             stall_count = 0
         else:
             stall_count += 1
+        _since_yield += 1
+        if _host and _since_yield >= YIELD_INTERVAL:
+            _since_yield = 0
+            await _host.get_tree().process_frame
 
     # Phase C — uniqueness gate for THIS attempt. Whether a failure here
     # gets retried with a fresh draw (rather than shipped as-is) is decided
