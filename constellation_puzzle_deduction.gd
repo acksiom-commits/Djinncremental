@@ -367,29 +367,61 @@ func _undo_category_blocks(record_idx: int, states_key: String, manual_key: Stri
 
 
 
-func _apply_color_elimination_to_names(record_idx: int, color_idx: int, new_state: int) -> void:
+func _recompute_color_star_elim(record_idx: int) -> void:
     # Color is the one axis directly visible per star, so it's the one axis
     # that can safely auto-propagate into the name/star grid without leaking
     # anything the player hasn't earned. Sequence and pitch are themselves
     # unknowns from the player's perspective, so they intentionally do NOT
     # get this treatment — they only unify through record merging once
     # identity is independently confirmed.
+    #
+    # FIXED 2026-07-27 — this used to be _apply_color_elimination_to_names,
+    # called with the specific (color_idx, new_state) that just changed. It
+    # only ever ADDED elim=2 marks, never removed any — so un-confirming or
+    # un-eliminating a color (the click-again-to-deselect / Undo paths) left
+    # stale "this star can't be the name" marks behind, since nothing ever
+    # told this function a mark's reason no longer held.
+    #
+    # Now this recomputes the color-derived portion of star_elim from
+    # scratch off CURRENT color_states every time any color state changes
+    # (confirm, eliminate, deselect, or Undo) — no need to track what
+    # changed, just what's true now. color_star_elim_marks (persisted
+    # alongside star_elim) remembers which stars THIS function marked, so a
+    # star that's no longer ruled out gets released back to 0 — but only if
+    # nothing stronger (a direct name/star-identity confirm, which
+    # overwrites star_elim wholesale elsewhere and always wins) has since
+    # claimed elim=1 there.
     var r: Dictionary = _match_records[record_idx]
-    var elim: Dictionary = r.get("star_elim", {})
     var name_str: String = str(r.get("name", ""))
     if name_str == "":
         return
-    if new_state == 2:
-        for s in _host._star_count:
-            var sc: int = _host._star_colors[s] if s < _host._star_colors.size() else 1
-            if sc == color_idx and int(elim.get(s, 0)) != 1:
+    if int(r.get("star_idx", -1)) >= 0:
+        return   # identity already pinned; a wholesale overwrite owns star_elim now
+    var color_states: Dictionary = r.get("color_states", {})
+    var confirmed_color: int = -1
+    for ci in _host.COLOR_NAME_LABELS.size():
+        if int(color_states.get(ci, 0)) == 1:
+            confirmed_color = ci
+            break
+    var elim: Dictionary = r.get("star_elim", {})
+    var prev_marks: Dictionary = r.get("color_star_elim_marks", {})
+    var new_marks: Dictionary = {}
+    for s in _host._star_count:
+        var sc: int = _host._star_colors[s] if s < _host._star_colors.size() else 1
+        var ruled_out: bool = false
+        if confirmed_color >= 0:
+            ruled_out = sc != confirmed_color
+        else:
+            ruled_out = int(color_states.get(sc, 0)) == 2
+        if ruled_out:
+            new_marks[s] = true
+            if int(elim.get(s, 0)) != 1:
                 elim[s] = 2
-    elif new_state == 1:
-        for s in _host._star_count:
-            var sc2: int = _host._star_colors[s] if s < _host._star_colors.size() else 1
-            if sc2 != color_idx and int(elim.get(s, 0)) != 1:
-                elim[s] = 2
+    for s in prev_marks.keys():
+        if not new_marks.has(s) and int(elim.get(s, 0)) == 2:
+            elim[s] = 0
     r["star_elim"] = elim
+    r["color_star_elim_marks"] = new_marks
 
 
 func _slot_letter(idx: int) -> String:
@@ -839,6 +871,11 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
         target["degree_slot_label"] = await _conflict_dialog_fn.call("degree slot label", target_degree_label, source_degree_label)
 
     _sync_color_states_from_star_idx(target_idx)
+    # color_states just got unioned from two records (or resynced from
+    # ground truth above) — recompute rather than trying to merge the two
+    # sides' color_star_elim_marks by hand; a no-op if star_idx is now
+    # resolved, since _sync_color_states_from_star_idx already owns that case.
+    _recompute_color_star_elim(target_idx)
 
     _match_records.remove_at(source_idx)
     if source_idx < target_idx:
@@ -931,6 +968,7 @@ func _save_match_records() -> Array:
             "protected_staff_names": (r.get("protected_staff_names", {}) as Dictionary).duplicate(),
             "pitch_revealed": bool(r.get("pitch_revealed", false)),
             "star_elim": (r.get("star_elim", {}) as Dictionary).duplicate(),
+            "color_star_elim_marks": (r.get("color_star_elim_marks", {}) as Dictionary).duplicate(),
             "star_idx": r["star_idx"],
             "color_slot_label": str(r.get("color_slot_label", "")),
             "pitch_slot_label": str(r.get("pitch_slot_label", "")),
@@ -952,6 +990,9 @@ func _load_match_records(data: Array) -> void:
         var star_elim: Dictionary = {}
         for sk in e.get("star_elim", {}):
             star_elim[int(sk)] = int(e["star_elim"][sk])
+        var color_star_elim_marks: Dictionary = {}
+        for csk in e.get("color_star_elim_marks", {}):
+            color_star_elim_marks[int(csk)] = true
         var name_states: Dictionary = {}
         for nk in e.get("name_states", {}):
             name_states[str(nk)] = int(e["name_states"][nk])
@@ -995,6 +1036,7 @@ func _load_match_records(data: Array) -> void:
             "protected_staff_names": protected_staff_names,
             "pitch_revealed": bool(e.get("pitch_revealed", false)),
             "star_elim": star_elim,
+            "color_star_elim_marks": color_star_elim_marks,
             "pitch_carousel_idx": 0,
             "star_idx": int(e.get("star_idx", -1)),
             "color_slot_label": str(e.get("color_slot_label", "")),

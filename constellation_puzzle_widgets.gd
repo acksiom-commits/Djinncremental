@@ -557,13 +557,19 @@ func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
 func _on_record_color_toggle(record_idx: int, color_idx: int, btn: Button) -> void:
     if record_idx < 0 or record_idx >= _deduction._match_records.size():
         return
-    if not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, true):
-        return
     var r: Dictionary = _deduction._match_records[record_idx]
-    r["color_states"][color_idx] = 1
-    _style_color_toggle_btn(btn, color_idx, 1)
-    _deduction._apply_color_elimination_to_names(record_idx, color_idx, 1)
-    _deduction._propagate_color_confirmed_same_record(record_idx, color_idx)
+    # Click-again-to-deselect: clicking an already-confirmed color resets
+    # just this one button back to neutral — same toggle shape as the Staff
+    # popup's _on_staff_color_check, matched here for consistency.
+    var cur: int = int(r["color_states"].get(color_idx, 0))
+    var new_state: int = 0 if cur == 1 else 1
+    if new_state == 1 and not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, true):
+        return
+    r["color_states"][color_idx] = new_state
+    _style_color_toggle_btn(btn, color_idx, new_state)
+    if new_state == 1:
+        _deduction._propagate_color_confirmed_same_record(record_idx, color_idx)
+    _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
 
@@ -571,18 +577,25 @@ func _on_record_color_toggle(record_idx: int, color_idx: int, btn: Button) -> vo
 func _on_record_color_eliminate(record_idx: int, color_idx: int, btn: Button) -> void:
     if record_idx < 0 or record_idx >= _deduction._match_records.size():
         return
-    if not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, false):
-        return
     var r: Dictionary = _deduction._match_records[record_idx]
-    r["color_states"][color_idx] = 2
+    # Click-again-to-deselect (right-click an already-eliminated color) —
+    # same shape as _on_staff_color_x.
+    var cur: int = int(r["color_states"].get(color_idx, 0))
+    var new_state: int = 0 if cur == 2 else 2
+    if new_state == 2 and not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, false):
+        return
+    r["color_states"][color_idx] = new_state
     # Same manual-block bookkeeping as _on_staff_color_x — this toggle row
     # writes the same color_states/manual_color_blocks dict on the same
     # record, so the Staff popup's Undo row needs to see blocks placed here.
     var manual: Dictionary = r.get("manual_color_blocks", {})
-    manual[color_idx] = true
+    if cur == 2:
+        manual.erase(color_idx)
+    else:
+        manual[color_idx] = true
     r["manual_color_blocks"] = manual
-    _style_color_toggle_btn(btn, color_idx, 2)
-    _deduction._apply_color_elimination_to_names(record_idx, color_idx, 2)
+    _style_color_toggle_btn(btn, color_idx, new_state)
+    _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
 
@@ -1406,7 +1419,7 @@ func _on_staff_color_check(record_idx: int, color_idx: int, _row: StaffPopupRow)
     r["color_states"][color_idx] = new_state
     if new_state == 1:
         _deduction._propagate_color_confirmed_same_record(record_idx, color_idx)
-    _deduction._apply_color_elimination_to_names(record_idx, color_idx, new_state)
+    _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
@@ -1427,7 +1440,7 @@ func _on_staff_color_x(record_idx: int, color_idx: int, _row: StaffPopupRow) -> 
     else:
         manual[color_idx] = true
     r["manual_color_blocks"] = manual
-    _deduction._apply_color_elimination_to_names(record_idx, color_idx, new_state)
+    _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
@@ -1529,6 +1542,11 @@ func _on_staff_color_undo_selects(record_idx: int) -> void:
     var r: Dictionary = _deduction._match_records[record_idx]
     if str(r.get("color_slot_label", "")) != "":
         r["color_slot_label"] = ""
+    # FIXED 2026-07-27 — this Undo used to reset color_states without ever
+    # touching star_elim, leaving stale "this star can't be the name" marks
+    # behind from whatever confirm/eliminate just got undone. See
+    # _recompute_color_star_elim's own comment for the full story.
+    _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
@@ -1536,6 +1554,7 @@ func _on_staff_color_undo_selects(record_idx: int) -> void:
 
 func _on_staff_color_undo_blocks(record_idx: int) -> void:
     _deduction._undo_category_blocks(record_idx, "color_states", "manual_color_blocks")
+    _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
@@ -1547,6 +1566,7 @@ func _on_staff_color_undo_all(record_idx: int) -> void:
         color_values.append(ci)
     _deduction._undo_category_selects(record_idx, "color_states", "manual_color_blocks", "protected_color_idxs", color_values)
     _deduction._undo_category_blocks(record_idx, "color_states", "manual_color_blocks")
+    _deduction._recompute_color_star_elim(record_idx)
     var r: Dictionary = _deduction._match_records[record_idx]
     if str(r.get("color_slot_label", "")) != "":
         r["color_slot_label"] = ""
