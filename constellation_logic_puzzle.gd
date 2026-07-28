@@ -438,12 +438,16 @@ func _expand_clues_to_cmp(clues: Array[Dictionary]) -> Array[Dictionary]:
                 # needs no new logic, just two entries instead of one.
                 expanded.append({"a": clue["mid"], "b": clue["a"], "a_gt_b": true})
                 expanded.append({"a": clue["b"], "b": clue["mid"], "a_gt_b": true})
-            "ordinal_group_cmp_color":
-                # One clause, one arc per (subject, same-colored target) pair:
-                # the color CATEGORY multiplies the constraint, and merged
-                # multi-subject clues (see _merge_group_cmp_kind) multiply it
-                # again per subject — every subject independently satisfies
-                # the same "before/after every target" relation.
+            "ordinal_group_cmp_color", "ordinal_group_cmp_tone":
+                # One clause, one arc per (subject, same-colored/toned target)
+                # pair: the CATEGORY (color or tone) multiplies the
+                # constraint, and merged multi-subject clues (see
+                # _merge_group_cmp_kind) multiply it again per subject —
+                # every subject independently satisfies the same
+                # "before/after every target" relation. Identical expansion
+                # logic for both kinds — only which category grouped the
+                # targets differs, and that's already baked into "targets"
+                # by the caller.
                 var s_first: bool = clue["s_first"]
                 for gs in clue["subjects"]:
                     for t in clue["targets"]:
@@ -451,14 +455,6 @@ func _expand_clues_to_cmp(clues: Array[Dictionary]) -> Array[Dictionary]:
                             expanded.append({"a": int(t), "b": int(gs), "a_gt_b": true})
                         else:
                             expanded.append({"a": int(gs), "b": int(t), "a_gt_b": true})
-            "ordinal_group_cmp_tone":
-                var s_first2: bool = clue["s_first"]
-                for gs2 in clue["subjects"]:
-                    for t in clue["targets"]:
-                        if s_first2:
-                            expanded.append({"a": int(t), "b": int(gs2), "a_gt_b": true})
-                        else:
-                            expanded.append({"a": int(gs2), "b": int(t), "a_gt_b": true})
             "ordinal_extreme":
                 var s: int = clue["s"]
                 var want_lowest: bool = clue["want_lowest"]
@@ -470,6 +466,23 @@ func _expand_clues_to_cmp(clues: Array[Dictionary]) -> Array[Dictionary]:
     return expanded
  
  
+## Scans one star's boolean possibility row and returns (min index where
+## true, max index where true) in one pass, or (-1, -1) if none are true.
+## _propagate re-derives exactly this "domain bounds" a handful of times
+## per fixed-point iteration (comparison arcs, then twice more per
+## cardinality-arc neighbor) — this is the one shared shape underneath all
+## of them.
+static func get_domain_bounds(domain_row: Array) -> Vector2i:
+    var mn: int = -1
+    var mx: int = -1
+    for r in domain_row.size():
+        if domain_row[r]:
+            if mn == -1:
+                mn = r
+            mx = r
+    return Vector2i(mn, mx)
+
+
 func _propagate(possible: Array, cmp_clues: Array[Dictionary], adj_clues: Array[Dictionary],
         count_clues: Array[Dictionary]) -> bool:
     # Arc-consistency fixed-point pass. Mutates `possible` in place.
@@ -486,11 +499,7 @@ func _propagate(possible: Array, cmp_clues: Array[Dictionary], adj_clues: Array[
             var hi: int = a if a_gt_b else b
             var lo: int = b if a_gt_b else a
  
-            var min_lo: int = -1
-            for r in star_count:
-                if possible[lo][r]:
-                    if min_lo == -1:
-                        min_lo = r
+            var min_lo: int = get_domain_bounds(possible[lo]).x
             if min_lo == -1:
                 return false
  
@@ -499,14 +508,9 @@ func _propagate(possible: Array, cmp_clues: Array[Dictionary], adj_clues: Array[
                     possible[hi][r] = false
                     changed = true
  
-            var min_hi: int = -1
-            var max_hi: int = -1
-            for r in star_count:
-                if possible[hi][r]:
-                    if min_hi == -1:
-                        min_hi = r
-                    max_hi = r
-            if min_hi == -1:
+            var hi_bounds: Vector2i = get_domain_bounds(possible[hi])
+            var max_hi: int = hi_bounds.y
+            if hi_bounds.x == -1:
                 return false
  
             for r in star_count:
@@ -551,14 +555,9 @@ func _propagate(possible: Array, cmp_clues: Array[Dictionary], adj_clues: Array[
                 var must_before: int = 0
                 var can_before: int = 0
                 for n in nbrs:
-                    var mn: int = star_count
-                    var mx: int = -1
-                    for rr in star_count:
-                        if possible[int(n)][rr]:
-                            if rr < mn:
-                                mn = rr
-                            if rr > mx:
-                                mx = rr
+                    var n_bounds: Vector2i = get_domain_bounds(possible[int(n)])
+                    var mn: int = n_bounds.x
+                    var mx: int = n_bounds.y
                     if mx == -1:
                         return false
                     if mx < r:
@@ -582,14 +581,9 @@ func _propagate(possible: Array, cmp_clues: Array[Dictionary], adj_clues: Array[
                 var must_before2: int = 0
                 var straddlers: Array = []
                 for n in nbrs:
-                    var mn2: int = star_count
-                    var mx2: int = -1
-                    for rr in star_count:
-                        if possible[int(n)][rr]:
-                            if rr < mn2:
-                                mn2 = rr
-                            if rr > mx2:
-                                mx2 = rr
+                    var n2_bounds: Vector2i = get_domain_bounds(possible[int(n)])
+                    var mn2: int = n2_bounds.x
+                    var mx2: int = n2_bounds.y
                     if mx2 == -1:
                         return false
                     if mx2 < s_rank:
