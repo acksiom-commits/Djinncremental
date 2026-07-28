@@ -282,22 +282,16 @@ func _on_tab_pressed() -> void:
         _close()
         return
     _is_open = true
-    if _tween:
-        _tween.kill()
-    _tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-    _tween.tween_property(_tab_btn, "position:x", -500.0, ANIM_TIME)
-    _tween.parallel().tween_property(_panel, "position:x", -478.0, ANIM_TIME)
+    _tween = SlidePanelToggle.run(_tab_btn, "position:x", -500.0,
+        _panel, "position:x", -478.0, ANIM_TIME, _tween)
 
 
 func _close() -> void:
     if not _is_open:
         return
     _is_open = false
-    if _tween:
-        _tween.kill()
-    _tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-    _tween.tween_property(_tab_btn, "position:x", 0.0, ANIM_TIME)
-    _tween.parallel().tween_property(_panel, "position:x", 22.0, ANIM_TIME)
+    _tween = SlidePanelToggle.run(_tab_btn, "position:x", 0.0,
+        _panel, "position:x", 22.0, ANIM_TIME, _tween)
 
 
 func _input(event: InputEvent) -> void:
