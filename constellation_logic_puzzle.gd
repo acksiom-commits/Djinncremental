@@ -3312,7 +3312,15 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # stall_count, etc.) survives the pause untouched — awaiting mid-loop
     # suspends this exact call, it doesn't restart it — so this naturally
     # spreads one attempt's work across as many frames as it needs.
-    const YIELD_INTERVAL: int = 20
+    #
+    # TUNED 2026-07-27 — 20 still let each yielded chunk do up to
+    # 20 * TIER_OPPORTUNISTIC_ATTEMPTS(4) * 4-tiers = ~320 _build_form-class
+    # calls before yielding, enough to cause visible input/animation lag
+    # (e.g. Archon face-tracking stutter) even after the earlier full-stop
+    # freeze was fixed. Dropped to 3 (~48 calls/chunk) — there's a whole
+    # prestige cycle's worth of real time to finish in, so trading more
+    # total frames for a smaller per-frame chunk costs nothing.
+    const YIELD_INTERVAL: int = 3
     var _since_yield: int = 0
     while _unused_pool_size() > 0 and stall_count < max_stall:
         var tier_order: Array = _tiers_by_underrepresentation(tier_counts)
