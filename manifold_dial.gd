@@ -25,20 +25,18 @@ const COLOR_RING_SEL     := Color(0.92, 0.90, 0.85, 0.90)
 const COLOR_CHANNEL      := Color(0.92, 0.90, 0.85, 0.72)
 const COLOR_PURITY_ARC   := Color(1.00, 0.90, 0.55, 0.32)
 
-const OUTPUT_COLOR: Dictionary = {
-    "phlogiston": Color(1.00, 0.52, 0.25, 1.00),
-    "ore_silver":  Color(1.00, 0.82, 0.52, 1.00),
-    "ore_copper":  Color(1.00, 0.82, 0.52, 1.00),
-    "ore_iron":    Color(1.00, 0.82, 0.52, 1.00),
-    "stone":       Color(1.00, 0.82, 0.52, 1.00),
-    "clay":        Color(1.00, 0.82, 0.52, 1.00),
-    "oil":         Color(0.50, 0.75, 1.00, 1.00),
-    "infusion":    Color(0.50, 0.75, 1.00, 1.00),
-    "elixir":      Color(0.50, 0.75, 1.00, 1.00),
-    "steam":       Color(0.72, 0.50, 1.00, 1.00),
-    "smoke":       Color(0.72, 0.50, 1.00, 1.00),
-    "spirit":      Color(0.72, 0.50, 1.00, 1.00),
+# Icon tint by station membership — OUTPUT_COLOR previously hardcoded this
+# same literal 5x for calcination outputs and 3x each for dissolution/
+# sublimation (12 entries, only 4 distinct colors) with no shared source.
+# Now derived once in _ready() via OUTPUT_STATION, which already carries
+# the same grouping for arc-coloring purposes below.
+const STATION_TINT: Dictionary = {
+    "":             Color(1.00, 0.52, 0.25, 1.00),  # phlogiston (no station)
+    "calcination":  Color(1.00, 0.82, 0.52, 1.00),
+    "dissolution":  Color(0.50, 0.75, 1.00, 1.00),
+    "sublimation":  Color(0.72, 0.50, 1.00, 1.00),
 }
+var _output_color: Dictionary = {}
 
 # === OUTPUT LAYOUT ===
 # Face i outward normal = (-90 + i*30) degrees.
@@ -97,6 +95,7 @@ var _particles:     Array[Dictionary]  = []
 func _ready() -> void:
     gc        = get_node_or_null("/root/GameContext")
     game_data = get_node_or_null("/root/GameData")
+    _build_output_colors()
     _preload_textures()
     _build_icon_buttons()
     var pm: Node = get_node_or_null("/root/ProductionManager")
@@ -125,6 +124,12 @@ func _vertex_pos(v: int) -> Vector2:
 # ==================================================
 # ICONS
 # ==================================================
+func _build_output_colors() -> void:
+    for key in OUTPUT_KEYS:
+        var station: String = OUTPUT_STATION.get(key, "")
+        _output_color[key] = STATION_TINT.get(station, Color.WHITE)
+
+
 func _preload_textures() -> void:
     if not game_data: return
     for key in OUTPUT_KEYS:
@@ -143,7 +148,7 @@ func _build_icon_buttons() -> void:
         btn.ignore_texture_size = true
         if _icon_textures.has(key):
             btn.texture_normal = _icon_textures[key]
-        btn.modulate = OUTPUT_COLOR.get(key, Color.WHITE).darkened(0.40)
+        btn.modulate = _output_color.get(key, Color.WHITE).darkened(0.40)
         _icon_buttons.append(btn)
         var captured := i
         btn.pressed.connect(func(): _select_face(captured))
@@ -166,7 +171,7 @@ func _select_face(index: int) -> void:
 
 func _refresh_icon_tints() -> void:
     for i in _icon_buttons.size():
-        var base: Color = OUTPUT_COLOR.get(OUTPUT_KEYS[i], Color.WHITE)
+        var base: Color = _output_color.get(OUTPUT_KEYS[i], Color.WHITE)
         (_icon_buttons[i] as TextureButton).modulate = \
             base if i == _selected_index else base.darkened(0.45)
 
