@@ -942,7 +942,16 @@ func _on_game_loaded(offline_seconds: float) -> void:
     if cd_boot:
         var cached_boot: Dictionary = cd_boot.get_puzzle_cache(0)
         var seed_matches: bool = cached_boot.get("player_seed_used", -1) == cd_boot.player_seed
-        var version_matches: bool = cached_boot.get("version", 0) == 3
+        # FIXED 2026-07-27 — was hardcoded to 3, a stale literal that never
+        # matched ConstellationLogicPuzzle.CACHE_VERSION (2). That meant this
+        # check was ALWAYS false, silently discarding a perfectly valid
+        # cache and fully regenerating constellation 0 on every single boot.
+        # Harmless when generation was fast, but became visibly broken
+        # (blank star map/tabs) once generation was deliberately spread
+        # across more frames to fix input lag — players could open the
+        # Study panel before the wasted regeneration finished. Referencing
+        # the real constant instead of a literal so this can't drift again.
+        var version_matches: bool = cached_boot.get("version", 0) == ConstellationLogicPuzzle.CACHE_VERSION
         if cached_boot.is_empty() or not seed_matches or not version_matches:
             cd_boot.clear_puzzle_cache(0)
             _start_puzzle_generation(0)
