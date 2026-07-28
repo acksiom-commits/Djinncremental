@@ -77,16 +77,13 @@ const RESOURCE_COLORS = {
     "uonite":   Color("#ffdd55"),
 }
 
-const FACE_COLORS = {
-    0: Color("#ffffff", 0.25),  # exit face — white
-    1: Color("#ee4444", 0.4),   # monad
-    2: Color("#ffbb44", 0.4),   # tetrad
-    3: Color("#eecc00", 0.4),   # particle
-    4: Color("#55ff88", 0.4),   # iota
-    5: Color("#55aaff", 0.4),   # mote
-    6: Color("#9944ee", 0.4),   # grain
-    7: Color("#ffdd55", 0.4),   # uonite
-}
+const EXIT_FACE_COLOR: Color = Color("#ffffff", 0.25)
+const FACE_HIGHLIGHT_ALPHA: float = 0.4
+
+# Face-index-keyed alpha'd view of RESOURCE_COLORS — built once in _ready()
+# instead of hardcoding the same 7 hex values a second time (they'd
+# previously drifted apart from RESOURCE_COLORS with no shared source).
+var _face_colors: Dictionary = {}
 
 # ===================== ICON TEXTURES =============
 var _textures: Dictionary = {}
@@ -117,6 +114,15 @@ func _ready() -> void:
     _settings_popout = get_node_or_null("/root/Node2D/CanvasLayer/RootUI/TopBandHBox/RightEdgePopoutsVBox/settingsPopout")
     _rng.randomize()
     _load_textures()
+    _build_face_colors()
+
+
+func _build_face_colors() -> void:
+    _face_colors[0] = EXIT_FACE_COLOR
+    for key in RESOURCE_FACE:
+        var col: Color = RESOURCE_COLORS[key]
+        col.a = FACE_HIGHLIGHT_ALPHA
+        _face_colors[RESOURCE_FACE[key]] = col
 
 
 func _notification(what: int) -> void:
@@ -392,7 +398,7 @@ func _draw() -> void:
     for i in 8:
         var a   = _oct_verts[i]
         var b   = _oct_verts[(i + 1) % 8]
-        var col = FACE_COLORS.get(i, Color(0.3, 0.3, 0.3, 0.2))
+        var col = _face_colors.get(i, Color(0.3, 0.3, 0.3, 0.2))
         draw_line(a, b, col, 2.5)
 
     # Octagon border
