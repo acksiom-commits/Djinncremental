@@ -1090,6 +1090,41 @@ func _confirm_color_against_ground_truth(record_idx: int, color_idx: int, assert
     return winner == claim
 
 
+func _color_star_count(color_idx: int) -> int:
+    var count: int = 0
+    for s in _host._star_count:
+        var sc: int = _host._star_colors[s] if s < _host._star_colors.size() else 1
+        if sc == color_idx:
+            count += 1
+    return count
+
+
+func _confirm_color_against_cap(record_idx: int, color_idx: int) -> bool:
+    # ADDED 2026-07-27 — color has a fixed, always-visible ground-truth
+    # count per constellation (e.g. exactly 4 Blue stars, from the star map
+    # the player can already see). _confirm_color_against_ground_truth above
+    # only catches a contradiction once THIS record's own star identity is
+    # resolved (star_idx >= 0) — but most Sort:tab records don't have one
+    # yet during normal solving, so nothing else stopped more records than
+    # actually exist from independently confirming the same color (found via
+    # playtesting: 5+ records confirmed Blue when only 4 stars are Blue).
+    # This catches that broader, cross-record case.
+    var cap: int = _color_star_count(color_idx)
+    var already_confirmed: int = 0
+    for i in _match_records.size():
+        if i == record_idx:
+            continue
+        if int(_match_records[i].get("color_states", {}).get(color_idx, 0)) == 1:
+            already_confirmed += 1
+    if already_confirmed < cap:
+        return true
+    var color_name: String = _host.COLOR_NAME_LABELS[color_idx]
+    var claim: String = "%s here (your click)" % color_name
+    var truth: String = "the existing %d confirmed elsewhere (the max for this constellation)" % already_confirmed
+    var winner: String = await _conflict_dialog_fn.call("color count for this constellation", claim, truth)
+    return winner == claim
+
+
 func _propagate_color_confirmed_same_record(record_idx: int, confirmed_color_idx: int) -> void:
     # Confirming one color on a record means every OTHER color is
     # automatically eliminated on that SAME record — a slot/name/star can
