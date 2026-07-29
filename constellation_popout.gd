@@ -81,28 +81,32 @@ var _selected_multiplier: int  = 1
 var _multi_buttons:       Array = []
 var _show_sparks_numeric:   bool = true
 
+const PANEL_BASE_PATH:      String = "ConstellationSelectorPanel/SelectorMargin/SelectorVBox"
+const ALLOCATION_BASE_PATH: String = PANEL_BASE_PATH + "/ConstellationAllocationVBox"
+const INFO_BASE_PATH:       String = PANEL_BASE_PATH + "/ConstellationInfoVBox"
+
 @onready var _tab_btn    : Button         = $ConstellationTabButton
 @onready var _panel      : PanelContainer = $ConstellationSelectorPanel
-@onready var _slot_grid  : GridContainer  = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationSlotGrid
-@onready var _foci_minus : Button  = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox/FociMinusButton
-@onready var _foci_value : Label   = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox/FociValueLabel
-@onready var _foci_plus  : Button  = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox/FociPlusButton
-@onready var _vol_minus  : Button  = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox/VolMinusButton
-@onready var _vol_value  : Label   = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox/VolValueLabel
-@onready var _vol_plus   : Button  = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox/VolPlusButton
-@onready var _feed_hbox  : HBoxContainer = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox
+@onready var _slot_grid  : GridContainer  = get_node(PANEL_BASE_PATH + "/ConstellationSlotGrid")
+@onready var _foci_minus : Button  = get_node(ALLOCATION_BASE_PATH + "/FociVolHBox/FociMinusButton")
+@onready var _foci_value : Label   = get_node(ALLOCATION_BASE_PATH + "/FociVolHBox/FociValueLabel")
+@onready var _foci_plus  : Button  = get_node(ALLOCATION_BASE_PATH + "/FociVolHBox/FociPlusButton")
+@onready var _vol_minus  : Button  = get_node(ALLOCATION_BASE_PATH + "/FociVolHBox/VolMinusButton")
+@onready var _vol_value  : Label   = get_node(ALLOCATION_BASE_PATH + "/FociVolHBox/VolValueLabel")
+@onready var _vol_plus   : Button  = get_node(ALLOCATION_BASE_PATH + "/FociVolHBox/VolPlusButton")
+@onready var _feed_hbox  : HBoxContainer = get_node(ALLOCATION_BASE_PATH + "/FeedHBox")
 
-@onready var _info_vbox       : VBoxContainer = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox
-@onready var _info_name_label : Label         = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox/InfoNameLabel
-@onready var _info_lore_label : Label         = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox/InfoLoreLabel
-@onready var _info_bonus_label: Label         = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox/InfoBonusLabel
-@onready var _info_progress   : ProgressBar   = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox/InfoProgressBar
-@onready var _info_tier_label : Label         = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox/InfoTierLabel
-@onready var _spark_counter_label : Label     = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/SparkCounterLabel
-@onready var _octant_spin     : SpinBox       = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/OctantSpinBox
+@onready var _info_vbox       : VBoxContainer = get_node(INFO_BASE_PATH)
+@onready var _info_name_label : Label         = get_node(INFO_BASE_PATH + "/InfoNameLabel")
+@onready var _info_lore_label : Label         = get_node(INFO_BASE_PATH + "/InfoLoreLabel")
+@onready var _info_bonus_label: Label         = get_node(INFO_BASE_PATH + "/InfoBonusLabel")
+@onready var _info_progress   : ProgressBar   = get_node(INFO_BASE_PATH + "/InfoProgressBar")
+@onready var _info_tier_label : Label         = get_node(INFO_BASE_PATH + "/InfoTierLabel")
+@onready var _spark_counter_label : Label     = get_node(ALLOCATION_BASE_PATH + "/SparkCounterLabel")
+@onready var _octant_spin     : SpinBox       = get_node(PANEL_BASE_PATH + "/OctantSpinBox")
 
 @warning_ignore("unused_private_class_variable")
-@onready var _title_label     : Label         = $ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationTitleLabel
+@onready var _title_label     : Label         = get_node(PANEL_BASE_PATH + "/ConstellationTitleLabel")
 
 
 func _ready() -> void:
@@ -123,8 +127,7 @@ func _ready() -> void:
     _connect_feed_buttons()
     _spark_counter_label.mouse_filter = Control.MOUSE_FILTER_STOP
     _spark_counter_label.gui_input.connect(_on_spark_counter_input)
-    var multi_grid = get_node_or_null(
-        "ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiGrid")
+    var multi_grid = get_node_or_null(ALLOCATION_BASE_PATH + "/MultiGrid")
     if multi_grid:
         for i in MULTI_GRID.size():
             var amount: int = MULTI_GRID[i][1]
