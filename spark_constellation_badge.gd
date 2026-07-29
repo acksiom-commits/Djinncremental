@@ -31,13 +31,7 @@ func _ready() -> void:
 
 func _on_game_loaded(_elapsed: float) -> void:
     _game_loaded = true
-    print("[BADGE] game_loaded fired. cd=", cd, " gc=", gc)
-    if cd:
-        print("[BADGE] active_per_octant=", cd.get("active_per_octant"))
-    if gc:
-        print("[BADGE] has_volition_1=", gc.has_volition_for_constellation(1))
     _refresh_visibility()
-    print("[BADGE] visible after refresh=", visible)
 
 
 func _is_active() -> bool:

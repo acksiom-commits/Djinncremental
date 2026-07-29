@@ -80,7 +80,6 @@ func on_constellation_selected(constellation_id: int) -> void:
             center_px = display.get_global_rect().get_center() - Vector2(0.0, 35.0)
         else:
             center_px = get_global_rect().get_center()
-        print("SNAP center_px: ", center_px, "  display_rect: ", display.get_global_rect() if display else "NO DISPLAY")
         sf.snap_to_constellation(constellation_id, center_px)
 
 

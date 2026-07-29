@@ -62,7 +62,6 @@ func _ready() -> void:
 
     # Anchor to top of screen, full width
     set_anchors_preset(Control.PRESET_TOP_WIDE)
-    custom_minimum_size = Vector2(0, TICKER_HEIGHT)
 
     # Create the scrolling label
     label = RichTextLabel.new()
