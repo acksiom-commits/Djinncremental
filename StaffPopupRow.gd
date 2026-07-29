@@ -161,5 +161,13 @@ func _on_check_gui_input(event: InputEvent) -> void:
     # Checkmark only — protect/"still possible" toggle never applied to the
     # X button, matching the original pre-componentization behavior.
     if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+        # Grab the viewport BEFORE emitting: row_right_clicked's listeners
+        # (protect-toggle handlers) rebuild the popup's rows synchronously,
+        # which remove_child()s this row immediately (see _rebuild_columns()
+        # in staff_popup.gd / clear_rows() in checklist_popup.gd) — by the
+        # time emit() returns, this row is detached from the tree and
+        # get_viewport() would return null.
+        var vp := get_viewport()
         row_right_clicked.emit()
-        get_viewport().set_input_as_handled()
+        if vp:
+            vp.set_input_as_handled()
