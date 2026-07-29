@@ -73,6 +73,7 @@ var _all_monads_triggered:          bool = false
 var _tetrad_assembly_ready:         bool = false
 var _first_fundament_triggered:     bool = false
 var _all_fundaments_triggered:      bool = false
+@warning_ignore("unused_private_class_variable") # read/written via get()/set() as a _simple_triggers guard string, not by name — see _build_simple_triggers()
 var _first_non_fundament_category_triggered: bool = false
 var _first_particle_triggered:      bool = false
 var _first_iota_triggered:          bool = false

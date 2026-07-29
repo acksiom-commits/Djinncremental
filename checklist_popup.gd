@@ -19,6 +19,7 @@ signal undo_all_pressed(record_idx: int)
 ## Preloaded row scene for instantiation — same reusable row the staff
 ## popup and both checklist popups use, so cosmetic overrides apply
 ## everywhere at once.
+@warning_ignore("unused_private_class_variable") # only read by NameChecklistPopup/PitchChecklistPopup subclasses, never within this base class
 var _row_scene: PackedScene = preload("res://StaffPopupRow.tscn")
 
 ## Record this popup is currently showing a checklist for.

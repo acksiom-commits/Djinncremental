@@ -45,12 +45,21 @@ const MARKERS_BASE_PATH:    String = PANE1_BASE_PATH + "/MarkersVBox"
 @onready var _synth:    Node   = get_node_or_null("../RootUI/PuzzleSynths")
 @onready var _star_map_control:    Control = get_node(STAR_MAP_COLUMN_PATH + "/StarMapControl")
 
+# Read only via _host.<name> from constellation_puzzle_widgets.gd's/
+# constellation_puzzle_deduction.gd's composed helper objects, never from
+# within this class body — Godot's static analyzer can't see the external
+# use, so it flags each as unused (same false-positive class documented in
+# constellation_fork_puzzle.gd's "COMPUTED PASS-THROUGHS" block).
+@warning_ignore("unused_private_class_variable")
 @onready var _markers_scroll:      ScrollContainer = get_node(MARKERS_BASE_PATH + "/MarkersScrollContainer")
+@warning_ignore("unused_private_class_variable")
 @onready var _markers_content:     VBoxContainer = get_node(MARKERS_BASE_PATH + "/MarkersScrollContainer/MarkersContentVBox")
+@warning_ignore("unused_private_class_variable")
 @onready var _sort_sub_tab_bar:    HBoxContainer = get_node(MARKERS_BASE_PATH + "/SortSubTabBar")
 @onready var _melody_staff_panel:  Control = get_node(STAR_MAP_COLUMN_PATH + "/MelodyStaffPanel")
 
 var _staff_popup: StaffPopup = null
+@warning_ignore("unused_private_class_variable") # read only via _host. from constellation_puzzle_widgets.gd
 var _staff_popup_seq_pos: int = -1
 var _name_checklist_popup: NameChecklistPopup = null
 var _pitch_checklist_popup: PitchChecklistPopup = null
@@ -111,6 +120,7 @@ var _widget_closed: Dictionary = {}             # star_idx -> bool, closed via X
 var _pitch_rank_solution:   Array = []     # Array[int], melody step per star
 var _star_pitch_index:      Array = []     # Array[int], raw note index per star (ConstellationData)
 var _pitch_freqs:           Array = []     # Array[float], frequency table for this constellation
+@warning_ignore("unused_private_class_variable") # read/written only via _host. from constellation_puzzle_widgets.gd
 var _matches_sort_mode:    int = -1       # -1/0=Name,1=Sequence,2=Color,3=Pitch
 var _player_seed:          int = 0
 var _puzzle_seed_used:      int = 0     # actual seed used for THIS cached puzzle instance
@@ -127,6 +137,7 @@ var _form_clues_cache: Array = []     # cached chosen_form_clues dicts: {form_id
 # bug this refactor fixes.
 # Floating widget nodes, one Control per star.
 var _star_widgets: Array = []
+@warning_ignore("unused_private_class_variable") # read/written only via _host. from constellation_puzzle_widgets.gd
 var _star_tags: Array = []
 var _star_count: int = 0
 var _star_degrees: Array = []
