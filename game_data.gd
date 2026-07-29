@@ -40,21 +40,7 @@ const RESOURCES = {
 # ==================================================
 const BUTTON_LABELS = {
     "SummonSparkButton":      ["SUMMON",      "SPARK"],
-    "MonadCompressButton":    ["Compress to", "MONAD"],
-    "ParticleCompressButton": ["Compress to", "PARTICLE"],
-    "IotaAssembleButton":     ["Assemble",    "IOTA"],
-    "MoteCompressButton":     ["Compress to", "MOTE"],
-    "TetradAssembleButton":   ["Assemble",    "TETRAD"],
-    "GrainAssembleButton":    ["Assemble",    "GRAIN"],
-    "CreateUoniteButton":     ["Create",      "UONITE"],
-}
-
-
-# ==================================================
-# FIRMAMENT BUTTON LABEL DEFINITIONS
-# ==================================================
-const FIRM_BUTTON_LABELS = {
-    "FuseGrainButton":      ["FUSE",      "GRAINS"],
+    "FuseGrainButton":        ["FUSE",        "GRAINS"],
     "MonadCompressButton":    ["Compress to", "MONAD"],
     "ParticleCompressButton": ["Compress to", "PARTICLE"],
     "IotaAssembleButton":     ["Assemble",    "IOTA"],

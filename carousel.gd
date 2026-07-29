@@ -4,6 +4,11 @@ extends Control
 var panels: Array[Panel] = []
 var current_offset: float = 0.0
 
+# Panel count for the seamless reposition-based loop — create_panels()'s
+# range, _process()'s reposition loop, and its two off-screen wrap offsets
+# all need this in sync, or the loop stops being seamless.
+const PANEL_COUNT: int = 18
+
 @export var panel_width: float = 120.0
 @export var panel_height: float = 160.0
 @export var panel_spacing: float = 26.0
@@ -25,7 +30,7 @@ func _ready() -> void:
 
 
 func create_panels() -> void:
-    for i in 18:
+    for i in PANEL_COUNT:
         var panel = Panel.new()
         panel.custom_minimum_size = Vector2(panel_width, panel_height)
         panel.size = Vector2(panel_width, panel_height)
@@ -70,16 +75,16 @@ func _process(delta: float) -> void:
     var segment = panel_width + panel_spacing
     
     # Reposition panels for seamless loop
-    for i in 18:
+    for i in PANEL_COUNT:
         var x = current_offset + i * segment
         panels[i].position.x = x
         panels[i].position.y = (size.y - panel_height) / 2.0
-        
+
         # Reposition panels that go off-screen to the other side
         if x < -panel_width * 2:
-            panels[i].position.x += segment * 18
+            panels[i].position.x += segment * PANEL_COUNT
         elif x > size.x + panel_width:
-            panels[i].position.x -= segment * 18
+            panels[i].position.x -= segment * PANEL_COUNT
 
 
 func get_nearest_center_offset() -> float:
