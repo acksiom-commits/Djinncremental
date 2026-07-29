@@ -861,7 +861,7 @@ func enqueue_open_constellation_panel() -> void:
     if not dialogue_ended.is_connected(_on_open_constellation_panel_ended):
         dialogue_ended.connect(_on_open_constellation_panel_ended)
     enqueue_dialogue(lines, true)
-    emit_signal("sequence_complete", "Constellation Panel Created", lines)
+    emit_signal("sequence_complete", "Constellation Panel Opened", lines)
     
     
 func enqueue_tier1_archon_complete() -> void:
