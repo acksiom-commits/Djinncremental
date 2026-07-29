@@ -23,6 +23,17 @@ var _deduction: ConstellationPuzzleDeduction = null
 # Inspector-editable source instead of ~25 duplicated Color(...) literals.
 const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
 
+# Staff popup column scaling — see _open_staff_popup()'s call sites and
+# staff_popup.gd's _rebuild_columns(). Tune these if a section still
+# needs scrolling for very large constellations.
+const STAFF_POPUP_MAX_ROWS_PER_COLUMN: int = 6
+const STAFF_POPUP_MAX_COLUMNS:         int = 4
+
+func _staff_popup_column_count(row_count: int) -> int:
+    if row_count <= 0:
+        return 2
+    return clampi(ceili(float(row_count) / STAFF_POPUP_MAX_ROWS_PER_COLUMN), 2, STAFF_POPUP_MAX_COLUMNS)
+
 
 func setup(host: ConstellationStudyOverlay, deduction: ConstellationPuzzleDeduction) -> void:
     _host = host
@@ -1385,6 +1396,16 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
     var record_idx: int = _deduction._get_or_create_match_record_for_seq(seq_pos)
 
     _host._staff_popup.clear_all_rows()
+
+    # Column counts scale with content instead of a fixed 2, so a section
+    # spreads wider rather than getting taller and taller (Name in
+    # particular scales with star_count) — needed anyway for
+    # constellations with more stars than fit nicely in 2 columns, and
+    # also what keeps the popup from growing tall enough to cover the
+    # study panel's clue readout above it.
+    _host._staff_popup.set_pitch_column_count(_staff_popup_column_count(_host._pitch_freqs.size()))
+    _host._staff_popup.set_color_column_count(_staff_popup_column_count(_host.COLOR_NAME_LABELS.size()))
+    _host._staff_popup.set_name_column_count(_staff_popup_column_count(_host._star_count))
 
     # Add pitch rows
     for pitch_idx in _host._pitch_freqs.size():
