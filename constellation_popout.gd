@@ -290,7 +290,6 @@ func _input(event: InputEvent) -> void:
             return
         if _tab_btn.get_global_rect().has_point(event.global_position):
             return
-        _close()
         if _close_locked:
             return
         _close()
