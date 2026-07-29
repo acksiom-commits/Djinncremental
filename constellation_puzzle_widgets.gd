@@ -66,6 +66,30 @@ func _all_final_clues_for_tabs() -> Array[Dictionary]:
     return result
 
 
+## Called when the player clicks the pinned-clue readout in the study
+## panel's header — jumps back to whichever marker tab the clue was
+## originally pinned from (_host._selected_clue_tab, recorded by
+## _on_clue_row_clicked at selection time) and scrolls it into view, so
+## working down a clue list doesn't require manually re-finding your
+## place after tabbing away.
+func _jump_to_selected_clue() -> void:
+    if _host._selected_clue_text == "" or _host._selected_clue_tab < 0:
+        return
+    _set_marker_tab(_host._selected_clue_tab)
+    # Wait a frame — _set_marker_tab()'s clear+repopulate happens
+    # synchronously, but ensure_control_visible() needs the freshly-added
+    # rows to have a settled layout (valid rects) to compute a scroll
+    # offset from. Calling it in the same frame as the repopulate landed
+    # at the top of the tab instead of the selected clue's actual
+    # position.
+    await _host.get_tree().process_frame
+    for child in _host._markers_content.get_children():
+        if child is PanelContainer and child.has_meta("clue_text") \
+        and str(child.get_meta("clue_text")) == _host._selected_clue_text:
+            _host._markers_scroll.ensure_control_visible(child)
+            break
+
+
 func _populate_color_markers() -> void:
     var shown: bool = false
     var neutral_col := STATE_COLORS.muted
@@ -988,6 +1012,11 @@ func _on_clue_row_clicked(text: String) -> void:
     # Click again to unpin — a plain, expected toggle, not something that
     # needed a separate ask.
     _host._selected_clue_text = "" if _host._selected_clue_text == text else text
+    # Remember which tab this was pinned from, so the header readout's
+    # click-to-jump (_jump_to_selected_clue) can return to exactly that
+    # tab instead of guessing via characteristics — a clue can in
+    # principle satisfy more than one tab's filter.
+    _host._selected_clue_tab = _host._active_marker_tab if _host._selected_clue_text != "" else -1
     _host._select_clue(_bbcode_for_clue_text(_host._selected_clue_text) if _host._selected_clue_text != "" else "")
     # Re-style in place rather than a full repopulate — cheaper, and a
     # repopulate would re-run every populate function's own clue filtering

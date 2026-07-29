@@ -45,6 +45,7 @@ const MARKERS_BASE_PATH:    String = PANE1_BASE_PATH + "/MarkersVBox"
 @onready var _synth:    Node   = get_node_or_null("../RootUI/PuzzleSynths")
 @onready var _star_map_control:    Control = get_node(STAR_MAP_COLUMN_PATH + "/StarMapControl")
 
+@onready var _markers_scroll:      ScrollContainer = get_node(MARKERS_BASE_PATH + "/MarkersScrollContainer")
 @onready var _markers_content:     VBoxContainer = get_node(MARKERS_BASE_PATH + "/MarkersScrollContainer/MarkersContentVBox")
 @onready var _sort_sub_tab_bar:    HBoxContainer = get_node(MARKERS_BASE_PATH + "/SortSubTabBar")
 @onready var _melody_staff_panel:  Control = get_node(STAR_MAP_COLUMN_PATH + "/MelodyStaffPanel")
@@ -150,6 +151,7 @@ var _sb_tab_active:   StyleBox = null
 var _sb_tab_inactive: StyleBox = null
 var _sb_clue_normal:  StyleBox = null
 var _selected_clue_text: String = ""   # raw (non-BBCode) text of the pinned clue, "" = none
+var _selected_clue_tab:  int    = -1   # which marker tab it was pinned from, -1 = none
 
 
 # ==================================================
@@ -212,6 +214,14 @@ func _ready() -> void:
     _pitch_checklist_popup.undo_all_pressed.connect(_widgets._on_pitch_checklist_undo_all)
     _star_map_control.resized.connect(_on_star_map_resized)
     _close_btn.pressed.connect(_on_close)
+    # Click-to-jump: clicking the pinned-clue readout switches to whichever
+    # marker tab shows that clue and scrolls it into view — see
+    # _widgets._jump_to_selected_clue(). RichTextLabel doesn't pass mouse
+    # input through by default; STOP + gui_input is the same pattern
+    # _make_clue_label() uses for the clue rows themselves.
+    _selected_clue_display.mouse_filter = Control.MOUSE_FILTER_STOP
+    _selected_clue_display.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+    _selected_clue_display.gui_input.connect(_on_selected_clue_display_gui_input)
     _fork = ConstellationForkPuzzle.new()
     _fork.setup(_synth, _star_map_control, _fork_btn)
     _fork_btn.pressed.connect(_on_fork_toggle_pressed)
@@ -655,11 +665,18 @@ func _update_header() -> void:
     var desig: String = def.get("designation", "")
     _title_label.text = "%s  •  %s" % [name_str, desig] if desig != "" else name_str
     _selected_clue_text = ""
+    _selected_clue_tab = -1
     _selected_clue_display.text = SELECTED_CLUE_PLACEHOLDER
 
 
 func _select_clue(bbcode_text: String) -> void:
     _selected_clue_display.text = bbcode_text if bbcode_text != "" else SELECTED_CLUE_PLACEHOLDER
+
+
+func _on_selected_clue_display_gui_input(event: InputEvent) -> void:
+    if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+        _widgets._jump_to_selected_clue()
+        get_viewport().set_input_as_handled()
 
 
 # ==================================================
