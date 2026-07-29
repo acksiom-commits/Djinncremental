@@ -1,5 +1,5 @@
 extends Node
-# ================= DJINNCREMENTAL THEME BUILDER v0.4.0 =================
+# ================= DJINNCREMENTAL THEME BUILDER v0.5.0 =================
 # Run this script once to generate djinncremental_theme.tres
 # Attach to ThemeBuilderPanel, run the scene, then detach the script.
 #
@@ -7,6 +7,22 @@ extends Node
 # Project Settings -> GUI -> Theme -> Custom Theme
 # pointing to res://djinncremental_theme.tres
 #
+# NOTE: regenerating from scratch (Theme.new()) produces a resource with
+# no `uid`. The committed .tres carries uid://t7mug8aetm11 in its
+# [gd_resource] header — after running this, reopen the project in the
+# editor once so it rescans and reassigns a matching uid, or diff/patch
+# the regenerated file in by hand (as was done for the DialogConfirmButton
+# addition) instead of overwriting the committed file outright.
+#
+# CHANGELOG v0.5.0:
+# - Synced all font sizes to 18 (Button/Label/LineEdit/ProgressBar/
+#   RichTextLabel/SpinBox) and added default_font_size = 18 — these had
+#   been hand-tuned directly in the editor's Theme inspector since v0.4.0
+#   was last run, so the script no longer matched the live .tres. A
+#   from-scratch regeneration would have silently reverted that tuning.
+#   Every color/stylebox/margin value was diffed against the live
+#   djinncremental_theme.tres and already matched exactly — font size was
+#   the only drift.
 # CHANGELOG v0.4.0:
 # - Added "DialogConfirmButton" type variation, porting settings_popout.gd's
 #   former per-instance _style_dialog_button() StyleBoxFlat construction.
@@ -53,6 +69,7 @@ func _ready() -> void:
 
 func build_theme() -> void:
     var theme = Theme.new()
+    theme.default_font_size = 18
 
     # ================================================
     # PANEL CONTAINER
@@ -85,7 +102,7 @@ func build_theme() -> void:
     theme.set_color("font_hover_color",    "Button", TEXT_PRIMARY)
     theme.set_color("font_pressed_color",  "Button", TEXT_PRIMARY)
     theme.set_color("font_disabled_color", "Button", TEXT_DISABLED)
-    theme.set_font_size("font_size", "Button", 15)
+    theme.set_font_size("font_size", "Button", 18)
 
     # ================================================
     # DIALOG CONFIRM BUTTON — type variation for confirmation-dialog
@@ -119,13 +136,13 @@ func build_theme() -> void:
     # ================================================
     theme.set_color("font_color",        "Label", TEXT_PRIMARY)
     theme.set_color("font_shadow_color", "Label", Color(0, 0, 0, 0.5))
-    theme.set_font_size("font_size",     "Label", 16)
+    theme.set_font_size("font_size",     "Label", 18)
 
     # ================================================
     # RICH TEXT LABEL
     # ================================================
     theme.set_color("default_color",        "RichTextLabel", TEXT_PRIMARY)
-    theme.set_font_size("normal_font_size", "RichTextLabel", 16)
+    theme.set_font_size("normal_font_size", "RichTextLabel", 18)
     theme.set_stylebox("normal", "RichTextLabel",
         _make_stylebox(Color(0,0,0,0), Color(0,0,0,0), 0, 0))
 
@@ -135,7 +152,7 @@ func build_theme() -> void:
     var spin_style = _make_stylebox(BG_PRIMARY, BORDER_NORMAL, 1, 3)
     theme.set_stylebox("normal", "SpinBox", spin_style)
     theme.set_color("font_color", "SpinBox", TEXT_PRIMARY)
-    theme.set_font_size("font_size", "SpinBox", 14)
+    theme.set_font_size("font_size", "SpinBox", 18)
     theme.set_constant("minimum_grab_thickness", "SpinBox", 28)
 
     # ================================================
@@ -157,7 +174,7 @@ func build_theme() -> void:
     theme.set_color("font_selected_color", "LineEdit", TEXT_PRIMARY)
     theme.set_color("selection_color",     "LineEdit", ACCENT_GRAIN)
     theme.set_color("cursor_color",        "LineEdit", TEXT_PRIMARY)
-    theme.set_font_size("font_size",       "LineEdit", 13)
+    theme.set_font_size("font_size",       "LineEdit", 18)
 
     # ================================================
     # PROGRESS BAR
@@ -167,7 +184,7 @@ func build_theme() -> void:
     theme.set_stylebox("background", "ProgressBar", pb_bg)
     theme.set_stylebox("fill",       "ProgressBar", pb_fill)
     theme.set_color("font_color",    "ProgressBar", TEXT_PRIMARY)
-    theme.set_font_size("font_size", "ProgressBar", 12)
+    theme.set_font_size("font_size", "ProgressBar", 18)
 
     # ================================================
     # MARGIN CONTAINER — transparent
