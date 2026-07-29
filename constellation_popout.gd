@@ -59,8 +59,8 @@ const MULTI_GRID: Array = [
     ["ALL",  -1],
 ]
 
-const COLOR_MULTI_SEL:  Color = Color(0.92, 0.90, 0.85, 1.00)
-const COLOR_MULTI_NORM: Color = Color(0.92, 0.90, 0.85, 0.40)
+const COLOR_MULTI_SEL:  Color = Color(UIAccentColors.CREAM, 1.00)
+const COLOR_MULTI_NORM: Color = Color(UIAccentColors.CREAM, 0.40)
 
 signal constellation_selected(id: int)
 signal panel_first_opened()

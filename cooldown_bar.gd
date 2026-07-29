@@ -197,7 +197,7 @@ func _make_fill_style(color: Color) -> StyleBoxFlat:
 func _make_bg_style() -> StyleBoxFlat:
     var s = StyleBoxFlat.new()
     s.bg_color                   = Color(0.07, 0.06, 0.10, 0.85)
-    s.border_color               = Color(0.92, 0.90, 0.85, 0.35)
+    s.border_color               = Color(UIAccentColors.CREAM, 0.35)
     s.border_width_left          = 1
     s.border_width_right         = 1
     s.border_width_top           = 1

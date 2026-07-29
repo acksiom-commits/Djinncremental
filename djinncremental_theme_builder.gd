@@ -42,9 +42,9 @@ const BG_PRESSED    = Color(0.05, 0.04, 0.08, 0.95)  # pressed state
 const BG_DISABLED   = Color(0.06, 0.05, 0.09, 0.60)  # disabled
 
 # Borders: subtle purple-grey
-const BORDER_NORMAL  = Color(0.92, 0.90, 0.85, 0.35)
-const BORDER_FOCUS   = Color(0.92, 0.90, 0.85, 0.90)
-const BORDER_HOVER   = Color(0.92, 0.90, 0.85, 0.60)
+const BORDER_NORMAL  = Color(UIAccentColors.CREAM, 0.35)
+const BORDER_FOCUS   = Color(UIAccentColors.CREAM, 0.90)
+const BORDER_HOVER   = Color(UIAccentColors.CREAM, 0.60)
 
 # Text
 const TEXT_PRIMARY   = Color(0.92, 0.92, 0.95, 1.00)  # near-white

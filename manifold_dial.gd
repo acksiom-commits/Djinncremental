@@ -20,9 +20,9 @@ const CHANNEL_HALF_W: float = 6.0
 const ICON_SIZE:      float = 28.0
 
 # === COLORS ===
-const COLOR_RING         := Color(0.92, 0.90, 0.85, 0.10)
-const COLOR_RING_SEL     := Color(0.92, 0.90, 0.85, 0.90)
-const COLOR_CHANNEL      := Color(0.92, 0.90, 0.85, 0.72)
+const COLOR_RING         := Color(UIAccentColors.CREAM, 0.10)
+const COLOR_RING_SEL     := Color(UIAccentColors.CREAM, 0.90)
+const COLOR_CHANNEL      := Color(UIAccentColors.CREAM, 0.72)
 const COLOR_PURITY_ARC   := Color(1.00, 0.90, 0.55, 0.32)
 
 # Icon tint by station membership — OUTPUT_COLOR previously hardcoded this
