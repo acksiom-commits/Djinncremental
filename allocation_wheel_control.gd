@@ -64,9 +64,9 @@ const MULTI_GRID = [
 const COLOR_SELECTED    = Color(1.00, 1.00, 1.00, 1.00)
 const COLOR_ALLOCATED   = Color(1.00, 1.00, 1.00, 0.85)
 const COLOR_UNALLOCATED = Color(1.00, 1.00, 1.00, 0.30)
-const COLOR_BORDER_SEL  = Color(0.92, 0.90, 0.85, 0.90)
-const COLOR_MULTI_SEL   = Color(0.92, 0.90, 0.85, 1.00)
-const COLOR_MULTI_NORM  = Color(0.92, 0.90, 0.85, 0.40)
+const COLOR_BORDER_SEL  = Color(UIAccentColors.CREAM, 0.90)
+const COLOR_MULTI_SEL   = Color(UIAccentColors.CREAM, 1.00)
+const COLOR_MULTI_NORM  = Color(UIAccentColors.CREAM, 0.40)
 
 # === REFERENCES ===
 var game_context: Node = null
@@ -250,7 +250,7 @@ func _draw() -> void:
             _get_center_y() + _get_radius_y() * sin(a)
         ))
     for i in points.size() - 1:
-        draw_line(points[i], points[i + 1], Color(0.92, 0.90, 0.85, 0.08), 1.5)
+        draw_line(points[i], points[i + 1], Color(UIAccentColors.CREAM, 0.08), 1.5)
 
     if _icon_buttons.has(selected_resource):
         var btn = _icon_buttons[selected_resource]

@@ -10,8 +10,8 @@ extends Control
 
 @export var operation_key: String = ""
 
-const COLOR_ACTIVE    := Color(0.92, 0.90, 0.85, 0.90)
-const COLOR_INACTIVE  := Color(0.92, 0.90, 0.85, 0.28)
+const COLOR_ACTIVE    := Color(UIAccentColors.CREAM, 0.90)
+const COLOR_INACTIVE  := Color(UIAccentColors.CREAM, 0.28)
 const COLOR_PARENT    := Color(1.0, 0.85, 0.2, 0.90)
 const LINE_W_ACTIVE   := 2.0
 const LINE_W_INACTIVE := 1.5
