@@ -45,22 +45,6 @@ theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
 text = "PITCH"
 
-[node name="PitchColumns" type="HBoxContainer" parent="VBox"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="PitchLeftCol" type="VBoxContainer" parent="VBox/PitchColumns"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 2
-
-[node name="PitchRightCol" type="VBoxContainer" parent="VBox/PitchColumns"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 2
-
 [node name="PitchUndoRow" type="HBoxContainer" parent="VBox"]
 layout_mode = 2
 theme_override_constants/separation = 3
@@ -92,6 +76,22 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 10
 text = "Undo all"
 
+[node name="PitchColumns" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PitchLeftCol" type="VBoxContainer" parent="VBox/PitchColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="PitchRightCol" type="VBoxContainer" parent="VBox/PitchColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
 [node name="Sep2" type="HSeparator" parent="VBox"]
 layout_mode = 2
 
@@ -101,22 +101,6 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
 text = "COLOR"
-
-[node name="ColorColumns" type="HBoxContainer" parent="VBox"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="ColorLeftCol" type="VBoxContainer" parent="VBox/ColorColumns"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 2
-
-[node name="ColorRightCol" type="VBoxContainer" parent="VBox/ColorColumns"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 2
 
 [node name="ColorUndoRow" type="HBoxContainer" parent="VBox"]
 layout_mode = 2
@@ -149,6 +133,22 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 10
 text = "Undo all"
 
+[node name="ColorColumns" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ColorLeftCol" type="VBoxContainer" parent="VBox/ColorColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="ColorRightCol" type="VBoxContainer" parent="VBox/ColorColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
 [node name="Sep3" type="HSeparator" parent="VBox"]
 layout_mode = 2
 
@@ -158,22 +158,6 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
 text = "NAME"
-
-[node name="NameColumns" type="HBoxContainer" parent="VBox"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="NameLeftCol" type="VBoxContainer" parent="VBox/NameColumns"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 2
-
-[node name="NameRightCol" type="VBoxContainer" parent="VBox/NameColumns"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_constants/separation = 2
 
 [node name="NameUndoRow" type="HBoxContainer" parent="VBox"]
 layout_mode = 2
@@ -205,3 +189,19 @@ size_flags_horizontal = 3
 focus_mode = 0
 theme_override_font_sizes/font_size = 10
 text = "Undo all"
+
+[node name="NameColumns" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="NameLeftCol" type="VBoxContainer" parent="VBox/NameColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="NameRightCol" type="VBoxContainer" parent="VBox/NameColumns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
