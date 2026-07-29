@@ -1382,6 +1382,20 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
         var state: int = _deduction._record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
         _host._staff_popup.add_name_row(name_str, state, STATE_COLORS.neutral)
 
+    # Vertically center the popup within the study panel instead of
+    # anchoring its top edge at the click point — the melody staff sits
+    # near the bottom of the panel, so a click-anchored top edge left the
+    # (now correctly-sized, post row-clear fix) popup bottom-justified
+    # against the panel rather than centered in it. Computed after row
+    # population so get_contents_minimum_size() reflects the final
+    # content height. X stays click-driven (unchanged) — only Y is
+    # recentered here.
+    var panel: Control = _host.get_node(_host.PANEL_ROOT_PATH)
+    var popup_height: float = _host._staff_popup.get_contents_minimum_size().y
+    var panel_center_local: Vector2 = panel.global_position + panel.size * 0.5
+    var target_top_local: Vector2 = Vector2(panel_center_local.x, panel_center_local.y - popup_height * 0.5)
+    screen_pos.y = (panel.get_viewport().get_screen_transform() * target_top_local).y
+
     _host._staff_popup.open(seq_pos, record_idx, screen_pos)
 
 
