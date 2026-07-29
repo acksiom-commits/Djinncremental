@@ -12,6 +12,9 @@ extends VBoxContainer
 #       TopLabel (RichTextLabel)     — first line, plain white
 #       BottomLabel (RichTextLabel)  — second line, resource color
 
+const TOP_FONT_SIZE:    int = 20
+const BOTTOM_FONT_SIZE: int = 16
+
 @export var resource_key: String = "":
     set(v):
         resource_key = v
@@ -26,8 +29,8 @@ func _ready() -> void:
     set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     alignment = BoxContainer.ALIGNMENT_CENTER
     add_theme_constant_override("separation", 0)
-    _setup_label(top_label, 20)
-    _setup_label(bottom_label, 16)
+    _setup_label(top_label, TOP_FONT_SIZE)
+    _setup_label(bottom_label, BOTTOM_FONT_SIZE)
     _refresh()
 
 
