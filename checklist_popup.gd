@@ -53,9 +53,18 @@ func open(record_idx: int, screen_pos: Vector2) -> void:
 
 
 func clear_rows() -> void:
+    # remove_child() first so each row stops counting toward its column's
+    # minimum-size computation immediately — queue_free() alone only
+    # defers deletion, so a caller that repopulates in the same frame
+    # (every _open_*_checklist_popup() call does) would see
+    # get_contents_minimum_size() count both the outgoing and incoming
+    # rows at once, inflating the popup's computed size and causing the
+    # visible position/size jump on every reopen.
     for child in _left_col.get_children():
+        _left_col.remove_child(child)
         child.queue_free()
     for child in _right_col.get_children():
+        _right_col.remove_child(child)
         child.queue_free()
     _added_count = 0
 

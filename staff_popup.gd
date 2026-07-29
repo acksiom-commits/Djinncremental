@@ -166,4 +166,11 @@ func _add_row_to_columns(row: StaffPopupRow, left_col: VBoxContainer, right_col:
 
 func _clear_container(container: VBoxContainer) -> void:
     for child in container.get_children():
+        # remove_child() first so the row stops counting toward the
+        # container's minimum-size computation immediately — queue_free()
+        # alone only defers deletion, so a caller that repopulates in the
+        # same frame (every _open_staff_popup() call does) would see
+        # get_contents_minimum_size() count both the outgoing and
+        # incoming rows at once, inflating the popup's computed size.
+        container.remove_child(child)
         child.queue_free()
