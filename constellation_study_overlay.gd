@@ -28,17 +28,26 @@ class_name ConstellationStudyOverlay
 var _cd: Node = null
 
 # ── NODE REFS ────────────────────────────────────────────────────────
-@onready var _title_label:         Label         = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox/TitleLabel
-@onready var _close_btn:           Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox/CloseButton
-@onready var _fork_btn: Button = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox/TuningForkButton
-@onready var _pitch_listen_btn: Button = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox/PitchListenButton
-@onready var _selected_clue_display: RichTextLabel = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox/SelectedClueDisplay
-@onready var _synth:    Node   = get_node_or_null("../RootUI/PuzzleSynths")
-@onready var _star_map_control:    Control = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/StarMapColumn/StarMapControl
+# Base paths shared by many of the lookups below — extracted 2026-07-28
+# so a scene-hierarchy restructure only needs one edit per shared prefix
+# instead of hunting through every literal path individually.
+const PANEL_ROOT_PATH:      String = "CenterContainer/PanelContainer"
+const HEADER_BASE_PATH:     String = PANEL_ROOT_PATH + "/OuterMargin/OuterVBox/HeaderHBox"
+const PANE1_BASE_PATH:      String = PANEL_ROOT_PATH + "/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox"
+const STAR_MAP_COLUMN_PATH: String = PANE1_BASE_PATH + "/StarMapColumn"
+const MARKERS_BASE_PATH:    String = PANE1_BASE_PATH + "/MarkersVBox"
 
-@onready var _markers_content:     VBoxContainer = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkersScrollContainer/MarkersContentVBox
-@onready var _sort_sub_tab_bar:    HBoxContainer = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/SortSubTabBar
-@onready var _melody_staff_panel:  Control = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/StarMapColumn/MelodyStaffPanel
+@onready var _title_label:         Label         = get_node(HEADER_BASE_PATH + "/TitleLabel")
+@onready var _close_btn:           Button        = get_node(HEADER_BASE_PATH + "/CloseButton")
+@onready var _fork_btn: Button = get_node(HEADER_BASE_PATH + "/TuningForkButton")
+@onready var _pitch_listen_btn: Button = get_node(HEADER_BASE_PATH + "/PitchListenButton")
+@onready var _selected_clue_display: RichTextLabel = get_node(HEADER_BASE_PATH + "/SelectedClueDisplay")
+@onready var _synth:    Node   = get_node_or_null("../RootUI/PuzzleSynths")
+@onready var _star_map_control:    Control = get_node(STAR_MAP_COLUMN_PATH + "/StarMapControl")
+
+@onready var _markers_content:     VBoxContainer = get_node(MARKERS_BASE_PATH + "/MarkersScrollContainer/MarkersContentVBox")
+@onready var _sort_sub_tab_bar:    HBoxContainer = get_node(MARKERS_BASE_PATH + "/SortSubTabBar")
+@onready var _melody_staff_panel:  Control = get_node(STAR_MAP_COLUMN_PATH + "/MelodyStaffPanel")
 
 var _staff_popup: StaffPopup = null
 var _staff_popup_seq_pos: int = -1
@@ -55,12 +64,12 @@ const UNKNOWN_SEQ_COLOR := Color(0.35, 0.75, 0.45, 1.0)
 
 # Shared puzzle-state color palette — see puzzle_state_colors.gd.
 const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
-@onready var _tab_color:           Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar/TabColor
-@onready var _tab_sequence:        Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar/TabSequence
+@onready var _tab_color:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabColor")
+@onready var _tab_sequence:        Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabSequence")
 
-@onready var _tab_pitch:           Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2/TabPitch
-@onready var _tab_proximity:       Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2/TabAdjacency
-@onready var _tab_name_clues:      Button        = $CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar/TabPlaceholder
+@onready var _tab_pitch:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabPitch")
+@onready var _tab_proximity:       Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabAdjacency")
+@onready var _tab_name_clues:      Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabPlaceholder")
 
 # ── STYLE CACHE ──────────────────────────────────────────────────────
 # Shared with constellation_overlay.gd — see star_color_palette.gd.
@@ -675,7 +684,7 @@ func _input(event: InputEvent) -> void:
             get_viewport().set_input_as_handled()
     elif event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
         var mpos: Vector2 = get_local_mouse_position()
-        var panel_rect: Rect2 = $CenterContainer/PanelContainer.get_global_rect()
+        var panel_rect: Rect2 = get_node(PANEL_ROOT_PATH).get_global_rect()
         var local_panel_rect := Rect2(
             panel_rect.position - global_position,
             panel_rect.size
