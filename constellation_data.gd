@@ -680,20 +680,8 @@ var _puzzle_cache:          Dictionary = {}   # keyed by constellation_id string
 func _ready() -> void:
     _game_context = get_node_or_null("/root/GameContext")
     _load_patron_constellations()
-    var _sm: Node = get_node_or_null("/root/SaveManager")
-#       if sm:
-#        sm.game_loaded.connect(_on_game_loaded_playtest)
- 
- 
-# ── PLAYTEST ONLY — remove before ship ──────────────────
-#   func _on_game_loaded_playtest(_elapsed: float) -> void:
-#       _unlock_constellation(0)
-#       set_active_constellation(0, 0)
-#       if _game_context:
-#           _game_context.assignments["constellation_0_solve_count"] = 1
-# ────────────────────────────────────────────────────────
- 
- 
+
+
 # ==================================================
 # SEED AND STAR POSITION GENERATION
 # ==================================================
@@ -1152,83 +1140,6 @@ func get_note_assignment(constellation_id: int) -> Array:
  
  
 # ==================================================
-# SHADER DATA EXPORT
-# ==================================================
-func get_shader_constellation_data() -> Dictionary:
-    var star_dirs:    Array = []
-    var line_pairs:   Array = []
-    var brightnesses: Array = []
- 
-    for octant in range(8):
-        var id: int = active_per_octant[octant]
-        if id == -1:
-            continue
-            
-        var def: Dictionary = get_constellation_def(id)
-        if def.is_empty():
-            continue
- 
-        var const_frac: float = get_spark_fraction(id)
-        #if id == 0: print("[CD] constellation 0 — spark_totals raw: ", _game_context.constellation_spark_totals.get("0", -999.0), "  const_frac: ", const_frac, "  threshold: ", THRESHOLD_STARS)
-        var positions: Array = get_star_positions(id)
-        
-        # NEW: Per-star brightness scales
-        var scales: Array = def.get("star_brightness_scales", [])
-        
-        var base_index: int = star_dirs.size()
-        var line_threshold: float = def.get("line_threshold", 0.3)
-        var lines_visible: bool = const_frac >= line_threshold
- 
-        var puzzle_seq: Array = def.get("puzzle_sequence", [])
-        var note_assign: Array = get_note_assignment(id)
- 
-        var pitch_reveal_order: Dictionary = {}
-        var reveal_count: int = 0
-        for pitch_idx in puzzle_seq:
-            if not pitch_reveal_order.has(pitch_idx):
-                pitch_reveal_order[pitch_idx] = reveal_count
-                reveal_count += 1
-        if reveal_count == 0:
-            reveal_count = 1
- 
-        var tier1_progress: float = 0.0
-        if THRESHOLD_STARS > 0.0:
-            tier1_progress = clampf(const_frac / THRESHOLD_STARS, 0.0, 1.0)
- 
-        for i in positions.size():
-            star_dirs.append(positions[i])
- 
-            var scale: float = 1.0
-            if i < scales.size():
-                scale = scales[i]
- 
-            var star_brightness: float = 0.0
-            if const_frac >= THRESHOLD_STARS:
-                star_brightness = 1.0
-            elif const_frac > 0.0 and not note_assign.is_empty():
-                var pitch_idx: int = note_assign[i] if i < note_assign.size() else i
-                var reveal_step: int = pitch_reveal_order.get(pitch_idx, reveal_count - 1)
-                var star_start: float = float(reveal_step) / float(reveal_count)
-                var star_end:   float = float(reveal_step + 1) / float(reveal_count)
-                if tier1_progress >= star_end:
-                    star_brightness = 1.0
-                elif tier1_progress >= star_start:
-                    star_brightness = (tier1_progress - star_start) / (star_end - star_start)
-            brightnesses.append(clamp(star_brightness * scale, 0.0, 1.0))
- 
-        if lines_visible and positions.size() >= 2:
-            for i in positions.size() - 1:
-                line_pairs.append(base_index + i)
-                line_pairs.append(base_index + i + 1)
- 
-    return {
-        "star_dirs": star_dirs,
-        "line_pairs": line_pairs,
-        "brightnesses": brightnesses,
-    }
- 
- 
-# ==================================================
 # PATRON CONSTELLATION LOADING
 # ==================================================
 func _load_patron_constellations() -> void:
@@ -1246,7 +1157,6 @@ func _load_patron_constellations() -> void:
     var data = json.get_data()
     if data is Array:
         patron_constellations = data
-        print("ConstellationData: loaded ", patron_constellations.size(), " patron constellations")
  
  
 # ==================================================

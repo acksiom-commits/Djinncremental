@@ -28,6 +28,14 @@ const TIMER_MANIFOLD: float = 8.0   # Transform tick — slower than Grain assem
 # ===================== RANDOM DRAW THRESHOLD ==============
 const RANDOM_DRAW_THRESHOLD: int = 1000
 
+# Below threshold: draw each unit one-at-a-time from a live pool (true
+# random, exact but O(n)). Above threshold: use the simplex/proportional
+# split instead (statistically equivalent at scale, O(1)). Shared by the
+# monad-roll/tetrad-assemble/tetrad-spend batch dispatchers below — was
+# the same condition copy-pasted 3 times.
+func _should_use_true_random(amt_f: float) -> bool:
+    return amt_f <= float(RANDOM_DRAW_THRESHOLD) and amt_f >= 1.0
+
 # ===================== DEPENDENCY ORDER ===================
 const DEPENDENCY_ORDER: Array[String] = [
     "sparks_summon",
@@ -281,13 +289,6 @@ func _run_overflow_production(ready_batches: Dictionary) -> void:
 
     _overflow_budget = total_slots
     var fired: Dictionary = {}
-
-    print("=== OVERFLOW TICK START | budget=", _overflow_budget,
-          " | storage=", gc.get_storage_total().to_display_string(), "/", gc.get_effective_storage_cap().to_display_string(),
-          " | sparks=", gc.sparks.to_display_string(),
-          " | monad_u=", gc.get_monad_unlocked_total().to_display_string(),
-          " | particle=", gc.particle.to_display_string(),
-          " | iota=", gc.iota.to_display_string(), " ===")
 
     for op in OVERFLOW_PRIORITY:
         if _overflow_budget <= 0:
@@ -597,7 +598,7 @@ func _batch_roll_monads(amount: BigNum) -> void:
         gc.add_to_total("monad_" + unlocked[0], amount)
         return
     var amt_f = amount.to_float()
-    if amt_f <= float(RANDOM_DRAW_THRESHOLD) and amt_f >= 1.0:
+    if _should_use_true_random(amt_f):
         _roll_monads_true_random(amount.to_int(), unlocked)
     else:
         _roll_monads_simplex(amount, unlocked)
@@ -626,7 +627,7 @@ func _batch_assemble_tetrads(amount: BigNum) -> void:
             return
     
     var amt_f = amount.to_float()
-    if amt_f <= float(RANDOM_DRAW_THRESHOLD) and amt_f >= 1.0:
+    if _should_use_true_random(amt_f):
         _assemble_tetrads_true_random(amount.to_int(), available_types)
     else:
         _assemble_tetrads_simplex(amount, available_types, monad_cost)
@@ -648,7 +649,7 @@ func _batch_spend_tetrads(tetrad_cost: BigNum, output_amount: BigNum) -> void:
         return
     
     var amt_f = output_amount.to_float()
-    if amt_f <= float(RANDOM_DRAW_THRESHOLD) and amt_f >= 1.0:
+    if _should_use_true_random(amt_f):
         _spend_tetrads_true_random(tetrad_cost.to_int(), available)
     else:
         _spend_tetrads_simplex(tetrad_cost, available)
@@ -1039,10 +1040,6 @@ func manual_create_uonite() -> bool:
     var possible_by_mote:   int = gc.mote.div_int_floor(mote_cost).to_int()
     var possible_by_sparks: int = gc.sparks.div_int_floor(sparks_cost).to_int()
     var count: int = mini(possible_by_mote, mini(possible_by_sparks, headroom))
-    print("[UONITE-TEST] mote=", gc.mote.to_int(), " sparks=", gc.sparks.to_int(),
-          " cap=", gc.get_uonite_cycle_cap(), " this_cycle=", gc.uonites_this_cycle,
-          " headroom=", headroom, " by_mote=", possible_by_mote,
-          " by_sparks=", possible_by_sparks, " count=", count)
     if count <= 0: return false
     gc.mote   = gc.mote.sub(BigNum.from_int(count * mote_cost))
     gc.sparks = gc.sparks.sub(BigNum.from_int(count * sparks_cost))
