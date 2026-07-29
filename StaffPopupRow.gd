@@ -7,6 +7,10 @@ extends HBoxContainer
 # states — the same colors constellation_puzzle_widgets.gd etc. use.
 const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
 
+# Dimmed "not this button" color for whichever of check/X isn't highlighted
+# in the current state — repeated 4x across set_visual_state()'s match arms.
+const DISABLED_BTN_COLOR: Color = Color(0.5, 0.5, 0.5, 1)
+
 ## Emitted when the checkmark button is pressed.
 signal check_pressed
 ## Emitted when the X button is pressed.
@@ -119,19 +123,19 @@ func set_visual_state(state: int) -> void:
     match state:
         0:  # Unchecked / neutral
             _label.add_theme_color_override("font_color", label_color)
-            _btn_check.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
-            _btn_x.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
+            _btn_check.add_theme_color_override("font_color", DISABLED_BTN_COLOR)
+            _btn_x.add_theme_color_override("font_color", DISABLED_BTN_COLOR)
             _btn_check.disabled = false
             _btn_x.disabled = false
         1:  # Selected (check)
             _label.add_theme_color_override("font_color", STATE_COLORS.confirmed)
             _btn_check.add_theme_color_override("font_color", STATE_COLORS.confirmed)
-            _btn_x.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
+            _btn_x.add_theme_color_override("font_color", DISABLED_BTN_COLOR)
             _btn_check.disabled = false
             _btn_x.disabled = false
         2:  # Eliminated (X)
             _label.add_theme_color_override("font_color", STATE_COLORS.eliminated)
-            _btn_check.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
+            _btn_check.add_theme_color_override("font_color", DISABLED_BTN_COLOR)
             _btn_x.add_theme_color_override("font_color", STATE_COLORS.eliminated)
             _btn_check.disabled = false
             _btn_x.disabled = false
@@ -139,7 +143,7 @@ func set_visual_state(state: int) -> void:
             # dimmer than a hard X, distinguishing "leaning eliminated" from
             # a confirmed one.
             _label.add_theme_color_override("font_color", STATE_COLORS.soft_eliminated)
-            _btn_check.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1))
+            _btn_check.add_theme_color_override("font_color", DISABLED_BTN_COLOR)
             _btn_x.add_theme_color_override("font_color", Color(1.0, 0.6, 0.5, 1.0))
             _btn_check.disabled = false
             _btn_x.disabled = false
