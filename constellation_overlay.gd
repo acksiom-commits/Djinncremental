@@ -1,6 +1,6 @@
 extends Control
-# ================ CONSTELLATION OVERLAY v2.0.0 ================
-# Fullscreen transparent Control (Mouse Filter: Pass) that sits
+# ================ CONSTELLATION OVERLAY v2.1.0 ================
+# Fullscreen transparent Control (Mouse Filter: Ignore) that sits
 # between the starfield and the UI in the CanvasLayer.
 #
 # Responsibilities:
@@ -11,6 +11,14 @@ extends Control
 #
 # The starfield shader renders the star dots/glows.
 # This overlay renders lines and owns all puzzle state.
+#
+# v2.1.0: star-click reading moved from _input() to _unhandled_input()
+# so UI drawn on top of this fullscreen overlay always wins clicks. See
+# _unhandled_input()'s comment — reading in _input() ran before Control
+# GUI picking and made this overlay swallow clicks meant for the
+# constellation slideout's buttons / the study panel, a recurring bug.
+# Requires the starfield ColorRect behind us to be MOUSE_FILTER_IGNORE
+# (RootUI.tscn) so open-space star clicks still reach here.
 #
 # v2.0.0: the click-sequence state machine + audio now delegate to
 # ClickSequencePuzzleEngine, shared with constellation_fork_puzzle.gd's
@@ -260,7 +268,18 @@ func _draw() -> void:
 # ==================================================
 # INPUT
 # ==================================================
-func _input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
+    # _unhandled_input, NOT _input, on purpose. _input runs BEFORE Control
+    # GUI picking, so reading star clicks there made this fullscreen overlay
+    # swallow clicks meant for UI drawn on top of it — the constellation
+    # slideout's Foci/Volition/Endow buttons, the study panel — before those
+    # Controls ever got their turn (the recurring "overlay steals clicks from
+    # the UI" bug). _unhandled_input runs AFTER GUI picking, so any Control
+    # that consumes a click (MOUSE_FILTER_STOP) now wins automatically, with
+    # no per-panel guards. This relies on the fullscreen starfield ColorRect
+    # behind us being MOUSE_FILTER_IGNORE (set in RootUI.tscn) — otherwise it
+    # would consume open-space star clicks in the GUI phase and they'd never
+    # reach here.
     if event is InputEventKey and event.pressed and not event.echo:
         if event.keycode == KEY_Q:
             _debug_play_sequence()
@@ -268,6 +287,9 @@ func _input(event: InputEvent) -> void:
         if event.keycode == KEY_P:
             _debug_solve_puzzle()
             return
+    # Redundant belt-and-suspenders now: the study overlay's fullscreen
+    # MOUSE_FILTER_STOP backdrop already consumes clicks in the GUI phase
+    # before they could reach _unhandled_input. Kept as a cheap explicit guard.
     if _study_overlay and is_instance_valid(_study_overlay) and _study_overlay.visible:
         return
     if _engine.state != ClickSequencePuzzleEngine.State.ACTIVE or not _constellations_visible or _engine.replay_active:
