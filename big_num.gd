@@ -1,6 +1,6 @@
 class_name BigNum
 extends RefCounted
-# ================= BIG NUM v2.0.0 =================
+# ================= BIG NUM v2.1.0 =================
 # v2.0.0: Mantissa changed from int to float, giving full
 #         precision between exponent tiers. from_int(1500)
 #         now correctly stores m=1.5, e=1 instead of
@@ -8,6 +8,12 @@ extends RefCounted
 #         exactly for values that fit in a GDScript int.
 #         All arithmetic updated for float mantissa.
 #         Display and save/load updated accordingly.
+# v2.1.0: to_int() now clamps to INT64_MAX instead of
+#         silently wrapping once a value exceeds ~9.2e18 —
+#         late-game totals routinely exceed that range.
+#         Added floor_to_whole() for "round to whole units"
+#         use sites (e.g. save-load scrubbing) that used to
+#         round-trip through the now-lossy to_int()/from_int().
 #
 # Stored as mantissa (1.0–999.999...) × 1000^exponent.
 # Zero is represented as m=0.0, e=0.
@@ -271,14 +277,26 @@ func is_less_or_equal(other: BigNum) -> bool:
 # ==================================================
 # CONVERSION
 # ==================================================
+const INT64_MAX: int = 9223372036854775807
+
 func to_int() -> int:
+    # Clamps rather than silently wrapping: a naive float->int cast past
+    # ~9.2e18 (roughly e >= 6 with a large mantissa) produces garbage,
+    # possibly negative, once it exceeds GDScript's 64-bit int range. Late-
+    # game resource totals routinely exceed that range, so any caller that
+    # needs an exact value at that scale should use to_float() instead —
+    # this only guarantees a safe, ordering-preserving saturation.
     if is_zero():
         return 0
     if e < 0:
         return 0    # fractional value, rounds to 0
-    var result = m
+    var result: float = m
     for i in e:
         result *= 1000.0
+        if result > 9.0e18:
+            return INT64_MAX
+    if result > 9.0e18:
+        return INT64_MAX
     return int(result)
 
 
@@ -291,6 +309,18 @@ func to_float() -> float:
     if e != 0:
         result *= pow(1000.0, e)
     return result
+
+
+func floor_to_whole() -> BigNum:
+    # Floors to the nearest whole number entirely in float/BigNum space —
+    # no int64 round-trip, so this stays correct at any magnitude, unlike
+    # the old from_int(x.to_int()) pattern it replaces (silently corrupted
+    # once x exceeded to_int()'s int64 range). At scales far beyond where a
+    # sub-1 "fractional remnant" could ever matter, float64's own precision
+    # limit makes floor() effectively a no-op, which is the correct outcome.
+    if is_zero():
+        return BigNum.zero()
+    return BigNum.from_float(floor(to_float()))
 
 
 func copy() -> BigNum:

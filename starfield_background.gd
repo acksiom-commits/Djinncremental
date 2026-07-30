@@ -155,7 +155,7 @@ func _process(delta: float) -> void:
     var vp_size: Vector2 = get_viewport_rect().size
     var sparks: float = 0.0
     if _game_context and not _game_context.sparks.is_zero():
-        sparks = float(_game_context.sparks.to_int())
+        sparks = _game_context.sparks.to_float()
     mat.set_shader_parameter("spark_count",   sparks)
     mat.set_shader_parameter("time_offset",   _time)
     mat.set_shader_parameter("viewport_size", vp_size)

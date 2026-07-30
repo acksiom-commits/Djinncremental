@@ -528,7 +528,7 @@ func expand_storage_cap(remaining_sparks: BigNum) -> BigNum:
         ceiling = 0.15
     var b: float     = ceiling * (1.0 - exp(-5.0 * l_eff / s))
     var old_cap      := storage_cap.copy()
-    storage_cap      = BigNum.from_int(storage_cap.mul_float(1.0 + b).to_int())
+    storage_cap      = storage_cap.mul_float(1.0 + b).floor_to_whole()
     return storage_cap.sub(old_cap)
 
 
@@ -561,7 +561,7 @@ func get_effective_storage_cap() -> BigNum:
     if cd and cd.has_method("get_active_level_bonus"):
         mult = cd.get_active_level_bonus("storage_multiplier")
     var raw: BigNum = storage_cap.mul_float(mult)
-    return BigNum.from_int(raw.to_int())
+    return raw.floor_to_whole()
 
 
 # ===================== ASSIGNMENT TOTALS ==================
@@ -1294,6 +1294,38 @@ func _key_to_category_target(key: String) -> Array:
     return ["", ""]
 
 
+func _coerce_int(val, default: int) -> int:
+    # A tampered/corrupt-but-JSON-parseable save can put a wrong-type,
+    # non-null value at a numeric key (e.g. "creation_counter": "foo").
+    # JSON.parse_string() returns TYPE_FLOAT for every legitimate JSON
+    # number (ints included — JSON has no separate int type), so a plain
+    # `val != null` guard let those wrong-type values through an `as int`
+    # cast, which silently yields null and then corrupts a typed field.
+    # Checking typeof() against the actual numeric types first rejects
+    # those outright instead of only guarding against missing keys.
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return int(val)
+    return default
+
+
+func _coerce_float(val, default: float) -> float:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return float(val)
+    return default
+
+
+func _coerce_bool(val, default: bool) -> bool:
+    if typeof(val) == TYPE_BOOL:
+        return val
+    return default
+
+
+func _coerce_dict(val, default: Dictionary) -> Dictionary:
+    if typeof(val) == TYPE_DICTIONARY:
+        return val
+    return default
+
+
 func load_save_data(data: Dictionary) -> void:
     sparks          = BigNum.from_string(data.get("sparks",        "0:0"))
     monad["solid"]  = BigNum.from_string(data.get("monad_solid",   "0:0"))
@@ -1301,10 +1333,10 @@ func load_save_data(data: Dictionary) -> void:
     monad["gas"]    = BigNum.from_string(data.get("monad_gas",     "0:0"))
     # Scrub fractional monad remnants
     for k in ["solid", "liquid", "gas"]:
-        monad[k] = BigNum.from_int(monad[k].to_int())
+        monad[k] = monad[k].floor_to_whole()
 
-    var _cc = data.get("creation_counter"); creation_counter = _cc as int        if _cc != null else 0
-    var _co = data.get("creation_order");   creation_order   = _co as Dictionary if _co != null else {}
+    creation_counter = _coerce_int(data.get("creation_counter"), 0)
+    creation_order   = _coerce_dict(data.get("creation_order"), {})
 
     for k in tetrad:
         tetrad[k] = BigNum.from_string(data.get("tetrad_" + k, "0:0"))
@@ -1313,20 +1345,20 @@ func load_save_data(data: Dictionary) -> void:
 
     # Scrub fractional remnants from all stored resource types
     for k in monad:
-        monad[k] = BigNum.from_int(monad[k].to_int())
+        monad[k] = monad[k].floor_to_whole()
     for k in tetrad:
-        tetrad[k] = BigNum.from_int(tetrad[k].to_int())
+        tetrad[k] = tetrad[k].floor_to_whole()
     for key in ["particle", "iota", "mote", "grain", "uonite"]:
-        set_resource(key, BigNum.from_int(get_resource(key).to_int()))
+        set_resource(key, get_resource(key).floor_to_whole())
 
-    var _af   = data.get("archon_foci");           archon_foci               = _af as int  if _af != null else 1
-    var _vo   = data.get("volitions");             volitions                 = _vo as int  if _vo != null else 0
-    var _rc   = data.get("refinements_completed"); refinements_completed     = _rc as int  if _rc != null else 0
-    var _as   = data.get("expansions");            expansions                = _as as int if _as != null else 0
-    var _nefe = data.get("next_expansion_foci_exp"); next_expansion_foci_exp = _nefe as int if _nefe != null else 0
-    var _pl   = data.get("purity_locks_unlocked"); purity_locks_unlocked     = _pl as bool if _pl != null else false
-    var _gc   = data.get("grains_this_cycle");     grains_this_cycle         = _gc as int  if _gc != null else 0
-    var _utc  = data.get("uonites_this_cycle");    uonites_this_cycle        = _utc as int if _utc != null else 0
+    archon_foci             = _coerce_int(data.get("archon_foci"), 1)
+    volitions               = _coerce_int(data.get("volitions"), 0)
+    refinements_completed   = _coerce_int(data.get("refinements_completed"), 0)
+    expansions               = _coerce_int(data.get("expansions"), 0)
+    next_expansion_foci_exp = _coerce_int(data.get("next_expansion_foci_exp"), 0)
+    purity_locks_unlocked   = _coerce_bool(data.get("purity_locks_unlocked"), false)
+    grains_this_cycle       = _coerce_int(data.get("grains_this_cycle"), 0)
+    uonites_this_cycle      = _coerce_int(data.get("uonites_this_cycle"), 0)
 
     if data.has("assignments"):
         for key in data["assignments"]:
@@ -1391,17 +1423,17 @@ func load_save_data(data: Dictionary) -> void:
             if manifold_allocations.has(k):
                 manifold_allocations[k] = int(data["manifold_allocations"][k])
 
-    var _mf = data.get("manifold_total_flows"); manifold_total_flows = _mf as int    if _mf != null else 0
+    manifold_total_flows = _coerce_int(data.get("manifold_total_flows"), 0)
     var _ht = data.get("hourglass_target_ops")
     if _ht is Array:
         hourglass_target_ops = Array(_ht, TYPE_STRING, "", null)
     else:
         hourglass_target_ops = []
-    var _apc  = data.get("archon_poke_count");         archon_poke_count         = _apc  as int   if _apc  != null else 0
-    var _all  = data.get("archon_lockdown_level");     archon_lockdown_level     = _all  as int   if _all  != null else 0
-    var _alet = data.get("archon_lockdown_end_time");  archon_lockdown_end_time  = _alet as float if _alet != null else 0.0
-    var _aww  = data.get("archon_warning_window_end"); archon_warning_window_end = _aww  as float if _aww  != null else 0.0
-    var _art  = data.get("archon_reentry_threshold");  archon_reentry_threshold  = _art  as int   if _art  != null else 0
+    archon_poke_count         = _coerce_int(data.get("archon_poke_count"), 0)
+    archon_lockdown_level     = _coerce_int(data.get("archon_lockdown_level"), 0)
+    archon_lockdown_end_time  = _coerce_float(data.get("archon_lockdown_end_time"), 0.0)
+    archon_warning_window_end = _coerce_float(data.get("archon_warning_window_end"), 0.0)
+    archon_reentry_threshold  = _coerce_int(data.get("archon_reentry_threshold"), 0)
     uonite_name = data.get("uonite_name", "")
     sparks_since_first_prestige = data.get("sparks_since_first_prestige", 0.0)
     hint_bias_enabled = data.get("hint_bias_enabled", false)
