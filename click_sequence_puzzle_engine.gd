@@ -275,8 +275,17 @@ func _freq_to_star(freq: float) -> int:
 
 
 func _play_completion_reward() -> void:
+    # Same optional-resource shape as _on_puzzle_complete()'s solve_seq load —
+    # currently only reachable for constellations that already have a
+    # solve.tres (0, 1), which both also happen to have a matching
+    # reward.tres, so this has never actually hit a missing file yet. Guarded
+    # the same way regardless, so adding a solve.tres for another
+    # constellation without its reward.tres counterpart doesn't reintroduce
+    # the same "Cannot open file" log spam.
     var reward_path: String = "res://sequences/constellation_%d_reward.tres" % constellation_id
-    var reward_seq = load(reward_path) as PuzzleSequenceResource
+    var reward_seq: PuzzleSequenceResource = null
+    if ResourceLoader.exists(reward_path):
+        reward_seq = load(reward_path) as PuzzleSequenceResource
     if reward_seq and synth and synth.has_method("play_sequence"):
         synth.play_sequence(reward_seq, _finish_sequences)
     else:
