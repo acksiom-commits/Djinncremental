@@ -405,6 +405,17 @@ func _ready() -> void:
 # ==================================================
 # PROGRESSIVE UI REVEAL
 # ==================================================
+# Panel keys (see _panel_nodes) that are transparent frames drawn OVER the
+# fullscreen ConstellationOverlay, not solid interactive panels. They get
+# revealed like any panel (alpha up, child buttons made clickable), but their
+# own node stays MOUSE_FILTER_IGNORE so clicks fall THROUGH to the overlay's
+# stars behind them. Without this, the reveal system's blanket
+# MOUSE_FILTER_STOP makes the constellation display frame eat the clicks meant
+# for its stars, so the puzzle can't be solved by clicking them. Interactive
+# children (e.g. StudyButton) are still handled by _restore_subtree_input.
+const CLICK_THROUGH_PANEL_KEYS := {"constellation": true}
+
+
 func _setup_panel_nodes() -> void:
     _panel_nodes = {
         "monad_panel":      find_child("CompressPanelContainer",       true, false),
@@ -441,7 +452,7 @@ func _apply_unlock_visibility() -> void:
             continue
         if game_context.ui_unlocks.get(key, false):
             node.modulate.a   = 1.0
-            node.mouse_filter = Control.MOUSE_FILTER_STOP
+            node.mouse_filter = Control.MOUSE_FILTER_IGNORE if CLICK_THROUGH_PANEL_KEYS.has(key) else Control.MOUSE_FILTER_STOP
             _restore_subtree_input(node)
         else:
             node.modulate.a   = 0.0
@@ -460,7 +471,8 @@ func _reveal_panel(unlock_key: String) -> void:
     var node = _panel_nodes.get(unlock_key)
     if not node:
         return
-    node.mouse_filter = Control.MOUSE_FILTER_STOP
+    # See CLICK_THROUGH_PANEL_KEYS — the constellation frame stays click-through.
+    node.mouse_filter = Control.MOUSE_FILTER_IGNORE if CLICK_THROUGH_PANEL_KEYS.has(unlock_key) else Control.MOUSE_FILTER_STOP
     _restore_subtree_input(node)
     var tween = create_tween()
     tween.tween_property(node, "modulate:a", 1.0, REVEAL_DURATION) \
