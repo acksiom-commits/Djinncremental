@@ -119,50 +119,21 @@ func snap_to_constellation(constellation_id: int, panel_center_px: Vector2) -> v
     var positions: Array = _cd.get_star_positions(constellation_id)
     if positions.is_empty():
         return
-    var centroid := Vector3.ZERO
-    for pos in positions:
-        centroid += pos as Vector3
-    if centroid == Vector3.ZERO:
-        return
-    centroid = centroid.normalized()
 
     # Store pixel offset so the overlay can shift drawn positions
     # from screen center to the panel center.
     var vp_size := get_viewport_rect().size
     _snap_draw_offset_px = panel_center_px - vp_size * 0.5
 
-    # Build target basis: shortest arc from (0,0,1) to centroid,
-    # then apply roll correction so the designated horizon edge
-    # appears horizontal in view space.
-    var from_dir := Vector3(0.0, 0.0, 1.0)
-    var to_dir := centroid
-    var base_axis := from_dir.cross(to_dir)
-    var base_rot: Basis
-    if base_axis.length_squared() < 0.0001:
-        base_rot = Basis.IDENTITY if from_dir.dot(to_dir) > 0.0 else Basis(Vector3.RIGHT, PI)
-    else:
-        base_rot = Basis(base_axis.normalized(), from_dir.angle_to(to_dir))
-    var def: Dictionary = _cd.get_constellation_def(constellation_id)
-    var horiz_stars: Array = def.get("snap_horiz_stars", [])
-    if horiz_stars.size() == 2 and horiz_stars[0] < positions.size() and horiz_stars[1] < positions.size():
-        var star_a: Vector3 = positions[horiz_stars[0]]
-        var star_b: Vector3 = positions[horiz_stars[1]]
-        var a_view: Vector3 = base_rot.inverse() * star_a
-        var b_view: Vector3 = base_rot.inverse() * star_b
-        var dy: float = b_view.y - a_view.y
-        var dx: float = b_view.x - a_view.x
-        var line_angle: float = atan2(dy, dx)
-        var roll_angle: float = line_angle
-        if roll_angle > PI * 0.5:
-            roll_angle -= PI
-        elif roll_angle < -PI * 0.5:
-            roll_angle += PI
-        _snap_target_basis = base_rot * Basis(Vector3(0.0, 0.0, 1.0), roll_angle)
-    else:
-        _snap_target_basis = base_rot
+    # Shared with constellation_study_overlay.gd's map projection, so both
+    # surfaces always settle on the same canonical orientation — see
+    # get_canonical_display_basis() for the leveling + disambiguation logic.
+    _snap_target_basis = _cd.get_canonical_display_basis(constellation_id)
 
-    # Single target direction for convergence check (same forward as basis)
-    _snap_target_dir = to_dir
+    # Single target direction for convergence check (same forward the
+    # basis maps (0,0,1) to, regardless of roll — rotating around Z
+    # doesn't move points on the Z axis).
+    _snap_target_dir = _snap_target_basis * Vector3(0.0, 0.0, 1.0)
 
     _snap_active     = true
     _snap_blend      = 0.0

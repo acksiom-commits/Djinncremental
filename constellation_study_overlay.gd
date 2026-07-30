@@ -392,23 +392,23 @@ func _compute_star_screen_positions() -> void:
     if world_positions.is_empty():
         return
 
-    # Find the centroid direction so we can build a local tangent frame
-    # and project stars into a flat 2D map coordinate.
-    var centroid := Vector3.ZERO
+    # Same canonical orientation as the starfield's whirl-to-select
+    # animation (see get_canonical_display_basis()) — this used to build
+    # its own arbitrary world-UP-based frame and then search 180
+    # candidate angles for whichever best filled the panel, which meant
+    # this map never reliably matched any specific "up" direction. Using
+    # the shared canonical basis directly (same X/Y-direct convention as
+    # constellation_overlay.gd's own _world_to_screen) keeps this map
+    # consistent with what the starfield settles into, at the cost of
+    # occasionally not filling the panel quite as tightly as the old
+    # best-fit search did for oddly-shaped constellations — the intended
+    # tradeoff, since showing the correct orientation matters more here.
+    var canonical_basis: Basis = _cd.get_canonical_display_basis(_constellation_id)
+    var canonical_inv: Basis = canonical_basis.inverse()
+    var rotated_pts: Array = []
     for wp in world_positions:
-        centroid += wp as Vector3
-    centroid = centroid.normalized()
-
-    # Build a consistent local 2D frame at the centroid.
-    var ref: Vector3 = Vector3.UP if absf(centroid.y) < 0.99 else Vector3.RIGHT
-    var local_x: Vector3 = ref.cross(centroid).normalized()
-    var local_y: Vector3 = centroid.cross(local_x).normalized()
-
-    # Project each star onto the local plane and collect 2D coords.
-    var raw_pts: Array = []
-    for wp in world_positions:
-        var v: Vector3 = (wp as Vector3) - centroid * (wp as Vector3).dot(centroid)
-        raw_pts.append(Vector2(v.dot(local_x), -v.dot(local_y)))
+        var view_pos: Vector3 = canonical_inv * (wp as Vector3)
+        rotated_pts.append(Vector2(view_pos.x, view_pos.y))
 
     var map_size: Vector2 = _star_map_control.size
     if map_size.x < 10.0 or map_size.y < 10.0:
@@ -417,48 +417,6 @@ func _compute_star_screen_positions() -> void:
 
     var usable_w: float = map_size.x - MAP_PADDING * 2.0
     var usable_h: float = map_size.y - MAP_PADDING * 2.0
-
-    # ── Orientation search ────────────────────────────────────────
-    # Rotating the constellation's 2D projection changes how tightly its
-    # bounding box matches the panel's aspect ratio. A rotation that leaves
-    # a tall narrow shape wastes horizontal space; the wrong rotation on
-    # a wide shape wastes vertical space. Sweep candidate angles and keep
-    # whichever rotation lets the constellation scale up the most before
-    # its bounding box hits the panel edges.
-    var best_angle: float = 0.0
-    var best_scale: float = -1.0
-    var step_count: int = 180   # 1-degree resolution; 180° covers all
-                                 # distinct bounding boxes since a further
-                                 # 180° rotation reproduces the same box.
-    for step in step_count:
-        var angle: float = deg_to_rad(float(step))
-        var trial_ca: float = cos(angle)
-        var trial_sa: float = sin(angle)
-
-        var trial_min_x: float = INF; var trial_max_x: float = -INF
-        var trial_min_y: float = INF; var trial_max_y: float = -INF
-        for pt in raw_pts:
-            var p := pt as Vector2
-            var rx: float = p.x * trial_ca - p.y * trial_sa
-            var ry: float = p.x * trial_sa + p.y * trial_ca
-            trial_min_x = minf(trial_min_x, rx); trial_max_x = maxf(trial_max_x, rx)
-            trial_min_y = minf(trial_min_y, ry); trial_max_y = maxf(trial_max_y, ry)
-
-        var trial_span_x: float = maxf(trial_max_x - trial_min_x, 0.0001)
-        var trial_span_y: float = maxf(trial_max_y - trial_min_y, 0.0001)
-        var trial_scale: float = minf(usable_w / trial_span_x, usable_h / trial_span_y)
-
-        if trial_scale > best_scale:
-            best_scale = trial_scale
-            best_angle = angle
-
-    # Apply the winning rotation to the projected points.
-    var ca: float = cos(best_angle)
-    var sa: float = sin(best_angle)
-    var rotated_pts: Array = []
-    for pt in raw_pts:
-        var p := pt as Vector2
-        rotated_pts.append(Vector2(p.x * ca - p.y * sa, p.x * sa + p.y * ca))
 
     # ── Fit rotated points to the panel ─────────────────────────────
     var min_x: float = rotated_pts[0].x; var max_x: float = rotated_pts[0].x

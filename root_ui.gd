@@ -1500,6 +1500,27 @@ func _input(event: InputEvent) -> void:
                         cd.set_active_constellation(0, 0)
                         game_context.constellation_spark_totals["0"] = cd.get_spark_cap(0) * 0.15
                     cd.active_constellation_changed.emit(0, cd.active_per_octant[0])
+        if event.keycode == KEY_Z:
+            # DEV: unlock all 5 designed constellations at once (Archon,
+            # Spark, Hourglass, Satchel, Bellows — ids 0-4), same
+            # direct-unlock shape as KEY_H above but looped and using each
+            # constellation's own octant instead of hardcoding 0. Lets the
+            # constellation-orientation fix get tested against all 5
+            # without actually grinding through 5 real prestiges.
+            if game_context:
+                var cd2 = get_node_or_null("/root/ConstellationData")
+                if cd2:
+                    for cid in range(5):
+                        if cd2.unlocked.has(cid):
+                            continue
+                        var def2: Dictionary = cd2.get_constellation_def(cid)
+                        var octant2: int = int(def2.get("octant", cid))
+                        cd2._unlock_constellation(cid)
+                        cd2.set_active_constellation(octant2, cid)
+                        game_context.constellation_spark_totals[str(cid)] = cd2.get_spark_cap(cid) * 0.15
+                        cd2.active_constellation_changed.emit(octant2, cid)
+                    print("[DEV] Unlocked constellations 0-4 for testing.")
+            get_viewport().set_input_as_handled()
         if event.keycode == KEY_U:
             var target_id: int = 0
             if _study_overlay and _study_overlay.has_method("get_current_constellation_id"):
