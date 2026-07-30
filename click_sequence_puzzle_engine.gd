@@ -115,7 +115,20 @@ func get_correct_star_sequence(for_constellation_id: int) -> Array:
 func on_star_clicked(star_index: int) -> void:
     if replay_active:
         return
+    # Only accept clicks while the puzzle is actively being solved. This
+    # rejects both "not started" (IDLE) and — the actual bug — "already
+    # solved" (SUCCESS): _on_puzzle_complete() leaves step at sequence.size(),
+    # so a stray post-solve click read correct_sequence[step] out of bounds.
+    # The main overlay gated this itself, but the study/Fork path
+    # (constellation_fork_puzzle.gd) calls through unconditionally, so the
+    # guard belongs here in the shared engine.
+    if state != State.ACTIVE:
+        return
     if correct_sequence.is_empty() or not cd:
+        return
+    # A bad hit-test index must not read past note_assignment — same
+    # out-of-bounds class as the step overflow the state guard above fixes.
+    if star_index < 0 or star_index >= note_assignment.size():
         return
     var def: Dictionary = cd.get_constellation_def(constellation_id)
     if not def.has("puzzle_sequence"):
@@ -220,8 +233,15 @@ func _on_puzzle_complete() -> void:
         var solve_key: String = "constellation_%d_solve_count" % constellation_id
         gc.assignments[solve_key] = 1
 
+    # The per-constellation solve sequence is optional — only some
+    # constellations ship a constellation_N_solve.tres. Guard the load with
+    # ResourceLoader.exists() so a missing one is silent; load() logs
+    # "Cannot open file" errors for a nonexistent path even though the null
+    # result already falls through cleanly to _finish_sequences() below.
     var solve_path: String = "res://sequences/constellation_%d_solve.tres" % constellation_id
-    var solve_seq = load(solve_path) as PuzzleSequenceResource
+    var solve_seq: PuzzleSequenceResource = null
+    if ResourceLoader.exists(solve_path):
+        solve_seq = load(solve_path) as PuzzleSequenceResource
     if solve_seq and synth and synth.has_method("play_sequence"):
         synth.play_sequence(solve_seq, _play_completion_reward)
     else:
