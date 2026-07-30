@@ -175,7 +175,20 @@ func _propagate_name_confirmed(confirmed_star: int, star_name: String) -> void:
     _match_records[this_record]["star_elim"] = this_elim
 
     for i in _match_records.size():
-        if i == this_record:
+        # Only other records that themselves represent a candidate NAME —
+        # star_elim's meaning is "which stars are ruled out for THIS
+        # record's name," so it's only sound to write into it when there
+        # is a name. A Color/Pitch/Sequence/Degree-slot record with no
+        # name yet (e.g. an anonymous "Red A" placeholder for one of
+        # several same-color stars) isn't a candidate for star_name at
+        # all — writing confirmed_star's exclusion onto it anyway falsely
+        # asserts "this slot isn't confirmed_star," contaminating
+        # _records_provably_distinct's star category with a claim the
+        # player never made and this slot has no actual basis for. Found
+        # via a Color-tab exclusion query surfacing that exact
+        # contamination: confirming a name onto a star wrongly excluded
+        # that name from every same-color slot's Name selector.
+        if i == this_record or str(_match_records[i].get("name", "")) == "":
             continue
         var r: Dictionary = _match_records[i]
         var elim: Dictionary = r.get("star_elim", {})
@@ -538,6 +551,35 @@ func _get_or_create_match_record_for_pitch_slot(pitch_freq: float, position_in_g
         "degree_slot_label": "",
     })
     return _match_records.size() - 1
+
+
+func _reconcile_unique_pitch_slot(record_idx: int, note_name: String) -> int:
+    # _get_or_create_match_record_for_pitch_slot's "adopt an existing
+    # confirmed record" path only runs at the moment a slot label is
+    # FIRST created — if the Sort:Pitch tab was opened (creating a blank
+    # placeholder record for e.g. "G4 A") before this star was ever
+    # listened to, that placeholder is permanently locked in from then on
+    # by the label-match lookup that always runs first, and this newly-
+    # confirmed record never gets linked to it. Only safe to fix by
+    # merging when this note has EXACTLY one star (_pitch_star_count==1):
+    # for a shared note, the "A"/"B" slot lettering is arbitrary discovery
+    # order with no way to tell which physical letter this specific star
+    # belongs to from a single confirm alone — merging there would be
+    # unsound. Called only from the Listen click handler (a deliberate,
+    # low-frequency player action), never from the passive
+    # _full_propagation_refresh path, so this is the one place in the
+    # merge-vs-query tradeoff explored earlier where a merge is both safe
+    # and necessary — there's no live-query equivalent that can make a
+    # blank slot record's OWN star_idx exist.
+    if _pitch_star_count(note_name) != 1:
+        return record_idx
+    var freq: float = _host._widgets._freq_for_note_name(note_name)
+    if freq < 0.0:
+        return record_idx
+    var slot_idx: int = _get_or_create_match_record_for_pitch_slot(freq, 0)
+    if slot_idx != record_idx:
+        record_idx = await _merge_match_records(record_idx, slot_idx)
+    return record_idx
 
 
 func _get_or_create_match_record_for_name(name_str: String) -> int:
@@ -1099,6 +1141,25 @@ func _color_star_count(color_idx: int) -> int:
     return count
 
 
+func _pitch_star_count(note_name: String) -> int:
+    # Same shape as _color_star_count, keyed by note name instead of color
+    # index — ground-truth incidence count, used to gate
+    # _compute_excluded_pitches_for below (a note can have more than one
+    # star, unlike Sequence/Name, so exclusion is only sound when exactly
+    # one star has it). Also the canonical version of the incidence-count
+    # loop widgets.gd previously duplicated inline in two places.
+    var count: int = 0
+    for s in _host._star_count:
+        if s >= _host._star_pitch_index.size():
+            continue
+        var p: int = int(_host._star_pitch_index[s])
+        if p < 0 or p >= _host._pitch_freqs.size():
+            continue
+        if ConstellationLogicPuzzle.note_name_for_freq(_host._pitch_freqs[p]) == note_name:
+            count += 1
+    return count
+
+
 func _confirm_color_against_cap(record_idx: int, color_idx: int) -> bool:
     # ADDED 2026-07-27 — color has a fixed, always-visible ground-truth
     # count per constellation (e.g. exactly 4 Blue stars, from the star map
@@ -1285,16 +1346,24 @@ func _effective_pitch_state(record_idx: int, note_name: String) -> int:
 
 
 func _effective_name_state(record_idx: int, name_str: String) -> int:
-    # Same shape as _effective_pitch_state/_effective_color_state, for the
-    # staff popup's NAME section (name_states/protected_staff_names on a
-    # non-star record, e.g. a sequence slot) — ground truth via star_idx,
-    # then the record's own confirmed name field, then the protect-derived
-    # soft state folded in the same way.
+    # Deliberately does NOT shortcut via star_idx the way
+    # _effective_pitch_state/_effective_color_state do (see those
+    # functions) — a record's star_idx gets set by things that are NOT a
+    # legitimate name confirmation: _build_star_widgets_impl() auto-
+    # creates a star_idx-bound record for every star merely by rendering
+    # its floating widget, and _get_or_create_match_record_for_pitch_slot
+    # can go on to ADOPT that same record as a Sort:Pitch-tab row once the
+    # listen mechanic legitimately confirms its pitch — which reveals
+    # PITCH, never identity. r["name"] is the safe signal instead: it's
+    # ONLY ever set by a genuine player identity confirmation
+    # (_confirm_match_record_identity always sets it together with
+    # star_idx), never by auto-creation — so this isn't losing any real
+    # coverage the star_idx tier had, just the leak it caused. Found via a
+    # singleton Pitch slot showing an unconfirmed star's true name as
+    # already selected on a puzzle that had barely started — the adopted
+    # record's leftover star_idx (from mere widget rendering) was being
+    # read as "the player knows this star's identity."
     var r: Dictionary = _match_records[record_idx]
-    var star_idx: int = int(r.get("star_idx", -1))
-    if star_idx >= 0 and star_idx < _host._star_names.size():
-        return 1 if _host._star_names[star_idx] == name_str else 2
-
     var rn: String = str(r.get("name", ""))
     if rn != "":
         return 1 if rn == name_str else 2
@@ -1477,6 +1546,87 @@ func _settle_singleton_sequences() -> void:
             r["seq_candidates"] = []
 
 
+func _settle_singleton_names() -> void:
+    # Same "narrowed-to-one IS a confirm" promotion as
+    # _settle_singleton_sequences above, applied to the Sort:tab/Staff-
+    # popup name_states dict instead of seq_lo/seq_hi. Name (this
+    # record-level mechanism, distinct from the star widget's star_elim)
+    # is alldiff — one name per star — exactly like Sequence, so the same
+    # reasoning holds unconditionally. Reuses the existing sibling-
+    # clearing propagate function rather than duplicating its logic.
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        var name_states: Dictionary = r.get("name_states", {})
+        var remaining: String = ""
+        var remaining_count: int = 0
+        var already_confirmed: bool = false
+        for n in _host._star_names:
+            var name_str: String = str(n)
+            var state: int = int(name_states.get(name_str, 0))
+            if state == 1:
+                already_confirmed = true
+                break
+            if state != 2:
+                remaining_count += 1
+                remaining = name_str
+        if not already_confirmed and remaining_count == 1:
+            _propagate_name_states_confirmed_same_record(i, remaining)
+
+
+func _settle_singleton_pitches() -> void:
+    # Same promotion as _settle_singleton_names, for pitch_states. Pitch
+    # is NOT alldiff (see _pitch_star_count/_compute_excluded_pitches_for
+    # below) but a single record narrowed to one remaining candidate is
+    # still exactly as much a confirm on THAT record as it always was for
+    # Sequence/Name — the alldiff question only matters for whether it's
+    # also safe to exclude the value from OTHER records, handled
+    # separately by _compute_excluded_pitches_for.
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        if bool(r.get("pitch_revealed", false)):
+            continue   # listen mechanic already owns this record's pitch state
+        var pitch_states: Dictionary = r.get("pitch_states", {})
+        var remaining: String = ""
+        var remaining_count: int = 0
+        var already_confirmed: bool = false
+        for note_name in _host._widgets._distinct_note_names():
+            var state: int = int(pitch_states.get(note_name, 0))
+            if state == 1:
+                already_confirmed = true
+                break
+            if state != 2:
+                remaining_count += 1
+                remaining = note_name
+        if not already_confirmed and remaining_count == 1:
+            _propagate_pitch_confirmed_same_record(i, remaining)
+
+
+func _settle_singleton_colors() -> void:
+    # Same promotion as _settle_singleton_pitches, for color_states. Color
+    # is also not alldiff (see _color_star_count) — same reasoning as
+    # Pitch applies: narrowing to one remaining candidate is still a
+    # confirm on THIS record regardless of alldiff-ness; the incidence
+    # guard only matters for whether _compute_excluded_colors_for can
+    # also exclude the value from OTHER records.
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        var color_states: Dictionary = r.get("color_states", {})
+        var remaining: int = -1
+        var remaining_count: int = 0
+        var already_confirmed: bool = false
+        for ci in _host.COLOR_NAME_LABELS.size():
+            var state: int = int(color_states.get(ci, 0))
+            if state == 1:
+                already_confirmed = true
+                break
+            if state != 2:
+                remaining_count += 1
+                remaining = ci
+        if not already_confirmed and remaining_count == 1:
+            _propagate_color_confirmed_same_record(i, remaining)
+            _recompute_color_star_elim(i)
+
+
 func _compute_excluded_positions_for(record_idx: int) -> Array:
     # Scans the CURRENT full set of records live, every call. Nothing is
     # stored or pushed, so a record created AFTER some other record's
@@ -1494,6 +1644,93 @@ func _compute_excluded_positions_for(record_idx: int) -> Array:
         if lo > 0 and lo == hi and _records_provably_distinct(record_idx, i):
             excluded.append(lo)
     return excluded
+
+
+func _compute_excluded_names_for(record_idx: int) -> Array[String]:
+    # Same live-query shape as _compute_excluded_positions_for above —
+    # Name (this record-level name_states mechanism) is alldiff, single
+    # canonical record per name via _get_or_create_match_record_for_name,
+    # same as Sequence's _get_or_create_match_record_for_seq — so the
+    # exclusion is unconditional, no incidence-count guard needed (unlike
+    # Pitch below). Deliberately calls _effective_name_state, NOT this
+    # function's own eventual caller — that's the "base" ground-truth/
+    # slot-label/raw tier, safe to call here with no recursion, since the
+    # cross-record exclusion this computes is layered on TOP of it only at
+    # display call sites, never inside _effective_name_state itself.
+    var excluded: Array[String] = []
+    for i in _match_records.size():
+        if i == record_idx or _record_is_unconfirmed_star_widget_stub(i):
+            continue
+        for n in _host._star_names:
+            var name_str: String = str(n)
+            if _effective_name_state(i, name_str) == 1 and _records_provably_distinct(record_idx, i):
+                excluded.append(name_str)
+    return excluded
+
+
+func _compute_excluded_pitches_for(record_idx: int) -> Array[String]:
+    # Same shape as _compute_excluded_names_for, but Pitch is NOT alldiff
+    # (see _pitch_star_count) — a note can legitimately be confirmed on
+    # several different records at once (e.g. two stars sharing "C4"), so
+    # excluding it everywhere else would be unsound. Only excludes a note
+    # when its incidence count is exactly 1 — the same uniquely-
+    # identifies-a-single-star guard as constellation_logic_puzzle.gd's
+    # _category_uniquely_labels (clue generation), applied here to the
+    # player-facing deduction engine instead.
+    var excluded: Array[String] = []
+    for note_name in _host._widgets._distinct_note_names():
+        if _pitch_star_count(note_name) != 1:
+            continue
+        for i in _match_records.size():
+            if i == record_idx or _record_is_unconfirmed_star_widget_stub(i):
+                continue
+            if _effective_pitch_state(i, note_name) == 1 and _records_provably_distinct(record_idx, i):
+                excluded.append(note_name)
+                break
+    return excluded
+
+
+func _compute_excluded_colors_for(record_idx: int) -> Array[int]:
+    # Same shape as _compute_excluded_pitches_for, gated the same way via
+    # _color_star_count for the same not-alldiff reason. Deliberately does
+    # NOT skip unconfirmed star-widget stubs the way the Name/Pitch
+    # exclusion functions do: Color is a "given" axis (see
+    # constellation_puzzle_category_facts memory) — painted on the map,
+    # zero effort, true for every star whether or not its identity has
+    # been confirmed — so _effective_color_state's ground-truth tier
+    # isn't a leak here the way it was for Name (never confirmed for
+    # free) or would be for Pitch (gated behind the listen mechanic).
+    var excluded: Array[int] = []
+    for ci in _host.COLOR_NAME_LABELS.size():
+        if _color_star_count(ci) != 1:
+            continue
+        for i in _match_records.size():
+            if i == record_idx:
+                continue
+            if _effective_color_state(i, ci) == 1 and _records_provably_distinct(record_idx, i):
+                excluded.append(ci)
+                break
+    return excluded
+
+
+func _record_is_unconfirmed_star_widget_stub(record_idx: int) -> bool:
+    # _build_star_widgets_impl() auto-creates a star_idx-bound record for
+    # EVERY star the instant its floating widget is built
+    # (_get_or_create_match_record_for_star_idx), regardless of anything
+    # the player has done — so star_idx >= 0 alone is NOT proof the player
+    # has legitimately confirmed that star's identity. r["name"] is a safe
+    # signal: it's only ever set by a real player action
+    # (_confirm_match_record_identity, or a name-slot record's own
+    # defining field) — never by mere auto-creation. Without this guard,
+    # _effective_name_state/_effective_pitch_state's ground-truth tier
+    # (star_idx >= 0 → read the true value directly) leaks every
+    # unconfirmed star's true name/pitch into _records_provably_distinct,
+    # which _compute_excluded_names_for/_compute_excluded_pitches_for
+    # then surface as if legitimately deduced — caught via a singleton
+    # Pitch slot showing every OTHER star's Name selector as already
+    # solved on a puzzle that had barely started.
+    var r: Dictionary = _match_records[record_idx]
+    return int(r.get("star_idx", -1)) >= 0 and str(r.get("name", "")) == ""
 
 
 func _exclusive_display_lo(inclusive_lo: int, inclusive_hi: int) -> int:
@@ -1551,6 +1788,9 @@ func _effective_seq_bounds(record_idx: int) -> Array:
 func _full_propagation_refresh() -> void:
     _derive_color_eliminations_from_star_elim()
     _settle_singleton_sequences()
+    _settle_singleton_names()
+    _settle_singleton_pitches()
+    _settle_singleton_colors()
     _host._widgets._build_star_widgets()
     _host._widgets._build_star_tags()
     _host._melody_staff_panel.queue_redraw()

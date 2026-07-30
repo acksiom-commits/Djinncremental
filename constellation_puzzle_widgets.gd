@@ -337,7 +337,20 @@ func _make_name_checklist_trigger_button(record_idx: int) -> Button:
     btn.custom_minimum_size = Vector2(110, 0)
     btn.add_theme_font_size_override("font_size", 13)
     btn.focus_mode = Control.FOCUS_NONE
+    # Checks BOTH the record's own "name" field (set by identity confirms
+    # elsewhere) and name_states (set by this checklist itself, either a
+    # direct check or _settle_singleton_names narrowing it to one) — same
+    # two sources _make_pitch_checklist_trigger_button already checks for
+    # pitch_states; "name" alone left this button stuck on "Select Name"
+    # even after the checklist had a confirmed row.
     var current_name: String = str(_deduction._match_records[record_idx].get("name", ""))
+    if current_name == "":
+        var name_states: Dictionary = _deduction._match_records[record_idx].get("name_states", {})
+        for n in _host._star_names:
+            var name_str: String = str(n)
+            if int(name_states.get(name_str, 0)) == 1:
+                current_name = name_str
+                break
     btn.text = current_name if current_name != "" else "Select Name"
     var ridx := record_idx
     var btn_ref := btn
@@ -355,9 +368,17 @@ func _open_name_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     _host._name_checklist_popup.clear_rows()
     var names_sorted: Array = _host._star_names.duplicate()
     names_sorted.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
+    # A record another Sort:tab has already proven distinct from this one,
+    # that has ITSELF confirmed a name, rules that name out here too — see
+    # _compute_excluded_names_for. Computed once, not per-row.
+    var excluded_names: Array[String] = _deduction._compute_excluded_names_for(record_idx)
     for n in names_sorted:
         var name_str: String = str(n)
-        var state: int = _deduction._record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
+        var state: int = _deduction._effective_name_state(record_idx, name_str)
+        # Only checked when still neutral: a hard confirm/eliminate/
+        # protect already decided wins over a cross-record inference.
+        if state == 0 and excluded_names.has(name_str):
+            state = 2
         _host._name_checklist_popup.add_name_row(name_str, state, STATE_COLORS.neutral)
     _host._name_checklist_popup.open(record_idx, screen_pos)
 
@@ -461,14 +482,19 @@ func _make_pitch_checklist_trigger_button(record_idx: int) -> Button:
 
 func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     _host._pitch_checklist_popup.clear_rows()
+    # A record another Sort:tab has already proven distinct from this one,
+    # that has ITSELF confirmed a note whose incidence count is exactly
+    # 1 (the only case where excluding it elsewhere is sound — a shared
+    # note can't be excluded just because one of its stars is spoken for),
+    # rules that note out here too — see _compute_excluded_pitches_for.
+    var excluded_pitches: Array[String] = _deduction._compute_excluded_pitches_for(record_idx)
     for pitch_idx in _host._pitch_freqs.size():
         var f: float = _host._pitch_freqs[pitch_idx]
         var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(f)
-        var incidence_count: int = 0
-        for sp in _host._star_pitch_index:
-            if int(sp) == pitch_idx:
-                incidence_count += 1
-        var state: int = _deduction._record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", note_name)
+        var incidence_count: int = _deduction._pitch_star_count(note_name)
+        var state: int = _deduction._effective_pitch_state(record_idx, note_name)
+        if state == 0 and excluded_pitches.has(note_name):
+            state = 2
         _host._pitch_checklist_popup.add_pitch_row(note_name, incidence_count, state, STATE_COLORS.neutral)
     _host._pitch_checklist_popup.open(record_idx, screen_pos)
 
@@ -570,6 +596,11 @@ func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
     row.add_theme_constant_override("separation", 3)
     # Alphabetical order: Blue(0), Red(3), White(1), Yellow(2)
     var btn_order: Array = [0, 3, 1, 2]
+    # A record another Sort:tab has already proven distinct from this one,
+    # that has ITSELF confirmed a color whose incidence count is exactly 1
+    # (the only case where excluding it elsewhere is sound), rules that
+    # color out here too — see _compute_excluded_colors_for.
+    var excluded_colors: Array[int] = _deduction._compute_excluded_colors_for(record_idx)
     for ci in btn_order:
         var btn := Button.new()
         btn.custom_minimum_size = Vector2(26, 24)
@@ -583,7 +614,9 @@ func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
                 _on_record_color_eliminate(ridx, cidx, btn)
                 btn.get_viewport().set_input_as_handled())
         # Effective state so a staff-popup "still possible" mark shows here too.
-        var cur_state: int = _deduction._record_effective_state(record_idx, "color_states", "protected_color_idxs", ci)
+        var cur_state: int = _deduction._effective_color_state(record_idx, ci)
+        if cur_state == 0 and excluded_colors.has(ci):
+            cur_state = 2
         _style_color_toggle_btn(btn, ci, cur_state)
         row.add_child(btn)
     return row
@@ -1128,7 +1161,7 @@ func _populate_color_group_rows() -> void:
     _deduction._debug_dump_named_records()
     var color_order: Array = range(_host.COLOR_NAME_LABELS.size())
     color_order.sort_custom(func(a, b):
-        return String(_host.COLOR_NAME_LABELS[a]).nocasecmp_to(String(_host.COLOR_NAME_LABELS[b])) > 0)
+        return String(_host.COLOR_NAME_LABELS[a]).nocasecmp_to(String(_host.COLOR_NAME_LABELS[b])) < 0)
     for ci in color_order:
         var count_in_color: int = 0
         for i in _host._star_count:
@@ -1140,8 +1173,15 @@ func _populate_color_group_rows() -> void:
 
 func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
     var record_idx: int = _deduction._get_or_create_match_record_for_pitch_slot(pitch_freq, position_in_group)
-    var row_color: Color = _deduction._display_color_for_record(record_idx)
     var known_star_color: int = _deduction._known_color_for_record(record_idx)
+    # Unlike _display_color_for_record (used as row_color on every other
+    # Sort:tab row), this also checks ground truth via star_idx, not just
+    # an explicit color_states confirm — needed now that this row has no
+    # Color selector of its own to ever write color_states directly (see
+    # below); without this, every Pitch-slot row's fact labels would stay
+    # stuck at the unresolved/neutral color forever, even after the
+    # player has listened to the star and its color is fully knowable.
+    var row_color: Color = _host.STAR_COLORS_BY_IDX[known_star_color] if known_star_color >= 0 else _deduction._display_color_for_record(record_idx)
     print("[DEBUG] pitch row %s pos=%d record=%d star_idx=%d known_color=%d color_states=%s" %
         [ConstellationLogicPuzzle.note_name_for_freq(pitch_freq), position_in_group, record_idx,
          int(_deduction._match_records[record_idx].get("star_idx", -1)), known_star_color,
@@ -1171,8 +1211,12 @@ func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
     facts_vbox.add_theme_constant_override("separation", 1)
     row.add_child(facts_vbox)
 
+    # No Color selector here — a star's color is already fully knowable
+    # for free by running through every star with the Listen toggle, same
+    # tier as this row's own note name (see the swatch/known_star_color
+    # handling above), so a separate manual Color entry here was pure UI
+    # clutter, never adding information the row wasn't already showing.
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
@@ -1186,11 +1230,7 @@ func _populate_pitch_group_rows() -> void:
     pitch_freqs.sort_custom(func(a, b): return float(a) < float(b))
 
     for pf in pitch_freqs:
-        var count_in_pitch: int = 0
-        for i in _host._star_count:
-            if i < _host._star_pitch_index.size() and _host._star_pitch_index[i] < _host._pitch_freqs.size():
-                if _host._pitch_freqs[int(_host._star_pitch_index[i])] == pf:
-                    count_in_pitch += 1
+        var count_in_pitch: int = _deduction._pitch_star_count(ConstellationLogicPuzzle.note_name_for_freq(pf))
         for pos in count_in_pitch:
             _build_pitch_group_row(pf, pos)
 
@@ -1407,29 +1447,40 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
     _host._staff_popup.set_color_column_count(_staff_popup_column_count(_host.COLOR_NAME_LABELS.size()))
     _host._staff_popup.set_name_column_count(_staff_popup_column_count(_host._star_count))
 
-    # Add pitch rows
+    # Add pitch rows — same cross-record exclusion as
+    # _open_pitch_checklist_popup, since the Staff popup is a third UI
+    # surface hitting the exact same records (see
+    # _compute_excluded_pitches_for).
+    var excluded_pitches: Array[String] = _deduction._compute_excluded_pitches_for(record_idx)
     for pitch_idx in _host._pitch_freqs.size():
         var f: float = _host._pitch_freqs[pitch_idx]
         var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(f)
-        var incidence_count: int = 0
-        for sp in _host._star_pitch_index:
-            if int(sp) == pitch_idx:
-                incidence_count += 1
-        var state: int = _deduction._record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", note_name)
+        var incidence_count: int = _deduction._pitch_star_count(note_name)
+        var state: int = _deduction._effective_pitch_state(record_idx, note_name)
+        if state == 0 and excluded_pitches.has(note_name):
+            state = 2
         _host._staff_popup.add_pitch_row(note_name, incidence_count, state, STATE_COLORS.neutral)
 
-    # Add color rows
+    # Add color rows — same cross-record exclusion as
+    # _make_color_toggle_row_for_record (see _compute_excluded_colors_for).
+    var excluded_colors: Array[int] = _deduction._compute_excluded_colors_for(record_idx)
     for ci in _host.COLOR_NAME_LABELS.size():
-        var cstate: int = _deduction._record_effective_state(record_idx, "color_states", "protected_color_idxs", ci)
+        var cstate: int = _deduction._effective_color_state(record_idx, ci)
+        if cstate == 0 and excluded_colors.has(ci):
+            cstate = 2
         _host._staff_popup.add_color_row(_host.COLOR_NAME_LABELS[ci], ci, cstate, _host.STAR_COLORS_BY_IDX[ci])
 
-    # Add name rows
+    # Add name rows — same cross-record exclusion as
+    # _open_name_checklist_popup (see _compute_excluded_names_for).
     var all_names: Array[String] = []
     for j in _host._star_count:
         all_names.append(_host._star_names[j] if j < _host._star_names.size() else "?")
     all_names.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
+    var excluded_names: Array[String] = _deduction._compute_excluded_names_for(record_idx)
     for name_str in all_names:
-        var state: int = _deduction._record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
+        var state: int = _deduction._effective_name_state(record_idx, name_str)
+        if state == 0 and excluded_names.has(name_str):
+            state = 2
         _host._staff_popup.add_name_row(name_str, state, STATE_COLORS.neutral)
 
     # Vertically center the popup within the study panel instead of
