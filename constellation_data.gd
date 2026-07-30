@@ -127,6 +127,11 @@ const BUILT_IN = [
         "spark_cap":      75025,
         "line_threshold": 0.3819,   # 28,657 / 75,025
         "snap_horiz_stars": [0, 1],
+        # Leveling snap_horiz_stars alone only fixes rotation mod 180° —
+        # star 2 (the outer-triangle apex, "outer bottom apex" below) must
+        # end up on the +Y (point-down) side after leveling, or the whirl
+        # can settle upside-down. See get_canonical_display_basis().
+        "snap_orient_check": {"star": 2, "axis": "y", "sign": 1},
         "puzzle_sequence": [8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 1, 0, 4, 9],
         "note_durations": [
             0.333, 0.167, 0.333, 0.167,          # Measure 1: F5 E5 D5 C#5
@@ -352,6 +357,10 @@ const BUILT_IN = [
         "bonus_value": 1.0,
         "mechanic_key": "",
         "snap_horiz_stars": [10, 15],
+        # Star 16 (the strap chain's far end) must end up on the +X
+        # (trailing right) side after leveling — see the Archon's
+        # matching comment and get_canonical_display_basis().
+        "snap_orient_check": {"star": 16, "axis": "x", "sign": 1},
         "bonus_levels": {"stars": 2.0, "lines": 3.0, "art": 3.0},
         "spark_cap":      75025,
         "line_threshold": 0.3819,   # 28,657 / 75,025
@@ -426,6 +435,11 @@ const BUILT_IN = [
         "bonus_value": 1.0,
         "mechanic_key": "",
         "snap_horiz_stars": [4, 9],
+        # Star 4 (the nozzle tip) must end up on the +X (right) side
+        # after leveling, matching the authored layout's own comment
+        # below ("nozzle points right") — see the Archon's matching
+        # comment and get_canonical_display_basis().
+        "snap_orient_check": {"star": 4, "axis": "x", "sign": 1},
         "bonus_levels": {"stars": 1.5, "lines": 2.0, "art": 3.0},
         "spark_cap":      75025,
         "line_threshold": 0.3819,   # 28,657 / 75,025
@@ -803,6 +817,71 @@ func _apply_constellation_transform(local_pos: Vector3, center_dir: Vector3, rol
     basis = Basis(center_dir, roll) * basis
 
     return (basis * local_pos).normalized()
+
+
+# ------------------------------------------------------------------
+# Returns the "camera-to-world" basis that shows a constellation in its
+# designed canonical orientation — the same basis both
+# starfield_background.gd's snap_to_constellation() (whirl animation
+# target) and constellation_study_overlay.gd's map projection use, so the
+# two surfaces always agree.
+#
+# Leveling snap_horiz_stars only fixes rotation mod 180° — there are
+# always two candidate rolls that both make that pair horizontal, one
+# correct and one upside-down/mirrored. snap_orient_check (optional,
+# added per-constellation only where the shape actually needs
+# disambiguating — see e.g. the Archon's def) picks between them: a
+# reference star must land on a specific side (+/-X or +/-Y) of the
+# leveled view once the roll is applied, checked here via Basis/Vector3
+# ops directly rather than hand-derived trig.
+# ------------------------------------------------------------------
+func get_canonical_display_basis(constellation_id: int) -> Basis:
+    var positions: Array = get_star_positions(constellation_id)
+    if positions.is_empty():
+        return Basis.IDENTITY
+
+    var centroid := Vector3.ZERO
+    for pos in positions:
+        centroid += pos as Vector3
+    if centroid == Vector3.ZERO:
+        return Basis.IDENTITY
+    centroid = centroid.normalized()
+
+    var from_dir := Vector3(0.0, 0.0, 1.0)
+    var base_rot: Basis
+    var base_axis: Vector3 = from_dir.cross(centroid)
+    if base_axis.length_squared() < 0.0001:
+        base_rot = Basis.IDENTITY if from_dir.dot(centroid) > 0.0 else Basis(Vector3.RIGHT, PI)
+    else:
+        base_rot = Basis(base_axis.normalized(), from_dir.angle_to(centroid))
+
+    var def: Dictionary = get_constellation_def(constellation_id)
+    var horiz_stars: Array = def.get("snap_horiz_stars", [])
+    var roll_angle: float = 0.0
+    if horiz_stars.size() == 2 and horiz_stars[0] < positions.size() and horiz_stars[1] < positions.size():
+        var star_a: Vector3 = positions[horiz_stars[0]]
+        var star_b: Vector3 = positions[horiz_stars[1]]
+        var a_view: Vector3 = base_rot.inverse() * star_a
+        var b_view: Vector3 = base_rot.inverse() * star_b
+        var dy: float = b_view.y - a_view.y
+        var dx: float = b_view.x - a_view.x
+        var line_angle: float = atan2(dy, dx)
+        roll_angle = line_angle
+        if roll_angle > PI * 0.5:
+            roll_angle -= PI
+        elif roll_angle < -PI * 0.5:
+            roll_angle += PI
+
+        var check: Dictionary = def.get("snap_orient_check", {})
+        if check.has("star") and int(check["star"]) < positions.size():
+            var candidate: Basis = base_rot * Basis(Vector3(0.0, 0.0, 1.0), roll_angle)
+            var ref_view: Vector3 = candidate.inverse() * (positions[int(check["star"])] as Vector3)
+            var value: float = ref_view.y if str(check.get("axis", "y")) == "y" else ref_view.x
+            var wanted_sign: int = int(check.get("sign", 1))
+            if signf(value) != 0.0 and signf(value) != signf(float(wanted_sign)):
+                roll_angle += PI
+
+    return base_rot * Basis(Vector3(0.0, 0.0, 1.0), roll_angle)
 
 
 # ==================================================
