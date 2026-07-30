@@ -94,3 +94,13 @@ func _on_study_pressed() -> void:
 ## study_panel_reveal dialogue trigger).
 func reveal_study_button() -> void:
     _study_btn.visible = true
+    # The VBoxContainer's own re-sort (to grow the panel and reposition
+    # this newly-visible child below ConstellationDisplay) is queued/
+    # deferred by Godot, not applied synchronously — confirmed via
+    # diagnostics: even calling queue_sort() explicitly right here still
+    # left the panel/button reporting their pre-reveal size and position
+    # immediately afterward, only correcting some time later. Awaiting
+    # one process_frame is the robust way to let that queued work flush
+    # (Godot resolves deferred/queued calls before the next process_frame
+    # signal fires) rather than assuming any fixed delay is long enough.
+    await get_tree().process_frame
