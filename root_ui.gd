@@ -360,7 +360,9 @@ func _ready() -> void:
         
     if save_manager:
         save_manager.game_loaded.connect(_on_game_loaded)
-        
+        if save_manager.has_signal("save_load_failed"):
+            save_manager.save_load_failed.connect(_on_save_load_failed)
+
 
     _archon_panel   = find_child("ArchonTetrahedronContainer", true, false)
     _dialogue_panel = find_child("DialoguePanelContainer",     true, false)
@@ -937,6 +939,30 @@ func _on_age_selected(key: String) -> void:
             _transition_to_age("res://WorldUI.tscn")
         "civilization":
             _transition_to_age("res://CivilizationUI.tscn")
+
+func _on_save_load_failed() -> void:
+    # SaveManager found the save AND its backup both unreadable and halted
+    # loading (see save_manager.gd) — it has already disabled further saves so
+    # the corrupt files are preserved for recovery rather than overwritten.
+    # Surface that to the player, and point them at the files, instead of
+    # leaving them staring at a silently-fresh game they might autosave over.
+    var save_dir: String = ProjectSettings.globalize_path("user://")
+    var dlg := AcceptDialog.new()
+    dlg.title = "Save could not be read"
+    dlg.dialog_text = ("Your save file and its backup could not be read, so the game "
+        + "could not load your progress.\n\n"
+        + "To protect them, saving has been paused — your files have NOT been "
+        + "deleted or overwritten. You can find them here:\n\n"
+        + save_dir + "\n\n"
+        + "Back them up if you'd like to attempt recovery. To start over instead, "
+        + "use Reset in the Settings menu.")
+    dlg.dialog_autowrap = true
+    dlg.min_size = Vector2i(460, 0)
+    add_child(dlg)
+    dlg.popup_centered()
+    dlg.confirmed.connect(dlg.queue_free)
+    dlg.canceled.connect(dlg.queue_free)
+
 
 func _on_game_loaded(offline_seconds: float) -> void:
     _sync_trigger_flags_from_loaded_state()
