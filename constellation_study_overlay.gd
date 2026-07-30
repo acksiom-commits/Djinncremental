@@ -623,6 +623,11 @@ func _on_pitch_listen_star_clicked(star_idx: int) -> void:
     var record_idx: int = _deduction._get_or_create_match_record_for_star_idx(star_idx)
     _deduction._propagate_pitch_confirmed_same_record(record_idx, note_name)
     _deduction._match_records[record_idx]["pitch_revealed"] = true
+    # Reconciles this record with a stale, blank Sort:Pitch-tab slot
+    # record for the same note, if the tab was opened before this star
+    # was ever listened to — see _reconcile_unique_pitch_slot for why
+    # this is only safe/needed for notes with exactly one star.
+    record_idx = await _deduction._reconcile_unique_pitch_slot(record_idx, note_name)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
 
