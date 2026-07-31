@@ -56,6 +56,44 @@ func setup(host: ConstellationStudyOverlay, conflict_dialog_fn: Callable) -> voi
 
 
 # ==================================================
+# TYPE COERCION — _load_match_records() is the one place untrusted,
+# save-derived data enters _match_records. Every other function in this
+# file that reads a record field (there are dozens, e.g. `int(r.get(
+# "seq_lo", 0))` throughout) trusts that value is already the right type
+# — true for records built by normal gameplay (literal ints/strings), but
+# not for a corrupted-but-parseable save. Fully sanitizing every field
+# here, once, means none of those downstream reads need their own guard:
+# a wrong-typed value assigned into a typed variable, or passed to the
+# global int()/bool() constructors, hangs the engine rather than raising
+# a catchable error (confirmed repeatedly this session, bool() included).
+# str() is safe for any input type (also confirmed) — the many str(...)
+# calls elsewhere in this file don't need this treatment.
+# ==================================================
+func _coerce_int(val, default: int) -> int:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return int(val)
+    return default
+
+
+func _coerce_bool(val, default: bool) -> bool:
+    if typeof(val) == TYPE_BOOL:
+        return val
+    return default
+
+
+func _coerce_dict(val, default: Dictionary) -> Dictionary:
+    if typeof(val) == TYPE_DICTIONARY:
+        return val
+    return default
+
+
+func _coerce_array(val, default: Array) -> Array:
+    if typeof(val) == TYPE_ARRAY:
+        return val
+    return default
+
+
+# ==================================================
 # MELODY BAR SCORE — piano-roll style summary of confirmed Sequence×Pitch
 # information. Purely a rendering query over _match_records: no ground
 # truth is ever read here. A position only gets a notehead if the player
@@ -1022,49 +1060,70 @@ func _save_match_records() -> Array:
 func _load_match_records(data: Array) -> void:
     _match_records.clear()
     for entry in data:
+        if not entry is Dictionary:
+            continue
         var e: Dictionary = entry
+
+        var raw_color_states: Dictionary = _coerce_dict(e.get("color_states"), {})
         var color_states: Dictionary = {}
-        for ck in e.get("color_states", {}):
-            color_states[int(ck)] = int(e["color_states"][ck])
+        for ck in raw_color_states:
+            color_states[_coerce_int(ck, 0)] = _coerce_int(raw_color_states[ck], 0)
+
+        var raw_pitch_states: Dictionary = _coerce_dict(e.get("pitch_states"), {})
         var pitch_states: Dictionary = {}
-        for pk in e.get("pitch_states", {}):
-            pitch_states[str(pk)] = int(e["pitch_states"][pk])
+        for pk in raw_pitch_states:
+            pitch_states[str(pk)] = _coerce_int(raw_pitch_states[pk], 0)
+
+        var raw_star_elim: Dictionary = _coerce_dict(e.get("star_elim"), {})
         var star_elim: Dictionary = {}
-        for sk in e.get("star_elim", {}):
-            star_elim[int(sk)] = int(e["star_elim"][sk])
+        for sk in raw_star_elim:
+            star_elim[_coerce_int(sk, 0)] = _coerce_int(raw_star_elim[sk], 0)
+
         var color_star_elim_marks: Dictionary = {}
-        for csk in e.get("color_star_elim_marks", {}):
-            color_star_elim_marks[int(csk)] = true
+        for csk in _coerce_dict(e.get("color_star_elim_marks"), {}):
+            color_star_elim_marks[_coerce_int(csk, 0)] = true
+
+        var raw_name_states: Dictionary = _coerce_dict(e.get("name_states"), {})
         var name_states: Dictionary = {}
-        for nk in e.get("name_states", {}):
-            name_states[str(nk)] = int(e["name_states"][nk])
+        for nk in raw_name_states:
+            name_states[str(nk)] = _coerce_int(raw_name_states[nk], 0)
+
         var manual_name_blocks: Dictionary = {}
-        for mnk in e.get("manual_name_blocks", {}):
+        for mnk in _coerce_dict(e.get("manual_name_blocks"), {}):
             manual_name_blocks[str(mnk)] = true
+
         var manual_pitch_blocks: Dictionary = {}
-        for mpk in e.get("manual_pitch_blocks", {}):
+        for mpk in _coerce_dict(e.get("manual_pitch_blocks"), {}):
             manual_pitch_blocks[str(mpk)] = true
+
         var manual_color_blocks: Dictionary = {}
-        for mck in e.get("manual_color_blocks", {}):
-            manual_color_blocks[int(mck)] = true
+        for mck in _coerce_dict(e.get("manual_color_blocks"), {}):
+            manual_color_blocks[_coerce_int(mck, 0)] = true
+
+        var raw_degree_states: Dictionary = _coerce_dict(e.get("degree_states"), {})
         var degree_states: Dictionary = {}
-        for dk in e.get("degree_states", {}):
-            degree_states[int(dk)] = int(e["degree_states"][dk])
+        for dk in raw_degree_states:
+            degree_states[_coerce_int(dk, 0)] = _coerce_int(raw_degree_states[dk], 0)
+
         var protected_pitch_notes: Dictionary = {}
-        for ppk in e.get("protected_pitch_notes", {}):
+        for ppk in _coerce_dict(e.get("protected_pitch_notes"), {}):
             protected_pitch_notes[str(ppk)] = true
+
         var protected_color_idxs: Dictionary = {}
-        for pck in e.get("protected_color_idxs", {}):
-            protected_color_idxs[int(pck)] = true
+        for pck in _coerce_dict(e.get("protected_color_idxs"), {}):
+            protected_color_idxs[_coerce_int(pck, 0)] = true
+
         var protected_staff_names: Dictionary = {}
-        for psnk in e.get("protected_staff_names", {}):
+        for psnk in _coerce_dict(e.get("protected_staff_names"), {}):
             protected_staff_names[str(psnk)] = true
+
         var seq_candidates: Array = []
-        for v in e.get("seq_candidates", []):
-            seq_candidates.append(int(v))
+        for v in _coerce_array(e.get("seq_candidates"), []):
+            seq_candidates.append(_coerce_int(v, 0))
+
         _match_records.append({
             "name": str(e.get("name", "")),
-            "seq_lo": int(e.get("seq_lo", 0)), "seq_hi": int(e.get("seq_hi", 0)),
+            "seq_lo": _coerce_int(e.get("seq_lo"), 0), "seq_hi": _coerce_int(e.get("seq_hi"), 0),
             "seq_candidates": seq_candidates,
             "color_states": color_states,
             "pitch_states": pitch_states,
@@ -1076,11 +1135,11 @@ func _load_match_records(data: Array) -> void:
             "protected_pitch_notes": protected_pitch_notes,
             "protected_color_idxs": protected_color_idxs,
             "protected_staff_names": protected_staff_names,
-            "pitch_revealed": bool(e.get("pitch_revealed", false)),
+            "pitch_revealed": _coerce_bool(e.get("pitch_revealed"), false),
             "star_elim": star_elim,
             "color_star_elim_marks": color_star_elim_marks,
             "pitch_carousel_idx": 0,
-            "star_idx": int(e.get("star_idx", -1)),
+            "star_idx": _coerce_int(e.get("star_idx"), -1),
             "color_slot_label": str(e.get("color_slot_label", "")),
             "pitch_slot_label": str(e.get("pitch_slot_label", "")),
             "degree_slot_label": str(e.get("degree_slot_label", "")),
