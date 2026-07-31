@@ -100,6 +100,7 @@ var _face1_len: float = 0.0
 var _icons:       Array = []
 var _rng:         RandomNumberGenerator = RandomNumberGenerator.new()
 var _frame_count: int   = 0
+var _tooltip_accum: float = 0.0
 var _overflow_tri:      PackedVector2Array = PackedVector2Array()
 var _vol_center:        Vector2 = Vector2.ZERO
 var _pct_center:        Vector2 = Vector2.ZERO
@@ -205,10 +206,17 @@ func _process(delta: float) -> void:
     if _settings_popout and not _settings_popout.tooltips_enabled:
         tooltip_text = ""
     else:
-        tooltip_text = "%s / %s" % [
-            _gc.get_storage_total().to_display_string(),
-            _gc.get_effective_storage_cap().to_display_string()
-        ]
+        # BigNum.to_display_string() formatting was previously redone every
+        # single frame regardless of whether the tooltip is even visible —
+        # throttled to 1x/sec, matching root_ui.gd's _update_button_tooltips()
+        # precedent, since nothing here needs faster-than-eye-tracking updates.
+        _tooltip_accum += delta
+        if _tooltip_accum >= 1.0:
+            _tooltip_accum = 0.0
+            tooltip_text = "%s / %s" % [
+                _gc.get_storage_total().to_display_string(),
+                _gc.get_effective_storage_cap().to_display_string()
+            ]
     
     
 func _gui_input(event: InputEvent) -> void:
