@@ -268,6 +268,40 @@ func _process(delta: float) -> void:
     _fork.tick(delta)
 
 
+func _coerce_int(val, default: int) -> int:
+    # This overlay's puzzle-solving state is populated straight from the
+    # puzzle cache (constellation_data.gd's _puzzle_cache), which round-
+    # trips through save data. Only the cache's top-level dict-ness is
+    # validated at the source — individual field values and array elements
+    # aren't — and a typed variable/parameter assignment or the global
+    # int()/float() constructors hang the engine on a wrong-typed value
+    # (Dictionary/Array) rather than raising a catchable error, confirmed
+    # repeatedly this session. str() is safe for any type (verified
+    # directly), which is why the many str(k)/str(n) calls in this file
+    # don't need the same treatment.
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return int(val)
+    return default
+
+
+func _coerce_array(val, default: Array) -> Array:
+    if typeof(val) == TYPE_ARRAY:
+        return val
+    return default
+
+
+func _coerce_dict(val, default: Dictionary) -> Dictionary:
+    if typeof(val) == TYPE_DICTIONARY:
+        return val
+    return default
+
+
+func _coerce_string(val, default: String) -> String:
+    if typeof(val) == TYPE_STRING:
+        return val
+    return default
+
+
 func _build_style_boxes() -> void:
     var make := func(bg: Color, border: Color, bw: int = 1, cr: int = 3) -> StyleBoxFlat:
         var sb := StyleBoxFlat.new()
@@ -322,27 +356,27 @@ func _load_constellation_data() -> void:
         return
 
     var cache: Dictionary = _cd.get_puzzle_cache(_constellation_id)
-    _puzzle_seed_used = int(cache.get("player_seed_used", 0))
+    _puzzle_seed_used = _coerce_int(cache.get("player_seed_used"), 0)
 
-    var raw_names = cache.get("star_names", [])
+    var raw_names = _coerce_array(cache.get("star_names"), [])
     _star_names = []
     for n in raw_names:
         _star_names.append(str(n))
 
-    var raw_colors = cache.get("star_colors", [])
+    var raw_colors = _coerce_array(cache.get("star_colors"), [])
     _star_colors = []
     for c in raw_colors:
-        _star_colors.append(int(c))
+        _star_colors.append(_coerce_int(c, 0))
 
-    var raw_degrees = cache.get("star_degrees", [])
+    var raw_degrees = _coerce_array(cache.get("star_degrees"), [])
     _star_degrees = []
     for d in raw_degrees:
-        _star_degrees.append(int(d))
+        _star_degrees.append(_coerce_int(d, 0))
 
     _star_count = _star_names.size()
 
     # Name assignments (legacy positive-assignment slot).
-    var raw_assign = cache.get("player_name_assignments", [])
+    var raw_assign: Array = _coerce_array(cache.get("player_name_assignments"), [])
     _name_assignments = []
     for i in _star_count:
         _name_assignments.append(str(raw_assign[i]) if i < raw_assign.size() else "")
@@ -351,33 +385,37 @@ func _load_constellation_data() -> void:
     var notes: Dictionary = _cd.get_player_puzzle_notes(_constellation_id)
 
     _proximity_states.clear()
-    var raw_adj: Dictionary = notes.get("adjacency_states", {})
+    var raw_adj: Dictionary = _coerce_dict(notes.get("adjacency_states"), {})
     for k in raw_adj:
-        _proximity_states[str(k)] = int(raw_adj[k])
+        _proximity_states[str(k)] = _coerce_int(raw_adj[k], 0)
 
     _deduction._protected_names.clear()
-    var raw_prot: Dictionary = notes.get("protected_names", {})
+    var raw_prot: Dictionary = _coerce_dict(notes.get("protected_names"), {})
     for k in raw_prot:
         _deduction._protected_names[str(k)] = true
 
     _deduction._user_blocks.clear()
-    var raw_blocks: Dictionary = notes.get("user_blocks", {})
+    var raw_blocks: Dictionary = _coerce_dict(notes.get("user_blocks"), {})
     for k in raw_blocks:
         _deduction._user_blocks[str(k)] = true
 
-    _deduction._load_match_records(notes.get("match_records", []))
+    # _load_match_records(data: Array) has a typed parameter — a wrong-
+    # typed value would hang at the call boundary, one hop before that
+    # function's own body (not yet reviewed this session) ever runs.
+    _deduction._load_match_records(_coerce_array(notes.get("match_records"), []))
 
     # Sequence position + clue text caches (for Markers Panel display).
     _pitch_rank_solution = []
-    for v in cache.get("pitch_rank_solution", []):
-        _pitch_rank_solution.append(int(v))
+    for v in _coerce_array(cache.get("pitch_rank_solution"), []):
+        _pitch_rank_solution.append(_coerce_int(v, 0))
 
     _star_pitch_index = []
     for v in _cd.get_note_assignment(_constellation_id):
-        _star_pitch_index.append(int(v))
+        _star_pitch_index.append(_coerce_int(v, 0))
     _pitch_freqs = _cd.get_note_freqs(_constellation_id)
 
-    _form_clues_cache = cache.get("chosen_form_clues", []).duplicate(true)
+    var raw_form_clues = _coerce_array(cache.get("chosen_form_clues"), [])
+    _form_clues_cache = raw_form_clues.duplicate(true)
 
     _compute_star_screen_positions()
     _selected_star = -1
@@ -459,15 +497,15 @@ func _draw_star_map() -> void:
         return
 
     var def: Dictionary = _cd.get_constellation_def(_constellation_id) if _cd else {}
-    var line_pairs: Array = def.get("line_pairs", [])
+    var line_pairs: Array = _coerce_array(def.get("line_pairs"), [])
 
     var line_color := Color(0.55, 0.45, 0.75, 0.35)
     var k: int = 0
     while k < line_pairs.size() - 1:
-        var ai: int = int(line_pairs[k])
-        var bi: int = int(line_pairs[k + 1])
+        var ai: int = _coerce_int(line_pairs[k], -1)
+        var bi: int = _coerce_int(line_pairs[k + 1], -1)
         k += 2
-        if ai >= _star_screen_pos.size() or bi >= _star_screen_pos.size():
+        if ai < 0 or bi < 0 or ai >= _star_screen_pos.size() or bi >= _star_screen_pos.size():
             continue
         _star_map_control.draw_line(
             _star_screen_pos[ai], _star_screen_pos[bi], line_color, 1.5, true)
@@ -635,8 +673,8 @@ func _update_header() -> void:
     if not _cd or _constellation_id < 0:
         return
     var def: Dictionary = _cd.get_constellation_def(_constellation_id)
-    var name_str: String = def.get("name", "Constellation")
-    var desig: String = def.get("designation", "")
+    var name_str: String = _coerce_string(def.get("name"), "Constellation")
+    var desig: String = _coerce_string(def.get("designation"), "")
     _title_label.text = "%s  •  %s" % [name_str, desig] if desig != "" else name_str
     _selected_clue_text = ""
     _selected_clue_tab = -1
