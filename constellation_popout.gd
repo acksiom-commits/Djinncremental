@@ -292,11 +292,18 @@ func _build_slots() -> void:
         for c in _cd.BUILT_IN:
             if _cd.unlocked.has(c["id"]):
                 defs.append(c)
+        # player_constellations/patron_constellations round-trip through
+        # save data (constellation_data.gd's load_save_data() only checks
+        # the outer Array's type) — an element that isn't a Dictionary
+        # crashes outright on bracket-indexing (confirmed: c["id"] on a
+        # non-Dictionary Variant exits the process, no catchable error),
+        # so guard the type before ever touching "id".
         for c in _cd.player_constellations:
-            if _cd.unlocked.has(c["id"]):
+            if c is Dictionary and _cd.unlocked.has(_coerce_int(c.get("id"), -1)):
                 defs.append(c)
         for c in _cd.patron_constellations:
-            if c.get("approved", false) and _cd.unlocked.has(c["id"]):
+            if c is Dictionary and c.get("approved", false) \
+                    and _cd.unlocked.has(_coerce_int(c.get("id"), -1)):
                 defs.append(c)
     for def in defs:
         var id: int = def["id"]
@@ -321,11 +328,18 @@ func _refresh_slots() -> void:
         for c in _cd.BUILT_IN:
             if _cd.unlocked.has(c["id"]):
                 defs.append(c)
+        # player_constellations/patron_constellations round-trip through
+        # save data (constellation_data.gd's load_save_data() only checks
+        # the outer Array's type) — an element that isn't a Dictionary
+        # crashes outright on bracket-indexing (confirmed: c["id"] on a
+        # non-Dictionary Variant exits the process, no catchable error),
+        # so guard the type before ever touching "id".
         for c in _cd.player_constellations:
-            if _cd.unlocked.has(c["id"]):
+            if c is Dictionary and _cd.unlocked.has(_coerce_int(c.get("id"), -1)):
                 defs.append(c)
         for c in _cd.patron_constellations:
-            if c.get("approved", false) and _cd.unlocked.has(c["id"]):
+            if c is Dictionary and c.get("approved", false) \
+                    and _cd.unlocked.has(_coerce_int(c.get("id"), -1)):
                 defs.append(c)
     for def in defs:
         var id: int = def["id"]
@@ -352,8 +366,8 @@ func _get_slot_label(constellation_id: int) -> String:
     var def = _cd.get_constellation_def(constellation_id)
     if def.is_empty():
         return "???"
-    var designation: String = def.get("designation", "")
-    var name_str:    String = def.get("name", "???")
+    var designation: String = _coerce_string(def.get("designation"), "")
+    var name_str:    String = _coerce_string(def.get("name"), "???")
     if designation != "":
         return "%s\n%s" % [designation.to_upper(), name_str]
     return name_str
@@ -536,7 +550,7 @@ func _refresh_spark_counter() -> void:
                                     str(_selected_slot), 0.0) if _gc else 0.0
     var fraction:       float = _cd.get_spark_fraction(_selected_slot)
     var def:            Dictionary = _cd.get_constellation_def(_selected_slot)
-    var line_threshold: float = def.get("line_threshold", 0.3)
+    var line_threshold: float = _coerce_float(def.get("line_threshold"), 0.3)
     var state:          String = _cd.get_visual_state(_selected_slot)
     var toggle_unlocked: bool = _is_numeric_toggle_unlocked()
     var counter_text: String
@@ -625,7 +639,7 @@ func _refresh_info_panel() -> void:
     _info_vbox.visible = true
 
     # ── Name ──
-    var designation: String = def.get("designation", "")
+    var designation: String = _coerce_string(def.get("designation"), "")
     if designation != "":
         _info_name_label.text = "%s — %s" % [designation.to_upper(), def.get("name", "Unknown")]
     else:
@@ -635,7 +649,7 @@ func _refresh_info_panel() -> void:
     _info_lore_label.text = ""
 
     # ── Bonus ──
-    var bonus_key: String = def.get("bonus_key", "")
+    var bonus_key: String = _coerce_string(def.get("bonus_key"), "")
     var state:     String = _cd.get_visual_state(_selected_slot)
     var bonus_desc: String = BONUS_DESCRIPTIONS.get(
         bonus_key, bonus_key.capitalize().replace("_", " "))
@@ -645,8 +659,14 @@ func _refresh_info_panel() -> void:
             var solve_key := "constellation_%d_solve_count" % _selected_slot
             solved = _gc._assignment_int(solve_key, 0) > 0
         if solved:
-            var current_val: float = def["bonus_levels"].get(
-                state, def.get("bonus_value", 1.0))
+            # def["bonus_levels"] is a save-derived field too — a wrong
+            # type there would crash calling .get() on it the same way
+            # bracket-indexing a non-Dictionary does (see the id-read fix
+            # above), and def["bonus_value"]/the state's entry could be
+            # wrong-typed even when bonus_levels itself is a real Dictionary.
+            var bonus_levels: Dictionary = _coerce_dict(def.get("bonus_levels"), {})
+            var default_bonus: float = _coerce_float(def.get("bonus_value"), 1.0)
+            var current_val: float = _coerce_float(bonus_levels.get(state, default_bonus), default_bonus)
             _info_bonus_label.text = "%s: ×%s" % [bonus_desc, str(current_val)]
             _info_bonus_label.add_theme_color_override("font_color",
                 TIER_COLORS.get(state, Color.WHITE))
@@ -682,6 +702,30 @@ func _refresh_info_panel() -> void:
     _info_tier_label.text = tier_text
     _info_tier_label.add_theme_color_override("font_color",
         TIER_COLORS.get(state, Color.WHITE))
+
+
+func _coerce_int(val, default: int) -> int:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return int(val)
+    return default
+
+
+func _coerce_float(val, default: float) -> float:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return float(val)
+    return default
+
+
+func _coerce_string(val, default: String) -> String:
+    if typeof(val) == TYPE_STRING:
+        return val
+    return default
+
+
+func _coerce_dict(val, default: Dictionary) -> Dictionary:
+    if typeof(val) == TYPE_DICTIONARY:
+        return val
+    return default
 
 
 func _make_slot_style(color: Color) -> StyleBoxFlat:
