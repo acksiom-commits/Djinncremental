@@ -36,6 +36,15 @@ signal save_reset()
 ## the save-disable alone prevents the silent data loss that used to happen
 ## here (load would just start a fresh game, then autosave over the corruption).
 signal save_load_failed()
+## Emitted when the atomic-write rotation's final tmp->primary rename fails
+## (locked by antivirus/cloud-sync, permissions, disk error, etc.) — the
+## verified new save data is stranded in TMP_PATH and never went live.
+## Not fatal on its own: the previous good save is untouched (rename never
+## got that far), and the next autosave 60s later is a fresh, independent
+## attempt that will likely succeed once the lock clears. A UI handler can
+## surface this; even with no handler, at minimum it's now logged instead
+## of silently discarded.
+signal save_failed()
 
 ## Set true only when load found existing-but-unreadable save files. While set,
 ## save_game() refuses to write, so nothing overwrites the corrupt files.
@@ -98,11 +107,34 @@ func save_game() -> void:
     #    in the tiny gap between these two renames, primary is momentarily
     #    absent but BAK_PATH holds the last-good save and TMP_PATH holds the
     #    new-good save — load() falls back to the backup either way.
+    #
+    #    None of these three calls' return values were checked before — a
+    #    transient lock (antivirus/cloud-sync scanning the save folder is
+    #    common on Windows, exactly what itch.io testers are likely to have
+    #    running) could silently no-op a save with no error, no signal,
+    #    nothing — the player would only find out when they next relaunch
+    #    and their progress isn't there. Confirmed directly: rename_absolute
+    #    returns OK (and actually overwrites) when the destination already
+    #    exists, and a non-OK Error code when it genuinely can't complete —
+    #    that return value just needs to be looked at.
     if FileAccess.file_exists(SAVE_PATH):
         if FileAccess.file_exists(BAK_PATH):
-            DirAccess.remove_absolute(BAK_PATH)
-        DirAccess.rename_absolute(SAVE_PATH, BAK_PATH)
-    DirAccess.rename_absolute(TMP_PATH, SAVE_PATH)
+            var remove_err: Error = DirAccess.remove_absolute(BAK_PATH)
+            if remove_err != OK:
+                # Not fatal by itself — rename_absolute overwrites an
+                # existing destination fine, so still attempt the rotation.
+                push_warning("SaveManager: could not remove stale backup (error %d), attempting rotation anyway." % remove_err)
+        var to_backup_err: Error = DirAccess.rename_absolute(SAVE_PATH, BAK_PATH)
+        if to_backup_err != OK:
+            # Backup rotation failed but the primary is untouched — still
+            # worth promoting the verified new save over it directly rather
+            # than discarding a good write over one failed housekeeping
+            # step; BAK_PATH just ends up one cycle staler than usual.
+            push_warning("SaveManager: could not rotate primary save to backup (error %d)." % to_backup_err)
+    var to_primary_err: Error = DirAccess.rename_absolute(TMP_PATH, SAVE_PATH)
+    if to_primary_err != OK:
+        push_error("SaveManager: could not promote new save into primary slot (error %d) — the new save is stranded in %s and never went live; the previous save is untouched." % [to_primary_err, TMP_PATH])
+        emit_signal("save_failed")
 
 
 func load_game() -> void:
