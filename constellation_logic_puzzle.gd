@@ -278,8 +278,15 @@ func _build_proximity(line_pairs: Array) -> void:
         proximity[i] = []
     var i: int = 0
     while i < line_pairs.size() - 1:
-        var a: int = int(line_pairs[i])
-        var b: int = int(line_pairs[i + 1])
+        # line_pairs is a raw def field on player/patron constellations —
+        # its outer Array type is guaranteed by the caller (root_ui.gd) but
+        # not its elements. The global int() constructor crashes outright
+        # on a Dictionary/Array element (confirmed this session); coerce to
+        # a sentinel that the bounds check below excludes instead.
+        var raw_a = line_pairs[i]
+        var raw_b = line_pairs[i + 1]
+        var a: int = int(raw_a) if typeof(raw_a) in [TYPE_INT, TYPE_FLOAT] else -1
+        var b: int = int(raw_b) if typeof(raw_b) in [TYPE_INT, TYPE_FLOAT] else -1
         if a >= 0 and a < star_count and b >= 0 and b < star_count:
             if not proximity[a].has(b):
                 proximity[a].append(b)
@@ -1125,6 +1132,32 @@ func check_solution(candidate: Array) -> bool:
 # from a cache that never stored a clue set at all.
 const CACHE_VERSION: int = 2
 
+# get_puzzle_cache() only guarantees the outer Dictionary it returns is a
+# real Dictionary — the save-derived fields inside it aren't typed-checked
+# at all. The global int()/bool() constructors crash outright on a
+# Dictionary/Array value (confirmed this session), and a typed `Dictionary`
+# variable assignment from a wrong-typed element (e.g. a chosen_form_clues
+# entry that isn't a Dictionary) hangs rather than raising a catchable
+# error — every field read in from_cache_dict() below is routed through
+# one of these first.
+func _coerce_int(val, default: int) -> int:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return int(val)
+    return default
+
+
+func _coerce_bool(val, default: bool) -> bool:
+    if typeof(val) == TYPE_BOOL:
+        return val
+    return default
+
+
+func _coerce_array(val, default: Array) -> Array:
+    if typeof(val) == TYPE_ARRAY:
+        return val
+    return default
+
+
 func to_cache_dict() -> Dictionary:
     return {
         "version":             CACHE_VERSION,
@@ -1143,43 +1176,45 @@ func to_cache_dict() -> Dictionary:
 
 
 func from_cache_dict(data: Dictionary) -> bool:
-    if int(data.get("version", 0)) != CACHE_VERSION:
+    if _coerce_int(data.get("version"), 0) != CACHE_VERSION:
         push_warning("ConstellationLogicPuzzle: cache version mismatch, ignoring cached data.")
         return false
-    constellation_id    = int(data.get("constellation_id", -1))
-    player_seed_used    = int(data.get("player_seed_used", 0))
-    star_count          = int(data.get("star_count", 0))
-    _generation_complete = bool(data.get("generation_complete", false))
+    constellation_id    = _coerce_int(data.get("constellation_id"), -1)
+    player_seed_used    = _coerce_int(data.get("player_seed_used"), 0)
+    star_count          = _coerce_int(data.get("star_count"), 0)
+    _generation_complete = _coerce_bool(data.get("generation_complete"), false)
 
     star_colors = []
-    for v in data.get("star_colors", []):
-        star_colors.append(int(v))
+    for v in _coerce_array(data.get("star_colors"), []):
+        star_colors.append(_coerce_int(v, 0))
 
     star_degrees = []
-    for v in data.get("star_degrees", []):
-        star_degrees.append(int(v))
+    for v in _coerce_array(data.get("star_degrees"), []):
+        star_degrees.append(_coerce_int(v, 0))
 
     star_names = []
-    for v in data.get("star_names", []):
+    for v in _coerce_array(data.get("star_names"), []):
         star_names.append(str(v))
 
     pitch_rank_solution = []
-    for v in data.get("pitch_rank_solution", []):
-        pitch_rank_solution.append(int(v))
+    for v in _coerce_array(data.get("pitch_rank_solution"), []):
+        pitch_rank_solution.append(_coerce_int(v, 0))
 
-    pitch_count = int(data.get("pitch_count", 0))
+    pitch_count = _coerce_int(data.get("pitch_count"), 0)
     _pitch_freq_rank = []
-    for v in data.get("pitch_freq_rank", []):
-        _pitch_freq_rank.append(int(v))
+    for v in _coerce_array(data.get("pitch_freq_rank"), []):
+        _pitch_freq_rank.append(_coerce_int(v, 0))
 
     chosen_form_clues = []
-    for raw_clue in data.get("chosen_form_clues", []):
+    for raw_clue in _coerce_array(data.get("chosen_form_clues"), []):
+        if not (raw_clue is Dictionary):
+            continue
         var rc: Dictionary = raw_clue
         var tags: Array[String] = []
-        for t in rc.get("characteristics", []):
+        for t in _coerce_array(rc.get("characteristics"), []):
             tags.append(str(t))
         chosen_form_clues.append({
-            "form_id":         int(rc.get("form_id", 0)),
+            "form_id":         _coerce_int(rc.get("form_id"), 0),
             "form_name":       str(rc.get("form_name", "")),
             "text":            str(rc.get("text", "")),
             "characteristics": tags,
