@@ -61,8 +61,8 @@ var all_fundaments_done:                bool = false
 var all_tetrads_done:                   bool = false
 var first_particle_done:                bool = false
 var first_grain_done:                   bool = false
-var nineteenth_grain_done:              bool = false
-var twentieth_grain_done:               bool = false
+var nineteenth_mote_done:               bool = false
+var twentieth_mote_done:                bool = false
 var first_prestige_done:                bool = false
 var second_prestige_done:               bool = false
 var third_prestige_done:                bool = false
@@ -746,31 +746,31 @@ func enqueue_first_grain() -> void:
     emit_signal("sequence_complete", "First Grain", lines)
 
 
-func enqueue_nineteenth_grain() -> void:
-    if nineteenth_grain_done:
+func enqueue_nineteenth_mote() -> void:
+    if nineteenth_mote_done:
         return
-    nineteenth_grain_done = true
+    nineteenth_mote_done = true
     var lines = [
-        "Almost there, Boss! Just one more Grain to go - our first Expansion, our first Uonite! I'm so excited! Aren't you excited? Come on, be excited!||HMM...I'LL SETTLE FOR BEING AMUSED, I THINK.",
+        "Almost there, Boss! Just one more Mote to go - our first Expansion, our first Uonite! I'm so excited! Aren't you excited? Come on, be excited!||HMM...I'LL SETTLE FOR BEING AMUSED, I THINK.",
         "Ugh, fine. I guess that's the best I can expect...||I HEARD THAT UNSPOKEN 'FROM YOU', KALEB. \n\nWELL, THAT'S ALL RIGHT, THOUGH. YOU CAN BE EXCITED ENOUGH FOR BOTH OF US.",
     ]
     enqueue_dialogue(lines, true)
-    emit_signal("sequence_complete", "Nineteenth Grain", lines)
+    emit_signal("sequence_complete", "Nineteenth Mote", lines)
 
 
-func enqueue_twentieth_grain() -> void:
-    if twentieth_grain_done:
+func enqueue_twentieth_mote() -> void:
+    if twentieth_mote_done:
         return
-    twentieth_grain_done = true
+    twentieth_mote_done = true
     var lines = [
-        "Twenty Grains stocked, Boss! It's time for our first Expansion!||THAT WAS A LOT OF PRODUCTION FOR JUST ONE UONITE.",
+        "Twenty Motes stocked, Boss! It's time for our first Expansion!||THAT WAS A LOT OF PRODUCTION FOR JUST ONE UONITE.",
         "Ugh, no kidding. [font_size=14]And I did most of it, too.[/font_size] \n\nBut look on the bright side! Things will start moving faster soon. And I'll probably get another Focus each for the first Uonite and Expansion.||TRUE ENOUGH, AND IT WOULDN'T SUPRISE ME EITHER.",
         "Then let's GOOOOOOO!||I'LL ADMIT IT, I'M LOOKING FORWARD TO THIS. OH, AND KALEB?",
         "Yes, Boss?||GOOD WORK. SEE YOU ON THE FLIPSIDE, PARTNER.",
         "[font_size=14]...wait...what?[/font_size]",
     ]
     enqueue_dialogue(lines, true)
-    emit_signal("sequence_complete", "Twentieth Grain", lines)
+    emit_signal("sequence_complete", "Twentieth Mote", lines)
 
 
 func enqueue_first_prestige() -> void:
@@ -1079,8 +1079,8 @@ func get_save_data() -> Dictionary:
         "all_tetrads_done":                     all_tetrads_done,
         "first_particle_done":                  first_particle_done,
         "first_grain_done":                     first_grain_done,
-        "nineteenth_grain_done":                nineteenth_grain_done,
-        "twentieth_grain_done":                 twentieth_grain_done,
+        "nineteenth_mote_done":                 nineteenth_mote_done,
+        "twentieth_mote_done":                  twentieth_mote_done,
         "first_prestige_done":                  first_prestige_done,
         "second_prestige_done":                 second_prestige_done,
         "third_prestige_done":                  third_prestige_done,
@@ -1133,8 +1133,8 @@ func load_save_data(data: Dictionary) -> void:
     first_particle_done     = _coerce_bool(data.get("first_particle_done"),       false)
 
     first_grain_done      = _coerce_bool(data.get("first_grain_done"),      false)
-    nineteenth_grain_done = _coerce_bool(data.get("nineteenth_grain_done"), false)
-    twentieth_grain_done  = _coerce_bool(data.get("twentieth_grain_done"),  false)
+    nineteenth_mote_done  = _coerce_bool(data.get("nineteenth_mote_done"),  false)
+    twentieth_mote_done   = _coerce_bool(data.get("twentieth_mote_done"),   false)
 
     first_prestige_done     = _coerce_bool(data.get("first_prestige_done"),       false)
     second_prestige_done    = _coerce_bool(data.get("second_prestige_done"),      false)

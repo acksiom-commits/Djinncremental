@@ -96,7 +96,7 @@ var archon_foci_spent:     int = 0
 var volitions_spent:       int = 0
 var _last_bonus_volition_grant: int = 0
 var grains_this_cycle:     int = 0
-var motes_this_cycle:      int = 0   # TEST: mirrors grains_this_cycle, drives Uonite gauge for grains-out experiment
+var motes_this_cycle:      int = 0   # Drives the Uonite gauge and the pre-first-Uonite dialogue triggers (grains-out experiment) — grains_this_cycle still increments alongside it but is no longer read by any of those
 var uonites_this_cycle:    int = 0
 var archon_reward_flags:   Dictionary = {}
 
@@ -1183,6 +1183,7 @@ func get_save_data() -> Dictionary:
     data["next_expansion_foci_exp"] = next_expansion_foci_exp
     data["purity_locks_unlocked"] = purity_locks_unlocked
     data["grains_this_cycle"]     = grains_this_cycle
+    data["motes_this_cycle"]      = motes_this_cycle
     data["uonites_this_cycle"]    = uonites_this_cycle
     var saved_assignments = {}
     for key in assignments:
@@ -1410,6 +1411,7 @@ func load_save_data(data: Dictionary) -> void:
     next_expansion_foci_exp = _coerce_int(data.get("next_expansion_foci_exp"), 0)
     purity_locks_unlocked   = _coerce_bool(data.get("purity_locks_unlocked"), false)
     grains_this_cycle       = _coerce_int(data.get("grains_this_cycle"), 0)
+    motes_this_cycle        = _coerce_int(data.get("motes_this_cycle"), 0)
     uonites_this_cycle      = _coerce_int(data.get("uonites_this_cycle"), 0)
 
     # data.has(key) only confirms the key is present, not that the value is
@@ -1541,6 +1543,7 @@ func do_prestige_reset() -> BigNum:
     mote     = BigNum.zero()
     grain    = BigNum.zero()
     grains_this_cycle = 0
+    motes_this_cycle = 0
     uonites_this_cycle = 0
     # Firmament stocks reset fully until survival mechanics are unlocked.
     for k in solid_stocks:  solid_stocks[k]  = BigNum.zero()
