@@ -1197,9 +1197,15 @@ func get_save_data() -> Dictionary:
     data["locks"]                      = locks.duplicate()
     data["constellation_spark_totals"] = constellation_spark_totals.duplicate()
     data["storage_cap"]                = storage_cap.to_save_string()
-    data["watermark_monad_solid"]      = watermarks["monad_solid"].to_save_string()
-    data["watermark_monad_liquid"]     = watermarks["monad_liquid"].to_save_string()
-    data["watermark_monad_gas"]        = watermarks["monad_gas"].to_save_string()
+    data["storage_cap_at_prestige_start"] = storage_cap_at_prestige_start.to_save_string()
+    # watermarks has 11 keys (see its declaration) and every one of them is
+    # actively updated by update_watermarks() — this used to hardcode only
+    # the 3 monad_* keys instead of looping over the dict like
+    # totals_created/locks/ui_unlocks do, so the other 8 (sparks, monad,
+    # tetrad, particle, iota, mote, grain, uonite) silently reset to
+    # BigNum.zero() on every reload.
+    for wm_key in watermarks:
+        data["watermark_" + wm_key] = watermarks[wm_key].to_save_string()
     data["ui_unlocks"]                 = ui_unlocks.duplicate()
     data["tetrad_milestones"]          = tetrad_milestones.duplicate()
     data["monad_milestones"]           = monad_milestones.duplicate()
@@ -1443,9 +1449,9 @@ func load_save_data(data: Dictionary) -> void:
         constellation_spark_totals[key] = _coerce_float(raw_spark_totals[key], 0.0)
     
     storage_cap              = BigNum.from_string(data.get("storage_cap",            "987:0"))
-    watermarks["monad_solid"]  = BigNum.from_string(data.get("watermark_monad_solid",  "0:0"))
-    watermarks["monad_liquid"] = BigNum.from_string(data.get("watermark_monad_liquid", "0:0"))
-    watermarks["monad_gas"]    = BigNum.from_string(data.get("watermark_monad_gas",    "0:0"))
+    storage_cap_at_prestige_start = BigNum.from_string(data.get("storage_cap_at_prestige_start", "987:0"))
+    for wm_key in watermarks:
+        watermarks[wm_key] = BigNum.from_string(data.get("watermark_" + wm_key, "0:0"))
 
     var raw_ui_unlocks: Dictionary = _coerce_dict(data.get("ui_unlocks"), {})
     for key in raw_ui_unlocks:
