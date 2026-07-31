@@ -1167,9 +1167,13 @@ func update_watermarks() -> void:
 func get_save_data() -> Dictionary:
     var data = {}
     data["sparks"]       = sparks.to_save_string()
-    data["monad_solid"]  = monad["solid"].to_save_string()
-    data["monad_liquid"] = monad["liquid"].to_save_string()
-    data["monad_gas"]    = monad["gas"].to_save_string()
+    # Looped rather than hardcoded per-key (monad_solid/liquid/gas) like
+    # tetrad below already is — the hardcoded-triplet shape is exactly what
+    # let watermarks silently drop 8 of its 11 keys until this same sweep
+    # caught it. monad's 3 keys happen to match today, but this makes it
+    # immune to the same class of gap if a 4th monad type is ever added.
+    for k in monad:
+        data["monad_" + k] = monad[k].to_save_string()
     data["creation_counter"] = creation_counter
     data["creation_order"]   = creation_order.duplicate()
     for k in tetrad:
@@ -1387,9 +1391,8 @@ func _coerce_string(val, default: String) -> String:
 
 func load_save_data(data: Dictionary) -> void:
     sparks          = BigNum.from_string(data.get("sparks",        "0:0"))
-    monad["solid"]  = BigNum.from_string(data.get("monad_solid",   "0:0"))
-    monad["liquid"] = BigNum.from_string(data.get("monad_liquid",  "0:0"))
-    monad["gas"]    = BigNum.from_string(data.get("monad_gas",     "0:0"))
+    for k in monad:
+        monad[k] = BigNum.from_string(data.get("monad_" + k, "0:0"))
     # Scrub fractional monad remnants
     for k in ["solid", "liquid", "gas"]:
         monad[k] = monad[k].floor_to_whole()
