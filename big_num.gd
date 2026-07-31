@@ -101,6 +101,23 @@ static func from_string(s) -> BigNum:
 # Zero is always m=0.0, e=0.
 # ==================================================
 func _normalize() -> void:
+    # Every arithmetic entry point (from_float/from_me/mul_float/add/sub/
+    # mul/etc.) funnels through here, so this is the one place that needs
+    # to catch a non-finite mantissa. NaN/Infinity compare false against
+    # everything, including themselves — `m <= 0.0` above doesn't catch
+    # them, so they fall through to the while loops below. NaN just sits
+    # there forever failing both loop conditions (m >= 1000.0 and m < 1.0
+    # are both false for NaN), which is merely wrong, not fatal — but
+    # +Infinity divided by 1000.0 is still +Infinity, so `while m >= 1000.0:
+    # m /= 1000.0` never terminates. Confirmed directly: BigNum.from_float(
+    # 1.0/0.0) hangs the engine. A legitimate float division with a zero or
+    # near-zero denominator anywhere upstream (a spark-cap fraction, a rate
+    # calculation, etc.) reaching from_float()/mul_float() is enough to
+    # trigger this — no corrupted save required.
+    if is_nan(m) or is_inf(m):
+        m = 0.0
+        e = 0
+        return
     if m <= 0.0:
         m = 0.0
         e = 0
