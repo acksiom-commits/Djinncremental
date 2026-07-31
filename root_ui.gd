@@ -1197,7 +1197,7 @@ func _build_simple_triggers() -> void:
             "guard": "_first_mote_triggered",
             "condition": func(): return not game_context.mote.is_zero(),
             "effect": func():
-                archon_dialogue_manager.notification_queue.append("First Mote.")
+                archon_dialogue_manager.notification_queue.append("First Mote: +1 Focus.")
                 archon_dialogue_manager.try_show_next_notification(),
         },
         {
