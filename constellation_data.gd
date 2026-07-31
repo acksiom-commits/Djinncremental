@@ -1252,20 +1252,50 @@ func get_save_data() -> Dictionary:
     }
 
 
+func _coerce_int(val, default: int) -> int:
+    # Same class of hazard as game_context.gd's load_save_data(): a
+    # corrupted-but-parseable save can put the wrong type at any key, and
+    # assigning that straight into a typed var/property or a typed function
+    # parameter (e.g. _unlock_constellation(id: int)) hangs the engine
+    # rather than raising a catchable error — confirmed directly this
+    # session, not a theoretical concern.
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return int(val)
+    return default
+
+
 func load_save_data(data: Dictionary) -> void:
-    player_seed           = data.get("player_seed", randi())
-    var _raw_apo = data.get("active_per_octant", [-1,-1,-1,-1,-1,-1,-1,-1])
+    player_seed = _coerce_int(data.get("player_seed"), randi())
+
+    var _raw_apo = data.get("active_per_octant")
     active_per_octant = []
-    for v in _raw_apo:
-        active_per_octant.append(int(v))
-    _last_selected_id     = data.get("last_selected_id", -1)
-    player_constellations = data.get("player_constellations", [])
+    if _raw_apo is Array:
+        for v in _raw_apo:
+            active_per_octant.append(_coerce_int(v, -1))
+    while active_per_octant.size() < 8:
+        active_per_octant.append(-1)
+    if active_per_octant.size() > 8:
+        active_per_octant = active_per_octant.slice(0, 8)
+
+    _last_selected_id = _coerce_int(data.get("last_selected_id"), -1)
+
+    var _raw_pc = data.get("player_constellations")
+    player_constellations = _raw_pc if _raw_pc is Array else []
+
     _star_positions_cache.clear()
     unlocked = []
-    for id in data.get("unlocked", [0]):
-        _unlock_constellation(id)
+    var _raw_unlocked = data.get("unlocked", [0])
+    if _raw_unlocked is Array:
+        for raw_id in _raw_unlocked:
+            var id: int = _coerce_int(raw_id, -1)
+            if id >= 0:
+                _unlock_constellation(id)
+    else:
+        _unlock_constellation(0)
     _rebuild_active_mechanics()
-    _puzzle_cache = data.get("puzzle_cache", {})
+
+    var _raw_cache = data.get("puzzle_cache")
+    _puzzle_cache = _raw_cache if _raw_cache is Dictionary else {}
 
 
 func get_puzzle_cache(p_constellation_id: int) -> Dictionary:
