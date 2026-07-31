@@ -126,15 +126,24 @@ func load_game() -> void:
         push_warning("SaveManager: primary save was unreadable, recovered from backup.")
 
     gc.load_save_data(data)
-    if cd and cd.has_method("load_save_data") and data.has("constellation"):
+    # `data.get(key) is Dictionary` checks both "key present" and "value is
+    # the right type" in one expression — replaces the old `data.has(key)`
+    # check, which only verified the key existed. Each load_save_data()
+    # below has a typed `data: Dictionary` parameter, and passing a wrong-
+    # typed value (a corrupted save could put a String/Array there instead
+    # of a nested object) hangs the engine at the call boundary rather than
+    # raising a catchable error — confirmed directly — so it has to be
+    # checked here, before the call, not inside the callee's own body.
+    if cd and cd.has_method("load_save_data") and data.get("constellation") is Dictionary:
         cd.load_save_data(data["constellation"])
-    if adm and adm.has_method("load_save_data") and data.has("dialogue"):
+    if adm and adm.has_method("load_save_data") and data.get("dialogue") is Dictionary:
         adm.load_save_data(data["dialogue"])
-    if ar and ar.has_method("load_save_data") and data.has("achievements"):
+    if ar and ar.has_method("load_save_data") and data.get("achievements") is Dictionary:
         ar.load_save_data(data["achievements"])
-    if journal and journal.has_method("load_save_data") and data.has("journal"):
+    if journal and journal.has_method("load_save_data") and data.get("journal") is Dictionary:
         journal.load_save_data(data["journal"])
-    var timestamp: float = float(data.get("save_timestamp", -1.0))
+    var raw_timestamp = data.get("save_timestamp")
+    var timestamp: float = float(raw_timestamp) if (raw_timestamp is int or raw_timestamp is float) else -1.0
     var elapsed := 0.0
     if timestamp > 0.0:
         elapsed = Time.get_unix_time_from_system() - timestamp
