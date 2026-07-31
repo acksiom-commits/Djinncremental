@@ -78,7 +78,7 @@ var _first_non_fundament_category_triggered: bool = false
 var _first_particle_triggered:      bool = false
 var _first_iota_triggered:          bool = false
 var _first_mote_triggered:          bool = false
-var _first_grain_triggered:         bool = false
+var _first_mote_dialogue_triggered: bool = false
 var _nineteenth_mote_triggered:     bool = false
 var _twentieth_mote_triggered:      bool = false
 var _first_uonite_triggered:        bool = false
@@ -1074,7 +1074,7 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     _first_particle_triggered = uonite_ever_made or not game_context.totals_created.get("particle", BigNum.zero()).is_zero()
     _first_iota_triggered     = uonite_ever_made or not game_context.totals_created.get("iota",     BigNum.zero()).is_zero()
     _first_mote_triggered     = uonite_ever_made or not game_context.totals_created.get("mote",     BigNum.zero()).is_zero()
-    _first_grain_triggered    = uonite_ever_made or not game_context.totals_created.get("grain",    BigNum.zero()).is_zero()
+    _first_mote_dialogue_triggered = uonite_ever_made or not game_context.totals_created.get("mote", BigNum.zero()).is_zero()
     _first_uonite_triggered   = uonite_ever_made
     _nineteenth_mote_triggered = uonite_ever_made or game_context.motes_this_cycle >= 19
     _twentieth_mote_triggered  = uonite_ever_made or game_context.motes_this_cycle >= 20
@@ -1202,12 +1202,11 @@ func _build_simple_triggers() -> void:
                 archon_dialogue_manager.try_show_next_notification(),
         },
         {
-            "guard": "_first_grain_triggered",
-            "condition": func(): return not game_context.grain.is_zero(),
+            "guard": "_first_mote_dialogue_triggered",
+            "condition": func(): return not game_context.mote.is_zero(),
             "effect": func():
                 _grant_foci()
-                archon_dialogue_manager.notification_queue.append("First Grain: +1 Focus.")
-                archon_dialogue_manager.enqueue_first_grain(),
+                archon_dialogue_manager.enqueue_first_mote_dialogue(),
         },
         {
             "guard": "_nineteenth_mote_triggered",

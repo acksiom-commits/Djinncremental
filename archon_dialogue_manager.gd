@@ -60,7 +60,7 @@ var first_non_fundament_done:           bool = false
 var all_fundaments_done:                bool = false
 var all_tetrads_done:                   bool = false
 var first_particle_done:                bool = false
-var first_grain_done:                   bool = false
+var first_mote_dialogue_done:           bool = false
 var nineteenth_mote_done:               bool = false
 var twentieth_mote_done:                bool = false
 var first_prestige_done:                bool = false
@@ -733,17 +733,17 @@ func enqueue_first_particle() -> void:
     emit_signal("sequence_complete", "First Particle", lines)
     
 
-func enqueue_first_grain() -> void:
-    if first_grain_done:
+func enqueue_first_mote_dialogue() -> void:
+    if first_mote_dialogue_done:
         return
-    first_grain_done = true
+    first_mote_dialogue_done = true
     var lines = [
-        "Our first Grain! We're over the threshold - just nineteen more and we can Expand!||TWENTY GRAINS PER EXPANSION? WHAT IF WE HAVE MORE?",
-        "No, twenty per Uonite - and right now, just one Uonite per Expansion. So any extra Grains would just be consumed, this time. But the more Expansions we've done, the more Uonites we can Create each Expansion. And if you have enough Sparks stocked up beforehand, the Stoctagon gets bigger afterwards, too! ||THAT MAKES SENSE. YOU DID SAY WE'RE GOING TO BE MAKING A [i]LOT[/i] OF RESOURCES, EVENTUALLY.",
+        "Our first Mote! We're over the threshold - just nineteen more and we can Expand!||TWENTY MOTES PER EXPANSION? WHAT IF WE HAVE MORE?",
+        "No, twenty per Uonite - and right now, just one Uonite per Expansion. So any extra Motes would just be consumed, this time. But the more Expansions we've done, the more Uonites we can Create each Expansion. And if you have enough Sparks stocked up beforehand, the Stoctagon gets bigger afterwards, too! ||THAT MAKES SENSE. YOU DID SAY WE'RE GOING TO BE MAKING A [i]LOT[/i] OF RESOURCES, EVENTUALLY.",
         "We sure are! We've got a whole world to build here!||AND FLOATING AROUND IN SPACE CHATTING ISN'T GOING TO GET IT DONE FOR US, SO LET'S GET BACK TO PUTTING IN THE WORK."
     ]
     enqueue_dialogue(lines, true)
-    emit_signal("sequence_complete", "First Grain", lines)
+    emit_signal("sequence_complete", "First Mote", lines)
 
 
 func enqueue_nineteenth_mote() -> void:
@@ -1078,7 +1078,7 @@ func get_save_data() -> Dictionary:
         "all_fundaments_done":                  all_fundaments_done,
         "all_tetrads_done":                     all_tetrads_done,
         "first_particle_done":                  first_particle_done,
-        "first_grain_done":                     first_grain_done,
+        "first_mote_dialogue_done":             first_mote_dialogue_done,
         "nineteenth_mote_done":                 nineteenth_mote_done,
         "twentieth_mote_done":                  twentieth_mote_done,
         "first_prestige_done":                  first_prestige_done,
@@ -1132,7 +1132,7 @@ func load_save_data(data: Dictionary) -> void:
     all_tetrads_done        = _coerce_bool(data.get("all_tetrads_done"),          false)
     first_particle_done     = _coerce_bool(data.get("first_particle_done"),       false)
 
-    first_grain_done      = _coerce_bool(data.get("first_grain_done"),      false)
+    first_mote_dialogue_done = _coerce_bool(data.get("first_mote_dialogue_done"), false)
     nineteenth_mote_done  = _coerce_bool(data.get("nineteenth_mote_done"),  false)
     twentieth_mote_done   = _coerce_bool(data.get("twentieth_mote_done"),   false)
 
