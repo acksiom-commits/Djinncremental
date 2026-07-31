@@ -1397,28 +1397,30 @@ func load_save_data(data: Dictionary) -> void:
     grains_this_cycle       = _coerce_int(data.get("grains_this_cycle"), 0)
     uonites_this_cycle      = _coerce_int(data.get("uonites_this_cycle"), 0)
 
-    if data.has("assignments"):
-        for key in data["assignments"]:
-            var val = data["assignments"][key]
-            if typeof(val) == TYPE_STRING and val.begins_with("BN:"):
-                assignments[key] = BigNum.from_string(val.substr(3))
-            else:
-                assignments[key] = _coerce_int(val, 0)
-    if data.has("locks"):
-        for key in data["locks"]:
-            if locks.has(key):
-                locks[key] = _coerce_bool(data["locks"][key], false)
+    # data.has(key) only confirms the key is present, not that the value is
+    # a Dictionary — a corrupted save with a wrong-typed value there would
+    # iterate fine (Strings/Arrays are iterable) but then hang or crash
+    # re-indexing that same value with each iterated key (confirmed on
+    # constellation_spark_totals's identical shape below), so every
+    # for-key-in-data["X"] loop in this function routes the container
+    # through _coerce_dict() first.
+    var raw_assignments: Dictionary = _coerce_dict(data.get("assignments"), {})
+    for key in raw_assignments:
+        var val = raw_assignments[key]
+        if typeof(val) == TYPE_STRING and val.begins_with("BN:"):
+            assignments[key] = BigNum.from_string(val.substr(3))
+        else:
+            assignments[key] = _coerce_int(val, 0)
+    var raw_locks: Dictionary = _coerce_dict(data.get("locks"), {})
+    for key in raw_locks:
+        if locks.has(key):
+            locks[key] = _coerce_bool(raw_locks[key], false)
     # --- Volition Slots ---
     if data.has("volition_slots"):
         _deserialize_volition_slots(data["volition_slots"])
     else:
         _migrate_flat_volitions_to_slots()
     _rebuild_volition_assignments()
-    # data.has() only confirms the key is present, not that the value is a
-    # Dictionary — a corrupted save with e.g. a String there would iterate
-    # fine (Strings are iterable) but then crash/hang re-indexing that same
-    # String with each character as a key (confirmed: chained subscript on
-    # a wrong-typed value here hangs rather than raising a catchable error).
     var raw_spark_totals: Dictionary = _coerce_dict(data.get("constellation_spark_totals"), {})
     for key in raw_spark_totals:
         constellation_spark_totals[key] = _coerce_float(raw_spark_totals[key], 0.0)
@@ -1428,25 +1430,32 @@ func load_save_data(data: Dictionary) -> void:
     watermarks["monad_liquid"] = BigNum.from_string(data.get("watermark_monad_liquid", "0:0"))
     watermarks["monad_gas"]    = BigNum.from_string(data.get("watermark_monad_gas",    "0:0"))
 
-    if data.has("ui_unlocks"):
-        for key in data["ui_unlocks"]:
-            if ui_unlocks.has(key):
-                ui_unlocks[key] = _coerce_bool(data["ui_unlocks"][key], false)
-    if data.has("tetrad_milestones"):
-        for key in data["tetrad_milestones"]:
-            tetrad_milestones[key] = data["tetrad_milestones"][key]
-    if data.has("monad_milestones"):
-        for key in data["monad_milestones"]:
-            monad_milestones[key] = data["monad_milestones"][key]
-    if data.has("totals_created"):
-        for key in data["totals_created"]:
-            if totals_created.has(key):
-                totals_created[key] = BigNum.from_string(data["totals_created"][key])
-    if data.has("totals_milestones"):
-        for key in data["totals_milestones"]:
-            # Default 2 matches the .get(key, 2) fallback every consumer
-            # uses (root_ui.gd's _check_totals_milestones()).
-            totals_milestones[key] = _coerce_int(data["totals_milestones"][key], 2)
+    var raw_ui_unlocks: Dictionary = _coerce_dict(data.get("ui_unlocks"), {})
+    for key in raw_ui_unlocks:
+        if ui_unlocks.has(key):
+            ui_unlocks[key] = _coerce_bool(raw_ui_unlocks[key], false)
+    # tetrad_milestones/monad_milestones have no live reader anywhere in the
+    # codebase today (the milestone-check mechanic that used to consume them
+    # was removed — see root_ui.gd's v3.9.0 changelog comment), but the
+    # container-type crash risk applies purely from the load loop itself,
+    # regardless of whether anything reads the values afterward. Values are
+    # "next_power_index" (see the var declarations above) — coerced to int
+    # like every other index/counter field in this function.
+    var raw_tetrad_milestones: Dictionary = _coerce_dict(data.get("tetrad_milestones"), {})
+    for key in raw_tetrad_milestones:
+        tetrad_milestones[key] = _coerce_int(raw_tetrad_milestones[key], 0)
+    var raw_monad_milestones: Dictionary = _coerce_dict(data.get("monad_milestones"), {})
+    for key in raw_monad_milestones:
+        monad_milestones[key] = _coerce_int(raw_monad_milestones[key], 0)
+    var raw_totals_created: Dictionary = _coerce_dict(data.get("totals_created"), {})
+    for key in raw_totals_created:
+        if totals_created.has(key):
+            totals_created[key] = BigNum.from_string(raw_totals_created[key])
+    var raw_totals_milestones: Dictionary = _coerce_dict(data.get("totals_milestones"), {})
+    for key in raw_totals_milestones:
+        # Default 2 matches the .get(key, 2) fallback every consumer
+        # uses (root_ui.gd's _check_totals_milestones()).
+        totals_milestones[key] = _coerce_int(raw_totals_milestones[key], 2)
 
     # === FIRMAMENT STOCKS ===
     for k in solid_stocks:
@@ -1458,14 +1467,14 @@ func load_save_data(data: Dictionary) -> void:
     phlogiston   = BigNum.from_string(data.get("phlogiston",   "0:0"))
     quintessence = BigNum.from_string(data.get("quintessence", "0:0"))
 
-    if data.has("grain_purity_profile"):
-        for k in data["grain_purity_profile"]:
-            if grain_purity_profile.has(k):
-                grain_purity_profile[k] = _coerce_float(data["grain_purity_profile"][k], 0.0)
-    if data.has("manifold_allocations"):
-        for k in data["manifold_allocations"]:
-            if manifold_allocations.has(k):
-                manifold_allocations[k] = _coerce_int(data["manifold_allocations"][k], 0)
+    var raw_grain_purity_profile: Dictionary = _coerce_dict(data.get("grain_purity_profile"), {})
+    for k in raw_grain_purity_profile:
+        if grain_purity_profile.has(k):
+            grain_purity_profile[k] = _coerce_float(raw_grain_purity_profile[k], 0.0)
+    var raw_manifold_allocations: Dictionary = _coerce_dict(data.get("manifold_allocations"), {})
+    for k in raw_manifold_allocations:
+        if manifold_allocations.has(k):
+            manifold_allocations[k] = _coerce_int(raw_manifold_allocations[k], 0)
 
     manifold_total_flows = _coerce_int(data.get("manifold_total_flows"), 0)
     var _ht = data.get("hourglass_target_ops")
