@@ -1115,6 +1115,12 @@ func _coerce_bool(val, default: bool) -> bool:
     return default
 
 
+func _coerce_dict(val, default: Dictionary) -> Dictionary:
+    if typeof(val) == TYPE_DICTIONARY:
+        return val
+    return default
+
+
 func load_save_data(data: Dictionary) -> void:
     intro_done              = _coerce_bool(data.get("intro_done"),                false)
     second_monad_done       = _coerce_bool(data.get("second_monad_done"),         false)
@@ -1150,8 +1156,12 @@ func load_save_data(data: Dictionary) -> void:
 
     monad_panel_done        = _coerce_bool(data.get("monad_panel_done"),          false)
     monad_random_done       = _coerce_bool(data.get("monad_random_done"),         false)
-    if data.has("category_notified"):
-        for key in data["category_notified"]:
-            if _category_notified.has(key):
-                _category_notified[key] = _coerce_bool(data["category_notified"][key], false)
+    # data.has() only confirms the key is present, not that the value is a
+    # Dictionary — a corrupted save with a wrong-typed value there would
+    # iterate fine but then hang/crash re-indexing that same value with
+    # each iterated key (same class already fixed elsewhere this session).
+    var raw_category_notified: Dictionary = _coerce_dict(data.get("category_notified"), {})
+    for key in raw_category_notified:
+        if _category_notified.has(key):
+            _category_notified[key] = _coerce_bool(raw_category_notified[key], false)
     _all_tetrads_notified   = _coerce_bool(data.get("all_tetrads_notified"),     false)
