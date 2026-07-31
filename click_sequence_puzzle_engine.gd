@@ -48,6 +48,33 @@ var fanfare_lit_star:   int    = -1
 
 
 # ==================================================
+# COERCION HELPERS — cd.get_constellation_def() serves player_constellations/
+# patron_constellations, both loaded from save data, so "puzzle_sequence"/
+# "note_durations" fields (and their elements) can be wrong-typed. A typed
+# Array assignment or per-element typed int/float assignment from a
+# wrong-typed value hangs the engine rather than raising a catchable error
+# (confirmed directly this session) — every def-field read below is routed
+# through one of these first.
+# ==================================================
+func _coerce_int(val, default: int) -> int:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return int(val)
+    return default
+
+
+func _coerce_float(val, default: float) -> float:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return float(val)
+    return default
+
+
+func _coerce_array(val, default: Array) -> Array:
+    if typeof(val) == TYPE_ARRAY:
+        return val
+    return default
+
+
+# ==================================================
 # PUBLIC API
 # ==================================================
 func configure_io(p_synth: Node, redraw_cb: Callable) -> void:
@@ -131,10 +158,10 @@ func on_star_clicked(star_index: int) -> void:
     if star_index < 0 or star_index >= note_assignment.size():
         return
     var def: Dictionary = cd.get_constellation_def(constellation_id)
-    if not def.has("puzzle_sequence"):
+    var sequence: Array = _coerce_array(def.get("puzzle_sequence"), [])
+    if sequence.is_empty():
         return
-    var sequence: Array = def["puzzle_sequence"]
-    var clicked: int = note_assignment[star_index]
+    var clicked: int = _coerce_int(note_assignment[star_index], -1)
     var correct_star: int = correct_sequence[step]
 
     play_note_by_pitch_index(clicked)
@@ -180,17 +207,17 @@ func tick(delta: float) -> void:
         if replay_timer >= replay_gap:
             replay_timer = 0.0
             var def:       Dictionary = cd.get_constellation_def(constellation_id)
-            var sequence:  Array      = def.get("puzzle_sequence", [])
-            var durations: Array      = def.get("note_durations", [])
-            if replay_step >= replay_limit:
+            var sequence:  Array      = _coerce_array(def.get("puzzle_sequence"), [])
+            var durations: Array      = _coerce_array(def.get("note_durations"), [])
+            if replay_step >= replay_limit or replay_step >= sequence.size():
                 replay_active   = false
                 replay_lit_star = -1
             else:
-                var pitch_idx: int = sequence[replay_step]
+                var pitch_idx: int = _coerce_int(sequence[replay_step], -1)
                 play_note_by_pitch_index(pitch_idx)
                 replay_lit_star = correct_sequence[replay_step]
                 if replay_step < durations.size():
-                    replay_gap = durations[replay_step]
+                    replay_gap = _coerce_float(durations[replay_step], 0.65)
                 else:
                     replay_gap = 0.65
                 replay_step += 1
@@ -205,10 +232,10 @@ func _build_correct_star_sequence() -> void:
     if not cd or note_assignment.is_empty():
         return
     var def: Dictionary = cd.get_constellation_def(constellation_id)
-    var sequence: Array = def.get("puzzle_sequence", [])
+    var sequence: Array = _coerce_array(def.get("puzzle_sequence"), [])
     var used: Array = []
     for step_i in sequence.size():
-        var pitch: int = sequence[step_i]
+        var pitch: int = _coerce_int(sequence[step_i], -1)
         var best_star: int = -1
         for si in note_assignment.size():
             if note_assignment[si] == pitch and si not in used:
