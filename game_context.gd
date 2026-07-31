@@ -1483,7 +1483,14 @@ func load_save_data(data: Dictionary) -> void:
     else:
         hourglass_target_ops = []
     archon_poke_count         = _coerce_int(data.get("archon_poke_count"), 0)
-    archon_lockdown_level     = _coerce_int(data.get("archon_lockdown_level"), 0)
+    # clampi, not just type coercion: archon_poke_minigame.gd indexes
+    # LOCKDOWN_DURATIONS/POST_LOCKDOWN_MESSAGES (6 entries) with this value.
+    # A hand-corrupted save setting it to e.g. -999 or 999 is a genuinely-
+    # numeric but out-of-range value — negative indices wrap safely in
+    # GDScript, but one far enough out of bounds aborts the read (confirmed
+    # this session: a different, non-crashing failure mode than a type
+    # mismatch, but still worth clamping at the one place this is loaded).
+    archon_lockdown_level     = clampi(_coerce_int(data.get("archon_lockdown_level"), 0), 0, 6)
     archon_lockdown_end_time  = _coerce_float(data.get("archon_lockdown_end_time"), 0.0)
     archon_warning_window_end = _coerce_float(data.get("archon_warning_window_end"), 0.0)
     archon_reentry_threshold  = _coerce_int(data.get("archon_reentry_threshold"), 0)
