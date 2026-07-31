@@ -509,7 +509,16 @@ func _known_color_for_record(record_idx: int) -> int:
     var r: Dictionary = _match_records[record_idx]
     var star_idx: int = int(r.get("star_idx", -1))
     if star_idx >= 0:
-        return _host._star_colors[star_idx] if star_idx < _host._star_colors.size() else -1
+        # Clamped, not just bounds-checked against array size — _star_colors
+        # is int-coerced but not range-clamped on load (constellation_study_
+        # overlay.gd), so a corrupted/stale puzzle-cache entry could put an
+        # out-of-range value here. The three callers in constellation_puzzle_
+        # widgets.gd (_build_pitch_group_row) bracket-index the 4-element
+        # STAR_COLORS_BY_IDX with this return value with no clamp of their
+        # own — every OTHER _star_colors consumer in that file already
+        # clamps to 0-3 before indexing the same array; this closes the one
+        # path that routed through here instead and skipped it.
+        return clamp(_host._star_colors[star_idx], 0, 3) if star_idx < _host._star_colors.size() else -1
     var cs: Dictionary = r.get("color_states", {})
     for ci in _host.COLOR_NAME_LABELS.size():
         if int(cs.get(ci, 0)) == 1:
