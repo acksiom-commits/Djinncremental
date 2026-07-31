@@ -35,8 +35,11 @@ var _user_blocks: Dictionary = {}       # "star_idx:name" -> true; blocks placed
 # Each record: {
 #   "name": String,              # "" if unknown
 #   "seq_lo": int, "seq_hi": int, # 0 if unknown; exact position known when seq_lo == seq_hi > 0
+#   "seq_candidates": Array,      # explicit narrowed set of possible sequence slots, if any
 #   "color_states": Dictionary,   # {color_idx(int): state(int)} 0=neutral, 1=confirmed, 2=eliminated
 #   "pitch_states": Dictionary,   # {note_name(String): state(int)}
+#   "degree_states": Dictionary,  # {degree(int): state(int)}
+#   "name_states": Dictionary,    # {name(String): state(int)}
 #   "manual_name_blocks": Dictionary,   # {name(String): true} — names the player
 #   "manual_pitch_blocks": Dictionary,  # X'd directly, as opposed to state-2
 #   "manual_color_blocks": Dictionary,  # entries that are fallout from confirming
@@ -44,7 +47,18 @@ var _user_blocks: Dictionary = {}       # "star_idx:name" -> true; blocks placed
 #                                        # "Undo selects" (revert sibling-clearing
 #                                        # fallout only) apart from "Undo blocks"
 #                                        # (revert the player's own X clicks only).
+#   "protected_pitch_notes": Dictionary,  # {note_name(String): true} — right-click
+#   "protected_color_idxs": Dictionary,   # "still possible" flags, one dict per
+#   "protected_staff_names": Dictionary,  # category; cosmetic hints, not hard facts.
+#   "pitch_revealed": bool,       # true once the record's pitch has been shown to the player
+#   "star_elim": Dictionary,      # {star_idx(int): state(int)} — which stars are ruled out for THIS record
+#   "color_star_elim_marks": Dictionary,  # {star_idx(int): true} — stars this record's
+#                                          # color-derived elimination pass itself marked,
+#                                          # so a later recompute knows what it owns
 #   "star_idx": int,              # -1 until resolvable from seq_lo==seq_hi or map-widget confirm
+#   "color_slot_label": String,   # "" unless bound to a Sort:Color grid slot (e.g. "Blue A")
+#   "pitch_slot_label": String,   # "" unless bound to a Sort:Pitch grid slot
+#   "degree_slot_label": String,  # "" unless bound to a Sort:Sequence grid slot
 # }
 var _match_records: Array[Dictionary] = []
 
@@ -543,8 +557,12 @@ func _get_or_create_match_record_for_color_slot(color_idx: int, position_in_grou
         "manual_name_blocks": {},
         "manual_pitch_blocks": {},
         "manual_color_blocks": {},
+        "protected_pitch_notes": {},
+        "protected_color_idxs": {},
+        "protected_staff_names": {},
         "pitch_revealed": false,
         "star_elim": {},
+        "color_star_elim_marks": {},
         "star_idx": -1,
         "color_slot_label": label,
         "pitch_slot_label": "",
@@ -578,8 +596,12 @@ func _get_or_create_match_record_for_pitch_slot(pitch_freq: float, position_in_g
         "manual_name_blocks": {},
         "manual_pitch_blocks": {},
         "manual_color_blocks": {},
+        "protected_pitch_notes": {},
+        "protected_color_idxs": {},
+        "protected_staff_names": {},
         "pitch_revealed": false,
         "star_elim": {},
+        "color_star_elim_marks": {},
         "star_idx": -1,
         "color_slot_label": "",
         "pitch_slot_label": label,
@@ -632,8 +654,12 @@ func _get_or_create_match_record_for_name(name_str: String) -> int:
         "manual_name_blocks": {},
         "manual_pitch_blocks": {},
         "manual_color_blocks": {},
+        "protected_pitch_notes": {},
+        "protected_color_idxs": {},
+        "protected_staff_names": {},
         "pitch_revealed": false,
         "star_elim": {},
+        "color_star_elim_marks": {},
         "star_idx": -1,
         "color_slot_label": "",
         "pitch_slot_label": "",
@@ -657,8 +683,12 @@ func _get_or_create_match_record_for_seq(slot: int) -> int:
         "manual_name_blocks": {},
         "manual_pitch_blocks": {},
         "manual_color_blocks": {},
+        "protected_pitch_notes": {},
+        "protected_color_idxs": {},
+        "protected_staff_names": {},
         "pitch_revealed": false,
         "star_elim": {},
+        "color_star_elim_marks": {},
         "star_idx": -1,
         "color_slot_label": "",
         "pitch_slot_label": "",
@@ -682,8 +712,12 @@ func _get_or_create_match_record_for_star_idx(star_idx: int) -> int:
         "manual_name_blocks": {},
         "manual_pitch_blocks": {},
         "manual_color_blocks": {},
+        "protected_pitch_notes": {},
+        "protected_color_idxs": {},
+        "protected_staff_names": {},
         "pitch_revealed": false,
         "star_elim": {},
+        "color_star_elim_marks": {},
         "star_idx": star_idx,
         "color_slot_label": "",
         "pitch_slot_label": "",
@@ -715,8 +749,12 @@ func _get_or_create_match_record_for_degree_slot(degree: int, position_in_group:
         "manual_name_blocks": {},
         "manual_pitch_blocks": {},
         "manual_color_blocks": {},
+        "protected_pitch_notes": {},
+        "protected_color_idxs": {},
+        "protected_staff_names": {},
         "pitch_revealed": false,
         "star_elim": {},
+        "color_star_elim_marks": {},
         "star_idx": -1,
         "color_slot_label": "",
         "pitch_slot_label": "",
