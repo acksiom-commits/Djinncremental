@@ -1103,43 +1103,55 @@ func get_save_data() -> Dictionary:
         "all_tetrads_notified":     _all_tetrads_notified,
     }
 
+func _coerce_bool(val, default: bool) -> bool:
+    # Every field below is a typed `bool` property; assigning a wrong-typed
+    # value from a corrupted-but-parseable save straight into it hangs the
+    # engine rather than raising a catchable error (confirmed elsewhere
+    # this session), so each read needs a type check before the assignment,
+    # not just a null check — the old `_fgd != null` pattern here defended
+    # against a missing key but not a wrong-type one.
+    if typeof(val) == TYPE_BOOL:
+        return val
+    return default
+
+
 func load_save_data(data: Dictionary) -> void:
-    intro_done              = data.get("intro_done",                false)
-    second_monad_done       = data.get("second_monad_done",         false)
-    tetrad_upgrade_done     = data.get("tetrad_upgrade_done",       false)
-    all_monads_upgrade_done = data.get("all_monads_upgrade_done",   false)
-    first_fundament_done    = data.get("first_fundament_done",      false)
-    first_non_fundament_done = data.get("first_non_fundament_done", false)
-    all_fundaments_done     = data.get("all_fundaments_done",       false)
-    all_tetrads_done        = data.get("all_tetrads_done",          false)
-    first_particle_done     = data.get("first_particle_done",       false)
-    
-    var _fgd = data.get("first_grain_done",      false); first_grain_done      = _fgd  if _fgd  != null else false
-    var _ngd = data.get("nineteenth_grain_done", false); nineteenth_grain_done = _ngd  if _ngd  != null else false
-    var _tgd = data.get("twentieth_grain_done",  false); twentieth_grain_done  = _tgd  if _tgd  != null else false
-    
-    first_prestige_done     = data.get("first_prestige_done",       false)
-    second_prestige_done    = data.get("second_prestige_done",      false)
-    third_prestige_done     = data.get("third_prestige_done",        false)
-    fourth_prestige_done    = data.get("fourth_prestige_done",       false)
-    fifth_prestige_done     = data.get("fifth_prestige_done",        false)
-    start_second_prestige_done = data.get("start_second_prestige_done", false)
-    archon_volition_constellation_done = data.get("archon_volition_constellation_done", false)
-    no_archon_volition_constellation_done = data.get("no_archon_volition_constellation_done", false)
-    spark_movement_done     = data.get("spark_movement_done",       false)
-    star_chase_done         = data.get("star_chase_done",           false)
-    tier1_archon_complete_done  = data.get("tier1_archon_complete_done",  false)
-    study_panel_reveal_done     = data.get("study_panel_reveal_done",     false)
-    first_constellation_done = data.get("first_constellation_done", false)
-    constellation_panel_creation_done = data.get("constellation_panel_creation_done", false)
-    open_constellation_panel_done = data.get("open_constellation_panel_done", false)
-    
+    intro_done              = _coerce_bool(data.get("intro_done"),                false)
+    second_monad_done       = _coerce_bool(data.get("second_monad_done"),         false)
+    tetrad_upgrade_done     = _coerce_bool(data.get("tetrad_upgrade_done"),       false)
+    all_monads_upgrade_done = _coerce_bool(data.get("all_monads_upgrade_done"),   false)
+    first_fundament_done    = _coerce_bool(data.get("first_fundament_done"),      false)
+    first_non_fundament_done = _coerce_bool(data.get("first_non_fundament_done"), false)
+    all_fundaments_done     = _coerce_bool(data.get("all_fundaments_done"),       false)
+    all_tetrads_done        = _coerce_bool(data.get("all_tetrads_done"),          false)
+    first_particle_done     = _coerce_bool(data.get("first_particle_done"),       false)
+
+    first_grain_done      = _coerce_bool(data.get("first_grain_done"),      false)
+    nineteenth_grain_done = _coerce_bool(data.get("nineteenth_grain_done"), false)
+    twentieth_grain_done  = _coerce_bool(data.get("twentieth_grain_done"),  false)
+
+    first_prestige_done     = _coerce_bool(data.get("first_prestige_done"),       false)
+    second_prestige_done    = _coerce_bool(data.get("second_prestige_done"),      false)
+    third_prestige_done     = _coerce_bool(data.get("third_prestige_done"),        false)
+    fourth_prestige_done    = _coerce_bool(data.get("fourth_prestige_done"),       false)
+    fifth_prestige_done     = _coerce_bool(data.get("fifth_prestige_done"),        false)
+    start_second_prestige_done = _coerce_bool(data.get("start_second_prestige_done"), false)
+    archon_volition_constellation_done = _coerce_bool(data.get("archon_volition_constellation_done"), false)
+    no_archon_volition_constellation_done = _coerce_bool(data.get("no_archon_volition_constellation_done"), false)
+    spark_movement_done     = _coerce_bool(data.get("spark_movement_done"),       false)
+    star_chase_done         = _coerce_bool(data.get("star_chase_done"),           false)
+    tier1_archon_complete_done  = _coerce_bool(data.get("tier1_archon_complete_done"),  false)
+    study_panel_reveal_done     = _coerce_bool(data.get("study_panel_reveal_done"),     false)
+    first_constellation_done = _coerce_bool(data.get("first_constellation_done"), false)
+    constellation_panel_creation_done = _coerce_bool(data.get("constellation_panel_creation_done"), false)
+    open_constellation_panel_done = _coerce_bool(data.get("open_constellation_panel_done"), false)
+
     # close_constellation_panel_done = data.get("close_constellation_panel_done", false)
-    
-    monad_panel_done        = data.get("monad_panel_done",          false)
-    monad_random_done       = data.get("monad_random_done",         false)
+
+    monad_panel_done        = _coerce_bool(data.get("monad_panel_done"),          false)
+    monad_random_done       = _coerce_bool(data.get("monad_random_done"),         false)
     if data.has("category_notified"):
         for key in data["category_notified"]:
             if _category_notified.has(key):
-                _category_notified[key] = data["category_notified"][key]
-    _all_tetrads_notified   = data.get("all_tetrads_notified",     false)
+                _category_notified[key] = _coerce_bool(data["category_notified"][key], false)
+    _all_tetrads_notified   = _coerce_bool(data.get("all_tetrads_notified"),     false)
