@@ -79,8 +79,8 @@ var _first_particle_triggered:      bool = false
 var _first_iota_triggered:          bool = false
 var _first_mote_triggered:          bool = false
 var _first_grain_triggered:         bool = false
-var _nineteenth_grain_triggered:    bool = false
-var _twentieth_grain_triggered:     bool = false
+var _nineteenth_mote_triggered:     bool = false
+var _twentieth_mote_triggered:      bool = false
 var _first_uonite_triggered:        bool = false
 
 var _end_first_prestige_triggered:  bool = false
@@ -1076,8 +1076,8 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     _first_mote_triggered     = uonite_ever_made or not game_context.totals_created.get("mote",     BigNum.zero()).is_zero()
     _first_grain_triggered    = uonite_ever_made or not game_context.totals_created.get("grain",    BigNum.zero()).is_zero()
     _first_uonite_triggered   = uonite_ever_made
-    _nineteenth_grain_triggered = uonite_ever_made or (not game_context.grain.is_zero() and game_context.grain.is_greater_or_equal(BigNum.from_int(19)))
-    _twentieth_grain_triggered  = uonite_ever_made or (not game_context.grain.is_zero() and game_context.grain.is_greater_or_equal(BigNum.from_int(20)))
+    _nineteenth_mote_triggered = uonite_ever_made or game_context.motes_this_cycle >= 19
+    _twentieth_mote_triggered  = uonite_ever_made or game_context.motes_this_cycle >= 20
     _end_first_prestige_triggered   = game_context.expansions >= 1 and \
         (archon_dialogue_manager.second_prestige_done if archon_dialogue_manager else false)
     _archon_volition_constellation_triggered = archon_dialogue_manager.archon_volition_constellation_done if archon_dialogue_manager else false
@@ -1210,18 +1210,18 @@ func _build_simple_triggers() -> void:
                 archon_dialogue_manager.enqueue_first_grain(),
         },
         {
-            "guard": "_nineteenth_grain_triggered",
-            "condition": func(): return game_context.grain.is_greater_or_equal(BigNum.from_int(19)) and game_context.uonite.is_zero(),
-            "effect": func(): archon_dialogue_manager.enqueue_nineteenth_grain(),
+            "guard": "_nineteenth_mote_triggered",
+            "condition": func(): return game_context.motes_this_cycle >= 19 and game_context.uonite.is_zero(),
+            "effect": func(): archon_dialogue_manager.enqueue_nineteenth_mote(),
         },
         {
-            "guard": "_twentieth_grain_triggered",
-            "condition": func(): return game_context.grain.is_greater_or_equal(BigNum.from_int(20)) and game_context.uonite.is_zero(),
-            "effect": func(): archon_dialogue_manager.enqueue_twentieth_grain(),
+            "guard": "_twentieth_mote_triggered",
+            "condition": func(): return game_context.motes_this_cycle >= 20 and game_context.uonite.is_zero(),
+            "effect": func(): archon_dialogue_manager.enqueue_twentieth_mote(),
         },
         {
             "guard": "_end_first_prestige_triggered",
-            "condition": func(): return game_context.expansions >= 1 and game_context.grains_this_cycle >= 20,
+            "condition": func(): return game_context.expansions >= 1 and game_context.motes_this_cycle >= 20,
             "effect": func(): archon_dialogue_manager.enqueue_end_first_prestige(),
         },
         {
