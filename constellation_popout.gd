@@ -385,9 +385,9 @@ func _refresh_allocation_display() -> void:
         _refresh_feed_buttons()
         return
     var id_str    := str(_selected_slot)
-    var foci:      int = _gc.assignments.get("constellation_" + id_str + "_foci",      0)
-    var volitions: int = _gc.assignments.get("constellation_" + id_str + "_volitions",  0)
-    var bonus_vol: int = _gc.assignments.get("constellation_" + id_str + "_bonus_volitions", 0)
+    var foci:      int = _gc._assignment_int("constellation_" + id_str + "_foci",      0)
+    var volitions: int = _gc._assignment_int("constellation_" + id_str + "_volitions",  0)
+    var bonus_vol: int = _gc._assignment_int("constellation_" + id_str + "_bonus_volitions", 0)
     var vol_total: int = volitions + bonus_vol
     if _foci_value: _foci_value.text = str(foci)
     if _vol_value:
@@ -404,7 +404,7 @@ func _on_foci_plus() -> void:
     var available: int = _gc.archon_foci - _gc.get_total_foci_assigned()
     if available <= 0: return
     var key    := "constellation_%d_foci" % _selected_slot
-    var current: int = _gc.assignments.get(key, 0)
+    var current: int = _gc._assignment_int(key, 0)
     var amount: int  = available if _selected_multiplier == -1 \
                        else mini(_selected_multiplier, available)
     _gc.assignments[key] = current + amount
@@ -413,7 +413,7 @@ func _on_foci_plus() -> void:
 func _on_foci_minus() -> void:
     if not _gc or _selected_slot < 0: return
     var key    := "constellation_%d_foci" % _selected_slot
-    var current: int = _gc.assignments.get(key, 0)
+    var current: int = _gc._assignment_int(key, 0)
     if current <= 0: return
     var amount: int = current if _selected_multiplier == -1 \
                       else mini(_selected_multiplier, current)
@@ -439,8 +439,8 @@ func _on_vol_plus() -> void:
 func _on_vol_minus() -> void:
     if not _gc or _selected_slot < 0: return
     var id_str := str(_selected_slot)
-    var parent_count: int = _gc.assignments.get("constellation_" + id_str + "_volitions", 0)
-    var child_count: int = _gc.assignments.get("constellation_" + id_str + "_bonus_volitions", 0)
+    var parent_count: int = _gc._assignment_int("constellation_" + id_str + "_volitions", 0)
+    var child_count: int = _gc._assignment_int("constellation_" + id_str + "_bonus_volitions", 0)
     var total: int = parent_count + child_count
     if total <= 0: return
     var amount: int = total if _selected_multiplier == -1 \
@@ -489,8 +489,7 @@ func _refresh_feed_buttons() -> void:
                     _make_slot_style(Color(0.05, 0.05, 0.08, 1.0)))
         return
     var key      := "constellation_%d_feed_mode" % _selected_slot
-    var mode_raw  = _gc.assignments.get(key)
-    var mode: int = clampi(mode_raw as int if mode_raw != null else 0, 0, 1)
+    var mode: int = clampi(_gc._assignment_int(key, 0), 0, 1)
     for i in _feed_buttons.size():
         var btn: Button = _feed_buttons[i]
         if not btn: continue
@@ -578,8 +577,8 @@ func _refresh_spark_counter() -> void:
 func _is_numeric_toggle_unlocked() -> bool:
     if not _gc:
         return false
-    var c0_solved: bool = _gc.assignments.get("constellation_0_solve_count", 0) > 0
-    var c2_solved: bool = _gc.assignments.get("constellation_2_solve_count", 0) > 0
+    var c0_solved: bool = _gc._assignment_int("constellation_0_solve_count", 0) > 0
+    var c2_solved: bool = _gc._assignment_int("constellation_2_solve_count", 0) > 0
     return c0_solved and c2_solved
 
 
@@ -644,7 +643,7 @@ func _refresh_info_panel() -> void:
         var solved: bool = false
         if _gc:
             var solve_key := "constellation_%d_solve_count" % _selected_slot
-            solved = _gc.assignments.get(solve_key, 0) > 0
+            solved = _gc._assignment_int(solve_key, 0) > 0
         if solved:
             var current_val: float = def["bonus_levels"].get(
                 state, def.get("bonus_value", 1.0))

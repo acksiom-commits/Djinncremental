@@ -352,7 +352,7 @@ func _debug_solve_puzzle() -> void:
         print("[DEBUG] Constellation %d has no puzzle." % _puzzle_target_id)
         return
     var solve_key: String = "constellation_%d_solve_count" % _puzzle_target_id
-    if _gc.assignments.get(solve_key, 0) > 0:
+    if _gc._assignment_int(solve_key, 0) > 0:
         print("[DEBUG] Constellation %d already solved — resetting for retest." % _puzzle_target_id)
         _gc.assignments[solve_key] = 0
         _reset_puzzle()

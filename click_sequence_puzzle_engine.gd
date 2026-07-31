@@ -84,7 +84,7 @@ func check_availability() -> void:
         state = State.IDLE
         return
     var solve_key: String = "constellation_%d_solve_count" % constellation_id
-    var solves: int = gc.assignments.get(solve_key, 0)
+    var solves: int = gc._assignment_int(solve_key, 0)
     if solves > 0:
         state = State.IDLE
         return
@@ -95,7 +95,7 @@ func check_availability() -> void:
     state = State.ACTIVE
     step  = 0
     var hw_key := "constellation_%d_high_water" % constellation_id
-    high_water = gc.assignments.get(hw_key, 0)
+    high_water = gc._assignment_int(hw_key, 0)
     if note_assignment.is_empty():
         note_assignment = cd.get_note_assignment(constellation_id)
     if correct_sequence.is_empty():
