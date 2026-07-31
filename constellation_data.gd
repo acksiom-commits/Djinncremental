@@ -1204,14 +1204,27 @@ func get_note_freqs(constellation_id: int) -> Array:
     # return (bool/float/int) does — a wrong-typed value hangs the engine
     # at the return boundary just like a typed variable assignment would
     # (confirmed directly this session), so this needs the same guard as
-    # everywhere else def data gets read.
+    # everywhere else def data gets read. The outer-Array guard alone isn't
+    # enough either: every consumer reads an element straight into a typed
+    # float (constellation_study_overlay.gd, constellation_puzzle_widgets.gd,
+    # _freq_to_star() in click_sequence_puzzle_engine.gd), so a wrong-typed
+    # element inside an otherwise-valid Array would still hang downstream —
+    # coerce every element here, once, instead of at each read site.
     var def: Dictionary = get_constellation_def(constellation_id)
-    return _coerce_array(def.get("note_freqs"), PUZZLE_NOTE_FREQS)
+    var raw: Array = _coerce_array(def.get("note_freqs"), PUZZLE_NOTE_FREQS)
+    var result: Array = []
+    for v in raw:
+        result.append(_coerce_float(v, 0.0))
+    return result
 
 
 func get_response_freqs(constellation_id: int) -> Array:
     var def: Dictionary = get_constellation_def(constellation_id)
-    return _coerce_array(def.get("response_freqs"), PUZZLE_RESPONSE_FREQS)
+    var raw: Array = _coerce_array(def.get("response_freqs"), PUZZLE_RESPONSE_FREQS)
+    var result: Array = []
+    for v in raw:
+        result.append(_coerce_float(v, 0.0))
+    return result
 
 
 func get_note_assignment(constellation_id: int) -> Array:
@@ -1228,7 +1241,12 @@ func get_note_assignment(constellation_id: int) -> Array:
     if puzzle_seq.size() == star_count:
         # Use puzzle_sequence as assignment if it matches star count (Hourglass)
         for i in star_count:
-            assignment[i] = puzzle_seq[i]
+            # assignment is a plain Array (no element type), so this
+            # doesn't hang here — it silently carries a wrong-typed element
+            # forward until a consumer typed-assigns it (e.g. click_sequence_
+            # puzzle_engine.gd's `var clicked: int = note_assignment[...]`),
+            # which does hang. Coerce here instead of at every read site.
+            assignment[i] = _coerce_int(puzzle_seq[i], 0)
     elif star_count == freqs.size():
         # 1:1 star-to-pitch: use range (Archon, Spark)
         assignment = range(freqs.size())
