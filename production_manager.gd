@@ -278,8 +278,8 @@ func _run_normal_production(ready_batches: Dictionary) -> void:
 
 
 func _run_overflow_production(ready_batches: Dictionary) -> void:
-    var total_slots: int = gc.assignments.get("storage_overflow_volitions", 0) \
-                         + gc.assignments.get("storage_overflow_bonus_volitions", 0)
+    var total_slots: int = gc._assignment_int("storage_overflow_volitions", 0) \
+                         + gc._assignment_int("storage_overflow_bonus_volitions", 0)
     if total_slots <= 0:
         for op in OVERFLOW_PRIORITY:
             if op != "sparks_summon":

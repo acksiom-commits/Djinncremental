@@ -264,7 +264,7 @@ func _draw() -> void:
             var op: String = RESOURCE_OPERATIONS.get(key, "")
             if op == "":
                 continue
-            var vol: int = game_context.assignments.get(op + "_volitions", 0)
+            var vol: int = game_context._assignment_int(op + "_volitions", 0)
             if vol <= 0:
                 continue
             var btn   = _icon_buttons[key]
@@ -409,7 +409,7 @@ func _on_plus_pressed(pool_suffix: String) -> void:
         game_context.end_batch_volition_update()
     else:
         # Int path for foci
-        var current: int = game_context.assignments.get(assignment_key, 0)
+        var current: int = game_context._assignment_int(assignment_key, 0)
         var headroom: int = _get_pool_total_int(pool_suffix) - _get_pool_assigned_int(pool_suffix) - _get_pool_locks_cost_int(pool_suffix)
         if headroom <= 0:
             return
@@ -451,8 +451,8 @@ func _on_minus_pressed(pool_suffix: String) -> void:
             production_manager.update_assignment(assignment_key, new_value)
     elif pool_suffix == "volitions":
         # Slot path for volitions — child first, parent last
-        var parent_on_op: int = game_context.assignments.get(op + "_volitions", 0)
-        var child_on_op: int = game_context.assignments.get(op + "_bonus_volitions", 0)
+        var parent_on_op: int = game_context._assignment_int(op + "_volitions", 0)
+        var child_on_op: int = game_context._assignment_int(op + "_bonus_volitions", 0)
         var total: int = parent_on_op + child_on_op
         if total <= 0:
             return
@@ -470,7 +470,7 @@ func _on_minus_pressed(pool_suffix: String) -> void:
         game_context.end_batch_volition_update()
     else:
         # Int path for foci
-        var current: int = game_context.assignments.get(assignment_key, 0)
+        var current: int = game_context._assignment_int(assignment_key, 0)
         if current <= 0:
             return
         var amount: int = current if selected_multiplier == -1 else min(selected_multiplier, current)
@@ -543,7 +543,7 @@ func _update_icon_states() -> void:
                 has_allocation = true
             if not has_allocation:
                 for suffix in ["foci", "volitions", "bonus_volitions"]:
-                    if game_context.assignments.get(op + "_" + suffix, 0) > 0:
+                    if game_context._assignment_int(op + "_" + suffix, 0) > 0:
                         has_allocation = true
                         break
         if key == selected_resource:
@@ -581,8 +581,8 @@ func _update_center_values() -> void:
             if plus_btn:  plus_btn.disabled  = headroom.is_zero()
             if minus_btn: minus_btn.disabled = assigned.is_zero()
         elif suffix == "volitions":
-            var parent_count: int = game_context.assignments.get(op + "_volitions", 0)
-            var child_count: int = game_context.assignments.get(op + "_bonus_volitions", 0)
+            var parent_count: int = game_context._assignment_int(op + "_volitions", 0)
+            var child_count: int = game_context._assignment_int(op + "_bonus_volitions", 0)
             var total: int = parent_count + child_count
             if parent_count > 0:
                 row.set_label("[color=#FFD730]%s[/color]" % _fmt_int(total))
@@ -594,7 +594,7 @@ func _update_center_values() -> void:
             if minus_btn: minus_btn.disabled = (total <= 0)
         else:
             # Int path for foci
-            var assigned: int  = game_context.assignments.get(assignment_key, 0)
+            var assigned: int  = game_context._assignment_int(assignment_key, 0)
             var pool_total     = _get_pool_total_int(suffix)
             var pool_assigned  = _get_pool_assigned_int(suffix)
             var available      = max(0, pool_total - pool_assigned - _get_pool_locks_cost_int(suffix))

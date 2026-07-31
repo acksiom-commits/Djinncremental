@@ -248,7 +248,7 @@ func _tri_sign(p1: Vector2, p2: Vector2, p3: Vector2) -> float:
 func _on_overflow_toggle_pressed() -> void:
     if not _gc:
         return
-    var current = _gc.assignments.get("storage_overflow_volitions", 0)
+    var current = _gc._assignment_int("storage_overflow_volitions", 0)
     if current == 0:
         var idx = _gc.get_first_free_parent_index()
         if idx < 0:
@@ -422,8 +422,8 @@ func _draw() -> void:
 
     # Volition assignment counter — lower-right corner (face 3)
     if _vol_center != Vector2.ZERO and _gc:
-        var assigned = _gc.assignments.get("storage_overflow_volitions", 0) \
-                     + _gc.assignments.get("storage_overflow_bonus_volitions", 0)
+        var assigned = _gc._assignment_int("storage_overflow_volitions", 0) \
+                     + _gc._assignment_int("storage_overflow_bonus_volitions", 0)
         var vol_str  = "V:%d" % assigned
         var txt_col  = Color(1.0, 0.85, 0.2, 0.90) if assigned > 0 \
                        else Color(0.5, 0.45, 0.65, 0.55)
@@ -463,7 +463,7 @@ func _draw() -> void:
 
     # - button — upper-right corner
     if _minus_rect.has_area() and _gc:
-        var current  = _gc.assignments.get("storage_overflow_volitions", 0)
+        var current  = _gc._assignment_int("storage_overflow_volitions", 0)
         var can_sub  = current > 0
         var bg_col   = Color(1.0, 1.0, 1.0, 0.18) if (_minus_hovered and can_sub) \
                        else Color(0.12, 0.10, 0.20, 0.55)

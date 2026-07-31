@@ -1119,7 +1119,7 @@ func get_active_level_bonus(bonus_key: String) -> float:
             continue
         if _game_context:
             var solve_key: String = "constellation_%d_solve_count" % id
-            if _game_context.assignments.get(solve_key, 0) < 1:
+            if _game_context._assignment_int(solve_key, 0) < 1:
                 continue
             if not _game_context.has_volition_for_constellation(id):
                 continue
@@ -1149,7 +1149,7 @@ func get_bonus_volition_grant() -> int:
         return 0
     if _game_context:
         var solve_key: String = "constellation_%d_solve_count" % ARCHON_ID
-        if _game_context.assignments.get(solve_key, 0) < 1:
+        if _game_context._assignment_int(solve_key, 0) < 1:
             return 0
         if not _game_context.has_parent_volition_for_constellation(ARCHON_ID):
             return 0
