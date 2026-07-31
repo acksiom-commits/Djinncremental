@@ -1031,7 +1031,7 @@ func _on_game_loaded(offline_seconds: float) -> void:
         if results.has(key):
             lines.append("  +%s %s" % [results[key], key.capitalize()])
     if archon_dialogue_manager:
-        archon_dialogue_manager.notification_queue.append("\n".join(lines))
+        archon_dialogue_manager.enqueue_notification("\n".join(lines))
         archon_dialogue_manager.try_show_next_notification()
 
 
@@ -1182,7 +1182,7 @@ func _build_simple_triggers() -> void:
             "condition": func(): return not game_context.particle.is_zero(),
             "effect": func():
                 _grant_foci()
-                archon_dialogue_manager.notification_queue.append("First Particle: +1 Focus.")
+                archon_dialogue_manager.enqueue_notification("First Particle: +1 Focus.")
                 archon_dialogue_manager.enqueue_first_particle(),
         },
         {
@@ -1190,14 +1190,14 @@ func _build_simple_triggers() -> void:
             "condition": func(): return not game_context.iota.is_zero(),
             "effect": func():
                 _grant_foci()
-                archon_dialogue_manager.notification_queue.append("First Iota: +1 Focus.")
+                archon_dialogue_manager.enqueue_notification("First Iota: +1 Focus.")
                 archon_dialogue_manager.try_show_next_notification(),
         },
         {
             "guard": "_first_mote_triggered",
             "condition": func(): return not game_context.mote.is_zero(),
             "effect": func():
-                archon_dialogue_manager.notification_queue.append("First Mote: +1 Focus.")
+                archon_dialogue_manager.enqueue_notification("First Mote: +1 Focus.")
                 archon_dialogue_manager.try_show_next_notification(),
         },
         {
@@ -1238,7 +1238,7 @@ func _build_simple_triggers() -> void:
             "effect": func():
                 game_context.refinements_completed += 1
                 _grant_foci()
-                archon_dialogue_manager.notification_queue.append("First Uonite: +1 Focus, +1 Refinement.")
+                archon_dialogue_manager.enqueue_notification("First Uonite: +1 Focus, +1 Refinement.")
                 archon_dialogue_manager.try_show_next_notification()
                 var cd := get_node_or_null("/root/ConstellationData")
                 if cd and cd.has_method("on_achievement"):
@@ -1339,7 +1339,7 @@ func _do_prestige_reset() -> void:
                 leftover_sparks.to_display_string(),
                 cap_delta.to_display_string()
             ]
-            archon_dialogue_manager.notification_queue.append(msg)
+            archon_dialogue_manager.enqueue_notification(msg)
             archon_dialogue_manager.try_show_next_notification()
     else:
         if archon_dialogue_manager:
@@ -1348,7 +1348,7 @@ func _do_prestige_reset() -> void:
                 leftover_sparks.to_display_string(),
                 cap_delta.to_display_string()
             ]
-            archon_dialogue_manager.notification_queue.append(msg)
+            archon_dialogue_manager.enqueue_notification(msg)
             archon_dialogue_manager.try_show_next_notification()
     # Fire prestige achievements for constellation unlocks
     var cd = get_node_or_null("/root/ConstellationData")
@@ -1406,7 +1406,7 @@ func _check_totals_milestones() -> void:
         var next_exp: int = game_context.totals_milestones.get(key, 2)
         var threshold := BigNum.from_me(pow(10.0, float(next_exp % 3)), int(next_exp / 3.0))
         while total.is_greater_or_equal(threshold):
-            archon_dialogue_manager.notification_queue.append(
+            archon_dialogue_manager.enqueue_notification(
                 "%s — %s total created: +1 Focus." % [
                     _totals_display_name(key),
                     threshold.to_display_string()])
@@ -1420,7 +1420,7 @@ func _check_totals_milestones() -> void:
         var next_exp: int = game_context.totals_milestones.get("monad_all", 2)
         var threshold := BigNum.from_me(pow(10.0, float(next_exp % 3)), int(next_exp / 3.0))
         while monad_min.is_greater_or_equal(threshold):
-            archon_dialogue_manager.notification_queue.append(
+            archon_dialogue_manager.enqueue_notification(
                 "All Monads — %s of each type created: +1 Focus." % threshold.to_display_string())
             _grant_foci()
             next_exp  += 2
@@ -1444,7 +1444,7 @@ func _check_totals_milestones() -> void:
         var next_exp: int = game_context.totals_milestones.get(cat_key, 2)
         var threshold := BigNum.from_me(pow(10.0, float(next_exp % 3)), int(next_exp / 3.0))
         while cat_min.is_greater_or_equal(threshold):
-            archon_dialogue_manager.notification_queue.append(
+            archon_dialogue_manager.enqueue_notification(
                 "%s — %s of each variety created: +1 Focus." % [
                     _totals_display_name(cat_key),
                     threshold.to_display_string()])
