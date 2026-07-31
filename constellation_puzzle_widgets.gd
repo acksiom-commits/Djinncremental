@@ -71,9 +71,31 @@ func _populate_markers_panel() -> void:
         _: _populate_name_markers()
 
 
+func _coerce_int(val, default: int) -> int:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return int(val)
+    return default
+
+
+# _host._form_clues_cache round-trips through save data (see
+# ConstellationStudyOverlay._load_constellation_data()'s chosen_form_clues
+# read) — that load already guarantees the outer value is an Array, but not
+# that every element is a Dictionary with well-typed fields. Appending a
+# mixed-type Array into a typed Array[Dictionary] doesn't crash — Godot
+# silently discards the WHOLE result (confirmed: one bad element blanks out
+# every clue, not just itself), which would blank every Markers tab with no
+# error. Build the result element-by-element from sanitized dicts instead.
 func _all_final_clues_for_tabs() -> Array[Dictionary]:
     var result: Array[Dictionary] = []
-    result.append_array(_host._form_clues_cache)
+    for raw in _host._form_clues_cache:
+        if not (raw is Dictionary):
+            continue
+        var characteristics: Array = raw["characteristics"] if raw.get("characteristics") is Array else []
+        result.append({
+            "characteristics": characteristics,
+            "text": str(raw.get("text", "")),
+            "form_id": _coerce_int(raw.get("form_id", 0), 0),
+        })
     return result
 
 
