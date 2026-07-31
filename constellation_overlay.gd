@@ -189,7 +189,14 @@ func _draw() -> void:
         )
 
         if draw_lines:
-            var def_lt: float = _cd.get_constellation_def(id).get("line_threshold", 0.3)
+            # get_constellation_def() also serves player_constellations/
+            # patron_constellations (loaded from save data), so a corrupted
+            # "line_threshold" field could be wrong-typed — a typed float
+            # assignment from it hangs rather than raising a catchable
+            # error (confirmed this session, same field fixed the same way
+            # in constellation_popout.gd).
+            var raw_lt = _cd.get_constellation_def(id).get("line_threshold", 0.3)
+            var def_lt: float = float(raw_lt) if typeof(raw_lt) in [TYPE_INT, TYPE_FLOAT] else 0.3
             var line_frac: float = clampf((fraction - def_lt) / (0.85 - def_lt), 0.0, 1.0)
             var line_color: Color = LINE_COLOR_DIM.lerp(LINE_COLOR_BRIGHT, line_frac)
             var def:   Dictionary = _cd.get_constellation_def(id)
@@ -383,5 +390,9 @@ func _debug_solve_puzzle() -> void:
         print("[DEBUG] Puzzle not ACTIVE (visual state: %s). Invest more sparks first." % _cd.get_visual_state(_puzzle_target_id))
         return
     print("[DEBUG] Force-solving constellation %d." % _puzzle_target_id)
-    _engine.step = def["puzzle_sequence"].size()
+    # "puzzle_sequence" is present (checked above) but not guaranteed an
+    # Array — calling .size() on a wrong-typed save-derived value crashes
+    # the same way indexing one does (confirmed this session).
+    var seq = def["puzzle_sequence"]
+    _engine.step = seq.size() if seq is Array else 0
     _engine.force_complete()

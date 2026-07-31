@@ -881,20 +881,42 @@ func _dev_recompute_puzzle(constellation_id: int) -> void:
 # pre-work (cache/state reset or none), seed, and completion callback —
 # only the mechanical lookup+construction part was shared.
 # ==================================================
+func _coerce_def_int(val, default: int) -> int:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return int(val)
+    return default
+
+
+func _coerce_def_array(val, default: Array) -> Array:
+    if typeof(val) == TYPE_ARRAY:
+        return val
+    return default
+
+
+func _coerce_def_dict(val, default: Dictionary) -> Dictionary:
+    if typeof(val) == TYPE_DICTIONARY:
+        return val
+    return default
+
+
 func _generate_puzzle(constellation_id: int, cd: Node, def: Dictionary,
         puzzle_seed: int, warning_context: String, on_complete: Callable) -> void:
     if def.is_empty():
         return
-    var star_count: int = def.get("star_count", 0)
+    # def can be a player/patron constellation's dict, loaded straight from
+    # save data — its fields aren't guaranteed the right type, and a typed
+    # Array/Dictionary/int assignment from a wrong-typed value hangs the
+    # engine rather than raising a catchable error (confirmed this session).
+    var star_count: int = _coerce_def_int(def.get("star_count"), 0)
     if star_count <= 0:
         return
     var overlay := get_parent().find_child("ConstellationOverlay", true, false)
     if not overlay or not overlay.has_method("get_correct_star_sequence"):
         push_warning("RootUI: ConstellationOverlay not found for %s." % warning_context)
         return
-    var line_pairs: Array = def.get("line_pairs", [])
+    var line_pairs: Array = _coerce_def_array(def.get("line_pairs"), [])
     var correct_star_sequence: Array = overlay.get_correct_star_sequence(constellation_id)
-    var name_theme: Dictionary = def.get("name_theme", {})
+    var name_theme: Dictionary = _coerce_def_dict(def.get("name_theme"), {})
     var star_pitch_index: Array = cd.get_note_assignment(constellation_id)
     var pitch_freqs: Array = cd.get_note_freqs(constellation_id)
 
