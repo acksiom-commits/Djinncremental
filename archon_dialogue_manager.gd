@@ -88,6 +88,14 @@ var _fade_countdown:   			bool  = false
 var _tutorial_pending: 			bool  = false
 var _tutorial_active:           bool  = false
 
+## Defensive ceiling — today's producers are one-time "first X" triggers and
+## milestone messages that decay in frequency, so this queue never actually
+## gets close to this size. But it's fed from 10 call sites across two files
+## with no single append gate, so if a future trigger ever fires repeatedly
+## (e.g. every production tick) with nothing acknowledging notifications,
+## this stops it from growing unboundedly for the rest of the session.
+const NOTIFICATION_QUEUE_MAX_SIZE: int = 50
+
 var notification_queue: Array = []
 var _notify_tween:     Tween = null
 var _notify_timer:     float = 0.0
@@ -203,6 +211,17 @@ func advance_dialogue() -> void:
 func try_show_next_notification() -> void:
     if current_index == -1 and not _in_notification and dialogue_queue.is_empty():
         _advance()
+
+
+## Single append gate for notification_queue — enforces
+## NOTIFICATION_QUEUE_MAX_SIZE. Drops the OLDEST entries once over cap
+## (pop_front), since a queue this deep only happens if the player has been
+## away from notifications for a long time, and the most recent milestones
+## are more actionable than stale ones.
+func enqueue_notification(text: String) -> void:
+    notification_queue.append(text)
+    while notification_queue.size() > NOTIFICATION_QUEUE_MAX_SIZE:
+        notification_queue.pop_front()
 
 
 # ==================================================
@@ -375,7 +394,7 @@ func _on_no_archon_volition_constellation_ended() -> void:
     
     
 func notify_tetrad_created(variety_key: String, triggered_dict: Dictionary) -> void:
-    notification_queue.append("%s Tetrad: +1 Focus." % variety_key.capitalize())
+    enqueue_notification("%s Tetrad: +1 Focus." % variety_key.capitalize())
 
     var category_map = {
         "fundament": ["adaemant", "aquae", "aethyr"],
@@ -393,7 +412,7 @@ func notify_tetrad_created(variety_key: String, triggered_dict: Dictionary) -> v
                 break
         if all_done:
             _category_notified[cat] = true
-            notification_queue.append(CATEGORY_NOTIFY % cat.capitalize())
+            enqueue_notification(CATEGORY_NOTIFY % cat.capitalize())
             emit_signal("tetrad_category_complete", cat)
 
     if not _all_tetrads_notified:
@@ -404,7 +423,7 @@ func notify_tetrad_created(variety_key: String, triggered_dict: Dictionary) -> v
                 break
         if all_done:
             _all_tetrads_notified = true
-            notification_queue.append(ALL_TETRADS_NOTIFY)
+            enqueue_notification(ALL_TETRADS_NOTIFY)
             emit_signal("all_tetrads_complete")
 
     if current_index == -1 and not _in_notification and dialogue_queue.is_empty():
