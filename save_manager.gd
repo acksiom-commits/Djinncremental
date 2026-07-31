@@ -1,5 +1,24 @@
 extends Node
 
+# Bumped whenever a future patch changes the *shape* of the top-level save
+# dict in a way older code can't already handle gracefully (a field rename,
+# removal, or restructuring — not a plain new field, since every
+# load_save_data() already treats a missing key as "use the default").
+# load_game() reads this into loaded_save_format_version before dispatching
+# to any subsystem; a version-gated migration step (mirroring the existing
+# precedent at game_context.gd's _migrate_flat_volitions_to_slots(), which
+# was keyed on key-presence before this field existed) belongs here, run
+# once on the raw `data` dict before the per-subsystem load calls below.
+# Nothing to migrate yet — this is the alpha's first save format.
+const SAVE_FORMAT_VERSION: int = 1
+
+## The save_format_version load_game() most recently read, or -1 before any
+## load has happened. 0 means "predates this field" (every save written
+## before this version stamp existed) — distinct from "field present but
+## wrong-typed", which also falls back to 0 since there's nothing coherent
+## to migrate from a value that isn't even the right type.
+var loaded_save_format_version: int = -1
+
 const SAVE_PATH := "user://djinncremental_save.json"
 # Atomic-write scratch + rolling backup. See save_game() for the rotation
 # invariant these enforce: at least one of {SAVE_PATH, BAK_PATH} is always a
@@ -50,6 +69,7 @@ func save_game() -> void:
     if journal and journal.has_method("get_save_data"):
         data["journal"] = journal.get_save_data()
     data["save_timestamp"] = Time.get_unix_time_from_system()
+    data["save_format_version"] = SAVE_FORMAT_VERSION
 
     # ── Atomic write ──────────────────────────────────────────────────
     # 1. Write the new save to a temp file. Until this fully succeeds the
@@ -124,6 +144,13 @@ func load_game() -> void:
 
     if source == "backup":
         push_warning("SaveManager: primary save was unreadable, recovered from backup.")
+
+    var raw_version = data.get("save_format_version")
+    loaded_save_format_version = int(raw_version) if (raw_version is int or raw_version is float) else 0
+    # Version-gated migrations on the raw `data` dict (renamed/removed/
+    # restructured fields, as opposed to a plain new field — see the
+    # SAVE_FORMAT_VERSION comment) would run here, before any subsystem's
+    # load_save_data() sees `data`. None exist yet.
 
     gc.load_save_data(data)
     # `data.get(key) is Dictionary` checks both "key present" and "value is
