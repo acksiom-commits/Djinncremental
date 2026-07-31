@@ -1033,7 +1033,15 @@ func get_spark_fraction(constellation_id: int) -> float:
         return 0.0
     var cap:   float = get_spark_cap(constellation_id)
     var total: float = _game_context.constellation_spark_totals.get(str(constellation_id), 0.0)
-    var result: float = clamp(total / cap, 0.0, 1.0)
+    # cap can be 0.0 (a corrupted def with star_count coerced to 0 and no
+    # explicit spark_cap), and total can independently be 0.0 too (no
+    # investment yet) — 0.0/0.0 is NaN, which clamp() passes straight
+    # through unchanged (confirmed directly this session) instead of
+    # clamping it.
+    var raw: float = total / cap
+    if is_nan(raw):
+        return 0.0
+    var result: float = clamp(raw, 0.0, 1.0)
     return result
  
  

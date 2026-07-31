@@ -442,7 +442,17 @@ func get_storage_fill_fraction() -> float:
     if cap.is_zero():
         return 0.0
     var total = get_storage_total()
-    return clamp(total.to_float() / cap.to_float(), 0.0, 1.0)
+    # BigNum.to_float() overflows to +Infinity for late-game values beyond
+    # float64 range (~1.8e308) — BigNum itself represents those fine via
+    # mantissa×exponent, floats can't. If total and cap are both that far
+    # overflowed, this is Infinity/Infinity = NaN, and clamp() passes NaN
+    # straight through unchanged (confirmed directly) instead of clamping
+    # it, silently breaking this fraction (and whatever UI reads it) from
+    # then on rather than just capping at "full".
+    var fraction: float = total.to_float() / cap.to_float()
+    if is_nan(fraction):
+        return 0.0
+    return clamp(fraction, 0.0, 1.0)
 
 
 func get_resource_storage_fraction(resource_key: String) -> float:
@@ -459,7 +469,12 @@ func get_resource_storage_fraction(resource_key: String) -> float:
         "grain":    resource_val = grain
         "uonite":   resource_val = uonite
         _:          return 0.0
-    return clamp(resource_val.to_float() / total.to_float(), 0.0, 1.0)
+    # Same NaN-from-Infinity/Infinity risk as get_storage_fill_fraction()
+    # above — see that comment.
+    var fraction: float = resource_val.to_float() / total.to_float()
+    if is_nan(fraction):
+        return 0.0
+    return clamp(fraction, 0.0, 1.0)
 
 
 func get_resource(key: String) -> BigNum:
