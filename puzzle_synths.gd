@@ -198,11 +198,23 @@ func _play_voice_coroutine(voice_idx: int, events: Array, timbre: String, gen: i
     for event in events:
         if gen != _seq_generation:
             return
+        if not event is Dictionary:
+            continue
 
-        var beats: float = event.get("beats", 1.0)
-        var vel:   float = event.get("vel", 1.0)
+        # PuzzleSequenceResource's melody/bass/perc are a typed
+        # Array[Dictionary], enforced by Godot's resource loader, but the
+        # VALUES inside each dict aren't typed at all — a .tres file (per
+        # this file's own header comment, sometimes AI-generated from sheet
+        # music) can put a wrong-typed value at "beats"/"vel"/"note", and
+        # assigning that straight into a typed float/String variable hangs
+        # the engine rather than raising a catchable error (confirmed
+        # throughout this session for the equivalent save-data case).
+        var raw_beats = event.get("beats", 1.0)
+        var beats: float = raw_beats if (raw_beats is int or raw_beats is float) else 1.0
+        var raw_vel = event.get("vel", 1.0)
+        var vel: float = raw_vel if (raw_vel is int or raw_vel is float) else 1.0
 
-        if event.has("note"):
+        if event.has("note") and event["note"] is String:
             var note_name: String = event["note"]
             if note_name != "rest":
                 var freq: float = note_to_freq(note_name)
