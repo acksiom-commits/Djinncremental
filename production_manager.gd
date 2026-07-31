@@ -328,7 +328,7 @@ func _produce_sparks_summon(requested: BigNum) -> BigNum:
     var mult: float = get_sparks_multiplier()
     var actual: BigNum = requested
     if mult > 1.0:
-        actual = BigNum.from_int(int(requested.to_float() * mult))
+        actual = BigNum.from_int(_safe_int(requested.to_float() * mult))
     gc.sparks = gc.sparks.add(actual)
     gc.add_to_total("sparks_summoned", actual)
     if gc.expansions > 0:
@@ -531,15 +531,22 @@ func _add_resource(key: String, amount: BigNum) -> void:
         "iota":     gc.iota     = gc.iota.add(amount)
         "mote":
             gc.mote = gc.mote.add(amount)
-            gc.motes_this_cycle = mini(gc.motes_this_cycle + amount.to_int(), 20)
+            # Cap the BigNum to the small per-cycle headroom BEFORE calling
+            # to_int() — amount itself can be storage-headroom-bounded (i.e.
+            # effectively unbounded late-game), and to_int()-ing it first
+            # then adding to a ≤20 counter can overflow the int addition
+            # itself even with to_int()'s own clamp.
+            var mote_delta: BigNum = _bignum_min(amount, BigNum.from_int(maxi(0, 20 - gc.motes_this_cycle)))
+            gc.motes_this_cycle = mini(gc.motes_this_cycle + mote_delta.to_int(), 20)
         "grain":
             gc.grain = gc.grain.add(amount)
-            gc.grains_this_cycle = mini(gc.grains_this_cycle + amount.to_int(), 20)
+            var grain_delta: BigNum = _bignum_min(amount, BigNum.from_int(maxi(0, 20 - gc.grains_this_cycle)))
+            gc.grains_this_cycle = mini(gc.grains_this_cycle + grain_delta.to_int(), 20)
         "uonite":
             var cap: int = gc.get_uonite_cycle_cap()
             var headroom: int = maxi(0, cap - gc.uonites_this_cycle)
             if headroom <= 0: return
-            var capped_amount := BigNum.from_int(mini(amount.to_int(), headroom))
+            var capped_amount: BigNum = _bignum_min(amount, BigNum.from_int(headroom))
             gc.uonite = gc.uonite.add(capped_amount)
             gc.uonites_this_cycle += capped_amount.to_int()
             gc.add_to_total("uonite", capped_amount)
@@ -672,7 +679,7 @@ func _roll_monads_simplex(amount: BigNum, unlocked: Array) -> void:
     match unlocked.size():
         2:
             var cut = gc.rng.randf()
-            var a_amt = BigNum.from_int(int(amt_f * cut))
+            var a_amt = BigNum.from_int(_safe_int(amt_f * cut))
             var b_amt = amount.sub(a_amt)
             gc.monad[unlocked[0]] = gc.monad[unlocked[0]].add(a_amt)
             gc.add_to_total("monad_" + unlocked[0], a_amt)
@@ -680,12 +687,12 @@ func _roll_monads_simplex(amount: BigNum, unlocked: Array) -> void:
             gc.add_to_total("monad_" + unlocked[1], b_amt)
         3:
             var split = _random_simplex_split()
-            var s_amt = BigNum.from_int(int(amt_f * split.x))
-            var l_amt = BigNum.from_int(int(amt_f * split.y))
+            var s_amt = BigNum.from_int(_safe_int(amt_f * split.x))
+            var l_amt = BigNum.from_int(_safe_int(amt_f * split.y))
             var g_amt = amount.sub(s_amt).sub(l_amt)
             # Remainder from flooring lands in g_amt; redistribute randomly
-            var remainder = g_amt.sub(BigNum.from_int(int(amt_f * split.z)))
-            g_amt = BigNum.from_int(int(amt_f * split.z))
+            var remainder = g_amt.sub(BigNum.from_int(_safe_int(amt_f * split.z)))
+            g_amt = BigNum.from_int(_safe_int(amt_f * split.z))
             var rem_i = remainder.to_int()
             var keys = ["solid", "liquid", "gas"]
             for i in rem_i:
@@ -745,8 +752,8 @@ func _assemble_tetrads_simplex(amount: BigNum, available_types: Array, monad_cos
             var split = _random_simplex_split()
             sr = split.x; lr = split.y; gr = split.z
     gc.sparks = gc.sparks.sub(amount)
-    var s_spend = BigNum.from_int(int(monad_cost.to_float() * sr))
-    var l_spend = BigNum.from_int(int(monad_cost.to_float() * lr))
+    var s_spend = BigNum.from_int(_safe_int(monad_cost.to_float() * sr))
+    var l_spend = BigNum.from_int(_safe_int(monad_cost.to_float() * lr))
     var g_spend = monad_cost.sub(s_spend).sub(l_spend)
     gc.monad["solid"]  = gc.monad["solid"].sub(_clamped_sub(gc.monad["solid"],  s_spend))
     gc.monad["liquid"] = gc.monad["liquid"].sub(_clamped_sub(gc.monad["liquid"], l_spend))
@@ -775,7 +782,7 @@ func _batch_distribute_tetrads(amount: BigNum, sr: float, lr: float, gr: float) 
     for k in dist:
         var frac = dist[k] / total_prob
         if frac <= 0.0: continue
-        var count = int(amt_f * frac)
+        var count = _safe_int(amt_f * frac)
         if count <= 0: continue
         int_shares[k] = count
         assigned = assigned.add(BigNum.from_int(count))
@@ -814,7 +821,7 @@ func _spend_tetrads_simplex(tetrad_cost: BigNum, available: Array) -> void:
         var max_ratio   = gc.tetrad[k].to_float() / tf if tf > 0.0 else 0.0
         var spend_ratio = min(ratio, max_ratio)
         if spend_ratio <= 0.0: continue
-        var spend_target = BigNum.from_int(int(tetrad_cost.to_float() * spend_ratio))
+        var spend_target = BigNum.from_int(_safe_int(tetrad_cost.to_float() * spend_ratio))
         var spend = _clamped_sub(gc.tetrad[k], spend_target)
         gc.tetrad[k] = gc.tetrad[k].sub(spend)
         actually_spent = actually_spent.add(spend)
@@ -1235,6 +1242,21 @@ func _random_weights(n: int) -> Array:
 
 func _bignum_min(a: BigNum, b: BigNum) -> BigNum:
     return a if a.is_less_or_equal(b) else b
+
+
+func _safe_int(f: float) -> int:
+    # GDScript's int() cast does NOT clamp for floats past int64 range — it
+    # wraps to garbage (confirmed: int(5e20) == -9223372036854775808, not a
+    # saturated max). The simplex distribution paths below multiply an
+    # unbounded late-game BigNum's to_float() by a fractional share, so a
+    # large enough batch would otherwise produce a negative "count" that
+    # BigNum.from_int()'s own n<=0 guard then silently zeroes out — losing
+    # an entire monad/tetrad type's share for that tick.
+    if f >= 9.0e18:
+        return 9223372036854775807
+    if f <= 0.0:
+        return 0
+    return int(f)
 
 
 func _clamped_sub(available: BigNum, amount: BigNum) -> BigNum:

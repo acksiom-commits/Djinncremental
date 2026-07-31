@@ -371,9 +371,12 @@ func _on_plus_pressed(pool_suffix: String) -> void:
 
     if pool_suffix == "uonites":
         # BigNum path for uonites
-        var current: BigNum = game_context.assignments.get(assignment_key, BigNum.zero())
-        if not current is BigNum:
-            current = BigNum.from_int(current.to_int())
+        var current_raw = game_context.assignments.get(assignment_key, BigNum.zero())
+        # Type-check before the typed assignment below — assigning a wrong-
+        # type value straight into a BigNum-typed var crashes/hangs the
+        # engine rather than raising a catchable error, so the old
+        # `if not current is BigNum` fallback here could never actually run.
+        var current: BigNum = current_raw if current_raw is BigNum else BigNum.zero()
         var headroom: BigNum = _get_pool_headroom_bignum(pool_suffix)
         if headroom.is_zero():
             return
@@ -430,9 +433,10 @@ func _on_minus_pressed(pool_suffix: String) -> void:
 
     if pool_suffix == "uonites":
         # BigNum path for uonites
-        var current: BigNum = game_context.assignments.get(assignment_key, BigNum.zero())
-        if not current is BigNum:
-            current = BigNum.from_int(current.to_int())
+        var current_raw = game_context.assignments.get(assignment_key, BigNum.zero())
+        # Type-check before the typed assignment below — see matching
+        # comment in _on_plus_pressed() above.
+        var current: BigNum = current_raw if current_raw is BigNum else BigNum.zero()
         if current.is_zero():
             return
         var amount: BigNum
@@ -568,9 +572,10 @@ func _update_center_values() -> void:
 
         var assignment_key = op + "_" + suffix
         if suffix == "uonites":
-            var assigned: BigNum = game_context.assignments.get(assignment_key, BigNum.zero())
-            if not assigned is BigNum:
-                assigned = BigNum.from_int(assigned.to_int())
+            var assigned_raw = game_context.assignments.get(assignment_key, BigNum.zero())
+            # Type-check before the typed assignment below — see matching
+            # comment in _on_plus_pressed() above.
+            var assigned: BigNum = assigned_raw if assigned_raw is BigNum else BigNum.zero()
             var headroom = _get_pool_headroom_bignum(suffix)
             row.set_label(_fmt_bignum(assigned))
             if plus_btn:  plus_btn.disabled  = headroom.is_zero()
