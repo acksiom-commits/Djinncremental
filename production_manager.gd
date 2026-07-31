@@ -351,11 +351,20 @@ func _sample_grain_purity() -> void:
         var amt: float = gc.tetrad[variety_key].to_float()
         category_totals[cat] += amt
         grand_total += amt
-    if grand_total <= 0.0:
+    # grand_total sums BigNum.to_float() results, which overflow to
+    # +Infinity for late-game values beyond float64 range — a `<= 0.0`
+    # check alone doesn't catch that (Infinity is > 0.0). If it slips
+    # through, category_totals[k] / grand_total can be Infinity/Infinity
+    # = NaN, and lerpf() propagates a NaN target forever afterward (every
+    # subsequent lerpf(NaN, x, t) is still NaN) — permanently and silently
+    # poisoning grain_purity_profile instead of just capping the ratio.
+    if grand_total <= 0.0 or is_inf(grand_total):
         return
     const EMA_ALPHA := 0.10
     for k in gc.grain_purity_profile:
         var sample: float = category_totals[k] / grand_total
+        if is_nan(sample):
+            continue
         gc.grain_purity_profile[k] = lerpf(gc.grain_purity_profile[k], sample, EMA_ALPHA)
 
 
