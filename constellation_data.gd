@@ -686,7 +686,8 @@ var _star_positions_cache:  Dictionary = {}
 var _game_context:          Node       = null
 var _last_selected_id:      int        = -1
 var _puzzle_cache:          Dictionary = {}   # keyed by constellation_id string -> cache dict
- 
+var _stat_unlock_accum:     float      = 0.0
+
  
 # ==================================================
 # READY
@@ -1449,5 +1450,12 @@ func set_player_puzzle_notes(p_constellation_id: int, notes: Dictionary) -> void
 # ==================================================
 # PROCESS — stat-based unlock polling
 # ==================================================
-func _process(_delta: float) -> void:
-    _check_stat_unlocks()
+func _process(delta: float) -> void:
+    # Was an unthrottled full BUILT_IN scan + per-entry string split/parse
+    # every single frame for the whole session — the constellation list is
+    # small and fixed so it's not a growth risk, but it's wasted work at
+    # 60x/sec for a check nothing needs faster than human-perceptible.
+    _stat_unlock_accum += delta
+    if _stat_unlock_accum >= 0.5:
+        _stat_unlock_accum = 0.0
+        _check_stat_unlocks()
