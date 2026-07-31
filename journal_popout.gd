@@ -116,8 +116,30 @@ func get_save_data() -> Dictionary:
 
 
 func load_save_data(data: Dictionary) -> void:
-    _sequences     = data.get("sequences", [])
-    _notifications = data.get("notifications", [])
+    # _sequences/_notifications are typed Array properties, and every
+    # consumer below does `var seq: Dictionary = _sequences[i]` — a typed
+    # assignment on individual elements, not just the array itself. A
+    # corrupted-but-parseable save putting the wrong type at either layer
+    # hangs the engine rather than raising a catchable error (confirmed
+    # elsewhere this session), so both the outer array and each element's
+    # shape need validating before use.
+    var raw_seq = data.get("sequences")
+    _sequences = []
+    if raw_seq is Array:
+        for entry in raw_seq:
+            if entry is Dictionary:
+                var seq_name = entry.get("name", "")
+                var seq_lines = entry.get("lines", [])
+                _sequences.append({
+                    "name":  seq_name if seq_name is String else "",
+                    "lines": seq_lines if seq_lines is Array else [],
+                })
+    var raw_notif = data.get("notifications")
+    _notifications = []
+    if raw_notif is Array:
+        for n in raw_notif:
+            if n is String:
+                _notifications.append(n)
     _rebuild_sequence_list()
     if _active_tab == "notices":
         _rebuild_notices()
