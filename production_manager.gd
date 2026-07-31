@@ -864,7 +864,14 @@ func _batch_spend_monads(amount: BigNum) -> void:
             if totals[k] > 0:
                 gc.monad[k] = gc.monad[k].sub(BigNum.from_int(totals[k]))
     else:
-        # Large batch: equal split across available types, remainder distributed one-at-a-time
+        # Large batch: equal split across available types. Any remainder from
+        # a per-type shortfall goes entirely to the largest-balance pool in
+        # one BigNum op — matching _spend_tetrads_simplex's pattern below —
+        # instead of distributing it one unit at a time. Purity-locked play
+        # routinely leaves pools lopsided by design (e.g. concentrating on
+        # Solid for Sand-heavy recipes), and unit-at-a-time distribution
+        # against a large shortfall could iterate an unbounded number of
+        # times — effectively hanging the game on a single production tick.
         var n = pool.size()
         var per_type = amount.div_int_floor(n)
         var actually_spent = BigNum.zero()
@@ -873,15 +880,16 @@ func _batch_spend_monads(amount: BigNum) -> void:
             gc.monad[k] = gc.monad[k].sub(spend)
             actually_spent = actually_spent.add(spend)
         var remainder = amount.sub(actually_spent)
-        while not remainder.is_zero():
-            var spent_this_pass = false
+        if not remainder.is_zero():
+            var largest_key = ""
+            var largest_val = BigNum.zero()
             for k in pool:
-                if remainder.is_zero(): break
-                if gc.monad[k].is_zero(): continue
-                gc.monad[k] = gc.monad[k].sub(BigNum.from_int(1))
-                remainder = remainder.sub(BigNum.from_int(1))
-                spent_this_pass = true
-            if not spent_this_pass: break
+                if gc.monad[k].is_greater_than(largest_val):
+                    largest_val = gc.monad[k]
+                    largest_key = k
+            if largest_key != "":
+                var extra_spend = _clamped_sub(gc.monad[largest_key], remainder)
+                gc.monad[largest_key] = gc.monad[largest_key].sub(extra_spend)
 
 
 # ==================================================
