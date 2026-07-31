@@ -541,7 +541,7 @@ func has_storage_enhancer() -> bool:
     if not cd:
         return false
     var solve_key: String = "constellation_%d_solve_count" % SATCHEL_ID
-    if assignments.get(solve_key, 0) < 1:
+    if _assignment_int(solve_key, 0) < 1:
         return false
     if not has_volition_for_constellation(SATCHEL_ID):
         return false
@@ -565,6 +565,21 @@ func get_effective_storage_cap() -> BigNum:
 
 
 # ===================== ASSIGNMENT TOTALS ==================
+func _assignment_int(key: String, default: int = 0) -> int:
+    # assignments is the one dict with dual-type serialization (a "BN:"-
+    # prefixed save string becomes a real BigNum, anything else becomes a
+    # plain int — see load_save_data()). Most "_uonites" reads already
+    # guard with `is BigNum` before touching the value; this covers the
+    # "_foci"/"_volitions"/"_bonus_volitions"/"_solve_count"/"_feed_mode"
+    # reads that didn't. Reachable only via a hand-corrupted save, but
+    # confirmed directly: both `int + BigNum` arithmetic and assigning a
+    # BigNum into an int-typed variable hang the engine rather than
+    # raising a catchable error, so this must check before touching the
+    # value at all, not just guard the assignment.
+    var val = assignments.get(key, default)
+    return val if val is int else default
+
+
 func get_total_uonites_assigned() -> BigNum:
     var total := BigNum.zero()
     for key in assignments:
@@ -589,7 +604,7 @@ func get_total_foci_assigned() -> int:
     var total := 0
     for key in assignments:
         if key.ends_with("_foci"):
-            total += assignments[key]
+            total += _assignment_int(key, 0)
     return total
 
 
@@ -602,16 +617,16 @@ func get_total_volitions_assigned() -> int:
 
 
 func is_storage_overflow_active() -> bool:
-    return assignments.get("storage_overflow_volitions", 0) > 0
+    return _assignment_int("storage_overflow_volitions", 0) > 0
 
 
 func get_operation_total(operation: String) -> int:
     var u = assignments.get(operation + "_uonites", BigNum.zero())
     var u_int = u.to_int() if u is BigNum else int(u)
     return (u_int
-        + assignments.get(operation + "_foci",            0)
-        + assignments.get(operation + "_volitions",       0)
-        + assignments.get(operation + "_bonus_volitions", 0))
+        + _assignment_int(operation + "_foci",            0)
+        + _assignment_int(operation + "_volitions",       0)
+        + _assignment_int(operation + "_bonus_volitions", 0))
 
 
 func get_operation_uonites(operation: String) -> BigNum:
@@ -623,9 +638,9 @@ func get_operation_uonites(operation: String) -> BigNum:
 
 func get_operation_total_bignum(operation: String) -> BigNum:
     var u = get_operation_uonites(operation)
-    var f  = BigNum.from_int(assignments.get(operation + "_foci",            0))
-    var v  = BigNum.from_int(assignments.get(operation + "_volitions",       0))
-    var bv = BigNum.from_int(assignments.get(operation + "_bonus_volitions", 0))
+    var f  = BigNum.from_int(_assignment_int(operation + "_foci",            0))
+    var v  = BigNum.from_int(_assignment_int(operation + "_volitions",       0))
+    var bv = BigNum.from_int(_assignment_int(operation + "_bonus_volitions", 0))
     return u.add(f).add(v).add(bv)
 
 
@@ -643,9 +658,9 @@ func get_total_assigned_bignum() -> BigNum:
 # ===================== CONSTELLATION HELPERS ==============
 func get_constellation_points(constellation_id: int) -> int:
     var id_str = str(constellation_id)
-    return assignments.get("constellation_" + id_str + "_foci",            0) \
-         + assignments.get("constellation_" + id_str + "_volitions",       0) \
-         + assignments.get("constellation_" + id_str + "_bonus_volitions", 0)
+    return _assignment_int("constellation_" + id_str + "_foci",            0) \
+         + _assignment_int("constellation_" + id_str + "_volitions",       0) \
+         + _assignment_int("constellation_" + id_str + "_bonus_volitions", 0)
 
 
 func get_total_constellation_points() -> int:
@@ -966,7 +981,7 @@ func has_parent_volition_for_constellation(constellation_id: int) -> bool:
 func has_volition_for_constellation(constellation_id: int) -> bool:
     var key = "constellation_%d_volitions" % constellation_id
     var bonus_key = "constellation_%d_bonus_volitions" % constellation_id
-    return assignments.get(key, 0) > 0 or assignments.get(bonus_key, 0) > 0
+    return _assignment_int(key, 0) > 0 or _assignment_int(bonus_key, 0) > 0
 
 
 func get_constellation_sub_targets(constellation_id: int) -> Array:
@@ -999,8 +1014,7 @@ func accumulate_constellation_sparks() -> void:
         var points := get_constellation_points(id)
         if points <= 0:
             continue
-        var mode_raw = assignments.get("constellation_%d_feed_mode" % id)
-        var mode: int = mode_raw as int if mode_raw != null else 0
+        var mode: int = _assignment_int("constellation_%d_feed_mode" % id, 0)
         if mode == 0:
             continue
         if sparks.is_zero():
@@ -1265,7 +1279,7 @@ func _migrate_flat_volitions_to_slots() -> void:
     for key in assignments:
         if not key.ends_with("_volitions") or "bonus" in key:
             continue
-        var count: int = assignments.get(key, 0)
+        var count: int = _assignment_int(key, 0)
         for i in count:
             if slot_cursor >= volition_slots.size():
                 break
