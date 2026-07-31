@@ -80,7 +80,14 @@ func _coerce_array(val, default: Array) -> Array:
 func configure_io(p_synth: Node, redraw_cb: Callable) -> void:
     synth      = p_synth
     _redraw_cb = redraw_cb
-    if synth and synth.has_signal("sequence_note_played"):
+    # Both current call sites (constellation_overlay.gd, constellation_fork_
+    # puzzle.gd via .setup()) only call this once, from _ready() — so this
+    # guard isn't reachable today. Added defensively so configure_io() stays
+    # safe to call more than once on the same synth (e.g. a future audio
+    # rework that re-configures IO after a synth swap) without _on_fanfare_note
+    # firing once per stacked connection.
+    if synth and synth.has_signal("sequence_note_played") \
+            and not synth.sequence_note_played.is_connected(_on_fanfare_note):
         synth.sequence_note_played.connect(_on_fanfare_note)
 
 
