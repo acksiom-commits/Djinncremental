@@ -29,15 +29,35 @@ const DEFAULT_THEME := {
 }
 
 
+## theme is a raw def field on player/patron constellations (save-derived).
+## A wrong-typed "prefixes"/"mids"/"suffixes" value — or one of those
+## present but empty — doesn't hang the engine (a local typed-var mismatch
+## aborts just the current function, confirmed this session, unlike the
+## same mismatch at a parameter or return boundary), but it DOES silently
+## return an empty Array[String] to the caller, leaving star_names shorter
+## than star_count with no error raised anywhere. Coerce the pool itself
+## (falling back to the matching DEFAULT_THEME pool for a wrong type or an
+## empty array — an empty pool would make every randi_range(0, -1) below
+## resolve to index 0 on an out-of-bounds read) and every element via
+## str() (always safe, matches the pattern used throughout this session).
+static func _coerce_theme_pool(val, default: Array) -> Array:
+    if typeof(val) != TYPE_ARRAY or val.is_empty():
+        return default
+    var result: Array = []
+    for v in val:
+        result.append(str(v))
+    return result
+
+
 ## Generates `count` unique names for one constellation. Seeded by
 ## constellation_id only (not player_seed) so names are consistent for
 ## every player who unlocks that constellation — they're lore, not
 ## per-playthrough puzzle state.
 static func generate_names(count: int, constellation_id: int, theme: Dictionary = {}) -> Array[String]:
     var active_theme: Dictionary = theme if not theme.is_empty() else DEFAULT_THEME
-    var prefixes: Array = active_theme.get("prefixes", DEFAULT_THEME["prefixes"])
-    var mids: Array = active_theme.get("mids", DEFAULT_THEME["mids"])
-    var suffixes: Array = active_theme.get("suffixes", DEFAULT_THEME["suffixes"])
+    var prefixes: Array = _coerce_theme_pool(active_theme.get("prefixes"), DEFAULT_THEME["prefixes"])
+    var mids: Array = _coerce_theme_pool(active_theme.get("mids"), DEFAULT_THEME["mids"])
+    var suffixes: Array = _coerce_theme_pool(active_theme.get("suffixes"), DEFAULT_THEME["suffixes"])
 
     var rng := RandomNumberGenerator.new()
     rng.seed = constellation_id * 0x2545_F491 ^ 0x1357_9BDF
