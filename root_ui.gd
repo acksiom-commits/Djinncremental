@@ -1447,7 +1447,10 @@ func _check_star_in_view_trigger(delta: float) -> void:
         return
     if not game_context.hint_bias_enabled:
         return
-    var sf := get_node_or_null("StarfieldBackground")
+    # "StarfieldBackground" is not a real node name — the starfield is the
+    # sibling ColorRect under CanvasLayer (see _spawn_spark_effect()'s
+    # "../ColorRect" lookup for the same node, done correctly).
+    var sf := get_node_or_null("../ColorRect")
     var cd := get_node_or_null("/root/ConstellationData")
     if not sf or not cd:
         return
@@ -1693,9 +1696,20 @@ func _get_cooldown_bar(bar_name: String) -> Node:
 # CLICK VOLITIONS HELPERS
 # ==================================================
 
+func _coerce_assignment_int(key: String, default: int) -> int:
+    # game_context.assignments can hold either a plain int or an actual
+    # BigNum instance at the same key, depending on what a (possibly
+    # hand-edited) save serialized there — see load_save_data()'s "BN:"
+    # prefix branching. Assigning a BigNum straight into an int-typed
+    # variable doesn't raise a catchable error, it hangs the engine
+    # (verified directly), so fetch untyped and check first.
+    var val = game_context.assignments.get(key, default)
+    return val if val is int else default
+
+
 func _refresh_click_vol_buttons() -> void:
     if not game_context: return
-    var assigned: int  = game_context.assignments.get("click_volitions", 0)
+    var assigned: int  = _coerce_assignment_int("click_volitions", 0)
     var can_add:  bool = game_context.get_volitions_free() > 0
     var can_sub:  bool = assigned > 0
     const GOLD_ON  := Color(1.00, 0.85, 0.20, 0.90)
@@ -1715,8 +1729,8 @@ func _refresh_click_vol_buttons() -> void:
 
 func _get_click_multiplier() -> int:
     if not game_context: return 1
-    var base: int = 1 + game_context.assignments.get("click_volitions", 0) \
-                      + game_context.assignments.get("click_bonus_volitions", 0)
+    var base: int = 1 + _coerce_assignment_int("click_volitions", 0) \
+                      + _coerce_assignment_int("click_bonus_volitions", 0)
     var cd: Node = get_node_or_null("/root/ConstellationData")
     if not cd:
         return base
@@ -1729,7 +1743,7 @@ func _get_click_multiplier() -> int:
 func _update_click_vol_label() -> void:
     if not _click_vol_label or not game_context: return
     _click_vol_label.text = "x%d" % _get_click_multiplier()
-    var parent_count: int = game_context.assignments.get("click_volitions", 0)
+    var parent_count: int = _coerce_assignment_int("click_volitions", 0)
     if parent_count > 0:
         _click_vol_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
     else:
