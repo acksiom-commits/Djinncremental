@@ -1260,8 +1260,16 @@ func get_note_assignment(constellation_id: int) -> Array:
         assignment = range(freqs.size())
     else:
         # More stars than pitches: round-robin assignment (Satchel)
+        # freqs can be genuinely empty (a corrupted player/patron def with
+        # "note_freqs": [] — a valid Array, so it passes get_note_freqs()'s
+        # type check, just with zero elements) while star_count is still a
+        # legitimate nonzero value from the same def. `i % 0` is an integer
+        # modulo by zero, which aborts this function outright rather than
+        # raising a catchable error (confirmed this session) — leaving
+        # `assignment` only partially filled for the shuffle loop below.
+        var freq_count: int = freqs.size()
         for i in star_count:
-            assignment[i] = i % freqs.size()
+            assignment[i] = i % freq_count if freq_count > 0 else 0
 
     var rng := RandomNumberGenerator.new()
     rng.seed = player_seed ^ (constellation_id * 0x9E3779B9)
