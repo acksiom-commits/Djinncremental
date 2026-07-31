@@ -67,7 +67,6 @@ signal panel_first_opened()
 
 var _has_been_opened_once: bool = false
 var _close_locked:         bool = false
-var _debug_dumped:         bool = false
 
 var _cd: Node = null
 var _gc: Node = null
@@ -164,38 +163,10 @@ func _set_subtree_mouse_filter(node: Node, filter: int) -> void:
 
 
 func _process(_delta: float) -> void:
-    if not _debug_dumped:
-        _debug_dumped = true
-        print("[CPOPOUT] size=", size, " global_pos=", global_position,
-              " tab_size=", _tab_btn.size, " tab_global=", _tab_btn.global_position,
-              " tab_visible=", _tab_btn.visible, " tab_disabled=", _tab_btn.disabled,
-              " tab_mf=", _tab_btn.mouse_filter,
-              " self_mf=", mouse_filter,
-              " panel_mf=", _panel.mouse_filter,
-              " parent_mf=", get_parent().mouse_filter if get_parent() is Control else "N/A")
-        var tab_rect := _tab_btn.get_global_rect()
-        print("[TAB RECT] ", tab_rect)
-        var canvas_layer := get_parent()
-        while canvas_layer and not canvas_layer is CanvasLayer:
-            canvas_layer = canvas_layer.get_parent()
-        if canvas_layer:
-            _dump_overlapping(canvas_layer, tab_rect, 0)
     if _is_open:
         _refresh_slots()
         _refresh_allocation_display()
         _refresh_info_panel()
-
-
-func _dump_overlapping(node: Node, rect: Rect2, depth: int) -> void:
-    if node is Control and node != _tab_btn:
-        var cr: Rect2 = node.get_global_rect()
-        if cr.intersects(rect) and node.mouse_filter != Control.MOUSE_FILTER_IGNORE:
-            print("  [OVERLAP] ", "  ".repeat(depth), node.name,
-                  " mf=", node.mouse_filter,
-                  " rect=", cr,
-                  " z=", node.z_index)
-    for child in node.get_children():
-        _dump_overlapping(child, rect, depth + 1)
 
 
 # ==================================================
@@ -234,10 +205,6 @@ func show_slot_grid() -> void:
 # SLIDE TOGGLE — panel slides RIGHT from the left-edge tab strip
 # ==================================================
 func _on_tab_pressed() -> void:
-    print("[TAB] _is_open=", _is_open, " _close_locked=", _close_locked,
-          " tab_global=", _tab_btn.global_position,
-          " panel_global=", _panel.global_position,
-          " self_global=", global_position)
     if _is_open:
         _close()
         return
