@@ -76,8 +76,25 @@ func get_save_data() -> Dictionary:
     return { "earned": _earned.duplicate() }
 
 
+func _coerce_dict(val, default: Dictionary) -> Dictionary:
+    if typeof(val) == TYPE_DICTIONARY:
+        return val
+    return default
+
+
+func _coerce_bool(val, default: bool) -> bool:
+    if typeof(val) == TYPE_BOOL:
+        return val
+    return default
+
+
 func load_save_data(data: Dictionary) -> void:
-    if data.has("earned"):
-        for key in data["earned"]:
-            if _earned.has(key):
-                _earned[key] = data["earned"][key]
+    # data.has("earned") only confirms the key is present, not that the
+    # value is a Dictionary — a corrupted save with a wrong-typed value
+    # there would iterate fine but then hang/crash re-indexing that same
+    # value with each iterated key (same class already fixed elsewhere
+    # this session, e.g. game_context.gd's load_save_data()).
+    var raw_earned: Dictionary = _coerce_dict(data.get("earned"), {})
+    for key in raw_earned:
+        if _earned.has(key):
+            _earned[key] = _coerce_bool(raw_earned[key], false)
