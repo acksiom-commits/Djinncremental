@@ -712,7 +712,12 @@ func get_star_positions(constellation_id: int) -> Array:
     if def.is_empty():
         return []
 
-    var octant: int         = def.get("octant", 0)
+    # clampi, not just type coercion: "octant" being a genuinely-numeric but
+    # out-of-range value (e.g. a corrupted player constellation with
+    # "octant": 99) would still crash OCTANTS[octant] below with a hard
+    # array-index error, not the typed-assignment hang class — a different
+    # failure mode, equally worth guarding against here.
+    var octant: int         = clampi(_coerce_int(def.get("octant"), 0), 0, 7)
     var center_dir: Vector3 = _get_constellation_center_dir(constellation_id, octant)
     var roll: float         = _get_constellation_roll(constellation_id)
 
@@ -720,16 +725,20 @@ func get_star_positions(constellation_id: int) -> Array:
         # Fixed/designed constellations: author positions in local z-forward
         # space, then transform to the player's seeded world placement.
         var fixed_positions: Array = []
-        for raw in def["fixed_star_positions"]:
-            var local_pos: Vector3 = Vector3(raw[0], raw[1], raw[2]).normalized()
-            fixed_positions.append(_apply_constellation_transform(local_pos, center_dir, roll))
+        for raw in _coerce_array(def.get("fixed_star_positions"), []):
+            if raw is Array and raw.size() >= 3:
+                var rx: float = _coerce_float(raw[0], 0.0)
+                var ry: float = _coerce_float(raw[1], 0.0)
+                var rz: float = _coerce_float(raw[2], 1.0)
+                var local_pos: Vector3 = Vector3(rx, ry, rz).normalized()
+                fixed_positions.append(_apply_constellation_transform(local_pos, center_dir, roll))
         _star_positions_cache[constellation_id] = fixed_positions
         return fixed_positions
 
     # Procedural: scatter stars in a tight cluster around center_dir.
     # dot > 0.95 confines stars to within ~18° of center — distinct enough
     # to read as a cluster when multiple constellations share the same octant.
-    var star_count: int = def.get("star_count", 5)
+    var star_count: int = _coerce_int(def.get("star_count"), 5)
     var rng := RandomNumberGenerator.new()
     rng.seed = player_seed ^ (constellation_id * 2654435761)
 
@@ -856,11 +865,14 @@ func get_canonical_display_basis(constellation_id: int) -> Basis:
         base_rot = Basis(base_axis.normalized(), from_dir.angle_to(centroid))
 
     var def: Dictionary = get_constellation_def(constellation_id)
-    var horiz_stars: Array = def.get("snap_horiz_stars", [])
+    var horiz_stars: Array = _coerce_array(def.get("snap_horiz_stars"), [])
     var roll_angle: float = 0.0
-    if horiz_stars.size() == 2 and horiz_stars[0] < positions.size() and horiz_stars[1] < positions.size():
-        var star_a: Vector3 = positions[horiz_stars[0]]
-        var star_b: Vector3 = positions[horiz_stars[1]]
+    var horiz_a: int = _coerce_int(horiz_stars[0], -1) if horiz_stars.size() == 2 else -1
+    var horiz_b: int = _coerce_int(horiz_stars[1], -1) if horiz_stars.size() == 2 else -1
+    if horiz_stars.size() == 2 and horiz_a >= 0 and horiz_b >= 0 \
+            and horiz_a < positions.size() and horiz_b < positions.size():
+        var star_a: Vector3 = positions[horiz_a]
+        var star_b: Vector3 = positions[horiz_b]
         var a_view: Vector3 = base_rot.inverse() * star_a
         var b_view: Vector3 = base_rot.inverse() * star_b
         var dy: float = b_view.y - a_view.y
@@ -872,12 +884,13 @@ func get_canonical_display_basis(constellation_id: int) -> Basis:
         elif roll_angle < -PI * 0.5:
             roll_angle += PI
 
-        var check: Dictionary = def.get("snap_orient_check", {})
-        if check.has("star") and int(check["star"]) < positions.size():
+        var check: Dictionary = _coerce_dict(def.get("snap_orient_check"), {})
+        var check_star: int = _coerce_int(check.get("star"), -1)
+        if check.has("star") and check_star >= 0 and check_star < positions.size():
             var candidate: Basis = base_rot * Basis(Vector3(0.0, 0.0, 1.0), roll_angle)
-            var ref_view: Vector3 = candidate.inverse() * (positions[int(check["star"])] as Vector3)
-            var value: float = ref_view.y if str(check.get("axis", "y")) == "y" else ref_view.x
-            var wanted_sign: int = int(check.get("sign", 1))
+            var ref_view: Vector3 = candidate.inverse() * (positions[check_star] as Vector3)
+            var value: float = ref_view.y if _coerce_string(check.get("axis"), "y") == "y" else ref_view.x
+            var wanted_sign: int = _coerce_int(check.get("sign"), 1)
             if signf(value) != 0.0 and signf(value) != signf(float(wanted_sign)):
                 roll_angle += PI
 
@@ -888,28 +901,36 @@ func get_canonical_display_basis(constellation_id: int) -> Basis:
 # CONSTELLATION LOOKUP
 # ==================================================
 func get_constellation_def(id: int) -> Dictionary:
+    # BUILT_IN is compile-time constant data — always a well-formed "id".
+    # player_constellations/patron_constellations are loaded from external/
+    # save data, so both the entry itself and its "id" field could be
+    # wrong-typed; coercing "id" to a sentinel that can never equal a real
+    # id turns a would-be crashing `==` comparison into a safe int-int one.
     for c in BUILT_IN:
         if c["id"] == id:
             return c
     for c in player_constellations:
-        if c["id"] == id:
+        if c is Dictionary and _coerce_int(c.get("id"), -1) == id:
             return c
     for c in patron_constellations:
-        if c.get("approved", false) and c["id"] == id:
+        if c is Dictionary and c.get("approved", false) and _coerce_int(c.get("id"), -1) == id:
             return c
     return {}
- 
- 
+
+
 func get_constellations_in_octant(octant: int) -> Array:
     var result: Array = []
     for c in BUILT_IN:
         if c["octant"] == octant and unlocked.has(c["id"]):
             result.append(c)
     for c in player_constellations:
-        if c["octant"] == octant and unlocked.has(c["id"]):
+        if c is Dictionary and _coerce_int(c.get("octant"), -1) == octant \
+                and unlocked.has(_coerce_int(c.get("id"), -1)):
             result.append(c)
     for c in patron_constellations:
-        if c.get("approved", false) and c["octant"] == octant and unlocked.has(c["id"]):
+        if c is Dictionary and c.get("approved", false) \
+                and _coerce_int(c.get("octant"), -1) == octant \
+                and unlocked.has(_coerce_int(c.get("id"), -1)):
             result.append(c)
     return result
  
@@ -931,12 +952,12 @@ func _unlock_constellation(id: int) -> void:
         _game_context.ui_unlocks["constellation"] = true
         
     var def: Dictionary = get_constellation_def(id)
-    var mechanic: String = def.get("mechanic_key", "")
+    var mechanic: String = _coerce_string(def.get("mechanic_key"), "")
     if mechanic != "" and not active_mechanic_unlocks.has(mechanic):
         active_mechanic_unlocks.append(mechanic)
         emit_signal("mechanic_unlocked", mechanic)
- 
- 
+
+
 func on_achievement(key: String) -> void:
     for c in BUILT_IN:
         var condition: String = c.get("unlock", "")
@@ -999,11 +1020,11 @@ func get_spark_cap(constellation_id: int) -> float:
         # star_count in the definition is a GEOMETRY-ONLY field (controls
         # procedural star placement). It has zero effect on spark capacity
         # for any constellation that defines spark_cap explicitly.
-        return float(def["spark_cap"])
+        return _coerce_float(def["spark_cap"], SPARK_CAP_BASE)
     # DEV: FALLBACK — only reached by future/custom constellations that
     # intentionally omit spark_cap and want capacity to scale with geometry.
     # Never applies to any built-in id 0–15.
-    var star_count: int = def.get("star_count", 5)
+    var star_count: int = _coerce_int(def.get("star_count"), 5)
     return SPARK_CAP_BASE * float(star_count)
  
  
@@ -1023,7 +1044,7 @@ func get_visual_state(constellation_id: int) -> String:
     if fraction < THRESHOLD_STARS:
         return "dark"
     var def: Dictionary       = get_constellation_def(constellation_id)
-    var line_threshold: float = def.get("line_threshold", 0.3)
+    var line_threshold: float = _coerce_float(def.get("line_threshold"), 0.3)
     if fraction >= THRESHOLD_ART:
         return "art"
     if fraction >= line_threshold:
@@ -1036,7 +1057,7 @@ func get_star_brightness(constellation_id: int) -> float:
     if fraction < THRESHOLD_STARS:
         return 0.0
     var def: Dictionary       = get_constellation_def(constellation_id)
-    var line_threshold: float = def.get("line_threshold", 0.3)
+    var line_threshold: float = _coerce_float(def.get("line_threshold"), 0.3)
     return clamp(
         (fraction - THRESHOLD_STARS) / (line_threshold - THRESHOLD_STARS),
         0.0, 1.0)
@@ -1061,7 +1082,7 @@ func set_display_constellation(constellation_id: int) -> void:
     if def.is_empty():
         return
     _last_selected_id = constellation_id
-    var octant: int = def.get("octant", 0)
+    var octant: int = clampi(_coerce_int(def.get("octant"), 0), 0, 7)
     set_active_constellation(octant, constellation_id)
  
  
@@ -1082,12 +1103,12 @@ func _rebuild_active_mechanics() -> void:
         if id == -1:
             continue
         var def: Dictionary  = get_constellation_def(id)
-        var mechanic: String = def.get("mechanic_key", "")
+        var mechanic: String = _coerce_string(def.get("mechanic_key"), "")
         if mechanic != "" and not active_mechanic_unlocks.has(mechanic):
             active_mechanic_unlocks.append(mechanic)
             emit_signal("mechanic_unlocked", mechanic)
- 
- 
+
+
 # ==================================================
 # BONUS QUERY
 # ==================================================
@@ -1098,8 +1119,8 @@ func get_active_bonus(bonus_key: String) -> float:
         if id == -1:
             continue
         var def: Dictionary = get_constellation_def(id)
-        if def.get("bonus_key", "") == bonus_key:
-            total += def.get("bonus_value", 0.0)
+        if _coerce_string(def.get("bonus_key"), "") == bonus_key:
+            total += _coerce_float(def.get("bonus_value"), 0.0)
     return total
  
  
@@ -1113,7 +1134,7 @@ func get_active_level_bonus(bonus_key: String) -> float:
         if id == -1:
             continue
         var def: Dictionary = get_constellation_def(id)
-        if def.get("bonus_key", "") != bonus_key:
+        if _coerce_string(def.get("bonus_key"), "") != bonus_key:
             continue
         if not def.has("bonus_levels"):
             continue
@@ -1124,8 +1145,8 @@ func get_active_level_bonus(bonus_key: String) -> float:
             if not _game_context.has_volition_for_constellation(id):
                 continue
         var state:  String     = get_visual_state(id)
-        var levels: Dictionary = def["bonus_levels"]
-        var val:    float      = levels.get(state, 1.0)
+        var levels: Dictionary = _coerce_dict(def["bonus_levels"], {})
+        var val:    float      = _coerce_float(levels.get(state), 1.0)
         if minimize:
             if val < best:
                 best = val
@@ -1179,20 +1200,28 @@ func get_puzzle_hint_direction() -> Vector3:
  
  
 func get_note_freqs(constellation_id: int) -> Array:
+    # A typed `-> Array` return does NOT get the leniency a typed scalar
+    # return (bool/float/int) does — a wrong-typed value hangs the engine
+    # at the return boundary just like a typed variable assignment would
+    # (confirmed directly this session), so this needs the same guard as
+    # everywhere else def data gets read.
     var def: Dictionary = get_constellation_def(constellation_id)
-    return def.get("note_freqs", PUZZLE_NOTE_FREQS)
- 
- 
+    return _coerce_array(def.get("note_freqs"), PUZZLE_NOTE_FREQS)
+
+
 func get_response_freqs(constellation_id: int) -> Array:
     var def: Dictionary = get_constellation_def(constellation_id)
-    return def.get("response_freqs", PUZZLE_RESPONSE_FREQS)
- 
- 
+    return _coerce_array(def.get("response_freqs"), PUZZLE_RESPONSE_FREQS)
+
+
 func get_note_assignment(constellation_id: int) -> Array:
     var def:        Dictionary = get_constellation_def(constellation_id)
     var freqs:      Array      = get_note_freqs(constellation_id)
-    var star_count: int        = def.get("star_count", freqs.size())
-    var puzzle_seq: Array      = def.get("puzzle_sequence", [])
+    # maxi, not just type coercion: a corrupted player/patron def could set
+    # a genuinely-numeric but negative star_count, which is a value, not a
+    # type, problem — resize() would still choke on it.
+    var star_count: int        = maxi(_coerce_int(def.get("star_count"), freqs.size()), 0)
+    var puzzle_seq: Array      = _coerce_array(def.get("puzzle_sequence"), [])
     var assignment: Array      = []
     assignment.resize(star_count)
 
@@ -1261,6 +1290,37 @@ func _coerce_int(val, default: int) -> int:
     # session, not a theoretical concern.
     if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
         return int(val)
+    return default
+
+
+func _coerce_float(val, default: float) -> float:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return float(val)
+    return default
+
+
+func _coerce_string(val, default: String) -> String:
+    if typeof(val) == TYPE_STRING:
+        return val
+    return default
+
+
+func _coerce_dict(val, default: Dictionary) -> Dictionary:
+    if typeof(val) == TYPE_DICTIONARY:
+        return val
+    return default
+
+
+func _coerce_array(val, default: Array) -> Array:
+    # Also closes a gap the typed-scalar-return leniency (verified this
+    # session: a wrong-typed value returned from a `-> bool`/`-> float`
+    # function coerces safely) does NOT cover — a typed `-> Array`/
+    # `-> Dictionary` return does NOT get that same leniency and hangs
+    # just like a typed variable assignment (confirmed directly), so
+    # get_note_freqs()/get_response_freqs() below need this too, not just
+    # the internal def.get(...) reads.
+    if typeof(val) == TYPE_ARRAY:
+        return val
     return default
 
 
