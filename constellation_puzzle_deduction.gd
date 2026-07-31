@@ -44,7 +44,6 @@ var _user_blocks: Dictionary = {}       # "star_idx:name" -> true; blocks placed
 #                                        # "Undo selects" (revert sibling-clearing
 #                                        # fallout only) apart from "Undo blocks"
 #                                        # (revert the player's own X clicks only).
-#   "pitch_carousel_idx": int,    # transient UI state, not persisted
 #   "star_idx": int,              # -1 until resolvable from seq_lo==seq_hi or map-widget confirm
 # }
 var _match_records: Array[Dictionary] = []
@@ -546,7 +545,6 @@ func _get_or_create_match_record_for_color_slot(color_idx: int, position_in_grou
         "manual_color_blocks": {},
         "pitch_revealed": false,
         "star_elim": {},
-        "pitch_carousel_idx": 0,
         "star_idx": -1,
         "color_slot_label": label,
         "pitch_slot_label": "",
@@ -582,7 +580,6 @@ func _get_or_create_match_record_for_pitch_slot(pitch_freq: float, position_in_g
         "manual_color_blocks": {},
         "pitch_revealed": false,
         "star_elim": {},
-        "pitch_carousel_idx": 0,
         "star_idx": -1,
         "color_slot_label": "",
         "pitch_slot_label": label,
@@ -637,7 +634,6 @@ func _get_or_create_match_record_for_name(name_str: String) -> int:
         "manual_color_blocks": {},
         "pitch_revealed": false,
         "star_elim": {},
-        "pitch_carousel_idx": 0,
         "star_idx": -1,
         "color_slot_label": "",
         "pitch_slot_label": "",
@@ -663,7 +659,6 @@ func _get_or_create_match_record_for_seq(slot: int) -> int:
         "manual_color_blocks": {},
         "pitch_revealed": false,
         "star_elim": {},
-        "pitch_carousel_idx": 0,
         "star_idx": -1,
         "color_slot_label": "",
         "pitch_slot_label": "",
@@ -689,7 +684,6 @@ func _get_or_create_match_record_for_star_idx(star_idx: int) -> int:
         "manual_color_blocks": {},
         "pitch_revealed": false,
         "star_elim": {},
-        "pitch_carousel_idx": 0,
         "star_idx": star_idx,
         "color_slot_label": "",
         "pitch_slot_label": "",
@@ -723,7 +717,6 @@ func _get_or_create_match_record_for_degree_slot(degree: int, position_in_group:
         "manual_color_blocks": {},
         "pitch_revealed": false,
         "star_elim": {},
-        "pitch_carousel_idx": 0,
         "star_idx": -1,
         "color_slot_label": "",
         "pitch_slot_label": "",
@@ -1138,7 +1131,6 @@ func _load_match_records(data: Array) -> void:
             "pitch_revealed": _coerce_bool(e.get("pitch_revealed"), false),
             "star_elim": star_elim,
             "color_star_elim_marks": color_star_elim_marks,
-            "pitch_carousel_idx": 0,
             "star_idx": _coerce_int(e.get("star_idx"), -1),
             "color_slot_label": str(e.get("color_slot_label", "")),
             "pitch_slot_label": str(e.get("pitch_slot_label", "")),
