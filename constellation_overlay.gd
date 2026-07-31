@@ -105,7 +105,11 @@ func _process(delta: float) -> void:
                 _debug_lit_star     = -1
                 _debug_current_gap  = 0.65
             else:
-                var pitch_idx: int = sequence[_debug_seq_step]
+                # Same dormant-but-real exposure as line_pairs above: this
+                # def could be a player/patron constellation with a
+                # corrupted "puzzle_sequence" element.
+                var raw_pitch = sequence[_debug_seq_step]
+                var pitch_idx: int = int(raw_pitch) if typeof(raw_pitch) in [TYPE_INT, TYPE_FLOAT] else 0
                 _engine.play_note_by_pitch_index(pitch_idx)
                 _debug_lit_star = -1
                 for si in _engine.note_assignment.size():
@@ -202,9 +206,19 @@ func _draw() -> void:
                     draw_line(a, b, line_color, 1.5, true)
             else:
                 for k in range(0, pairs.size(), 2):
-                    var ai: int = pairs[k]
-                    var bi: int = pairs[k + 1]
-                    if ai >= positions.size() or bi >= positions.size():
+                    # line_pairs is developer-authored constant data for
+                    # BUILT_IN constellations, but get_constellation_def()
+                    # also serves player_constellations/patron_constellations
+                    # — both loaded from external/save data — so a wrong-
+                    # typed element here isn't purely theoretical, just not
+                    # reachable via any live gameplay path today.
+                    var raw_ai = pairs[k]
+                    var raw_bi = pairs[k + 1]
+                    if not (typeof(raw_ai) in [TYPE_INT, TYPE_FLOAT] and typeof(raw_bi) in [TYPE_INT, TYPE_FLOAT]):
+                        continue
+                    var ai: int = int(raw_ai)
+                    var bi: int = int(raw_bi)
+                    if ai < 0 or bi < 0 or ai >= positions.size() or bi >= positions.size():
                         continue
                     var a: Vector2 = positions[ai]
                     var b: Vector2 = positions[bi]
@@ -236,7 +250,15 @@ func _draw() -> void:
                 # Base star color: puzzle color if available, else white.
                 var base_color: Color
                 if has_star_colors:
-                    var ci: int = int(puzzle_star_colors[i])
+                    # get_puzzle_star_colors() only validates that the
+                    # returned value is an Array — not that each element is
+                    # numeric. The puzzle cache round-trips through save
+                    # data, so a corrupted save could put a non-numeric
+                    # value at this index; int() on a Dictionary/Array
+                    # hangs the engine rather than raising a catchable
+                    # error (confirmed elsewhere this session).
+                    var raw_color = puzzle_star_colors[i]
+                    var ci: int = int(raw_color) if typeof(raw_color) in [TYPE_INT, TYPE_FLOAT] else 0
                     base_color = STAR_COLORS_BY_IDX[clamp(ci, 0, 3)]
                 else:
                     base_color = Color(1.0, 1.0, 1.0, 1.0)
