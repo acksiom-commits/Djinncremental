@@ -198,8 +198,14 @@ func _process(delta: float) -> void:
 
     # ── Phase 1: Accumulate time, build ready-batch table ──
     var ready_batches: Dictionary = {}
+    # Hoisted out of the loop below — matches apply_offline_progress()'s
+    # existing pattern (line ~140). Nothing inside the loop body changes
+    # get_timer_intervals()'s inputs, so calling it fresh per-op here just
+    # rebuilt the same 8-entry Dictionary (plus an autoload lookup) up to
+    # 7x every frame for no benefit.
+    var intervals: Dictionary = get_timer_intervals()
     for op in DEPENDENCY_ORDER:
-        var interval: float = get_timer_intervals().get(op, 1.0)
+        var interval: float = intervals.get(op, 1.0)
         var assigned: BigNum = gc.get_operation_total_bignum(op)
         if assigned.is_zero():
             _accum[op] = 0.0

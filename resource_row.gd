@@ -56,6 +56,12 @@ func set_tooltip(text: String) -> void:
 
 
 func set_label(text: String) -> void:
+    # Callers (root_ui.gd's _process-driven _update_counters()) call this
+    # every frame regardless of whether the value changed. Without this
+    # guard, every resource row's RichTextLabel reparses its BBCode 60x/sec
+    # for the entire idle session even when the displayed text is identical.
+    if text == display_label:
+        return
     display_label = text
     if label_node:
         label_node.set("bbcode_text", display_label)
