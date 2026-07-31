@@ -1414,9 +1414,14 @@ func load_save_data(data: Dictionary) -> void:
     else:
         _migrate_flat_volitions_to_slots()
     _rebuild_volition_assignments()
-    if data.has("constellation_spark_totals"):
-        for key in data["constellation_spark_totals"]:
-            constellation_spark_totals[key] = _coerce_float(data["constellation_spark_totals"][key], 0.0)
+    # data.has() only confirms the key is present, not that the value is a
+    # Dictionary — a corrupted save with e.g. a String there would iterate
+    # fine (Strings are iterable) but then crash/hang re-indexing that same
+    # String with each character as a key (confirmed: chained subscript on
+    # a wrong-typed value here hangs rather than raising a catchable error).
+    var raw_spark_totals: Dictionary = _coerce_dict(data.get("constellation_spark_totals"), {})
+    for key in raw_spark_totals:
+        constellation_spark_totals[key] = _coerce_float(raw_spark_totals[key], 0.0)
     
     storage_cap              = BigNum.from_string(data.get("storage_cap",            "987:0"))
     watermarks["monad_solid"]  = BigNum.from_string(data.get("watermark_monad_solid",  "0:0"))
