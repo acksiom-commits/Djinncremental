@@ -74,9 +74,18 @@ static func from_me(mantissa: float, exponent: int) -> BigNum:
     return b
 
 
-static func from_string(s: String) -> BigNum:
+static func from_string(s) -> BigNum:
     # Expects format produced by to_save_string: "m:e"
     # where m is a float string and e is an int string.
+    # `s` is deliberately untyped: this is the primary sanitizer for every
+    # BigNum-valued save field in load_save_data() (~40 call sites), so it
+    # has to survive a corrupted save putting the wrong type at that key —
+    # not just malformed string content. A typed `s: String` parameter
+    # crashes/hangs the engine when the argument is a Dictionary or Array
+    # (confirmed directly) rather than raising a catchable error, since the
+    # mismatch happens at the call boundary before this body ever runs.
+    if typeof(s) != TYPE_STRING:
+        return BigNum.zero()
     var parts = s.split(":")
     if parts.size() != 2:
         return BigNum.zero()

@@ -1233,29 +1233,46 @@ func _serialize_volition_slots() -> Array:
     return result
 
 
-func _deserialize_volition_slots(saved: Array) -> void:
+func _deserialize_volition_slots(saved) -> void:
+    # `saved` is deliberately untyped and every entry re-checked below — the
+    # caller passes data["volition_slots"] straight from parsed save JSON
+    # with no type check, and a typed `saved: Array` parameter would crash/
+    # hang the engine at the call boundary if a corrupted save put anything
+    # else there (confirmed: this is the same class of crash as elsewhere
+    # in load_save_data(), not something a null/empty check catches).
     volition_slots.clear()
+    if not saved is Array:
+        return
     for s in saved:
+        if not s is Dictionary:
+            continue
         var slot = _make_empty_slot()
-        slot["category"] = s.get("category", "")
+        slot["category"] = _coerce_string(s.get("category"), "")
         var raw_target = s.get("target", "")
-        # JSON round-trips integer constellation IDs as floats — cast back.
-        if slot["category"] == "constellation" and raw_target is float:
-            slot["target"] = int(raw_target)
+        # "constellation" targets are always a numeric id (JSON round-trips
+        # them as float); every other category's target is a string op key
+        # (or "" when unused). _coerce_int/_coerce_string both default
+        # safely instead of trusting whatever type the save actually has.
+        if slot["category"] == "constellation":
+            slot["target"] = _coerce_int(raw_target, 0)
         else:
-            slot["target"] = raw_target
-        for c in s.get("children", []):
-            var child_cat: String = c.get("category", "")
-            var child_raw = c.get("target", "")
-            var child_target
-            if child_cat == "constellation" and child_raw is float:
-                child_target = int(child_raw)
-            else:
-                child_target = child_raw
-            slot["children"].append({
-                "category": child_cat,
-                "target":   child_target,
-            })
+            slot["target"] = _coerce_string(raw_target, "")
+        var children_raw = s.get("children", [])
+        if children_raw is Array:
+            for c in children_raw:
+                if not c is Dictionary:
+                    continue
+                var child_cat: String = _coerce_string(c.get("category"), "")
+                var child_raw = c.get("target", "")
+                var child_target
+                if child_cat == "constellation":
+                    child_target = _coerce_int(child_raw, 0)
+                else:
+                    child_target = _coerce_string(child_raw, "")
+                slot["children"].append({
+                    "category": child_cat,
+                    "target":   child_target,
+                })
         volition_slots.append(slot)
     # Grow/shrink parent slot count to match volitions, but do NOT call
     # sync_bonus_children_count() here — children were just deserialized
@@ -1340,6 +1357,12 @@ func _coerce_dict(val, default: Dictionary) -> Dictionary:
     return default
 
 
+func _coerce_string(val, default: String) -> String:
+    if typeof(val) == TYPE_STRING:
+        return val
+    return default
+
+
 func load_save_data(data: Dictionary) -> void:
     sparks          = BigNum.from_string(data.get("sparks",        "0:0"))
     monad["solid"]  = BigNum.from_string(data.get("monad_solid",   "0:0"))
@@ -1380,11 +1403,11 @@ func load_save_data(data: Dictionary) -> void:
             if typeof(val) == TYPE_STRING and val.begins_with("BN:"):
                 assignments[key] = BigNum.from_string(val.substr(3))
             else:
-                assignments[key] = int(val)
+                assignments[key] = _coerce_int(val, 0)
     if data.has("locks"):
         for key in data["locks"]:
             if locks.has(key):
-                locks[key] = data["locks"][key]
+                locks[key] = _coerce_bool(data["locks"][key], false)
     # --- Volition Slots ---
     if data.has("volition_slots"):
         _deserialize_volition_slots(data["volition_slots"])
@@ -1393,7 +1416,7 @@ func load_save_data(data: Dictionary) -> void:
     _rebuild_volition_assignments()
     if data.has("constellation_spark_totals"):
         for key in data["constellation_spark_totals"]:
-            constellation_spark_totals[key] = float(data["constellation_spark_totals"][key])
+            constellation_spark_totals[key] = _coerce_float(data["constellation_spark_totals"][key], 0.0)
     
     storage_cap              = BigNum.from_string(data.get("storage_cap",            "987:0"))
     watermarks["monad_solid"]  = BigNum.from_string(data.get("watermark_monad_solid",  "0:0"))
@@ -1403,7 +1426,7 @@ func load_save_data(data: Dictionary) -> void:
     if data.has("ui_unlocks"):
         for key in data["ui_unlocks"]:
             if ui_unlocks.has(key):
-                ui_unlocks[key] = data["ui_unlocks"][key]
+                ui_unlocks[key] = _coerce_bool(data["ui_unlocks"][key], false)
     if data.has("tetrad_milestones"):
         for key in data["tetrad_milestones"]:
             tetrad_milestones[key] = data["tetrad_milestones"][key]
@@ -1416,7 +1439,9 @@ func load_save_data(data: Dictionary) -> void:
                 totals_created[key] = BigNum.from_string(data["totals_created"][key])
     if data.has("totals_milestones"):
         for key in data["totals_milestones"]:
-            totals_milestones[key] = data["totals_milestones"][key]
+            # Default 2 matches the .get(key, 2) fallback every consumer
+            # uses (root_ui.gd's _check_totals_milestones()).
+            totals_milestones[key] = _coerce_int(data["totals_milestones"][key], 2)
 
     # === FIRMAMENT STOCKS ===
     for k in solid_stocks:
@@ -1431,11 +1456,11 @@ func load_save_data(data: Dictionary) -> void:
     if data.has("grain_purity_profile"):
         for k in data["grain_purity_profile"]:
             if grain_purity_profile.has(k):
-                grain_purity_profile[k] = float(data["grain_purity_profile"][k])
+                grain_purity_profile[k] = _coerce_float(data["grain_purity_profile"][k], 0.0)
     if data.has("manifold_allocations"):
         for k in data["manifold_allocations"]:
             if manifold_allocations.has(k):
-                manifold_allocations[k] = int(data["manifold_allocations"][k])
+                manifold_allocations[k] = _coerce_int(data["manifold_allocations"][k], 0)
 
     manifold_total_flows = _coerce_int(data.get("manifold_total_flows"), 0)
     var _ht = data.get("hourglass_target_ops")
@@ -1448,9 +1473,9 @@ func load_save_data(data: Dictionary) -> void:
     archon_lockdown_end_time  = _coerce_float(data.get("archon_lockdown_end_time"), 0.0)
     archon_warning_window_end = _coerce_float(data.get("archon_warning_window_end"), 0.0)
     archon_reentry_threshold  = _coerce_int(data.get("archon_reentry_threshold"), 0)
-    uonite_name = data.get("uonite_name", "")
-    sparks_since_first_prestige = data.get("sparks_since_first_prestige", 0.0)
-    hint_bias_enabled = data.get("hint_bias_enabled", false)
+    uonite_name = _coerce_string(data.get("uonite_name"), "")
+    sparks_since_first_prestige = _coerce_float(data.get("sparks_since_first_prestige"), 0.0)
+    hint_bias_enabled = _coerce_bool(data.get("hint_bias_enabled"), false)
     _last_bonus_volition_grant = 0  # Forces re-sync on first accumulate tick after load
 
 
