@@ -1255,7 +1255,16 @@ func get_note_assignment(constellation_id: int) -> Array:
             # forward until a consumer typed-assigns it (e.g. click_sequence_
             # puzzle_engine.gd's `var clicked: int = note_assignment[...]`),
             # which does hang. Coerce here instead of at every read site.
-            assignment[i] = _coerce_int(puzzle_seq[i], 0)
+            # Also clamped, not just type-coerced — a corrupted player/patron
+            # save's puzzle_sequence could hold a type-valid but out-of-range
+            # note index (e.g. 999). This value becomes star_pitch_index
+            # downstream in constellation_logic_puzzle.gd, which bracket-
+            # indexes pitch_freqs/pitch_freq_rank with it in several places
+            # with no bounds check of their own — an out-of-range value here
+            # crashes clue-text generation. Same "0 if freqs is empty" fallback
+            # as the round-robin branch below.
+            var raw_note_idx: int = _coerce_int(puzzle_seq[i], 0)
+            assignment[i] = clampi(raw_note_idx, 0, freqs.size() - 1) if freqs.size() > 0 else 0
     elif star_count == freqs.size():
         # 1:1 star-to-pitch: use range (Archon, Spark)
         assignment = range(freqs.size())
