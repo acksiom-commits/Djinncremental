@@ -9,7 +9,6 @@ extends Control
 # wired in root_ui.gd _ready().
 
 var _cd: Node = null
-var _gc: Node = null
 
 @onready var _constellation_art_rect: TextureRect = $ConstellationDisplay/ConstellationArtTextureRect
 @onready var _study_btn: Button = $StudyButton
@@ -20,7 +19,6 @@ var _starfield:  Node = null
 
 func _ready() -> void:
     _cd = get_node_or_null("/root/ConstellationData")
-    _gc = get_node_or_null("/root/GameContext")
     var display := get_node_or_null("ConstellationDisplay")
     if display is Control:
         display.draw.connect(_draw_border.bind(display))
