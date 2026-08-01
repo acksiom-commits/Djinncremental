@@ -129,10 +129,22 @@ func load_save_data(data: Dictionary) -> void:
         for entry in raw_seq:
             if entry is Dictionary:
                 var seq_name = entry.get("name", "")
-                var seq_lines = entry.get("lines", [])
+                var raw_lines = entry.get("lines", [])
+                # Outer array-ness alone isn't enough — _show_sequence_detail()
+                # does `"||" in line` and `line.strip_edges()` on each element.
+                # Confirmed directly: the `in` operator between a String
+                # literal and a non-String/non-container Variant (e.g. a
+                # corrupted save putting an int/Dictionary in this array)
+                # hangs the engine rather than raising a catchable error, so
+                # each element needs its own type check too.
+                var seq_lines: Array = []
+                if raw_lines is Array:
+                    for line in raw_lines:
+                        if line is String:
+                            seq_lines.append(line)
                 _sequences.append({
                     "name":  seq_name if seq_name is String else "",
-                    "lines": seq_lines if seq_lines is Array else [],
+                    "lines": seq_lines,
                 })
     var raw_notif = data.get("notifications")
     _notifications = []
