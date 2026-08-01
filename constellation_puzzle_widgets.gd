@@ -1189,7 +1189,6 @@ func _build_color_group_row(color_idx: int, position_in_group: int) -> void:
 
 
 func _populate_color_group_rows() -> void:
-    _deduction._debug_dump_named_records()
     var color_order: Array = range(_host.COLOR_NAME_LABELS.size())
     color_order.sort_custom(func(a, b):
         return String(_host.COLOR_NAME_LABELS[a]).nocasecmp_to(String(_host.COLOR_NAME_LABELS[b])) < 0)
@@ -1263,7 +1262,6 @@ func _populate_pitch_group_rows() -> void:
 
 
 func _populate_degree_group_rows() -> void:
-    _deduction._debug_dump_named_records()
     var degree_order: Array = []
     var degrees_set: Dictionary = {}
     for i in _host._star_count:
