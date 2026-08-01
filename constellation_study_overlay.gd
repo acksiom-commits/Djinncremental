@@ -246,18 +246,6 @@ func _ready() -> void:
     _star_map_control.add_child(_pitch_reveal_label)
 
 
-# ==================================================
-# MELODY BAR SCORE — piano-roll style summary of confirmed Sequence×Pitch
-# information. Purely a rendering query over _match_records: no ground
-# truth is ever read here. A position only gets a notehead if the player
-# has confirmed BOTH the exact sequence slot AND a pitch on that same
-# record; a confirmed slot with unconfirmed pitch gets a "?" at neutral
-# height; a wholly unconfirmed slot draws nothing.
-# ==================================================
-
-
-
-
 func _process(delta: float) -> void:
     if _pitch_reveal_timer > 0.0:
         _pitch_reveal_timer -= delta
@@ -650,18 +638,6 @@ func _on_fork_toggle_pressed() -> void:
         for wi in _star_widgets.size():
             if is_instance_valid(_star_widgets[wi]):
                 _star_widgets[wi].visible = false
-
-
-
-
-# ==================================================
-# UNDO NAME-SELECTION/NAME-BLOCK CALLBACKS
-# ==================================================
-
-
-
-
-
 
 
 # ==================================================
