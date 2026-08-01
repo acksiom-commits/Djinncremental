@@ -334,6 +334,15 @@ func _show_conflict_choice(what: String, value_a: String, value_b: String) -> St
     dlg.get_ok_button().hide()
     dlg.add_button("Keep: %s" % value_a, false, "choice_a")
     dlg.add_button("Keep: %s" % value_b, false, "choice_b")
+    # AcceptDialog can be dismissed without either button — Escape or the
+    # popup's own close corner both fire `canceled`, not `custom_action`
+    # (root_ui.gd's save-corruption dialog already handles `canceled`
+    # separately for exactly this reason). Since this function awaits
+    # custom_action specifically, an unhandled cancel would leave that
+    # await permanently unresolved — stalling whatever puzzle-state
+    # resolution called this. Defaulting to value_a (keep the pre-existing
+    # entry) guarantees the await always resumes.
+    dlg.canceled.connect(func(): dlg.emit_signal("custom_action", "choice_a"))
     _host.add_child(dlg)
     dlg.popup_centered()
     var chosen_action: String = await dlg.custom_action
