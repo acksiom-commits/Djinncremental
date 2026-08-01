@@ -117,7 +117,12 @@ func _process(delta: float) -> void:
                         _debug_lit_star = si
                         break
                 if _debug_seq_step < durations.size():
-                    _debug_current_gap = durations[_debug_seq_step]
+                    # Same corrupted-save exposure as raw_pitch above — a
+                    # typed float assignment from a wrong-typed "note_
+                    # durations" element hangs rather than raising a
+                    # catchable error (confirmed elsewhere this session).
+                    var raw_duration = durations[_debug_seq_step]
+                    _debug_current_gap = float(raw_duration) if typeof(raw_duration) in [TYPE_INT, TYPE_FLOAT] else 0.65
                 else:
                     _debug_current_gap = 0.65
                 _debug_seq_step += 1
