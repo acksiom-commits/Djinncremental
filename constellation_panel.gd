@@ -120,3 +120,25 @@ func reveal_study_button() -> void:
         ancestor = ancestor.get_parent()
     for _i in 3:
         await get_tree().process_frame
+
+    # TEMPORARY DIAGNOSTIC — the previous layout-settle fix here did not
+    # resolve the reported bug (button clickable/functional but invisible,
+    # persisting until reload). Dumping the actual render-relevant state of
+    # the button and every Control ancestor to find out which one is
+    # actually wrong, instead of guessing again. Safe to remove once
+    # confirmed/fixed — prints nothing that affects gameplay.
+    print("[STUDY_BTN_DIAG] --- reveal_study_button diagnostic dump ---")
+    print("[STUDY_BTN_DIAG] StudyButton: visible=%s modulate=%s self_modulate=%s global_rect=%s size=%s z_index=%s theme=%s" % [
+        _study_btn.visible, _study_btn.modulate, _study_btn.self_modulate,
+        _study_btn.get_global_rect(), _study_btn.size, _study_btn.z_index, _study_btn.theme])
+    var diag_node: Node = self
+    while diag_node:
+        if diag_node is Control:
+            print("[STUDY_BTN_DIAG] %s (%s): visible=%s modulate=%s self_modulate=%s size=%s z_index=%s z_as_relative=%s clip_contents=%s" % [
+                diag_node.name, diag_node.get_class(), diag_node.visible, diag_node.modulate,
+                diag_node.self_modulate, diag_node.size, diag_node.z_index, diag_node.z_as_relative,
+                diag_node.clip_contents])
+        elif diag_node is CanvasLayer:
+            print("[STUDY_BTN_DIAG] %s (CanvasLayer): layer=%s visible=%s" % [diag_node.name, diag_node.layer, diag_node.visible])
+        diag_node = diag_node.get_parent()
+    print("[STUDY_BTN_DIAG] --- end dump ---")
