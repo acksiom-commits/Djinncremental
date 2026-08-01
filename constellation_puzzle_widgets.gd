@@ -415,6 +415,8 @@ func _open_name_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
 
 
 func _on_slot_name_check(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        return
     var r: Dictionary = _deduction._match_records[record_idx]
     var name_states: Dictionary = r.get("name_states", {})
     var cur: int = int(name_states.get(star_name, 0))
@@ -453,6 +455,8 @@ func _on_slot_name_undo_all(record_idx: int) -> void:
 
 
 func _on_slot_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        return
     var r: Dictionary = _deduction._match_records[record_idx]
     var name_states: Dictionary = r.get("name_states", {})
     var cur: int = int(name_states.get(star_name, 0))
@@ -472,6 +476,8 @@ func _on_slot_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) ->
 
 
 func _on_slot_name_protect(record_idx: int, star_name: String) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        return
     var r: Dictionary = _deduction._match_records[record_idx]
     var states: Dictionary = r.get("name_states", {})
     if int(states.get(star_name, 0)) != 0:
@@ -531,6 +537,8 @@ func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
 
 
 func _on_pitch_checklist_check(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        return
     if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
     var pitch_states: Dictionary = _deduction._match_records[record_idx].get("pitch_states", {})
@@ -548,6 +556,8 @@ func _on_pitch_checklist_check(record_idx: int, note_name: String, _row: StaffPo
 
 
 func _on_pitch_checklist_x(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        return
     if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
     var r: Dictionary = _deduction._match_records[record_idx]
@@ -569,6 +579,8 @@ func _on_pitch_checklist_x(record_idx: int, note_name: String, _row: StaffPopupR
 
 
 func _on_pitch_checklist_protect(record_idx: int, note_name: String) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        return
     if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
     var r: Dictionary = _deduction._match_records[record_idx]
@@ -587,6 +599,8 @@ func _on_pitch_checklist_protect(record_idx: int, note_name: String) -> void:
 
 
 func _on_pitch_checklist_undo_selects(record_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        return
     if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
     _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
@@ -601,6 +615,8 @@ func _on_pitch_checklist_undo_selects(record_idx: int) -> void:
 
 
 func _on_pitch_checklist_undo_blocks(record_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        return
     if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
     _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
@@ -610,6 +626,8 @@ func _on_pitch_checklist_undo_blocks(record_idx: int) -> void:
 
 
 func _on_pitch_checklist_undo_all(record_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        return
     if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
         return
     _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
@@ -895,6 +913,8 @@ func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: Lin
 
 
 func _on_record_middle_committed(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        return
     var raw: String = mid_edit.text.strip_edges()
     if raw == "":
         _deduction._match_records[record_idx]["seq_candidates"] = []
