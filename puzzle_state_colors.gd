@@ -6,7 +6,7 @@ extends Resource
 # 2026-07-27 from ~25 duplicate Color(...) literals scattered across
 # constellation_puzzle_widgets.gd, constellation_puzzle_deduction.gd,
 # constellation_study_overlay.gd, constellation_fork_puzzle.gd, and
-# StaffPopupRow.gd — the same handful of colors independently retyped
+# staff_popup_row.gd — the same handful of colors independently retyped
 # in each file. One shared .tres instance (puzzle_state_colors.tres,
 # at project root) is now the single Inspector-editable source; every
 # consumer does `const STATE_COLORS := preload("res://puzzle_state_colors.tres")`

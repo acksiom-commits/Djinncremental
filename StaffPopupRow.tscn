@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://bm6jxg43ecqm5"]
 
-[ext_resource type="Script" uid="uid://caouke18vm4xd" path="res://StaffPopupRow.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://caouke18vm4xd" path="res://staff_popup_row.gd" id="1_script"]
 
 [node name="StaffPopupRow" type="HBoxContainer" unique_id=87103261]
 theme_override_constants/separation = 4
