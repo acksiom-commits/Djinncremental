@@ -1005,7 +1005,13 @@ func _on_game_loaded(offline_seconds: float) -> void:
     var cd_boot = get_node_or_null("/root/ConstellationData")
     if cd_boot:
         var cached_boot: Dictionary = cd_boot.get_puzzle_cache(0)
-        var seed_matches: bool = cached_boot.get("player_seed_used", -1) == cd_boot.player_seed
+        # get_puzzle_cache() only guarantees the outer value is a Dictionary —
+        # individual fields round-trip straight from save data unvalidated.
+        # A typed bool assigned from `==` between an untyped Variant holding a
+        # Dictionary/Array and a typed int HANGS the engine (confirmed
+        # directly), same danger class as a typed assignment from a wrong-
+        # typed value — so these must be coerced to int before comparing.
+        var seed_matches: bool = _coerce_def_int(cached_boot.get("player_seed_used"), -1) == cd_boot.player_seed
         # FIXED 2026-07-27 — was hardcoded to 3, a stale literal that never
         # matched ConstellationLogicPuzzle.CACHE_VERSION (2). That meant this
         # check was ALWAYS false, silently discarding a perfectly valid
@@ -1015,7 +1021,7 @@ func _on_game_loaded(offline_seconds: float) -> void:
         # across more frames to fix input lag — players could open the
         # Study panel before the wasted regeneration finished. Referencing
         # the real constant instead of a literal so this can't drift again.
-        var version_matches: bool = cached_boot.get("version", 0) == ConstellationLogicPuzzle.CACHE_VERSION
+        var version_matches: bool = _coerce_def_int(cached_boot.get("version"), 0) == ConstellationLogicPuzzle.CACHE_VERSION
         if cached_boot.is_empty() or not seed_matches or not version_matches:
             cd_boot.clear_puzzle_cache(0)
             _start_puzzle_generation(0)
