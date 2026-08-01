@@ -83,7 +83,10 @@ func set_constellation(constellation_id: int, cd: Node, gc: Node) -> void:
 
 func toggle_mode() -> void:
     _fork_mode = not _fork_mode
-    _fork_btn.modulate = STATE_COLORS.confirmed if _fork_mode else Color(1, 1, 1, 1)
+    # Matches set_constellation()'s existing is_instance_valid(_fork_btn)
+    # guard — touching .modulate on a freed/invalid Button crashes.
+    if is_instance_valid(_fork_btn):
+        _fork_btn.modulate = STATE_COLORS.confirmed if _fork_mode else Color(1, 1, 1, 1)
     if _fork_mode:
         _engine.check_availability()
     if is_instance_valid(_star_map_control):
@@ -92,7 +95,8 @@ func toggle_mode() -> void:
 
 func force_off() -> void:
     _fork_mode = false
-    _fork_btn.modulate = Color(1, 1, 1, 1)
+    if is_instance_valid(_fork_btn):
+        _fork_btn.modulate = Color(1, 1, 1, 1)
 
 
 func tick(delta: float) -> void:
