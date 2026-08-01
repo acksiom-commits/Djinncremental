@@ -346,28 +346,20 @@ func _possible_names_for_record(record_idx: int) -> Array[String]:
             var other_degree_label: String = str(other.get("degree_slot_label", ""))
 
             var conflict: bool = false
-            var conflict_reason: String = ""
             if this_star_idx >= 0 and other_star >= 0 and other_star != this_star_idx:
                 conflict = true
-                conflict_reason = "star %d vs %d" % [this_star_idx, other_star]
             if this_seq_exact > 0 and other_seq_exact > 0 and other_seq_exact != this_seq_exact:
                 conflict = true
-                conflict_reason = "seq %d vs %d" % [this_seq_exact, other_seq_exact]
             if this_color_label != "" and other_color_label != "" and other_color_label != this_color_label:
                 conflict = true
-                conflict_reason = "color slot '%s' vs '%s'" % [this_color_label, other_color_label]
             if this_pitch_label != "" and other_pitch_label != "" and other_pitch_label != this_pitch_label:
                 conflict = true
-                conflict_reason = "pitch slot '%s' vs '%s'" % [this_pitch_label, other_pitch_label]
             if this_degree_label != "" and other_degree_label != "" and this_degree_label != other_degree_label:
                 conflict = true
-                conflict_reason = "degree slot '%s' vs '%s'" % [this_degree_label, other_degree_label]
             if conflict:
-                print("[DEBUG] possible_names: record %d excludes '%s' — %s" % [record_idx, name_str, conflict_reason])
                 continue
 
         if this_star_idx >= 0 and _star_elim_state(this_star_idx, name_str) == 2:
-            print("[DEBUG] possible_names: record %d excludes '%s' — X'd for this slot's star %d" % [record_idx, name_str, this_star_idx])
             continue
 
         result.append(name_str)
