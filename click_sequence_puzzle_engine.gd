@@ -137,12 +137,31 @@ func check_availability() -> void:
 
 
 func get_correct_star_sequence(for_constellation_id: int) -> Array:
-    if constellation_id != for_constellation_id or correct_sequence.is_empty():
-        var prev_target: int = constellation_id
-        constellation_id = for_constellation_id
-        if note_assignment.is_empty() or prev_target != for_constellation_id:
-            note_assignment = cd.get_note_assignment(for_constellation_id)
-        _build_correct_star_sequence()
+    if constellation_id == for_constellation_id and not correct_sequence.is_empty():
+        return correct_sequence
+    # This same engine instance also drives LIVE click-based gameplay
+    # (constellation_overlay.gd's _engine). root_ui.gd's background puzzle-
+    # generation trigger (_start_puzzle_generation(), fired on prestige
+    # completion — a normal core-gameplay event, not an edge case) calls
+    # through to this function for whichever constellation id it's
+    # pre-generating, independent of whatever the player may currently be
+    # actively clicking through. Silently overwriting constellation_id/
+    # note_assignment/correct_sequence here — as the old code did
+    # unconditionally — would corrupt that live session: `step` isn't
+    # reset to match, so the next click evaluates against the wrong
+    # constellation's data, and crashes outright (Array OOB) if the new
+    # correct_sequence is shorter than `step`. Compute into a standalone
+    # result instead of touching self's fields whenever there's a live
+    # session for a DIFFERENT constellation to protect.
+    if state == State.ACTIVE and constellation_id >= 0 and constellation_id != for_constellation_id:
+        var other_note_assignment: Array = cd.get_note_assignment(for_constellation_id) if cd else []
+        return _compute_correct_star_sequence(for_constellation_id, other_note_assignment)
+
+    var prev_target: int = constellation_id
+    constellation_id = for_constellation_id
+    if note_assignment.is_empty() or prev_target != for_constellation_id:
+        note_assignment = cd.get_note_assignment(for_constellation_id)
+    _build_correct_star_sequence()
     return correct_sequence
 
 
@@ -235,27 +254,38 @@ func tick(delta: float) -> void:
 # INTERNAL — SEQUENCE BUILD
 # ==================================================
 func _build_correct_star_sequence() -> void:
-    correct_sequence.clear()
-    if not cd or note_assignment.is_empty():
-        return
-    var def: Dictionary = cd.get_constellation_def(constellation_id)
+    correct_sequence = _compute_correct_star_sequence(constellation_id, note_assignment)
+
+
+## Pure — reads/writes nothing on self except through its parameters, so
+## get_correct_star_sequence() can call this for a constellation OTHER than
+## the one this engine is currently live-tracking without disturbing that
+## live session's own state (constellation_id/note_assignment/correct_
+## sequence). _build_correct_star_sequence() above is the normal in-place
+## wrapper other call sites (check_availability()) use.
+func _compute_correct_star_sequence(target_constellation_id: int, target_note_assignment: Array) -> Array:
+    var result: Array = []
+    if not cd or target_note_assignment.is_empty():
+        return result
+    var def: Dictionary = cd.get_constellation_def(target_constellation_id)
     var sequence: Array = _coerce_array(def.get("puzzle_sequence"), [])
     var used: Array = []
     for step_i in sequence.size():
         var pitch: int = _coerce_int(sequence[step_i], -1)
         var best_star: int = -1
-        for si in note_assignment.size():
-            if note_assignment[si] == pitch and si not in used:
+        for si in target_note_assignment.size():
+            if target_note_assignment[si] == pitch and si not in used:
                 best_star = si
                 break
         if best_star == -1:
-            for si in note_assignment.size():
-                if note_assignment[si] == pitch:
+            for si in target_note_assignment.size():
+                if target_note_assignment[si] == pitch:
                     best_star = si
                     break
         if best_star >= 0:
             used.append(best_star)
-        correct_sequence.append(best_star)
+        result.append(best_star)
+    return result
 
 
 # ==================================================
