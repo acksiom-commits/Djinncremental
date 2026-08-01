@@ -62,6 +62,19 @@ var _user_blocks: Dictionary = {}       # "star_idx:name" -> true; blocks placed
 # }
 var _match_records: Array[Dictionary] = []
 
+## Bumped every time _match_records is cleared/rebuilt (see
+## _load_match_records()). _merge_match_records() and
+## _confirm_match_record_identity() both hold indices/Dictionary
+## references across `await _conflict_dialog_fn.call(...)` — a real,
+## reachable window, since root_ui.gd re-invokes show_for_constellation()
+## (which rebuilds _match_records from scratch) on the SAME constellation
+## a study overlay already has open, whenever that constellation's puzzle
+## regenerates. Capturing this counter at entry and checking it after an
+## await lets those functions detect "the array was rebuilt out from under
+## me" and abort cleanly instead of writing to an orphaned Dictionary or
+## bracket-indexing a stale/now-out-of-range index.
+var _match_records_generation: int = 0
+
 
 func setup(host: ConstellationStudyOverlay, conflict_dialog_fn: Callable) -> void:
     _host = host
@@ -835,6 +848,7 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
     if target_idx < 0 or target_idx >= _match_records.size() \
             or source_idx < 0 or source_idx >= _match_records.size():
         return target_idx
+    var entry_generation: int = _match_records_generation
     var target: Dictionary = _match_records[target_idx]
     var source: Dictionary = _match_records[source_idx]
 
@@ -1031,6 +1045,15 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
     elif target_degree_label != "" and source_degree_label != "" and target_degree_label != source_degree_label:
         target["degree_slot_label"] = await _conflict_dialog_fn.call("degree slot label", target_degree_label, source_degree_label)
 
+    # _match_records may have been cleared/rebuilt by one of the awaits
+    # above (see _match_records_generation's own comment) — target_idx/
+    # source_idx and the target/source Dictionary references could now
+    # point at nothing, or at unrelated records in a freshly-rebuilt
+    # array. Abort here rather than let remove_at()/the bracket-indexing
+    # below act on stale indices.
+    if _match_records_generation != entry_generation:
+        return target_idx
+
     _sync_color_states_from_star_idx(target_idx)
     # color_states just got unioned from two records (or resynced from
     # ground truth above) — recompute rather than trying to merge the two
@@ -1061,6 +1084,11 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
 func _confirm_match_record_identity(record_idx: int, star_idx: int, star_name: String) -> int:
     if record_idx < 0 or record_idx >= _match_records.size():
         return -1  # callers already treat a negative return as "abort"
+    # See _match_records_generation's comment — this function holds
+    # record_idx/Dictionary references across three separate awaits
+    # (including one that calls _merge_match_records, which does its own
+    # rebuild-during-await work). Checked after each one below.
+    var entry_generation: int = _match_records_generation
     # Color contradiction check FIRST, before any merge — every star widget
     # auto-creates a blank star_idx-bound record just by rendering, so the
     # merge below runs almost every time a name gets confirmed onto a star.
@@ -1085,10 +1113,15 @@ func _confirm_match_record_identity(record_idx: int, star_idx: int, star_name: S
             "color for '%s'" % star_name, old_color_label, new_color_label)
         if color_winner == old_color_label:
             return -1
+        if _match_records_generation != entry_generation:
+            return -1
 
     var existing_by_star: int = _find_match_record_by_star_idx(star_idx)
     if existing_by_star >= 0 and existing_by_star != record_idx:
         record_idx = await _merge_match_records(record_idx, existing_by_star)
+        if _match_records_generation != entry_generation \
+                or record_idx < 0 or record_idx >= _match_records.size():
+            return -1
 
     var r: Dictionary = _match_records[record_idx]
     if int(r["star_idx"]) >= 0 and int(r["star_idx"]) != star_idx:
@@ -1097,6 +1130,8 @@ func _confirm_match_record_identity(record_idx: int, star_idx: int, star_name: S
         var winner: String = await _conflict_dialog_fn.call(
             "star identity for '%s'" % star_name, old_label, new_label)
         if winner == old_label:
+            return -1
+        if _match_records_generation != entry_generation:
             return -1
 
     if str(r["name"]) == "":
@@ -1142,6 +1177,7 @@ func _save_match_records() -> Array:
 
 func _load_match_records(data: Array) -> void:
     _match_records.clear()
+    _match_records_generation += 1
     for entry in data:
         if not entry is Dictionary:
             continue
