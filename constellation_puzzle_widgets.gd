@@ -1204,10 +1204,6 @@ func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
     # stuck at the unresolved/neutral color forever, even after the
     # player has listened to the star and its color is fully knowable.
     var row_color: Color = _host.STAR_COLORS_BY_IDX[known_star_color] if known_star_color >= 0 else _deduction._display_color_for_record(record_idx)
-    print("[DEBUG] pitch row %s pos=%d record=%d star_idx=%d known_color=%d color_states=%s" %
-        [ConstellationLogicPuzzle.note_name_for_freq(pitch_freq), position_in_group, record_idx,
-         int(_deduction._match_records[record_idx].get("star_idx", -1)), known_star_color,
-         str(_deduction._match_records[record_idx].get("color_states", {}))])
 
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 8)
@@ -2032,9 +2028,6 @@ func _build_star_widgets_impl() -> void:
                     var captured_name := name_str
                     btn_check.pressed.connect(func(): _on_name_check(si, captured_name, name_lbl, btn_check, btn_x))
                     btn_check.gui_input.connect(func(event: InputEvent):
-                        if event is InputEventMouseButton:
-                            print("[DEBUG] btn_check gui_input: button=%d pressed=%s star=%d name=%s" %
-                                [event.button_index, event.pressed, si, captured_name])
                         if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
                             _on_name_protect_toggle(si, captured_name)
                             btn_check.get_viewport().set_input_as_handled())
@@ -2273,8 +2266,17 @@ func _reposition_star_tags() -> void:
         var root: Control = _host._star_tags[i]
         if not is_instance_valid(root):
             continue
-        var vbox: VBoxContainer = root.get_child(0)
-        var hbox: HBoxContainer = root.get_child(1)
+        # Safe enough by construction today — _build_star_tags_impl() always
+        # adds exactly a VBoxContainer then an HBoxContainer, in that order,
+        # to every root — but a direct typed assignment from get_child()
+        # HANGS the engine (not a catchable error) if that ever stops being
+        # true. `as` + null-check degrades to skipping this tag instead.
+        if root.get_child_count() < 2:
+            continue
+        var vbox: VBoxContainer = root.get_child(0) as VBoxContainer
+        var hbox: HBoxContainer = root.get_child(1) as HBoxContainer
+        if not vbox or not hbox:
+            continue
         var dot: Vector2 = _host._star_screen_pos[i]
 
         vbox.reset_size()
