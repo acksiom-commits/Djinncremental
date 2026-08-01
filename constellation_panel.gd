@@ -113,10 +113,17 @@ func reveal_study_button() -> void:
     # Toggling visibility off then back on forces Godot to fully re-register
     # this subtree with the rendering server — a much stronger guarantee of
     # a fresh repaint than queue_redraw() alone, which relies on the same
-    # dirty-tracking that isn't reliably catching this case.
+    # dirty-tracking that isn't reliably catching this case. CONFIRMED this
+    # fixes the invisibility (player-tested), but the first version awaited
+    # a frame between the false and true assignments, which actually
+    # rendered a frame with the whole panel (border included) hidden — a
+    # visible flicker the player also confirmed. Godot only composites a
+    # frame at frame boundaries, so setting visible false then true with NO
+    # await between them still drives the same off/on transition (and
+    # whatever re-registration it triggers) without the renderer ever
+    # getting a chance to draw the momentarily-hidden state.
     await get_tree().process_frame
     self.visible = false
-    await get_tree().process_frame
     self.visible = true
     queue_redraw()
     _study_btn.queue_redraw()
