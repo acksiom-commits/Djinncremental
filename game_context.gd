@@ -1504,10 +1504,18 @@ func load_save_data(data: Dictionary) -> void:
 
     manifold_total_flows = _coerce_int(data.get("manifold_total_flows"), 0)
     var _ht = data.get("hourglass_target_ops")
+    hourglass_target_ops = []
     if _ht is Array:
-        hourglass_target_ops = Array(_ht, TYPE_STRING, "", null)
-    else:
-        hourglass_target_ops = []
+        # Array(base, TYPE_STRING, "", null) looks like the obvious one-liner
+        # here, but confirmed directly: if ANY element in the source array
+        # isn't already a String (even a plain int, which is normally a
+        # valid Variant->String conversion), the whole conversion silently
+        # fails and returns an empty array - not a crash, but a corrupted
+        # save with one bad element would silently wipe every real
+        # hourglass target op instead of just dropping the bad one.
+        for v in _ht:
+            if typeof(v) == TYPE_STRING:
+                hourglass_target_ops.append(v)
     archon_poke_count         = _coerce_int(data.get("archon_poke_count"), 0)
     # clampi, not just type coercion: archon_poke_minigame.gd indexes
     # LOCKDOWN_DURATIONS/POST_LOCKDOWN_MESSAGES (6 entries) with this value.
