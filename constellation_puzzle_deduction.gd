@@ -177,6 +177,8 @@ func _known_color_for_seq_position(seq_pos: int) -> int:
 
 
 func _propagate_pitch_confirmed_same_record(record_idx: int, confirmed_note: String) -> void:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return
     var r: Dictionary = _match_records[record_idx]
     var pitch_states: Dictionary = r.get("pitch_states", {})
     for f in _host._pitch_freqs:
@@ -300,6 +302,8 @@ func _star_confirmed_name(star_idx: int) -> String:
 
 
 func _possible_names_for_record(record_idx: int) -> Array[String]:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return []
     var r: Dictionary = _match_records[record_idx]
     var this_star_idx: int = int(r.get("star_idx", -1))
     var this_name: String = str(r.get("name", ""))
@@ -387,18 +391,24 @@ func _effective_name_display_state(star_idx: int, name_str: String, all_names_fo
 
 
 func _record_value_protected(record_idx: int, protect_key: String, value_key) -> bool:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return false
     var r: Dictionary = _match_records[record_idx]
     var protected: Dictionary = r.get(protect_key, {})
     return protected.has(value_key)
 
 
 func _record_any_protected(record_idx: int, protect_key: String) -> bool:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return false
     var r: Dictionary = _match_records[record_idx]
     var protected: Dictionary = r.get(protect_key, {})
     return not protected.is_empty()
 
 
 func _record_effective_state(record_idx: int, states_key: String, protect_key: String, value_key) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return 0
     var r: Dictionary = _match_records[record_idx]
     var states: Dictionary = r.get(states_key, {})
     var base: int = int(states.get(value_key, 0))
@@ -423,6 +433,8 @@ func _record_effective_state(record_idx: int, states_key: String, protect_key: S
 # confirm's sibling-clearing, stays flagged manual and survives
 # "Undo selects" — only "Undo blocks" (or "Undo all") clears it.
 func _undo_category_selects(record_idx: int, states_key: String, manual_key: String, protect_key: String, all_values: Array) -> void:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return
     var r: Dictionary = _match_records[record_idx]
     var states: Dictionary = r.get(states_key, {})
     var manual: Dictionary = r.get(manual_key, {})
@@ -438,6 +450,8 @@ func _undo_category_selects(record_idx: int, states_key: String, manual_key: Str
 
 
 func _undo_category_blocks(record_idx: int, states_key: String, manual_key: String) -> void:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return
     var r: Dictionary = _match_records[record_idx]
     var states: Dictionary = r.get(states_key, {})
     var manual: Dictionary = r.get(manual_key, {})
@@ -450,6 +464,8 @@ func _undo_category_blocks(record_idx: int, states_key: String, manual_key: Stri
 
 
 func _recompute_color_star_elim(record_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return
     # Color is the one axis directly visible per star, so it's the one axis
     # that can safely auto-propagate into the name/star grid without leaking
     # anything the player hasn't earned. Sequence and pitch are themselves
@@ -524,6 +540,8 @@ func _anonymous_star_label(star_idx: int) -> String:
 
 
 func _known_color_for_record(record_idx: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return -1
     var r: Dictionary = _match_records[record_idx]
     var star_idx: int = int(r.get("star_idx", -1))
     if star_idx >= 0:
@@ -545,6 +563,8 @@ func _known_color_for_record(record_idx: int) -> int:
 
 
 func _sync_color_states_from_star_idx(record_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return
     var r: Dictionary = _match_records[record_idx]
     var star_idx: int = int(r.get("star_idx", -1))
     if star_idx < 0 or star_idx >= _host._star_colors.size():
@@ -812,6 +832,9 @@ func _find_match_record_by_star_idx(star_idx: int) -> int:
 func _merge_match_records(target_idx: int, source_idx: int) -> int:
     if target_idx == source_idx:
         return target_idx
+    if target_idx < 0 or target_idx >= _match_records.size() \
+            or source_idx < 0 or source_idx >= _match_records.size():
+        return target_idx
     var target: Dictionary = _match_records[target_idx]
     var source: Dictionary = _match_records[source_idx]
 
@@ -1036,6 +1059,8 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
 
 
 func _confirm_match_record_identity(record_idx: int, star_idx: int, star_name: String) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return -1  # callers already treat a negative return as "abort"
     # Color contradiction check FIRST, before any merge — every star widget
     # auto-creates a blank star_idx-bound record just by rendering, so the
     # merge below runs almost every time a name gets confirmed onto a star.
@@ -1255,6 +1280,8 @@ func _debug_dump_named_records() -> void:
 
 
 func _confirm_color_against_ground_truth(record_idx: int, color_idx: int, asserting_true: bool) -> bool:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return false  # matches this function's own "false means abort" contract
     # Returns false if the caller should abort. Only meaningful once
     # star_idx is resolved to real ground truth (_host._star_colors) — before
     # that there's nothing to check against. This is what catches a
@@ -1331,6 +1358,8 @@ func _confirm_color_against_cap(record_idx: int, color_idx: int) -> bool:
 
 
 func _propagate_color_confirmed_same_record(record_idx: int, confirmed_color_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return
     # Confirming one color on a record means every OTHER color is
     # automatically eliminated on that SAME record — a slot/name/star can
     # only be one color.
@@ -1358,6 +1387,8 @@ func _propagate_color_confirmed_same_record(record_idx: int, confirmed_color_idx
 
 
 func _propagate_degree_confirmed_same_record(record_idx: int, confirmed_degree: int) -> void:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return
     # Same rule as color/pitch: confirming one degree value means every
     # OTHER possible degree is eliminated on that SAME record. Degree had
     # no equivalent to _propagate_color_confirmed_same_record/
@@ -1376,6 +1407,8 @@ func _propagate_degree_confirmed_same_record(record_idx: int, confirmed_degree: 
 
 
 func _propagate_name_states_confirmed_same_record(record_idx: int, confirmed_name: String) -> void:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return
     # Same rule as color/pitch/degree: confirming one name on a record
     # means every OTHER name is eliminated on that SAME record. This is
     # the record-level name_states field (staff popup NAME section, Sort:tab
@@ -1434,6 +1467,8 @@ func _compressed_possible_positions_str(record_idx: int) -> String:
 
 
 func _effective_color_state(record_idx: int, color_idx: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return 0
     # Four sources of "known color" for a record, checked in order of
     # certainty: ground-truth visible color (star-anchored), the slot label
     # itself (a "Blue A" row is structurally Blue even though nothing ever
@@ -1461,6 +1496,8 @@ func _effective_color_state(record_idx: int, color_idx: int) -> int:
 
 
 func _effective_pitch_state(record_idx: int, note_name: String) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return 0
     # Same three tiers as _effective_color_state (ground truth, slot label,
     # raw toggled state), plus a fourth: the staff popup's right-click
     # "still possible" protect set. Narrowing that set to a few notes is the
@@ -1490,6 +1527,8 @@ func _effective_pitch_state(record_idx: int, note_name: String) -> int:
 
 
 func _effective_name_state(record_idx: int, name_str: String) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return 0
     # Deliberately does NOT shortcut via star_idx the way
     # _effective_pitch_state/_effective_color_state do (see those
     # functions) — a record's star_idx gets set by things that are NOT a
@@ -1520,6 +1559,8 @@ func _effective_name_state(record_idx: int, name_str: String) -> int:
 
 
 func _effective_degree_state(record_idx: int, degree: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return 0
     # Only two tiers, unlike Color/Pitch/Name: Degree has no staff-popup
     # protect/right-click mechanism at all (_on_record_degree_toggle/
     # _eliminate write degree_states directly, unconditionally, with no
@@ -1536,6 +1577,8 @@ func _effective_degree_state(record_idx: int, degree: int) -> int:
 
 
 func _effective_star_state(record_idx: int, star_idx: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return 0
     # System A: the star widget's own per-star name checklist. A record
     # confirmed to BE a specific star (star_idx resolved) or one that has
     # explicitly X'd that star via star_elim (written by _on_name_check/
@@ -1551,6 +1594,8 @@ func _effective_star_state(record_idx: int, star_idx: int) -> int:
 
 
 func _records_provably_distinct(idx_a: int, idx_b: int) -> bool:
+    if idx_a < 0 or idx_a >= _match_records.size() or idx_b < 0 or idx_b >= _match_records.size():
+        return false  # can't prove distinctness with an invalid index
     var a: Dictionary = _match_records[idx_a]
     var b: Dictionary = _match_records[idx_b]
 
@@ -1625,6 +1670,8 @@ func _parse_candidate_list(raw: String) -> Array:
 
 
 func _effective_seq_candidates(record_idx: int) -> Array:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return []
     var r: Dictionary = _match_records[record_idx]
     var explicit: Array = r.get("seq_candidates", [])
     var base: Array = []
@@ -1858,6 +1905,8 @@ func _compute_excluded_colors_for(record_idx: int) -> Array[int]:
 
 
 func _record_is_unconfirmed_star_widget_stub(record_idx: int) -> bool:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return false
     # _build_star_widgets_impl() auto-creates a star_idx-bound record for
     # EVERY star the instant its floating widget is built
     # (_get_or_create_match_record_for_star_idx), regardless of anything
@@ -1905,6 +1954,8 @@ func _parse_exclusive_bounds(raw_lo: int, raw_hi: int) -> Array:
 
 
 func _effective_seq_bounds(record_idx: int) -> Array:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return [0, 0, []]
     var r: Dictionary = _match_records[record_idx]
     var stored_lo: int = int(r.get("seq_lo", 0))
     var stored_hi: int = int(r.get("seq_hi", 0))
