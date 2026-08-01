@@ -94,13 +94,29 @@ func _on_study_pressed() -> void:
 ## study_panel_reveal dialogue trigger).
 func reveal_study_button() -> void:
     _study_btn.visible = true
-    # The VBoxContainer's own re-sort (to grow the panel and reposition
-    # this newly-visible child below ConstellationDisplay) is queued/
-    # deferred by Godot, not applied synchronously — confirmed via
-    # diagnostics: even calling queue_sort() explicitly right here still
-    # left the panel/button reporting their pre-reveal size and position
-    # immediately afterward, only correcting some time later. Awaiting
-    # one process_frame is the robust way to let that queued work flush
-    # (Godot resolves deferred/queued calls before the next process_frame
-    # signal fires) rather than assuming any fixed delay is long enough.
-    await get_tree().process_frame
+    # This panel (a shrink-sized VBoxContainer, custom_minimum_size floor
+    # 175) sits nested inside three more shrink-sized containers —
+    # ConstellationLeftMargin (MarginContainer) -> AllocationConstellationVBox
+    # (VBoxContainer) -> TopBandHBox (HBoxContainer) — each of which also
+    # needs to re-sort once this panel grows to fit the newly-visible
+    # button below ConstellationDisplay. The single awaited process_frame
+    # this had before (the previous fix here) reliably settles the button
+    # becoming visible/clickable, but leading theory for the still-open bug
+    # report (button fully functional — clicks work, panel opens — but not
+    # visually rendered, persisting until a full reload forces a fresh
+    # layout pass) is that this doesn't reliably settle the full multi-
+    # level resize cascade up through all three ancestor containers in a
+    # busy live scene, and nothing else ever re-dirties them afterward once
+    # left in a bad state. NOT independently confirmed — a synthetic mock
+    # of this exact container chain settled fine even with the OLD single-
+    # frame version, so this fix is a defensible hardening of a documented
+    # fragile spot, not a proven root-cause fix. Explicitly queue_sort() on
+    # every Container ancestor and give the cascade more than one frame to
+    # propagate, rather than relying on automatic dirty-tracking alone.
+    var ancestor: Node = self
+    while ancestor:
+        if ancestor is Container:
+            ancestor.queue_sort()
+        ancestor = ancestor.get_parent()
+    for _i in 3:
+        await get_tree().process_frame
