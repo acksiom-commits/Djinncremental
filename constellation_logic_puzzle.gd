@@ -1117,7 +1117,12 @@ func check_solution(candidate: Array) -> bool:
     if candidate.size() != star_count:
         return false
     for i in star_count:
-        if int(candidate[i]) != pitch_rank_solution[i]:
+        # No current caller (confirmed dead code, kept as a validation
+        # utility) — but candidate's elements are untyped, and the global
+        # int() constructor crashes outright on a Dictionary/Array element
+        # rather than raising a catchable error. _coerce_int() defaults to
+        # 0 for a wrong-typed element instead.
+        if _coerce_int(candidate[i], 0) != pitch_rank_solution[i]:
             return false
     return true
 
@@ -3293,8 +3298,6 @@ func generate_clues_forms() -> void:
         result = await _generate_clues_forms_attempt()
         if bool(result["seq_unique"]) and bool(result["name_unique"]):
             break
-        print("[FORMS_GEN %d] attempt %d/%d not yet unique (sequence_solutions=%d, all_names_revealed=%s) — retrying with a fresh draw." % [
-            constellation_id, attempt, MAX_GENERATION_ATTEMPTS, int(result["seq_solutions_count"]), str(result["name_unique"])])
         # Yield a frame before the next attempt instead of blocking straight
         # through up to MAX_GENERATION_ATTEMPTS in one go — see the header
         # comment above generation_complete for why. No-op (old synchronous
@@ -3305,8 +3308,6 @@ func generate_clues_forms() -> void:
         push_error("ConstellationLogicPuzzle [%d]: STILL NOT UNIQUE after %d generation attempts (sequence_solutions=%d, all_names_revealed=%s) — puzzle unsolvable as configured." % [
             constellation_id, MAX_GENERATION_ATTEMPTS, int(result["seq_solutions_count"]), str(result["name_unique"])])
     _generation_complete = true
-    print("[FORMS_GEN %d] generated %d clues after %d attempt(s), unused pool remaining=%d, tier composition=%s, sequence_unique=%s, name_unique=%s" % [
-        constellation_id, chosen_form_clues.size(), attempt, _unused_pool_size(), str(result["tier_counts"]), str(result["seq_unique"]), str(result["name_unique"])])
 
 
 func _generate_clues_forms_attempt() -> Dictionary:
