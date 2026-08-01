@@ -88,6 +88,24 @@ func _coerce_int(val, default: int) -> int:
     return default
 
 
+# For coercing DICTIONARY KEYS that are semantically ints (color/star/degree
+# indices), not values. JSON.stringify()/JSON.parse_string() — exactly what
+# save_manager.gd's atomic write/read does to the whole save file — silently
+# turns every int Dictionary key into a String (confirmed directly: {1:"a"}
+# round-trips to {"1":"a"}). _coerce_int() alone only accepts already-typed
+# int/float, so applying it straight to a key coming out of a real save
+# reload returns `default` for every single key — collapsing an entire
+# dict like color_states down to one entry, silently, on every normal
+# save/load cycle, not just a corrupted one. This was the actual bug;
+# range-clamping alone (added first, kept below) wasn't enough on its own.
+func _coerce_int_key(val, default: int) -> int:
+    if typeof(val) == TYPE_INT or typeof(val) == TYPE_FLOAT:
+        return int(val)
+    if typeof(val) == TYPE_STRING and (val as String).is_valid_int():
+        return int(val)
+    return default
+
+
 func _coerce_bool(val, default: bool) -> bool:
     if typeof(val) == TYPE_BOOL:
         return val
@@ -1107,7 +1125,20 @@ func _load_match_records(data: Array) -> void:
         var raw_color_states: Dictionary = _coerce_dict(e.get("color_states"), {})
         var color_states: Dictionary = {}
         for ck in raw_color_states:
-            color_states[_coerce_int(ck, 0)] = _coerce_int(raw_color_states[ck], 0)
+            var color_idx: int = _coerce_int_key(ck, -1)
+            # Unlike pitch/name/degree_states (string or open-ended int keys,
+            # never used to index a fixed-size array), color_states keys DO
+            # get bracket-indexed straight into the 4-entry COLOR_NAME_LABELS/
+            # STAR_COLORS_BY_IDX arrays elsewhere (_display_color_for_record,
+            # _merge_match_records) with no bounds check at the read site —
+            # a corrupted/hand-edited save with an out-of-range key would
+            # crash there. Dropped here rather than clamped: clamping a KEY
+            # (unlike clamping a scalar value elsewhere in this file) risks
+            # silently colliding with — and overwriting — a different,
+            # already-valid color's real state.
+            if color_idx < 0 or color_idx >= _host.COLOR_NAME_LABELS.size():
+                continue
+            color_states[color_idx] = _coerce_int(raw_color_states[ck], 0)
 
         var raw_pitch_states: Dictionary = _coerce_dict(e.get("pitch_states"), {})
         var pitch_states: Dictionary = {}
@@ -1117,11 +1148,17 @@ func _load_match_records(data: Array) -> void:
         var raw_star_elim: Dictionary = _coerce_dict(e.get("star_elim"), {})
         var star_elim: Dictionary = {}
         for sk in raw_star_elim:
-            star_elim[_coerce_int(sk, 0)] = _coerce_int(raw_star_elim[sk], 0)
+            var star_key: int = _coerce_int_key(sk, -1)
+            if star_key < 0:
+                continue
+            star_elim[star_key] = _coerce_int(raw_star_elim[sk], 0)
 
         var color_star_elim_marks: Dictionary = {}
         for csk in _coerce_dict(e.get("color_star_elim_marks"), {}):
-            color_star_elim_marks[_coerce_int(csk, 0)] = true
+            var elim_star_key: int = _coerce_int_key(csk, -1)
+            if elim_star_key < 0:
+                continue
+            color_star_elim_marks[elim_star_key] = true
 
         var raw_name_states: Dictionary = _coerce_dict(e.get("name_states"), {})
         var name_states: Dictionary = {}
@@ -1138,12 +1175,18 @@ func _load_match_records(data: Array) -> void:
 
         var manual_color_blocks: Dictionary = {}
         for mck in _coerce_dict(e.get("manual_color_blocks"), {}):
-            manual_color_blocks[_coerce_int(mck, 0)] = true
+            var mc_idx: int = _coerce_int_key(mck, -1)
+            if mc_idx < 0 or mc_idx >= _host.COLOR_NAME_LABELS.size():
+                continue
+            manual_color_blocks[mc_idx] = true
 
         var raw_degree_states: Dictionary = _coerce_dict(e.get("degree_states"), {})
         var degree_states: Dictionary = {}
         for dk in raw_degree_states:
-            degree_states[_coerce_int(dk, 0)] = _coerce_int(raw_degree_states[dk], 0)
+            var degree_key: int = _coerce_int_key(dk, -1)
+            if degree_key < 0:
+                continue
+            degree_states[degree_key] = _coerce_int(raw_degree_states[dk], 0)
 
         var protected_pitch_notes: Dictionary = {}
         for ppk in _coerce_dict(e.get("protected_pitch_notes"), {}):
@@ -1151,7 +1194,10 @@ func _load_match_records(data: Array) -> void:
 
         var protected_color_idxs: Dictionary = {}
         for pck in _coerce_dict(e.get("protected_color_idxs"), {}):
-            protected_color_idxs[_coerce_int(pck, 0)] = true
+            var pc_idx: int = _coerce_int_key(pck, -1)
+            if pc_idx < 0 or pc_idx >= _host.COLOR_NAME_LABELS.size():
+                continue
+            protected_color_idxs[pc_idx] = true
 
         var protected_staff_names: Dictionary = {}
         for psnk in _coerce_dict(e.get("protected_staff_names"), {}):
