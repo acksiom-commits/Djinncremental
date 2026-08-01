@@ -161,6 +161,7 @@ size_flags_vertical = 3
 text = "ALL"
 
 [node name="CustomInputContainerHBox" type="HBoxContainer" parent="CenterVBox" unique_id=1011984957]
+visible = false
 layout_mode = 2
 
 [node name="CustomLineEdit" type="LineEdit" parent="CenterVBox/CustomInputContainerHBox" unique_id=1856940066]
