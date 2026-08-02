@@ -1386,11 +1386,6 @@ func update_assignment(resource_key: String, value) -> void:
     if gc: gc.assignments[resource_key] = value
 
 
-func get_assignment(resource_key: String):
-    if gc: return gc.assignments.get(resource_key, 0)
-    return 0
-
-
 func get_available_uonites() -> BigNum:
     if not gc: return BigNum.zero()
     var assigned = gc.get_total_uonites_assigned()
