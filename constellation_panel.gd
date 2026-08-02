@@ -91,60 +91,37 @@ func _on_study_pressed() -> void:
 ## player's first constellation-star click (see root_ui.gd's
 ## study_panel_reveal dialogue trigger).
 func reveal_study_button() -> void:
+    # Two earlier fixes both failed to repaint this on a live, no-reload
+    # trigger, player-confirmed both times:
+    #   1. Toggling `self.visible` false/true with no intervening frame
+    #      (relies on Godot's own dirty-tracking to decide to re-submit
+    #      the subtree to the rendering server — a heuristic that can
+    #      silently no-op, which is apparently what's happening here).
+    #   2. Fully detaching and reattaching this whole panel from its
+    #      parent (remove_child + add_child + move_child back to the
+    #      original index) — a stronger, heuristic-free re-registration
+    #      of the SAME node objects, including _study_btn as a child.
+    # That #2 still didn't work is the important data point: it rules out
+    # "this object's tree membership needs cycling" and points at
+    # something stale on the _study_btn OBJECT ITSELF instead — it has
+    # sat invisible since this scene first loaded at the start of the
+    # session, however many frames that turned out to be, while a full
+    # reload's fix is a brand new node that was never in that state.
+    # So: destroy it and duplicate a fresh replacement in its place — as
+    # close to "what a reload does for this one node" as achievable
+    # without reloading the whole game. duplicate() copies configuration
+    # (theme, text, anchors, position) but not signal connections, so
+    # .pressed is reconnected explicitly below.
+    var parent := _study_btn.get_parent()
+    var idx: int = _study_btn.get_index()
+    var old_btn := _study_btn
+    var new_btn := old_btn.duplicate() as Button
+    parent.remove_child(old_btn)
+    old_btn.queue_free()
+    parent.add_child(new_btn)
+    parent.move_child(new_btn, idx)
+    _study_btn = new_btn
     _study_btn.visible = true
-    # Ruled out via a diagnostic dump comparing the live-broken state against
-    # a reload-fixed state: EVERY geometry/render property (global_rect,
-    # size, modulate, self_modulate, visible, z_index, clip_contents) up the
-    # whole ancestor chain was byte-for-byte IDENTICAL in both states — the
-    # earlier layout-cascade theory (and its queue_sort()-based fix) was
-    # wrong. The button really is sitting in the correct, correctly-sized
-    # place with correct visibility/modulate; it just isn't being repainted
-    # there. This points at a canvas redraw-invalidation gap instead of a
-    # layout gap — plausible given the player is on Intel integrated
-    # graphics via the OpenGL Compatibility renderer, a combination with
-    # known quirks around a newly-exposed screen region (this panel grew by
-    # ~30px to fit this button) not getting flagged for repaint just because
-    # a container resized, as opposed to an explicit redraw request. A full
-    # reload forces everything to repaint from scratch, which is consistent
-    # with "reload always fixes it" regardless of geometry.
-    #
-    # Toggling visibility off then back on forces Godot to fully re-register
-    # this subtree with the rendering server — a much stronger guarantee of
-    # a fresh repaint than queue_redraw() alone, which relies on the same
-    # dirty-tracking that isn't reliably catching this case. CONFIRMED this
-    # fixes the invisibility (player-tested), but the first version awaited
-    # a frame between the false and true assignments, which actually
-    # rendered a frame with the whole panel (border included) hidden — a
-    # visible flicker the player also confirmed. Godot only composites a
-    # frame at frame boundaries, so setting visible false then true with NO
-    # await between them still drives the same off/on transition (and
-    # whatever re-registration it triggers) without the renderer ever
-    # getting a chance to draw the momentarily-hidden state.
-    await get_tree().process_frame
-    self.visible = false
-    self.visible = true
+    _study_btn.pressed.connect(_on_study_pressed)
     queue_redraw()
     _study_btn.queue_redraw()
-    # Player reported this stopped reliably fixing the invisibility on a
-    # later fresh playthrough — same symptom as before (button fully
-    # functional, just never painted). Toggling `visible` above still
-    # relies on Godot's own dirty-tracking deciding to re-submit this
-    # subtree to the rendering server, which is exactly the mechanism
-    # already suspected unreliable on this hardware/driver combination —
-    # a heuristic can silently no-op. Fully detaching and reattaching from
-    # the parent forces an unconditional teardown+rebuild of every
-    # CanvasItem in this subtree's server-side representation instead, no
-    # heuristic involved. move_child() restores the original sibling
-    # index so layout order is unaffected; _ready() isn't re-run by
-    # remove_child()/add_child() (the node isn't freed, just detached), so
-    # the button's .pressed connection made there survives untouched.
-    # Kept layered with the toggle above rather than replacing it, in case
-    # either mechanism alone is what's actually working on any given setup.
-    var parent := get_parent()
-    if parent:
-        var idx := get_index()
-        parent.remove_child(self)
-        parent.add_child(self)
-        parent.move_child(self, idx)
-        queue_redraw()
-        _study_btn.queue_redraw()
