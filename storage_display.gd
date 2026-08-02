@@ -61,7 +61,6 @@ const FLOW_SPAWN_DURATION: float = 0.3
 const FLOW_SETTLE_FADE:    float = 0.6      # seconds a Grain-bound icon takes to fade out on arrival
 const FLOW_STAGGER:        float = 0.06     # seconds between staggered spawns within one burst
 const FLOW_BURST_MAX:      int   = 6        # cap on new icons spawned per production-delta event
-const FLOW_UONITE_CHANCE:  float = 0.35     # fraction of Mote-stage icons that peel off toward Uonite
 
 const RESOURCE_KEYS = [
     "monad", "tetrad", "particle", "iota", "mote", "grain", "uonite"
@@ -131,13 +130,14 @@ var _inner_face_normals:   Array = []
 # Built once per _rebuild_octagon() call, not per-icon-per-frame.
 var _wedge_bounds: Array = []
 
-# Flow path waypoints, shared trunk before the Mote-stage split: W[0] is
-# the Monad face midpoint (spawn point), W[1..4] are the seam midpoints an
-# icon crosses becoming Tetrad/Particle/Iota/Mote in turn. RESOURCE_KEYS[i]
-# is always used as the resource label while traveling FROM waypoint i.
-var _flow_waypoints:    Array   = []
-var _grain_seam_mid:    Vector2 = Vector2.ZERO   # post-split: Mote -> Grain (fades here)
-var _uonite_inner_mid:  Vector2 = Vector2.ZERO   # post-split: Mote -> Uonite (crosses into center)
+# Six independent legs, each gated by its OWN destination resource's real
+# production — NOT a single continuous march that walks the whole board
+# on a timer regardless of what's actually being produced. Each entry:
+# {"from": Vector2, "to": Vector2, "resource": String, "terminal": String}.
+# "terminal" is "fade" (arrives, briefly settles, fades out) or "settle"
+# (arrives and persists, bouncing, in the central octagon until cleared).
+# Built once per _rebuild_octagon() call. See _build_flow_legs().
+var _flow_legs: Array = []
 
 # ===================== STATE =====================
 var _icons:       Array = []
@@ -214,7 +214,7 @@ func _rebuild_octagon() -> void:
         _inner_face_normals.append((_oct_center - mid).normalized())
 
     _build_wedge_bounds()
-    _build_flow_waypoints()
+    _build_flow_legs()
 
     # Volition toggle anchor — lower-right corner (face 3, ~4:30)
     if _face_normals.size() < 6:
@@ -283,21 +283,34 @@ func _build_wedge_bounds() -> void:
         _wedge_bounds.append(bounds)
 
 
-# Shared trunk before the split: Monad face midpoint -> the four seams an
-# icon crosses becoming Tetrad, Particle, Iota, then Mote in turn. Vertex
-# indices 2..5 are exactly the seams bordering wedges 1(Monad)|2(Tetrad),
-# 2(Tetrad)|3(Particle), 3(Particle)|4(Iota), and 4(Iota)|5(Mote).
-func _build_flow_waypoints() -> void:
-    _flow_waypoints.clear()
+# Six independent legs. Vertex indices 2..5 are exactly the seams
+# bordering wedges 1(Monad)|2(Tetrad), 2(Tetrad)|3(Particle),
+# 3(Particle)|4(Iota), and 4(Iota)|5(Mote) — the shared trunk each icon
+# rides before Mote. Mote's own seam (index 5) then feeds two separate
+# legs: one into wedge 6 (Grain), one across the Mote wedge's inner edge
+# into the central octagon (Uonite). Each leg is independently triggered
+# by ITS OWN destination resource's real production (see
+# _drive_flow_production()) — none of this walks forward on a timer.
+func _build_flow_legs() -> void:
+    _flow_legs.clear()
     if _face_midpoints.size() < 8 or _oct_verts.size() < 8 or _inner_verts.size() < 8:
         return
-    _flow_waypoints.append(_face_midpoints[1])
-    for v_idx in [2, 3, 4, 5]:
-        _flow_waypoints.append((_oct_verts[v_idx] + _inner_verts[v_idx]) * 0.5)
-    # Post-split legs, from the last shared waypoint (the Iota|Mote seam,
-    # i.e. "now Mote") to wherever each branch ends.
-    _grain_seam_mid   = (_oct_verts[6] + _inner_verts[6]) * 0.5       # Mote|Grain seam — fades here
-    _uonite_inner_mid = (_inner_verts[5] + _inner_verts[6]) * 0.5     # Mote wedge's inner edge -> center
+    var w0 = _face_midpoints[1]
+    var w1 = (_oct_verts[2] + _inner_verts[2]) * 0.5
+    var w2 = (_oct_verts[3] + _inner_verts[3]) * 0.5
+    var w3 = (_oct_verts[4] + _inner_verts[4]) * 0.5
+    var w4 = (_oct_verts[5] + _inner_verts[5]) * 0.5
+    var grain_seam_mid:   Vector2 = (_oct_verts[6] + _inner_verts[6]) * 0.5
+    var uonite_inner_mid: Vector2 = (_inner_verts[5] + _inner_verts[6]) * 0.5
+
+    _flow_legs = [
+        {"from": w0, "to": w1, "resource": "tetrad",   "terminal": "fade"},
+        {"from": w1, "to": w2, "resource": "particle", "terminal": "fade"},
+        {"from": w2, "to": w3, "resource": "iota",     "terminal": "fade"},
+        {"from": w3, "to": w4, "resource": "mote",     "terminal": "fade"},
+        {"from": w4, "to": grain_seam_mid,   "resource": "grain",  "terminal": "fade"},
+        {"from": w4, "to": uonite_inner_mid, "resource": "uonite", "terminal": "settle"},
+    ]
 
 
 func _load_textures() -> void:
@@ -543,20 +556,23 @@ func _confine_to_center(icon: Dictionary) -> void:
 
 
 # ==================================================
-# FLOW ICONS — marching production stream
+# FLOW ICONS — one short hop per leg, each independently triggered by its
+# own destination resource's real production (see _drive_flow_production).
+# Nothing marches forward on its own timer once spawned.
 # ==================================================
-func _spawn_flow_icon() -> void:
-    if _flow_icons.size() >= FLOW_MAX_ICONS or _flow_waypoints.is_empty():
+func _spawn_flow_icon(leg_idx: int, delay: float = 0.0) -> void:
+    if _flow_icons.size() >= FLOW_MAX_ICONS or leg_idx < 0 or leg_idx >= _flow_legs.size():
         return
+    var leg: Dictionary = _flow_legs[leg_idx]
     _flow_icons.append({
-        "resource": RESOURCE_KEYS[0],
-        "pos":      _flow_waypoints[0],
+        "resource": leg["resource"],
+        "pos":      leg["from"],
         "vel":      Vector2.ZERO,
-        "stage":    0,
+        "leg_idx":  leg_idx,
         "leg_t":    0.0,
-        "branch":   "",
         "alpha":    0.0,
         "spawn_t":  0.0,
+        "delay":    delay,
         "state":    "spawning",
     })
 
@@ -567,17 +583,20 @@ func _update_flow_icons(delta: float) -> void:
         var icon = _flow_icons[i]
         match icon["state"]:
             "spawning":
-                icon["spawn_t"] += delta / FLOW_SPAWN_DURATION
-                icon["alpha"]    = clamp(icon["spawn_t"], 0.0, 1.0)
-                if icon["spawn_t"] >= 1.0:
-                    icon["state"] = "marching"
-            "marching":
-                _advance_marching(icon, delta)
+                if icon["delay"] > 0.0:
+                    icon["delay"] -= delta
+                else:
+                    icon["spawn_t"] += delta / FLOW_SPAWN_DURATION
+                    icon["alpha"]    = clamp(icon["spawn_t"], 0.0, 1.0)
+                    if icon["spawn_t"] >= 1.0:
+                        icon["state"] = "traveling"
+            "traveling":
+                _advance_leg(icon, delta)
             "settling_uonite":
                 icon["vel"]  = icon["vel"] * DAMPING
                 icon["pos"] += icon["vel"] * delta
                 _confine_to_center(icon)
-            "fading_grain":
+            "fading":
                 icon["alpha"] -= delta / FLOW_SETTLE_FADE
                 if icon["alpha"] <= 0.0:
                     to_remove.append(i)
@@ -585,89 +604,75 @@ func _update_flow_icons(delta: float) -> void:
         _flow_icons.remove_at(to_remove[i])
 
 
-# Advances one flow icon along the shared trunk (W[0]->W[1]->...->W[4],
-# transforming Monad->Tetrad->Particle->Iota->Mote at each waypoint), then
-# — once it reaches the last shared waypoint (Mote) — rolls the Grain/
-# Uonite split and travels the one remaining leg to wherever that branch
-# ends. RESOURCE_KEYS only has entries for the 5 shared-trunk stages, so
-# the split is a separate, explicit branch rather than an out-of-bounds
-# continuation of the same index.
-func _advance_marching(icon: Dictionary, delta: float) -> void:
-    if _flow_waypoints.size() < 2:
+func _advance_leg(icon: Dictionary, delta: float) -> void:
+    if icon["leg_idx"] < 0 or icon["leg_idx"] >= _flow_legs.size():
+        icon["state"] = "fading"
         return
-    var stage: int = icon["stage"]
-    var from_pt: Vector2
-    var to_pt:   Vector2
-
-    if icon["branch"] == "":
-        if stage >= _flow_waypoints.size() - 1:
-            # Reached Mote (the last shared waypoint) — roll the split now.
-            icon["branch"] = "uonite" if _rng.randf() < FLOW_UONITE_CHANCE else "grain"
-            icon["leg_t"]  = 0.0
-            return
-        from_pt = _flow_waypoints[stage]
-        to_pt   = _flow_waypoints[stage + 1]
-    else:
-        from_pt = _flow_waypoints[_flow_waypoints.size() - 1]
-        to_pt   = _uonite_inner_mid if icon["branch"] == "uonite" else _grain_seam_mid
+    var leg: Dictionary = _flow_legs[icon["leg_idx"]]
+    var from_pt: Vector2 = leg["from"]
+    var to_pt:   Vector2 = leg["to"]
 
     var seg_len: float = maxf(from_pt.distance_to(to_pt), 1.0)
     icon["leg_t"] += FLOW_SPEED * delta / seg_len
 
     if icon["leg_t"] >= 1.0:
         icon["pos"] = to_pt
-        if icon["branch"] == "":
-            icon["stage"]    += 1
-            icon["resource"]  = RESOURCE_KEYS[icon["stage"]]
-            icon["leg_t"]     = 0.0
-        elif icon["branch"] == "grain":
-            icon["resource"] = "grain"
-            icon["state"]    = "fading_grain"
+        if leg["terminal"] == "settle":
+            icon["state"] = "settling_uonite"
+            icon["vel"]   = (to_pt - from_pt).normalized() * DRIFT_SPEED
         else:
-            icon["resource"] = "uonite"
-            icon["state"]    = "settling_uonite"
-            icon["vel"]      = (to_pt - from_pt).normalized() * DRIFT_SPEED
+            icon["state"] = "fading"
     else:
         icon["pos"] = from_pt.lerp(to_pt, icon["leg_t"])
 
 
-# totals_created has no plain "monad" top-level key — only the fine-
-# grained monad_solid/liquid/gas ones.
-const MONAD_TOTAL_KEYS: Array[String] = ["monad_solid", "monad_liquid", "monad_gas"]
+# Maps each leg's trigger resource to its index in _flow_legs — see
+# _build_flow_legs(). totals_created has no plain "tetrad" top-level key
+# (only the 15 variety names), unlike particle/iota/mote/grain/uonite,
+# which already use their plain name — _current_resource_total() special-
+# cases the sum for that one.
+const FLOW_LEG_FOR_RESOURCE: Dictionary = {
+    "tetrad": 0, "particle": 1, "iota": 2, "mote": 3, "grain": 4, "uonite": 5,
+}
+const TETRAD_TOTAL_KEYS: Array[String] = [
+    "adaemant", "aquae", "aethyr", "earth", "water", "air",
+    "mud", "dust", "cloud", "dirt", "sand", "haze", "mist", "ooze", "foam",
+]
 
-func _current_monad_total() -> BigNum:
+func _current_resource_total(key: String) -> BigNum:
     var tc: Dictionary = _gc.totals_created
+    if key != "tetrad":
+        return tc.get(key, BigNum.zero())
     var sum := BigNum.zero()
-    for k in MONAD_TOTAL_KEYS:
+    for k in TETRAD_TOTAL_KEYS:
         sum = sum.add(tc.get(k, BigNum.zero()))
     return sum
 
 
-# Burst driver — triggers ONLY off new Monad production, not every chain
-# resource's total. Monad is raw material entering the visualization; the
-# march animation is what represents it moving through the later stages,
-# so it doesn't need (and originally wrongly had) its own independent
-# trigger per downstream resource — a single automated tick that cascades
-# monad->tetrad->particle->iota->mote->grain/uonite in one frame used to
-# fire a separate burst for EACH of those, all starting fresh at Monad, so
-# making a few Particles could visibly flood the whole ring with new
-# starts at once. Log-scaled so a single manual click and a huge
-# automated batch both produce a meaningful but capped burst.
-# _prev_monad_total stays null through the very first call so it never
-# mistakes a save's entire lifetime total for one frame's production.
-var _prev_monad_total = null
+# Burst driver — each of the 6 legs is gated ONLY by its own destination
+# resource's real production, never by a shared "spawn once, then march
+# the whole board on a timer" trigger. A leg only shows something when
+# enough of THAT resource has actually been created — making Tetrads (and
+# nothing downstream) lights up only the Monad->Tetrad leg, not Particle/
+# Iota/Mote/Uonite too, since those legs' own totals never moved.
+# _prev_totals starts empty so the very first call after load/ready never
+# mistakes a save's entire lifetime totals for one frame's production.
+var _prev_totals: Dictionary = {}
 
 func _drive_flow_production(_delta: float) -> void:
     if not _gc:
         return
-    var current: BigNum = _current_monad_total()
-    if _prev_monad_total != null and current.is_greater_than(_prev_monad_total):
-        var delta_bn: BigNum = current.sub(_prev_monad_total)
-        var burst: int = clampi(
-            int(round(log(1.0 + float(delta_bn.to_int())))), 1, FLOW_BURST_MAX)
-        for _i in burst:
-            _spawn_flow_icon()
-    _prev_monad_total = current.copy()
+    for key in FLOW_LEG_FOR_RESOURCE:
+        var current: BigNum = _current_resource_total(key)
+        if _prev_totals.has(key):
+            var prev: BigNum = _prev_totals[key]
+            if current.is_greater_than(prev):
+                var delta_bn: BigNum = current.sub(prev)
+                var burst: int = clampi(
+                    int(round(log(1.0 + float(delta_bn.to_int())))), 1, FLOW_BURST_MAX)
+                for i in burst:
+                    _spawn_flow_icon(FLOW_LEG_FOR_RESOURCE[key], i * FLOW_STAGGER)
+        _prev_totals[key] = current.copy()
 
 
 ## Called by root_ui.gd on prestige reset — the whole flow stream
