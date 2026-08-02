@@ -6,12 +6,16 @@ extends Control
 #         off all 8 outer faces (_confine_to_wedge replaces
 #         _bounce_off_octagon) and no longer pull toward the top face when
 #         fading — they just fade in place. A second, independent icon
-#         population (_flow_icons) marches Monad->Tetrad->Particle->Iota->
-#         Mote along the wedge seams, then splits at Mote: some become
-#         Grain and fade into wedge 6, others cross into the central
-#         octagon as Uonite and collect there (cleared on Expansion via
-#         clear_flow_icons(), called from root_ui.gd's _do_prestige_reset).
-#         Driven by production activity — see _drive_flow_production().
+#         population (_flow_icons) visualizes production: 5 legs
+#         (Tetrad/Particle/Iota/Mote->Grain/Mote->Uonite), each triggered
+#         ONLY by its own resource's real totals_created delta. A leg's
+#         icon crosses THAT resource's own wedge — e.g. a Tetrad icon
+#         crosses the Tetrad wedge, transforming to Particle right as it
+#         reaches the wall bordering the Particle wedge — never the true
+#         outer edge, never a neighboring wedge. Mote->Uonite icons settle
+#         in the central octagon until Expansion clears them
+#         (clear_flow_icons(), called from root_ui.gd's
+#         _do_prestige_reset). See _drive_flow_production().
 # v0.8.0: +/- volition assignment buttons at upper-left (+) and
 #         upper-right (-) corners of the node rect.
 # v0.6.0: Renamed chain to match canonical GameData order:
@@ -130,13 +134,20 @@ var _inner_face_normals:   Array = []
 # Built once per _rebuild_octagon() call, not per-icon-per-frame.
 var _wedge_bounds: Array = []
 
-# Six independent legs, each gated by its OWN destination resource's real
-# production — NOT a single continuous march that walks the whole board
-# on a timer regardless of what's actually being produced. Each entry:
-# {"from": Vector2, "to": Vector2, "resource": String, "terminal": String}.
-# "terminal" is "fade" (arrives, briefly settles, fades out) or "settle"
-# (arrives and persists, bouncing, in the central octagon until cleared).
-# Built once per _rebuild_octagon() call. See _build_flow_legs().
+# Five independent legs, each gated by its OWN trigger resource's real
+# production. A leg's icon crosses THAT resource's own wedge (from the
+# wall it entered by to the wall bordering the next resource), showing
+# that resource's identity the whole way, and transforms to "next" only
+# on arrival — e.g. a Tetrad icon (triggered by Tetrad's own delta)
+# crosses the Tetrad wedge and becomes Particle as it reaches the far
+# wall. Nothing marches on its own timer, and nothing ever touches the
+# octagon's true outer edge — every leg starts and ends at an internal
+# seam (or the center). Each entry:
+# {"from": Vector2, "to": Vector2, "resource": String, "next": String,
+#  "terminal": String}. "terminal" is "fade" (arrives, briefly shows
+# "next", fades out) or "settle" (arrives, persists bouncing in the
+# central octagon until cleared). Built once per _rebuild_octagon() call
+# — see _build_flow_legs().
 var _flow_legs: Array = []
 
 # ===================== STATE =====================
@@ -283,19 +294,20 @@ func _build_wedge_bounds() -> void:
         _wedge_bounds.append(bounds)
 
 
-# Six independent legs. Vertex indices 2..5 are exactly the seams
-# bordering wedges 1(Monad)|2(Tetrad), 2(Tetrad)|3(Particle),
-# 3(Particle)|4(Iota), and 4(Iota)|5(Mote) — the shared trunk each icon
-# rides before Mote. Mote's own seam (index 5) then feeds two separate
-# legs: one into wedge 6 (Grain), one across the Mote wedge's inner edge
-# into the central octagon (Uonite). Each leg is independently triggered
-# by ITS OWN destination resource's real production (see
-# _drive_flow_production()) — none of this walks forward on a timer.
+# Five independent legs, one per resource that has something to visually
+# "become". Vertex indices 1..5 are exactly the seams bordering wedges
+# 1(Monad)|2(Tetrad), 2(Tetrad)|3(Particle), 3(Particle)|4(Iota), and
+# 4(Iota)|5(Mote) — each leg crosses the interior of ONE wedge, from the
+# wall it entered by to the wall bordering the next resource. Monad
+# itself has no predecessor wall (only the octagon's true outer edge), so
+# it isn't visualized as a flow leg at all — it's already represented by
+# the storage-icon population. Mote's own seam (index 5) feeds two
+# separate legs across the Mote wedge: one to wedge 6 (Grain), one across
+# the Mote wedge's inner edge into the central octagon (Uonite).
 func _build_flow_legs() -> void:
     _flow_legs.clear()
     if _face_midpoints.size() < 8 or _oct_verts.size() < 8 or _inner_verts.size() < 8:
         return
-    var w0 = _face_midpoints[1]
     var w1 = (_oct_verts[2] + _inner_verts[2]) * 0.5
     var w2 = (_oct_verts[3] + _inner_verts[3]) * 0.5
     var w3 = (_oct_verts[4] + _inner_verts[4]) * 0.5
@@ -304,12 +316,11 @@ func _build_flow_legs() -> void:
     var uonite_inner_mid: Vector2 = (_inner_verts[5] + _inner_verts[6]) * 0.5
 
     _flow_legs = [
-        {"from": w0, "to": w1, "resource": "tetrad",   "terminal": "fade"},
-        {"from": w1, "to": w2, "resource": "particle", "terminal": "fade"},
-        {"from": w2, "to": w3, "resource": "iota",     "terminal": "fade"},
-        {"from": w3, "to": w4, "resource": "mote",     "terminal": "fade"},
-        {"from": w4, "to": grain_seam_mid,   "resource": "grain",  "terminal": "fade"},
-        {"from": w4, "to": uonite_inner_mid, "resource": "uonite", "terminal": "settle"},
+        {"from": w1, "to": w2,               "resource": "tetrad",   "next": "particle", "terminal": "fade"},
+        {"from": w2, "to": w3,               "resource": "particle", "next": "iota",     "terminal": "fade"},
+        {"from": w3, "to": w4,               "resource": "iota",     "next": "mote",     "terminal": "fade"},
+        {"from": w4, "to": grain_seam_mid,   "resource": "mote",     "next": "grain",    "terminal": "fade"},
+        {"from": w4, "to": uonite_inner_mid, "resource": "mote",     "next": "uonite",   "terminal": "settle"},
     ]
 
 
@@ -616,7 +627,8 @@ func _advance_leg(icon: Dictionary, delta: float) -> void:
     icon["leg_t"] += FLOW_SPEED * delta / seg_len
 
     if icon["leg_t"] >= 1.0:
-        icon["pos"] = to_pt
+        icon["pos"]      = to_pt
+        icon["resource"] = leg["next"]   # transform as it crosses the wall
         if leg["terminal"] == "settle":
             icon["state"] = "settling_uonite"
             icon["vel"]   = (to_pt - from_pt).normalized() * DRIFT_SPEED
@@ -626,13 +638,18 @@ func _advance_leg(icon: Dictionary, delta: float) -> void:
         icon["pos"] = from_pt.lerp(to_pt, icon["leg_t"])
 
 
-# Maps each leg's trigger resource to its index in _flow_legs — see
-# _build_flow_legs(). totals_created has no plain "tetrad" top-level key
-# (only the 15 variety names), unlike particle/iota/mote/grain/uonite,
-# which already use their plain name — _current_resource_total() special-
-# cases the sum for that one.
+# Maps a leg's OWN resource to its index in _flow_legs — a leg is
+# triggered by the same resource it displays while crossing its wedge
+# (see _build_flow_legs()). Mote has no entry: it's never a trigger
+# itself, only the label two legs arrive at (iota's leg turning into
+# "mote", which is then the "resource" shown while crossing toward
+# Grain/Uonite) — Grain's and Uonite's own deltas are what independently
+# decide which of those two legs actually happens. totals_created has no
+# plain "tetrad" top-level key (only the 15 variety names), unlike
+# particle/iota/grain/uonite, which already use their plain name —
+# _current_resource_total() special-cases the sum for that one.
 const FLOW_LEG_FOR_RESOURCE: Dictionary = {
-    "tetrad": 0, "particle": 1, "iota": 2, "mote": 3, "grain": 4, "uonite": 5,
+    "tetrad": 0, "particle": 1, "iota": 2, "grain": 3, "uonite": 4,
 }
 const TETRAD_TOTAL_KEYS: Array[String] = [
     "adaemant", "aquae", "aethyr", "earth", "water", "air",
@@ -649,12 +666,12 @@ func _current_resource_total(key: String) -> BigNum:
     return sum
 
 
-# Burst driver — each of the 6 legs is gated ONLY by its own destination
-# resource's real production, never by a shared "spawn once, then march
-# the whole board on a timer" trigger. A leg only shows something when
-# enough of THAT resource has actually been created — making Tetrads (and
-# nothing downstream) lights up only the Monad->Tetrad leg, not Particle/
-# Iota/Mote/Uonite too, since those legs' own totals never moved.
+# Burst driver — each of the 5 legs is gated ONLY by its own resource's
+# real production, never by a shared "spawn once, then march the whole
+# board on a timer" trigger. A leg only shows something when enough of
+# THAT resource has actually been created — making Tetrads (and nothing
+# downstream) lights up only the Tetrad leg, not Particle/Iota/Grain/
+# Uonite too, since those legs' own totals never moved.
 # _prev_totals starts empty so the very first call after load/ready never
 # mistakes a save's entire lifetime totals for one frame's production.
 var _prev_totals: Dictionary = {}
