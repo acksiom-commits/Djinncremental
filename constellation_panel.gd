@@ -125,3 +125,26 @@ func reveal_study_button() -> void:
     self.visible = true
     queue_redraw()
     _study_btn.queue_redraw()
+    # Player reported this stopped reliably fixing the invisibility on a
+    # later fresh playthrough — same symptom as before (button fully
+    # functional, just never painted). Toggling `visible` above still
+    # relies on Godot's own dirty-tracking deciding to re-submit this
+    # subtree to the rendering server, which is exactly the mechanism
+    # already suspected unreliable on this hardware/driver combination —
+    # a heuristic can silently no-op. Fully detaching and reattaching from
+    # the parent forces an unconditional teardown+rebuild of every
+    # CanvasItem in this subtree's server-side representation instead, no
+    # heuristic involved. move_child() restores the original sibling
+    # index so layout order is unaffected; _ready() isn't re-run by
+    # remove_child()/add_child() (the node isn't freed, just detached), so
+    # the button's .pressed connection made there survives untouched.
+    # Kept layered with the toggle above rather than replacing it, in case
+    # either mechanism alone is what's actually working on any given setup.
+    var parent := get_parent()
+    if parent:
+        var idx := get_index()
+        parent.remove_child(self)
+        parent.add_child(self)
+        parent.move_child(self, idx)
+        queue_redraw()
+        _study_btn.queue_redraw()
