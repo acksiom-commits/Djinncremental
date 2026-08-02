@@ -1,5 +1,23 @@
 extends Control
-# ================= CONSTELLATION PANEL v1.2.0 =================
+# ================= CONSTELLATION PANEL v1.3.0 =================
+# v1.3.0: reveal_study_button() root-caused: StudyButton was the only
+#         reveal-gated element in the whole game hidden via `visible`
+#         instead of `modulate.a` + `mouse_filter` (the pattern every
+#         other gated panel already uses via root_ui.gd's _reveal_panel/
+#         _hide_all_panels). `visible = false` fully excludes a CanvasItem
+#         from the renderer's draw list; re-including it later apparently
+#         doesn't reliably repaint on this hardware/driver combination
+#         (Intel integrated graphics, OpenGL Compatibility renderer) —
+#         three different "force a re-registration" attempts on the
+#         visible-based version (toggle, detach+reattach, destroy+
+#         recreate) all either failed or worked at best inconsistently.
+#         modulate.a=0 never removes the CanvasItem from the draw list at
+#         all (it's just always drawing at zero alpha), so there's no
+#         re-inclusion step to fail. StudyButton's .tscn default changed
+#         from `visible = false` to `modulate = Color(1,1,1,0)` +
+#         `mouse_filter = 2` (IGNORE) + `disabled = true` to match — see
+#         reveal_study_button()'s own comment for why `disabled`, not
+#         `mouse_filter`, ended up as the actual interaction gate.
 # v1.2.0: StudyButton hidden by default (see RootUI.tscn); reveal_study_button()
 #         added, called by root_ui.gd after the study_panel_reveal dialogue.
 # v1.1.0: Lazy starfield search, background color rect removed,
@@ -9,6 +27,8 @@ extends Control
 # wired in root_ui.gd _ready().
 
 var _cd: Node = null
+
+const STUDY_BUTTON_REVEAL_DURATION: float = 1.5   # matches root_ui.gd's REVEAL_DURATION
 
 @onready var _constellation_art_rect: TextureRect = $ConstellationDisplay/ConstellationArtTextureRect
 @onready var _study_btn: Button = $StudyButton
@@ -91,37 +111,28 @@ func _on_study_pressed() -> void:
 ## player's first constellation-star click (see root_ui.gd's
 ## study_panel_reveal dialogue trigger).
 func reveal_study_button() -> void:
-    # Two earlier fixes both failed to repaint this on a live, no-reload
-    # trigger, player-confirmed both times:
-    #   1. Toggling `self.visible` false/true with no intervening frame
-    #      (relies on Godot's own dirty-tracking to decide to re-submit
-    #      the subtree to the rendering server — a heuristic that can
-    #      silently no-op, which is apparently what's happening here).
-    #   2. Fully detaching and reattaching this whole panel from its
-    #      parent (remove_child + add_child + move_child back to the
-    #      original index) — a stronger, heuristic-free re-registration
-    #      of the SAME node objects, including _study_btn as a child.
-    # That #2 still didn't work is the important data point: it rules out
-    # "this object's tree membership needs cycling" and points at
-    # something stale on the _study_btn OBJECT ITSELF instead — it has
-    # sat invisible since this scene first loaded at the start of the
-    # session, however many frames that turned out to be, while a full
-    # reload's fix is a brand new node that was never in that state.
-    # So: destroy it and duplicate a fresh replacement in its place — as
-    # close to "what a reload does for this one node" as achievable
-    # without reloading the whole game. duplicate() copies configuration
-    # (theme, text, anchors, position) but not signal connections, so
-    # .pressed is reconnected explicitly below.
-    var parent := _study_btn.get_parent()
-    var idx: int = _study_btn.get_index()
-    var old_btn := _study_btn
-    var new_btn := old_btn.duplicate() as Button
-    parent.remove_child(old_btn)
-    old_btn.queue_free()
-    parent.add_child(new_btn)
-    parent.move_child(new_btn, idx)
-    _study_btn = new_btn
-    _study_btn.visible = true
-    _study_btn.pressed.connect(_on_study_pressed)
-    queue_redraw()
-    _study_btn.queue_redraw()
+    # See the v1.3.0 header note — root cause was `visible` itself, not
+    # anything about how the transition to visible was triggered. Reveals
+    # the same way every other gated panel in the game does (root_ui.gd's
+    # _reveal_panel): fade modulate.a up and flip mouse_filter to STOP.
+    # The button has been actively drawing at zero alpha the whole time,
+    # so there's no "just got re-included in the draw list" step for the
+    # renderer to ever get wrong.
+    #
+    # `disabled` is the actual interaction gate, not mouse_filter — this
+    # button lives inside ConstellationPanel, which root_ui.gd's own
+    # _restore_subtree_input() unconditionally flips every Button's
+    # mouse_filter to STOP for the moment the "constellation" panel
+    # itself gets revealed (much earlier than this). With the old
+    # `visible = false` that premature flip was harmless, since an
+    # invisible Control never receives input regardless of mouse_filter —
+    # but this button is visible (at alpha 0) the whole time now, so
+    # mouse_filter alone would let it be clicked well before its own
+    # reveal. _restore_subtree_input() never touches `disabled`, so it
+    # stays the reliable gate independent of that.
+    _study_btn.disabled = false
+    _study_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+    var tween := create_tween()
+    tween.tween_property(_study_btn, "modulate:a", 1.0, STUDY_BUTTON_REVEAL_DURATION) \
+        .set_trans(Tween.TRANS_SINE) \
+        .set_ease(Tween.EASE_OUT)
