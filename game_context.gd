@@ -1435,6 +1435,14 @@ func load_save_data(data: Dictionary) -> void:
         var val = raw_assignments[key]
         if typeof(val) == TYPE_STRING and val.begins_with("BN:"):
             assignments[key] = BigNum.from_string(val.substr(3))
+        elif typeof(val) == TYPE_BOOL:
+            # Not every assignments entry is a volition count — flags like
+            # tetrad_ever_produced live in this same dict as plain bools.
+            # _coerce_int() only recognizes TYPE_INT/TYPE_FLOAT, so without
+            # this branch a saved `true` silently became int 0 on load
+            # (falsy), resetting the flag it guards even though the dict
+            # key itself round-tripped through JSON correctly.
+            assignments[key] = val
         else:
             assignments[key] = _coerce_int(val, 0)
     var raw_locks: Dictionary = _coerce_dict(data.get("locks"), {})
