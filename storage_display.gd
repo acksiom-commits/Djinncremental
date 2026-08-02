@@ -1,21 +1,29 @@
 extends Control
-# ================= STORAGE DISPLAY v0.9.0 =================
+# ================= STORAGE DISPLAY v0.10.0 =================
+# v0.10.0: Flow visualization reworked from independent spawned icons to
+#          animating EXISTING storage icons in place. On a resource's own
+#          production delta, an existing storage icon of the PRECEDING
+#          resource (or a freshly spawned one if none is currently on
+#          hand) drifts from wherever it is to the shared wall with the
+#          new resource's wedge, transforms there, glides a short distance
+#          past the wall into the new wedge, then simply rejoins the
+#          normal storage population (_confine_to_wedge takes back over)
+#          — never a separate icon appearing out of nowhere, never a full
+#          wedge-spanning shot. Six legs now, one per real transformation
+#          in the chain (Monad->Tetrad->Particle->Iota->Mote->{Grain,
+#          Uonite}) — Iota->Mote used to be folded into the Particle->Iota
+#          leg's "next" label with no trigger of its own; now it's its own
+#          wall crossing, triggered by Mote's own delta. Only the
+#          Mote->Uonite leg still ends specially: instead of rejoining a
+#          wedge, it settles into the central octagon (_center_icons)
+#          until Expansion clears it (clear_flow_icons(), called from
+#          root_ui.gd's _do_prestige_reset). See _drive_flow_production().
 # v0.9.0: Central octagon added inside the existing one, splitting each
 #         wedge into a quadrilateral (outer face + two seams + inner face).
 #         Storage icons now confine to their own wedge instead of bouncing
 #         off all 8 outer faces (_confine_to_wedge replaces
 #         _bounce_off_octagon) and no longer pull toward the top face when
-#         fading — they just fade in place. A second, independent icon
-#         population (_flow_icons) visualizes production: 5 legs
-#         (Tetrad/Particle/Iota/Mote->Grain/Mote->Uonite), each triggered
-#         ONLY by its own resource's real totals_created delta. A leg's
-#         icon crosses THAT resource's own wedge — e.g. a Tetrad icon
-#         crosses the Tetrad wedge, transforming to Particle right as it
-#         reaches the wall bordering the Particle wedge — never the true
-#         outer edge, never a neighboring wedge. Mote->Uonite icons settle
-#         in the central octagon until Expansion clears them
-#         (clear_flow_icons(), called from root_ui.gd's
-#         _do_prestige_reset). See _drive_flow_production().
+#         fading — they just fade in place.
 # v0.8.0: +/- volition assignment buttons at upper-left (+) and
 #         upper-right (-) corners of the node rect.
 # v0.6.0: Renamed chain to match canonical GameData order:
@@ -59,12 +67,11 @@ const BTN_FONT_SIZE:   int   = 18     # + / - label inside buttons
 
 # ===================== FLOW STREAM TUNING =========
 const INNER_OCT_RADIUS_FRAC: float = 0.30   # central octagon radius, as a fraction of the outer one
-const FLOW_MAX_ICONS:      int   = 24       # hard cap — marching + settled Uonite icons combined
-const FLOW_SPEED:          float = 70.0     # px/sec along the flow path
-const FLOW_SPAWN_DURATION: float = 0.3
-const FLOW_SETTLE_FADE:    float = 0.6      # seconds a Grain-bound icon takes to fade out on arrival
-const FLOW_STAGGER:        float = 0.06     # seconds between staggered spawns within one burst
-const FLOW_BURST_MAX:      int   = 6        # cap on new icons spawned per production-delta event
+const FLOW_SPEED:          float = 70.0     # px/sec drifting to the shared wall
+const FLOW_GLIDE_SPEED:    float = 40.0     # px/sec for the short glide past the wall — slower, "gentle"
+const FLOW_GLIDE_DISTANCE: float = 16.0     # how far past the wall to glide into the new wedge
+const FLOW_STAGGER:        float = 0.06     # seconds between staggered starts within one burst
+const FLOW_BURST_MAX:      int   = 6        # cap on icons animated per production-delta event
 
 const RESOURCE_KEYS = [
     "monad", "tetrad", "particle", "iota", "mote", "grain", "uonite"
@@ -134,25 +141,30 @@ var _inner_face_normals:   Array = []
 # Built once per _rebuild_octagon() call, not per-icon-per-frame.
 var _wedge_bounds: Array = []
 
-# Five independent legs, each gated by its OWN trigger resource's real
-# production. A leg's icon crosses THAT resource's own wedge (from the
-# wall it entered by to the wall bordering the next resource), showing
-# that resource's identity the whole way, and transforms to "next" only
-# on arrival — e.g. a Tetrad icon (triggered by Tetrad's own delta)
-# crosses the Tetrad wedge and becomes Particle as it reaches the far
-# wall. Nothing marches on its own timer, and nothing ever touches the
-# octagon's true outer edge — every leg starts and ends at an internal
-# seam (or the center). Each entry:
-# {"from": Vector2, "to": Vector2, "resource": String, "next": String,
-#  "terminal": String}. "terminal" is "fade" (arrives, briefly shows
-# "next", fades out) or "settle" (arrives, persists bouncing in the
-# central octagon until cleared). Built once per _rebuild_octagon() call
-# — see _build_flow_legs().
+# Six wall crossings, one per real transformation in the chain
+# (Monad->Tetrad->Particle->Iota->Mote->{Grain,Uonite}), each gated by its
+# OWN destination resource's real production delta. A leg doesn't own an
+# icon of its own — see _start_flow_for_leg() — it just describes the
+# geometry: {"wall": Vector2, "glide_to": Vector2, "source": String,
+# "next": String, "dest_wedge": int, "terminal": String}. "wall" is the
+# fixed point on the shared seam the icon travels to (from wherever it
+# currently is); "glide_to" is a short distance further, gently into the
+# new wedge — never a full wedge-spanning shot, never the octagon's true
+# outer edge. "terminal" is "wedge" (glide completes, icon just resumes
+# normal storage-icon behavior at "dest_wedge") or "settle" (glide
+# completes, icon moves to _center_icons and bounces there until
+# cleared). Built once per _rebuild_octagon() call — see
+# _build_flow_legs().
 var _flow_legs: Array = []
 
 # ===================== STATE =====================
-var _icons:       Array = []
-var _flow_icons:  Array = []
+var _icons:         Array = []
+# Icons that finished a "settle" terminal (Mote->Uonite) and now bounce
+# freely inside the central octagon, awaiting Expansion. Everything else
+# in the flow — the five "wedge" terminal legs — lives entirely inside
+# _icons itself (existing entries temporarily marked flow_active; see
+# _advance_flow_icon()), not a separate population.
+var _center_icons:  Array = []
 var _rng:         RandomNumberGenerator = RandomNumberGenerator.new()
 var _frame_count: int   = 0
 var _tooltip_accum: float = 0.0
@@ -294,34 +306,50 @@ func _build_wedge_bounds() -> void:
         _wedge_bounds.append(bounds)
 
 
-# Five independent legs, one per resource that has something to visually
-# "become". Vertex indices 1..5 are exactly the seams bordering wedges
-# 1(Monad)|2(Tetrad), 2(Tetrad)|3(Particle), 3(Particle)|4(Iota), and
-# 4(Iota)|5(Mote) — each leg crosses the interior of ONE wedge, from the
-# wall it entered by to the wall bordering the next resource. Monad
-# itself has no predecessor wall (only the octagon's true outer edge), so
-# it isn't visualized as a flow leg at all — it's already represented by
-# the storage-icon population. Mote's own seam (index 5) feeds two
-# separate legs across the Mote wedge: one to wedge 6 (Grain), one across
-# the Mote wedge's inner edge into the central octagon (Uonite).
+# Six wall crossings. Vertex indices 2..6 are exactly the seams bordering
+# wedges 1(Monad)|2(Tetrad), 2(Tetrad)|3(Particle), 3(Particle)|4(Iota),
+# 4(Iota)|5(Mote), and 5(Mote)|6(Grain) — one real transformation each.
+# Mote's own seam (index 5) additionally feeds the Uonite leg, across the
+# Mote wedge's inner edge into the central octagon instead of into wedge 6.
 func _build_flow_legs() -> void:
     _flow_legs.clear()
     if _face_midpoints.size() < 8 or _oct_verts.size() < 8 or _inner_verts.size() < 8:
         return
-    var w1 = (_oct_verts[2] + _inner_verts[2]) * 0.5
-    var w2 = (_oct_verts[3] + _inner_verts[3]) * 0.5
-    var w3 = (_oct_verts[4] + _inner_verts[4]) * 0.5
-    var w4 = (_oct_verts[5] + _inner_verts[5]) * 0.5
-    var grain_seam_mid:   Vector2 = (_oct_verts[6] + _inner_verts[6]) * 0.5
-    var uonite_inner_mid: Vector2 = (_inner_verts[5] + _inner_verts[6]) * 0.5
+    var seam2 = (_oct_verts[2] + _inner_verts[2]) * 0.5   # Monad|Tetrad
+    var seam3 = (_oct_verts[3] + _inner_verts[3]) * 0.5   # Tetrad|Particle
+    var seam4 = (_oct_verts[4] + _inner_verts[4]) * 0.5   # Particle|Iota
+    var seam5 = (_oct_verts[5] + _inner_verts[5]) * 0.5   # Iota|Mote
+    var seam6 = (_oct_verts[6] + _inner_verts[6]) * 0.5   # Mote|Grain
+    var uonite_wall: Vector2 = (_inner_verts[5] + _inner_verts[6]) * 0.5  # Mote wedge's inner edge -> center
 
     _flow_legs = [
-        {"from": w1, "to": w2,               "resource": "tetrad",   "next": "particle", "terminal": "fade"},
-        {"from": w2, "to": w3,               "resource": "particle", "next": "iota",     "terminal": "fade"},
-        {"from": w3, "to": w4,               "resource": "iota",     "next": "mote",     "terminal": "fade"},
-        {"from": w4, "to": grain_seam_mid,   "resource": "mote",     "next": "grain",    "terminal": "fade"},
-        {"from": w4, "to": uonite_inner_mid, "resource": "mote",     "next": "uonite",   "terminal": "settle"},
+        _make_wedge_leg(seam2, "monad",    "tetrad"),
+        _make_wedge_leg(seam3, "tetrad",   "particle"),
+        _make_wedge_leg(seam4, "particle", "iota"),
+        _make_wedge_leg(seam5, "iota",     "mote"),
+        _make_wedge_leg(seam6, "mote",     "grain"),
+        {
+            "wall":       uonite_wall,
+            "glide_to":   uonite_wall + (_oct_center - uonite_wall).normalized() * FLOW_GLIDE_DISTANCE,
+            "source":     "mote",
+            "next":       "uonite",
+            "dest_wedge": -1,
+            "terminal":   "settle",
+        },
     ]
+
+
+func _make_wedge_leg(wall: Vector2, source: String, next: String) -> Dictionary:
+    var dest_wedge: int = RESOURCE_FACE.get(next, 1)
+    var glide_dir: Vector2 = (_face_midpoints[dest_wedge] - wall).normalized()
+    return {
+        "wall":       wall,
+        "glide_to":   wall + glide_dir * FLOW_GLIDE_DISTANCE,
+        "source":     source,
+        "next":       next,
+        "dest_wedge": dest_wedge,
+        "terminal":   "wedge",
+    }
 
 
 func _load_textures() -> void:
@@ -347,9 +375,9 @@ func _process(delta: float) -> void:
         return
     _frame_count += 1
     _sync_icons()
-    _update_icons(delta)
     _drive_flow_production(delta)
-    _update_flow_icons(delta)
+    _update_icons(delta)
+    _update_center_icons(delta)
     queue_redraw()
     if _settings_popout and not _settings_popout.tooltips_enabled:
         tooltip_text = ""
@@ -442,6 +470,11 @@ func _sync_icons() -> void:
     for key in RESOURCE_KEYS:
         current_counts[key] = 0
     for icon in _icons:
+        # Mid-flow icons are in transition between two resources' counts —
+        # excluded here (and from fade-selection below) so this fraction-
+        # based accounting doesn't fight with the flow animation over them.
+        if icon.get("flow_active", false):
+            continue
         if not icon["fading"]:
             current_counts[icon["resource"]] += 1
 
@@ -470,7 +503,8 @@ func _sync_icons() -> void:
         var removed = 0
         var i       = _icons.size() - 1
         while i >= 0 and removed < excess:
-            if _icons[i]["resource"] == key and not _icons[i]["fading"]:
+            if not _icons[i].get("flow_active", false) \
+            and _icons[i]["resource"] == key and not _icons[i]["fading"]:
                 _icons[i]["fading"] = true
                 removed += 1
             i -= 1
@@ -498,10 +532,17 @@ func _spawn_icon(resource_key: String) -> void:
 
 
 func _update_icons(delta: float) -> void:
-    var to_remove: Array = []
+    var to_remove: Array = []      # indices removed from _icons this frame
+    var to_center: Array = []      # subset of to_remove that transfers to _center_icons
 
     for i in _icons.size():
         var icon = _icons[i]
+
+        if icon.get("flow_active", false):
+            if _advance_flow_icon(icon, delta):
+                to_remove.append(i)
+                to_center.append(i)
+            continue
 
         if icon["spawning"]:
             icon["spawn_t"] += delta / SPAWN_DURATION
@@ -526,7 +567,66 @@ func _update_icons(delta: float) -> void:
                 to_remove.append(i)
 
     for i in range(to_remove.size() - 1, -1, -1):
-        _icons.remove_at(to_remove[i])
+        var idx: int = to_remove[i]
+        if idx in to_center:
+            var icon: Dictionary = _icons[idx]
+            icon.erase("flow_active")
+            icon.erase("flow_phase")
+            icon.erase("flow_leg")
+            icon.erase("flow_delay")
+            icon["alpha"] = 1.0
+            _center_icons.append(icon)
+        _icons.remove_at(idx)
+
+
+# Advances one icon through its wall-crossing animation. Returns true only
+# when a "settle" terminal (Mote->Uonite) has fully completed, signaling
+# the caller to move this icon out of _icons and into _center_icons — the
+# far more common "wedge" terminal just clears its own flow_* bookkeeping
+# and hands the icon back to normal drift+bounce behavior in place, no
+# removal needed.
+func _advance_flow_icon(icon: Dictionary, delta: float) -> bool:
+    if icon.get("flow_delay", 0.0) > 0.0:
+        icon["flow_delay"] -= delta
+        return false
+
+    var leg: Dictionary = _flow_legs[icon["flow_leg"]]
+
+    if icon["flow_phase"] == "to_wall":
+        var target: Vector2 = leg["wall"]
+        var to_target: Vector2 = target - icon["pos"]
+        var dist: float = to_target.length()
+        var step: float = FLOW_SPEED * delta
+        if step >= dist or dist < 0.5:
+            icon["pos"]        = target
+            icon["resource"]   = leg["next"]   # transform right as it crosses the wall
+            icon["flow_phase"] = "glide"
+        else:
+            icon["pos"] += to_target.normalized() * step
+        return false
+
+    # "glide" — a short, gentle drift past the wall into the new wedge
+    # (or, for the settle terminal, toward the center).
+    var target: Vector2 = leg["glide_to"]
+    var to_target: Vector2 = target - icon["pos"]
+    var dist: float = to_target.length()
+    var step: float = FLOW_GLIDE_SPEED * delta
+    if step < dist and dist >= 0.5:
+        icon["pos"] += to_target.normalized() * step
+        return false
+
+    icon["pos"] = target
+    if leg["terminal"] == "settle":
+        icon["vel"] = (leg["glide_to"] - leg["wall"]).normalized() * DRIFT_SPEED
+        return true
+
+    icon["wedge"] = leg["dest_wedge"]
+    icon["vel"]   = Vector2.ZERO
+    icon.erase("flow_active")
+    icon.erase("flow_phase")
+    icon.erase("flow_leg")
+    icon.erase("flow_delay")
+    return false
 
 
 func _confine_to_wedge(icon: Dictionary) -> void:
@@ -567,89 +667,79 @@ func _confine_to_center(icon: Dictionary) -> void:
 
 
 # ==================================================
-# FLOW ICONS — one short hop per leg, each independently triggered by its
-# own destination resource's real production (see _drive_flow_production).
-# Nothing marches forward on its own timer once spawned.
+# FLOW TRIGGERING — repurposes EXISTING _icons entries (or spawns fresh
+# ones only if none of the source resource are currently on hand) into the
+# flow_active state machine driven by _advance_flow_icon(). Nothing is
+# independently spawned-and-despawned anymore; see header changelog.
 # ==================================================
-func _spawn_flow_icon(leg_idx: int, delay: float = 0.0) -> void:
-    if _flow_icons.size() >= FLOW_MAX_ICONS or leg_idx < 0 or leg_idx >= _flow_legs.size():
+func _start_flow_for_leg(leg_idx: int, count: int) -> void:
+    if leg_idx < 0 or leg_idx >= _flow_legs.size() or count <= 0:
         return
     var leg: Dictionary = _flow_legs[leg_idx]
-    _flow_icons.append({
-        "resource": leg["resource"],
-        "pos":      leg["from"],
-        "vel":      Vector2.ZERO,
-        "leg_idx":  leg_idx,
-        "leg_t":    0.0,
-        "alpha":    0.0,
-        "spawn_t":  0.0,
-        "delay":    delay,
-        "state":    "spawning",
-    })
+    var source: String = leg["source"]
+
+    # Prefer repurposing existing storage icons of the source resource —
+    # this is what makes the animation start from wherever that icon
+    # actually is, instead of a fixed spawn point.
+    var candidates: Array = []
+    for icon in _icons:
+        if icon["resource"] == source and not icon.get("flow_active", false) \
+        and not icon["fading"] and not icon["spawning"]:
+            candidates.append(icon)
+            if candidates.size() >= count:
+                break
+
+    var started: int = 0
+    for icon in candidates:
+        icon["flow_active"] = true
+        icon["flow_phase"]  = "to_wall"
+        icon["flow_leg"]    = leg_idx
+        icon["flow_delay"]  = started * FLOW_STAGGER
+        started += 1
+
+    # Not enough existing icons on hand — spawn the remainder fresh at the
+    # source wedge's face, then immediately mark them flow_active so they
+    # animate straight into the crossing instead of drifting first.
+    while started < count and _icons.size() < MAX_ICONS:
+        var face_idx: int = RESOURCE_FACE.get(source, 1)
+        if _face_midpoints.is_empty():
+            break
+        var icon: Dictionary = {
+            "resource":    source,
+            "wedge":       face_idx,
+            "pos":         _face_midpoints[face_idx],
+            "vel":         Vector2.ZERO,
+            "alpha":       1.0,
+            "fading":      false,
+            "spawning":    false,
+            "spawn_t":     1.0,
+            "flow_active": true,
+            "flow_phase":  "to_wall",
+            "flow_leg":    leg_idx,
+            "flow_delay":  started * FLOW_STAGGER,
+        }
+        _icons.append(icon)
+        started += 1
 
 
-func _update_flow_icons(delta: float) -> void:
-    var to_remove: Array = []
-    for i in _flow_icons.size():
-        var icon = _flow_icons[i]
-        match icon["state"]:
-            "spawning":
-                if icon["delay"] > 0.0:
-                    icon["delay"] -= delta
-                else:
-                    icon["spawn_t"] += delta / FLOW_SPAWN_DURATION
-                    icon["alpha"]    = clamp(icon["spawn_t"], 0.0, 1.0)
-                    if icon["spawn_t"] >= 1.0:
-                        icon["state"] = "traveling"
-            "traveling":
-                _advance_leg(icon, delta)
-            "settling_uonite":
-                icon["vel"]  = icon["vel"] * DAMPING
-                icon["pos"] += icon["vel"] * delta
-                _confine_to_center(icon)
-            "fading":
-                icon["alpha"] -= delta / FLOW_SETTLE_FADE
-                if icon["alpha"] <= 0.0:
-                    to_remove.append(i)
-    for i in range(to_remove.size() - 1, -1, -1):
-        _flow_icons.remove_at(to_remove[i])
+# Central-octagon population — Uonite icons that finished a "settle"
+# terminal. Simple drift+damping+bounce, no state machine needed here;
+# the wall-crossing animation itself lives in _advance_flow_icon().
+func _update_center_icons(delta: float) -> void:
+    for icon in _center_icons:
+        icon["vel"]  = icon["vel"] * DAMPING
+        icon["pos"] += icon["vel"] * delta
+        _confine_to_center(icon)
 
 
-func _advance_leg(icon: Dictionary, delta: float) -> void:
-    if icon["leg_idx"] < 0 or icon["leg_idx"] >= _flow_legs.size():
-        icon["state"] = "fading"
-        return
-    var leg: Dictionary = _flow_legs[icon["leg_idx"]]
-    var from_pt: Vector2 = leg["from"]
-    var to_pt:   Vector2 = leg["to"]
-
-    var seg_len: float = maxf(from_pt.distance_to(to_pt), 1.0)
-    icon["leg_t"] += FLOW_SPEED * delta / seg_len
-
-    if icon["leg_t"] >= 1.0:
-        icon["pos"]      = to_pt
-        icon["resource"] = leg["next"]   # transform as it crosses the wall
-        if leg["terminal"] == "settle":
-            icon["state"] = "settling_uonite"
-            icon["vel"]   = (to_pt - from_pt).normalized() * DRIFT_SPEED
-        else:
-            icon["state"] = "fading"
-    else:
-        icon["pos"] = from_pt.lerp(to_pt, icon["leg_t"])
-
-
-# Maps a leg's OWN resource to its index in _flow_legs — a leg is
-# triggered by the same resource it displays while crossing its wedge
-# (see _build_flow_legs()). Mote has no entry: it's never a trigger
-# itself, only the label two legs arrive at (iota's leg turning into
-# "mote", which is then the "resource" shown while crossing toward
-# Grain/Uonite) — Grain's and Uonite's own deltas are what independently
-# decide which of those two legs actually happens. totals_created has no
-# plain "tetrad" top-level key (only the 15 variety names), unlike
-# particle/iota/grain/uonite, which already use their plain name —
-# _current_resource_total() special-cases the sum for that one.
+# Maps a leg's OWN destination resource to its index in _flow_legs — a leg
+# is triggered by the resource it PRODUCES (see _build_flow_legs()), and
+# each of the six real transformations in the chain gets its own entry now
+# that Iota->Mote is no longer folded into the Particle->Iota leg. Mote
+# still needs the special-case sum in _current_resource_total() below (see
+# TETRAD_TOTAL_KEYS) only for reading "tetrad" itself, not for Mote.
 const FLOW_LEG_FOR_RESOURCE: Dictionary = {
-    "tetrad": 0, "particle": 1, "iota": 2, "grain": 3, "uonite": 4,
+    "tetrad": 0, "particle": 1, "iota": 2, "mote": 3, "grain": 4, "uonite": 5,
 }
 const TETRAD_TOTAL_KEYS: Array[String] = [
     "adaemant", "aquae", "aethyr", "earth", "water", "air",
@@ -666,11 +756,11 @@ func _current_resource_total(key: String) -> BigNum:
     return sum
 
 
-# Burst driver — each of the 5 legs is gated ONLY by its own resource's
+# Burst driver — each of the 6 legs is gated ONLY by its own resource's
 # real production, never by a shared "spawn once, then march the whole
 # board on a timer" trigger. A leg only shows something when enough of
 # THAT resource has actually been created — making Tetrads (and nothing
-# downstream) lights up only the Tetrad leg, not Particle/Iota/Grain/
+# downstream) lights up only the Tetrad leg, not Particle/Iota/Mote/Grain/
 # Uonite too, since those legs' own totals never moved.
 # _prev_totals starts empty so the very first call after load/ready never
 # mistakes a save's entire lifetime totals for one frame's production.
@@ -687,8 +777,7 @@ func _drive_flow_production(_delta: float) -> void:
                 var delta_bn: BigNum = current.sub(prev)
                 var burst: int = clampi(
                     int(round(log(1.0 + float(delta_bn.to_int())))), 1, FLOW_BURST_MAX)
-                for i in burst:
-                    _spawn_flow_icon(FLOW_LEG_FOR_RESOURCE[key], i * FLOW_STAGGER)
+                _start_flow_for_leg(FLOW_LEG_FOR_RESOURCE[key], burst)
         _prev_totals[key] = current.copy()
 
 
@@ -696,7 +785,7 @@ func _drive_flow_production(_delta: float) -> void:
 ## represents pre-Expansion production, so it's cleared immediately rather
 ## than left to drain naturally (matching the resource wipe it visualizes).
 func clear_flow_icons() -> void:
-    _flow_icons.clear()
+    _center_icons.clear()
 
 
 func _draw_icon_at(pos: Vector2, key: String, alpha: float) -> void:
@@ -755,10 +844,12 @@ func _draw() -> void:
             draw_line(_inner_verts[i], _inner_verts[(i + 1) % 8],
                 Color(1.0, 0.87, 0.33, 0.35), 1.5)
 
-    # Icons — storage population, then the flow stream on top of it.
+    # Icons — storage population (flow-active icons mid-crossing are
+    # regular _icons members and draw here too, using their live
+    # resource/pos/alpha), then settled central-octagon icons on top.
     for icon in _icons:
         _draw_icon_at(icon["pos"], icon["resource"], icon["alpha"])
-    for icon in _flow_icons:
+    for icon in _center_icons:
         _draw_icon_at(icon["pos"], icon["resource"], icon["alpha"])
 
     # Volition assignment counter — lower-right corner (face 3)
