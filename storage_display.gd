@@ -593,16 +593,16 @@ func _advance_flow_icon(icon: Dictionary, delta: float) -> bool:
     var leg: Dictionary = _flow_legs[icon["flow_leg"]]
 
     if icon["flow_phase"] == "to_wall":
-        var target: Vector2 = leg["wall"]
-        var to_target: Vector2 = target - icon["pos"]
-        var dist: float = to_target.length()
-        var step: float = FLOW_SPEED * delta
-        if step >= dist or dist < 0.5:
-            icon["pos"]        = target
+        var wall_target: Vector2 = leg["wall"]
+        var to_wall: Vector2 = wall_target - icon["pos"]
+        var wall_dist: float = to_wall.length()
+        var wall_step: float = FLOW_SPEED * delta
+        if wall_step >= wall_dist or wall_dist < 0.5:
+            icon["pos"]        = wall_target
             icon["resource"]   = leg["next"]   # transform right as it crosses the wall
             icon["flow_phase"] = "glide"
         else:
-            icon["pos"] += to_target.normalized() * step
+            icon["pos"] += to_wall.normalized() * wall_step
         return false
 
     # "glide" — a short, gentle drift past the wall into the new wedge
