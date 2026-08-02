@@ -1330,6 +1330,8 @@ func _do_prestige_reset() -> void:
     var cap_delta: BigNum       = game_context.do_prestige_reset()
     if production_manager:
         production_manager.reset_for_prestige()
+    if _storage_display and _storage_display.has_method("clear_flow_icons"):
+        _storage_display.clear_flow_icons()
     _tetrad_assembly_ready = false
     if archon_dialogue_manager and archon_dialogue_manager.all_monads_upgrade_done:
         _tetrad_assembly_ready = true
