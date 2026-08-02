@@ -210,12 +210,26 @@ func load_game() -> void:
 
 
 func reset_save() -> void:
+    # Return values checked for the same reason as save_game()'s rotation
+    # (see its comment): a transient lock (antivirus/cloud-sync on Windows)
+    # can silently no-op a delete with no error otherwise. A failed delete
+    # here isn't catastrophic on its own — the in-memory state still resets
+    # and the next autosave would normally overwrite the stale file within
+    # 60s — but if the player quits before that autosave fires, the next
+    # load would silently resurrect the pre-reset save, making Reset look
+    # like it did nothing. Warn so it's at least visible in the logs.
     if FileAccess.file_exists(SAVE_PATH):
-        DirAccess.remove_absolute(SAVE_PATH)
+        var err: Error = DirAccess.remove_absolute(SAVE_PATH)
+        if err != OK:
+            push_warning("SaveManager: could not remove primary save on reset (error %d)." % err)
     if FileAccess.file_exists(BAK_PATH):
-        DirAccess.remove_absolute(BAK_PATH)
+        var err: Error = DirAccess.remove_absolute(BAK_PATH)
+        if err != OK:
+            push_warning("SaveManager: could not remove backup save on reset (error %d)." % err)
     if FileAccess.file_exists(TMP_PATH):
-        DirAccess.remove_absolute(TMP_PATH)
+        var err: Error = DirAccess.remove_absolute(TMP_PATH)
+        if err != OK:
+            push_warning("SaveManager: could not remove temp save on reset (error %d)." % err)
     # A fresh reset clears any prior corrupt-file lockout so saving resumes.
     _save_disabled = false
     emit_signal("save_reset")
