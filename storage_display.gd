@@ -1,5 +1,29 @@
 extends Control
-# ================= STORAGE DISPLAY v0.10.0 =================
+# ================= STORAGE DISPLAY v0.11.0 =================
+# v0.11.0: Two fixes from live playtesting of v0.10.0:
+#          (1) Wedge-crossing icons now land at a randomized point along
+#              the shared wall (not always the exact midpoint) and glide
+#              off at a randomized angle/distance, so a burst of several
+#              icons crossing together fans out instead of marching along
+#              one identical line. They also pick up a randomized velocity
+#              on arrival (matching _spawn_icon()'s jitter pattern) instead
+#              of stopping dead with vel=ZERO.
+#          (2) The 5 "wedge"-terminal legs (Monad->Tetrad->Particle->Iota->
+#              Mote->Grain) are no longer triggered by watching
+#              totals_created every frame — that fired on every single
+#              production tick, out of step with how storage icons
+#              normally appear. They're now triggered from _sync_icons()'s
+#              own needed-vs-current-count reconciliation (the same
+#              fraction-of-storage batch schedule that has always governed
+#              Monad's edge-spawns), and _spawn_icon() is no longer called
+#              for those 5 keys at all — a wedge can now ONLY gain an icon
+#              by a wall crossing from its upstream wedge, never by
+#              spawning fresh at its own outer edge (this is what fixes
+#              Tetrad icons still entering from the outer rim). The
+#              Mote->Uonite "settle" leg is the one exception: it isn't
+#              tied to any wedge's storage target (it settles in the
+#              central cavity, not a wedge), so it stays on the original
+#              totals_created-delta trigger, now scoped to just that leg.
 # v0.10.0: Flow visualization reworked from independent spawned icons to
 #          animating EXISTING storage icons in place. On a resource's own
 #          production delta, an existing storage icon of the PRECEDING
@@ -71,7 +95,11 @@ const FLOW_SPEED:          float = 70.0     # px/sec drifting to the shared wall
 const FLOW_GLIDE_SPEED:    float = 40.0     # px/sec for the short glide past the wall — slower, "gentle"
 const FLOW_GLIDE_DISTANCE: float = 16.0     # how far past the wall to glide into the new wedge
 const FLOW_STAGGER:        float = 0.06     # seconds between staggered starts within one burst
-const FLOW_BURST_MAX:      int   = 6        # cap on icons animated per production-delta event
+const FLOW_BURST_MAX:      int   = 6        # cap on icons animated per settle-leg production-delta event (see _drive_flow_production)
+const FLOW_WALL_SPREAD_MIN:       float = 0.2   # per-icon crossing point along the shared wall segment, as a 0..1 lerp
+const FLOW_WALL_SPREAD_MAX:       float = 0.8   # (kept off the very corners so icons don't pop into a THIRD wedge)
+const FLOW_GLIDE_ANGLE_JITTER_DEG: float = 25.0 # +/- degrees randomized off the base glide direction
+const FLOW_GLIDE_DIST_JITTER_FRAC: float = 0.3  # +/- fraction of FLOW_GLIDE_DISTANCE randomized per icon
 
 const RESOURCE_KEYS = [
     "monad", "tetrad", "particle", "iota", "mote", "grain", "uonite"
@@ -142,19 +170,19 @@ var _inner_face_normals:   Array = []
 var _wedge_bounds: Array = []
 
 # Six wall crossings, one per real transformation in the chain
-# (Monad->Tetrad->Particle->Iota->Mote->{Grain,Uonite}), each gated by its
-# OWN destination resource's real production delta. A leg doesn't own an
-# icon of its own — see _start_flow_for_leg() — it just describes the
-# geometry: {"wall": Vector2, "glide_to": Vector2, "source": String,
-# "next": String, "dest_wedge": int, "terminal": String}. "wall" is the
-# fixed point on the shared seam the icon travels to (from wherever it
-# currently is); "glide_to" is a short distance further, gently into the
-# new wedge — never a full wedge-spanning shot, never the octagon's true
-# outer edge. "terminal" is "wedge" (glide completes, icon just resumes
-# normal storage-icon behavior at "dest_wedge") or "settle" (glide
-# completes, icon moves to _center_icons and bounces there until
-# cleared). Built once per _rebuild_octagon() call — see
-# _build_flow_legs().
+# (Monad->Tetrad->Particle->Iota->Mote->{Grain,Uonite}). A leg doesn't own
+# an icon of its own — see _start_flow_for_leg() — it just describes the
+# geometry: {"wall_a": Vector2, "wall_b": Vector2, "glide_dir": Vector2,
+# "source": String, "next": String, "dest_wedge": int, "terminal": String}.
+# "wall_a"/"wall_b" are the two ends of the shared seam segment — each icon
+# picks its OWN random point along it (see _roll_flow_targets()) rather
+# than every icon converging on one fixed point. "glide_dir" is the base
+# direction from the wall toward the destination wedge/center, again
+# randomized per icon (angle + distance) at roll time. "terminal" is
+# "wedge" (glide completes, icon just resumes normal storage-icon behavior
+# at "dest_wedge") or "settle" (glide completes, icon moves to
+# _center_icons and bounces there until cleared). Built once per
+# _rebuild_octagon() call — see _build_flow_legs().
 var _flow_legs: Array = []
 
 # ===================== STATE =====================
@@ -309,47 +337,61 @@ func _build_wedge_bounds() -> void:
 # Six wall crossings. Vertex indices 2..6 are exactly the seams bordering
 # wedges 1(Monad)|2(Tetrad), 2(Tetrad)|3(Particle), 3(Particle)|4(Iota),
 # 4(Iota)|5(Mote), and 5(Mote)|6(Grain) — one real transformation each.
-# Mote's own seam (index 5) additionally feeds the Uonite leg, across the
-# Mote wedge's inner edge into the central octagon instead of into wedge 6.
+# Mote's own inner edge additionally feeds the Uonite leg, into the
+# central octagon instead of into wedge 6.
 func _build_flow_legs() -> void:
     _flow_legs.clear()
     if _face_midpoints.size() < 8 or _oct_verts.size() < 8 or _inner_verts.size() < 8:
         return
-    var seam2 = (_oct_verts[2] + _inner_verts[2]) * 0.5   # Monad|Tetrad
-    var seam3 = (_oct_verts[3] + _inner_verts[3]) * 0.5   # Tetrad|Particle
-    var seam4 = (_oct_verts[4] + _inner_verts[4]) * 0.5   # Particle|Iota
-    var seam5 = (_oct_verts[5] + _inner_verts[5]) * 0.5   # Iota|Mote
-    var seam6 = (_oct_verts[6] + _inner_verts[6]) * 0.5   # Mote|Grain
-    var uonite_wall: Vector2 = (_inner_verts[5] + _inner_verts[6]) * 0.5  # Mote wedge's inner edge -> center
 
     _flow_legs = [
-        _make_wedge_leg(seam2, "monad",    "tetrad"),
-        _make_wedge_leg(seam3, "tetrad",   "particle"),
-        _make_wedge_leg(seam4, "particle", "iota"),
-        _make_wedge_leg(seam5, "iota",     "mote"),
-        _make_wedge_leg(seam6, "mote",     "grain"),
-        {
-            "wall":       uonite_wall,
-            "glide_to":   uonite_wall + (_oct_center - uonite_wall).normalized() * FLOW_GLIDE_DISTANCE,
-            "source":     "mote",
-            "next":       "uonite",
-            "dest_wedge": -1,
-            "terminal":   "settle",
-        },
+        _make_wedge_leg(_oct_verts[2], _inner_verts[2], "monad",    "tetrad"),   # Monad|Tetrad
+        _make_wedge_leg(_oct_verts[3], _inner_verts[3], "tetrad",   "particle"), # Tetrad|Particle
+        _make_wedge_leg(_oct_verts[4], _inner_verts[4], "particle", "iota"),     # Particle|Iota
+        _make_wedge_leg(_oct_verts[5], _inner_verts[5], "iota",     "mote"),     # Iota|Mote
+        _make_wedge_leg(_oct_verts[6], _inner_verts[6], "mote",     "grain"),    # Mote|Grain
+        _make_settle_leg(_inner_verts[5], _inner_verts[6], "mote", "uonite"),    # Mote's inner edge -> center
     ]
 
 
-func _make_wedge_leg(wall: Vector2, source: String, next: String) -> Dictionary:
-    var dest_wedge: int = RESOURCE_FACE.get(next, 1)
-    var glide_dir: Vector2 = (_face_midpoints[dest_wedge] - wall).normalized()
+func _make_wedge_leg(wall_a: Vector2, wall_b: Vector2, source: String, next: String) -> Dictionary:
+    var mid: Vector2       = (wall_a + wall_b) * 0.5
+    var dest_wedge: int    = RESOURCE_FACE.get(next, 1)
+    var glide_dir: Vector2 = (_face_midpoints[dest_wedge] - mid).normalized()
     return {
-        "wall":       wall,
-        "glide_to":   wall + glide_dir * FLOW_GLIDE_DISTANCE,
+        "wall_a":     wall_a,
+        "wall_b":     wall_b,
+        "glide_dir":  glide_dir,
         "source":     source,
         "next":       next,
         "dest_wedge": dest_wedge,
         "terminal":   "wedge",
     }
+
+
+func _make_settle_leg(wall_a: Vector2, wall_b: Vector2, source: String, next: String) -> Dictionary:
+    var mid: Vector2 = (wall_a + wall_b) * 0.5
+    return {
+        "wall_a":     wall_a,
+        "wall_b":     wall_b,
+        "glide_dir":  (_oct_center - mid).normalized(),
+        "source":     source,
+        "next":       next,
+        "dest_wedge": -1,
+        "terminal":   "settle",
+    }
+
+
+# Rolls a randomized crossing point along the leg's shared wall segment and
+# a randomized glide angle/distance off it, so several icons crossing the
+# same leg at once fan out instead of marching along one identical line.
+func _roll_flow_targets(leg: Dictionary) -> Dictionary:
+    var t: float          = _rng.randf_range(FLOW_WALL_SPREAD_MIN, FLOW_WALL_SPREAD_MAX)
+    var wall: Vector2     = leg["wall_a"].lerp(leg["wall_b"], t)
+    var angle: float      = deg_to_rad(_rng.randf_range(-FLOW_GLIDE_ANGLE_JITTER_DEG, FLOW_GLIDE_ANGLE_JITTER_DEG))
+    var dist: float       = FLOW_GLIDE_DISTANCE * (1.0 + _rng.randf_range(-FLOW_GLIDE_DIST_JITTER_FRAC, FLOW_GLIDE_DIST_JITTER_FRAC))
+    var glide_to: Vector2 = wall + leg["glide_dir"].rotated(angle) * dist
+    return {"wall": wall, "glide_to": glide_to}
 
 
 func _load_textures() -> void:
@@ -469,11 +511,21 @@ func _sync_icons() -> void:
     var current_counts: Dictionary = {}
     for key in RESOURCE_KEYS:
         current_counts[key] = 0
+    # Icons already mid-flow toward a wedge are "spoken for" — counted
+    # here so _sync_icons() doesn't re-trigger a fresh crossing for the
+    # same shortfall every single frame while they're still in transit
+    # (settle-terminal icons don't count toward any wedge, so they're
+    # left out of this — see _drive_flow_production() for that leg).
+    var in_flight_counts: Dictionary = {}
     for icon in _icons:
         # Mid-flow icons are in transition between two resources' counts —
         # excluded here (and from fade-selection below) so this fraction-
         # based accounting doesn't fight with the flow animation over them.
         if icon.get("flow_active", false):
+            var leg: Dictionary = _flow_legs[icon["flow_leg"]]
+            if leg["terminal"] == "wedge":
+                var dest: String = leg["next"]
+                in_flight_counts[dest] = in_flight_counts.get(dest, 0) + 1
             continue
         if not icon["fading"]:
             current_counts[icon["resource"]] += 1
@@ -493,10 +545,22 @@ func _sync_icons() -> void:
         var base = 1 if (has_stock and key != "uonite") else 0
         targets[key] = max(base, int(frac * target_total))
 
+    # A wedge that has an upstream flow leg (everything except Monad and
+    # Uonite — see WEDGE_LEG_FOR_RESOURCE) can ONLY gain icons by a wall
+    # crossing from that leg now, never by spawning fresh at its own outer
+    # edge. Both paths pull from the exact same "needed" shortfall and the
+    # exact same per-frame _sync_icons() cadence, so a wedge-crossing leg
+    # is triggered on the identical batch schedule the old edge-spawn
+    # always used — not on every raw production tick.
     for key in RESOURCE_KEYS:
-        var needed = targets[key] - current_counts[key]
-        for i in max(0, needed):
-            _spawn_icon(key)
+        var needed = targets[key] - current_counts[key] - in_flight_counts.get(key, 0)
+        if needed <= 0:
+            continue
+        if WEDGE_LEG_FOR_RESOURCE.has(key):
+            _start_flow_for_leg(WEDGE_LEG_FOR_RESOURCE[key], needed)
+        else:
+            for i in needed:
+                _spawn_icon(key)
 
     for key in RESOURCE_KEYS:
         var excess  = current_counts[key] - targets[key]
@@ -574,6 +638,8 @@ func _update_icons(delta: float) -> void:
             icon.erase("flow_phase")
             icon.erase("flow_leg")
             icon.erase("flow_delay")
+            icon.erase("flow_wall")
+            icon.erase("flow_glide_to")
             icon["alpha"] = 1.0
             _center_icons.append(icon)
         _icons.remove_at(idx)
@@ -593,7 +659,7 @@ func _advance_flow_icon(icon: Dictionary, delta: float) -> bool:
     var leg: Dictionary = _flow_legs[icon["flow_leg"]]
 
     if icon["flow_phase"] == "to_wall":
-        var wall_target: Vector2 = leg["wall"]
+        var wall_target: Vector2 = icon["flow_wall"]
         var to_wall: Vector2 = wall_target - icon["pos"]
         var wall_dist: float = to_wall.length()
         var wall_step: float = FLOW_SPEED * delta
@@ -606,8 +672,10 @@ func _advance_flow_icon(icon: Dictionary, delta: float) -> bool:
         return false
 
     # "glide" — a short, gentle drift past the wall into the new wedge
-    # (or, for the settle terminal, toward the center).
-    var target: Vector2 = leg["glide_to"]
+    # (or, for the settle terminal, toward the center). Target is this
+    # icon's OWN randomized point (see _roll_flow_targets), not a single
+    # shared point every icon on the leg converges on.
+    var target: Vector2 = icon["flow_glide_to"]
     var to_target: Vector2 = target - icon["pos"]
     var dist: float = to_target.length()
     var step: float = FLOW_GLIDE_SPEED * delta
@@ -616,16 +684,25 @@ func _advance_flow_icon(icon: Dictionary, delta: float) -> bool:
         return false
 
     icon["pos"] = target
+    # Arrival velocity is randomized the same way _spawn_icon() jitters a
+    # fresh icon's initial drift — a straight-line stop-dead landing (the
+    # old vel=ZERO) read as too uniform once several icons crossed at once.
+    var arrive_dir: Vector2  = (icon["flow_glide_to"] - icon["flow_wall"]).normalized()
+    var arrive_perp: Vector2 = Vector2(-arrive_dir.y, arrive_dir.x)
+    var arrive_vel: Vector2  = arrive_dir * DRIFT_SPEED + arrive_perp * _rng.randf_range(-RANDOM_VEL, RANDOM_VEL)
+
     if leg["terminal"] == "settle":
-        icon["vel"] = (leg["glide_to"] - leg["wall"]).normalized() * DRIFT_SPEED
+        icon["vel"] = arrive_vel
         return true
 
     icon["wedge"] = leg["dest_wedge"]
-    icon["vel"]   = Vector2.ZERO
+    icon["vel"]   = arrive_vel
     icon.erase("flow_active")
     icon.erase("flow_phase")
     icon.erase("flow_leg")
     icon.erase("flow_delay")
+    icon.erase("flow_wall")
+    icon.erase("flow_glide_to")
     return false
 
 
@@ -691,10 +768,13 @@ func _start_flow_for_leg(leg_idx: int, count: int) -> void:
 
     var started: int = 0
     for icon in candidates:
-        icon["flow_active"] = true
-        icon["flow_phase"]  = "to_wall"
-        icon["flow_leg"]    = leg_idx
-        icon["flow_delay"]  = started * FLOW_STAGGER
+        var targets: Dictionary = _roll_flow_targets(leg)
+        icon["flow_active"]   = true
+        icon["flow_phase"]    = "to_wall"
+        icon["flow_leg"]      = leg_idx
+        icon["flow_delay"]    = started * FLOW_STAGGER
+        icon["flow_wall"]     = targets["wall"]
+        icon["flow_glide_to"] = targets["glide_to"]
         started += 1
 
     # Not enough existing icons on hand — spawn the remainder fresh at the
@@ -704,19 +784,22 @@ func _start_flow_for_leg(leg_idx: int, count: int) -> void:
         var face_idx: int = RESOURCE_FACE.get(source, 1)
         if _face_midpoints.is_empty():
             break
+        var targets: Dictionary = _roll_flow_targets(leg)
         var icon: Dictionary = {
-            "resource":    source,
-            "wedge":       face_idx,
-            "pos":         _face_midpoints[face_idx],
-            "vel":         Vector2.ZERO,
-            "alpha":       1.0,
-            "fading":      false,
-            "spawning":    false,
-            "spawn_t":     1.0,
-            "flow_active": true,
-            "flow_phase":  "to_wall",
-            "flow_leg":    leg_idx,
-            "flow_delay":  started * FLOW_STAGGER,
+            "resource":     source,
+            "wedge":        face_idx,
+            "pos":          _face_midpoints[face_idx],
+            "vel":          Vector2.ZERO,
+            "alpha":        1.0,
+            "fading":       false,
+            "spawning":     false,
+            "spawn_t":      1.0,
+            "flow_active":  true,
+            "flow_phase":   "to_wall",
+            "flow_leg":     leg_idx,
+            "flow_delay":   started * FLOW_STAGGER,
+            "flow_wall":    targets["wall"],
+            "flow_glide_to": targets["glide_to"],
         }
         _icons.append(icon)
         started += 1
@@ -732,53 +815,43 @@ func _update_center_icons(delta: float) -> void:
         _confine_to_center(icon)
 
 
-# Maps a leg's OWN destination resource to its index in _flow_legs — a leg
-# is triggered by the resource it PRODUCES (see _build_flow_legs()), and
-# each of the six real transformations in the chain gets its own entry now
-# that Iota->Mote is no longer folded into the Particle->Iota leg. Mote
-# still needs the special-case sum in _current_resource_total() below (see
-# TETRAD_TOTAL_KEYS) only for reading "tetrad" itself, not for Mote.
-const FLOW_LEG_FOR_RESOURCE: Dictionary = {
-    "tetrad": 0, "particle": 1, "iota": 2, "mote": 3, "grain": 4, "uonite": 5,
+# Maps a resource with an upstream "wedge"-terminal leg to that leg's
+# index in _flow_legs — used by _sync_icons() to route a wedge's own
+# needed-icon shortfall into a wall crossing instead of _spawn_icon().
+# Monad has no entry (nothing flows into it — it's the root of the
+# chain) and Uonite has no entry either, since its leg is "settle", not
+# "wedge" (see SETTLE_LEG_INDEX below).
+const WEDGE_LEG_FOR_RESOURCE: Dictionary = {
+    "tetrad": 0, "particle": 1, "iota": 2, "mote": 3, "grain": 4,
 }
-const TETRAD_TOTAL_KEYS: Array[String] = [
-    "adaemant", "aquae", "aethyr", "earth", "water", "air",
-    "mud", "dust", "cloud", "dirt", "sand", "haze", "mist", "ooze", "foam",
-]
 
-func _current_resource_total(key: String) -> BigNum:
-    var tc: Dictionary = _gc.totals_created
-    if key != "tetrad":
-        return tc.get(key, BigNum.zero())
-    var sum := BigNum.zero()
-    for k in TETRAD_TOTAL_KEYS:
-        sum = sum.add(tc.get(k, BigNum.zero()))
-    return sum
+# The Mote->Uonite leg is the one exception to "triggered by _sync_icons()'s
+# wedge shortfall" — it settles into the central cavity, not a wedge, so
+# there's no wedge storage-target it could be reconciled against. It's kept
+# on the older totals_created-delta trigger instead, now scoped to just
+# this one leg (see _drive_flow_production() below), representing a
+# distinct "flowing toward the center" flourish tied to real Uonite
+# creation events rather than to any wedge's population.
+const SETTLE_LEG_INDEX:    int    = 5
+const SETTLE_LEG_RESOURCE: String = "uonite"
 
-
-# Burst driver — each of the 6 legs is gated ONLY by its own resource's
-# real production, never by a shared "spawn once, then march the whole
-# board on a timer" trigger. A leg only shows something when enough of
-# THAT resource has actually been created — making Tetrads (and nothing
-# downstream) lights up only the Tetrad leg, not Particle/Iota/Mote/Grain/
-# Uonite too, since those legs' own totals never moved.
-# _prev_totals starts empty so the very first call after load/ready never
-# mistakes a save's entire lifetime totals for one frame's production.
-var _prev_totals: Dictionary = {}
+# _settle_total_primed starts false so the very first call after
+# load/ready never mistakes a save's entire lifetime Uonite total for one
+# frame's production.
+var _prev_settle_total:   BigNum = BigNum.zero()
+var _settle_total_primed: bool   = false
 
 func _drive_flow_production(_delta: float) -> void:
     if not _gc:
         return
-    for key in FLOW_LEG_FOR_RESOURCE:
-        var current: BigNum = _current_resource_total(key)
-        if _prev_totals.has(key):
-            var prev: BigNum = _prev_totals[key]
-            if current.is_greater_than(prev):
-                var delta_bn: BigNum = current.sub(prev)
-                var burst: int = clampi(
-                    int(round(log(1.0 + float(delta_bn.to_int())))), 1, FLOW_BURST_MAX)
-                _start_flow_for_leg(FLOW_LEG_FOR_RESOURCE[key], burst)
-        _prev_totals[key] = current.copy()
+    var current: BigNum = _gc.totals_created.get(SETTLE_LEG_RESOURCE, BigNum.zero())
+    if _settle_total_primed and current.is_greater_than(_prev_settle_total):
+        var delta_bn: BigNum = current.sub(_prev_settle_total)
+        var burst: int = clampi(
+            int(round(log(1.0 + float(delta_bn.to_int())))), 1, FLOW_BURST_MAX)
+        _start_flow_for_leg(SETTLE_LEG_INDEX, burst)
+    _prev_settle_total   = current.copy()
+    _settle_total_primed = true
 
 
 ## Called by root_ui.gd on prestige reset — the whole flow stream
