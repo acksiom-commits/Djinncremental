@@ -92,6 +92,19 @@ static func from_string(s) -> BigNum:
     var b = BigNum.new()
     b.m = float(parts[0])
     b.e = int(parts[1])
+    # Unlike every other constructor, this one used to return without
+    # normalizing. A numeric-looking but out-of-range string (e.g.
+    # "1e400", a legitimate float-parse overflow — no special "nan"/"inf"
+    # literal recognition needed, confirmed GDScript's float(String) parser
+    # doesn't have that anyway) produces m=Infinity here, and downstream
+    # functions that read m directly assume _normalize() already ran —
+    # to_display_string()'s `while mantissa_f >= 10.0: mantissa_f /= 10.0`
+    # never terminates for an infinite mantissa (10.0/Infinity is still
+    # Infinity), the same infinite-loop shape as the one already fixed in
+    # _normalize() itself, just reachable through the one constructor that
+    # skipped it. Confirmed directly: BigNum.from_string("1e400:5").
+    # to_display_string() hung before this fix.
+    b._normalize()
     return b
 
 
