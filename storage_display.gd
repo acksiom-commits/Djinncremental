@@ -142,7 +142,6 @@ var _uonite_inner_mid:  Vector2 = Vector2.ZERO   # post-split: Mote -> Uonite (c
 # ===================== STATE =====================
 var _icons:       Array = []
 var _flow_icons:  Array = []
-var _prev_totals: Dictionary = {}
 var _rng:         RandomNumberGenerator = RandomNumberGenerator.new()
 var _frame_count: int   = 0
 var _tooltip_accum: float = 0.0
@@ -273,10 +272,13 @@ func _build_wedge_bounds() -> void:
         var outward_b: Vector2 = -seam_b_perp if (a - b).dot(seam_b_perp) > 0.0 else seam_b_perp
         bounds.append([(b + ib) * 0.5, outward_b])
 
-        # Inner face — push OUTWARD (away from the central cavity), the
-        # same direction as the outer face's push, just measured from the
-        # inner edge instead.
-        bounds.append([(ia + ib) * 0.5, Vector2(-_face_normals[w].x, -_face_normals[w].y)])
+        # Inner face — the forbidden direction here is INTO the cavity,
+        # i.e. TOWARD center, the opposite sign from the outer face. Every
+        # entry in this array is "the direction beyond which _confine_to_
+        # wedge() pushes back", so this one must NOT be negated like the
+        # outer face is — that was the bug: storage icons were being
+        # pushed toward center (into the cavity) instead of away from it.
+        bounds.append([(ia + ib) * 0.5, _face_normals[w]])
 
         _wedge_bounds.append(bounds)
 
@@ -629,53 +631,43 @@ func _advance_marching(icon: Dictionary, delta: float) -> void:
         icon["pos"] = from_pt.lerp(to_pt, icon["leg_t"])
 
 
-# Per-RESOURCE_KEYS-entry lookup into totals_created — "monad" and "tetrad"
-# have no plain top-level key there (only the fine-grained monad_solid/
-# liquid/gas and the 15 tetrad variety names), unlike particle/iota/mote/
-# grain/uonite, which are already stored under their plain name.
-const MONAD_TOTAL_KEYS:  Array[String] = ["monad_solid", "monad_liquid", "monad_gas"]
-const TETRAD_TOTAL_KEYS: Array[String] = [
-    "adaemant", "aquae", "aethyr", "earth", "water", "air",
-    "mud", "dust", "cloud", "dirt", "sand", "haze", "mist", "ooze", "foam",
-]
+# totals_created has no plain "monad" top-level key — only the fine-
+# grained monad_solid/liquid/gas ones.
+const MONAD_TOTAL_KEYS: Array[String] = ["monad_solid", "monad_liquid", "monad_gas"]
 
-func _current_resource_total(key: String) -> BigNum:
+func _current_monad_total() -> BigNum:
     var tc: Dictionary = _gc.totals_created
     var sum := BigNum.zero()
-    match key:
-        "monad":
-            for k in MONAD_TOTAL_KEYS:
-                sum = sum.add(tc.get(k, BigNum.zero()))
-        "tetrad":
-            for k in TETRAD_TOTAL_KEYS:
-                sum = sum.add(tc.get(k, BigNum.zero()))
-        _:
-            sum = tc.get(key, BigNum.zero())
+    for k in MONAD_TOTAL_KEYS:
+        sum = sum.add(tc.get(k, BigNum.zero()))
     return sum
 
 
-# Burst driver — polls each chain resource's running total once a frame
-# and spawns new flow icons in proportion to how much just got made, log-
-# scaled so both a single manual click and a huge automated batch produce
-# a meaningful but capped burst. _prev_totals starts empty, so the very
-# first frame after load/ready never mistakes a save's entire lifetime
-# total for a single frame's production.
+# Burst driver — triggers ONLY off new Monad production, not every chain
+# resource's total. Monad is raw material entering the visualization; the
+# march animation is what represents it moving through the later stages,
+# so it doesn't need (and originally wrongly had) its own independent
+# trigger per downstream resource — a single automated tick that cascades
+# monad->tetrad->particle->iota->mote->grain/uonite in one frame used to
+# fire a separate burst for EACH of those, all starting fresh at Monad, so
+# making a few Particles could visibly flood the whole ring with new
+# starts at once. Log-scaled so a single manual click and a huge
+# automated batch both produce a meaningful but capped burst.
+# _prev_monad_total stays null through the very first call so it never
+# mistakes a save's entire lifetime total for one frame's production.
+var _prev_monad_total = null
+
 func _drive_flow_production(_delta: float) -> void:
     if not _gc:
         return
-    var total_burst: int = 0
-    for key in RESOURCE_KEYS:
-        var current: BigNum = _current_resource_total(key)
-        if _prev_totals.has(key):
-            var prev: BigNum = _prev_totals[key]
-            if current.is_greater_than(prev):
-                var delta_bn: BigNum = current.sub(prev)
-                var burst: int = clampi(
-                    int(round(log(1.0 + float(delta_bn.to_int())))), 1, FLOW_BURST_MAX)
-                total_burst += burst
-        _prev_totals[key] = current.copy()
-    for _i in mini(total_burst, FLOW_MAX_ICONS):
-        _spawn_flow_icon()
+    var current: BigNum = _current_monad_total()
+    if _prev_monad_total != null and current.is_greater_than(_prev_monad_total):
+        var delta_bn: BigNum = current.sub(_prev_monad_total)
+        var burst: int = clampi(
+            int(round(log(1.0 + float(delta_bn.to_int())))), 1, FLOW_BURST_MAX)
+        for _i in burst:
+            _spawn_flow_icon()
+    _prev_monad_total = current.copy()
 
 
 ## Called by root_ui.gd on prestige reset — the whole flow stream
