@@ -382,7 +382,7 @@ func _build_reference() -> String:
     t += "[color=%s]Assemble 25 Sparks + 64 Monads + 16 Particles + 4 Motes → 1 Grain.[/color]\n\n" % BODY_COLOR
 
     t += "[color=%s]Uonite[/color]\n" % SUBHEAD_COLOR
-    t += "[color=%s]Create 1 Spark + 20 Grains → 1 Uonite. Smallest active intelligence. Used for automation.[/color]\n\n" % BODY_COLOR
+    t += "[color=%s]Create 1 Spark + 20 Motes → 1 Uonite. Smallest active intelligence. Used for automation.[/color]\n\n" % BODY_COLOR
 
     t += "[color=%s]──────────────────[/color]\n\n" % RECALL_COLOR
 
