@@ -1397,7 +1397,27 @@ func _build_simple_triggers() -> void:
                     cd._unlock_constellation(0)
                     cd.set_active_constellation(0, 0)
                     game_context.constellation_spark_totals["0"] = 150.0
-                archon_dialogue_manager.enqueue_first_constellation(),
+                archon_dialogue_manager.enqueue_first_constellation()
+                # StudyButton lives INSIDE ConstellationPanel (see RootUI.tscn)
+                # and both start at modulate.a=0 — but they're revealed by two
+                # completely independent triggers. The study-button dialogue
+                # fires off any star click, which constellation_overlay.gd
+                # allows from the very start of the game; THIS panel doesn't
+                # reveal until expansions>0 and 3000 sparks, a far later
+                # milestone. reveal_study_button() (already called the moment
+                # that dialogue finishes — see _on_study_panel_reveal_complete
+                # and the load-time resync above) sets the button's own alpha
+                # to 1, but modulate cascades multiplicatively, so it stayed
+                # completely invisible behind this panel's still-0 alpha the
+                # entire time — and nothing re-checked it once the panel
+                # itself finally revealed. Catch it up right here instead of
+                # waiting for a star click that may never come again, since
+                # clicking one only re-fires the dialogue while its own done
+                # flag is false.
+                if archon_dialogue_manager.study_panel_reveal_done:
+                    var cp := find_child("ConstellationPanel", true, false)
+                    if cp and cp.has_method("reveal_study_button"):
+                        cp.reveal_study_button(),
         },
     ]
 
