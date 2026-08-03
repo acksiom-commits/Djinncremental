@@ -1185,7 +1185,21 @@ func _build_simple_triggers() -> void:
         },
         {
             "guard": "_first_particle_triggered",
-            "condition": func(): return not game_context.particle.is_zero(),
+            # Volition assignment to particle_compress unlocks as soon as
+            # wheel_full_access opens (all 3 Monad types made — see
+            # allocation_wheel_control.gd), far earlier than all_tetrads_done
+            # (all 15 Tetrad varieties). particle_compress only costs 5 of
+            # ANY single unlocked Tetrad type, so automated production can
+            # silently create a Particle long before enqueue_all_tetrads()'s
+            # "[reveal:particle] Tap it!" line ever queues — without this
+            # guard, enqueue_first_particle()'s "Two Volitions!" dialogue
+            # could fire and play before all_tetrads' dialogue even queues,
+            # since both were independently gated only on their own resource
+            # existing. Requiring all_tetrads_done first guarantees
+            # enqueue_all_tetrads() was already called (and its lines
+            # already appended to the shared FIFO dialogue_queue) before
+            # this can queue its own.
+            "condition": func(): return archon_dialogue_manager.all_tetrads_done and not game_context.particle.is_zero(),
             "effect": func():
                 _grant_foci()
                 archon_dialogue_manager.enqueue_notification("First Particle: +1 Focus.")
