@@ -1282,7 +1282,26 @@ func _build_simple_triggers() -> void:
         },
         {
             "guard": "_all_fundaments_triggered",
-            "condition": func(): return _tetrad_variety_triggered["adaemant"] and _tetrad_variety_triggered["aquae"] and _tetrad_variety_triggered["aethyr"],
+            # enqueue_first_non_fundament()'s dialogue is explicitly framed
+            # as an alternate branch — "you could complete the X Category
+            # first instead of the Fundaments" — meaning these two are
+            # mutually exclusive: whichever category the player actually
+            # completes first should be the only one that gets a "category
+            # complete" dialogue. The reverse check already existed (below,
+            # "if _all_fundaments_triggered: return false"), but this side
+            # never checked whether some OTHER category had already
+            # completed first, so completing e.g. Element before Fundament
+            # correctly fired enqueue_first_non_fundament() but didn't stop
+            # enqueue_all_fundaments() from ALSO firing once Fundament
+            # itself later completed too. Reads archon_dialogue_manager's
+            # flag directly rather than the root_ui-side
+            # _first_non_fundament_category_triggered guard var, since that
+            # one is never resynced from the loaded save (only the
+            # guard/condition/effect table's OWN re-evaluation touches it) —
+            # it would read false after a reload even when the "different
+            # category first" dialogue had already genuinely played.
+            "condition": func(): return not archon_dialogue_manager.first_non_fundament_done \
+                and _tetrad_variety_triggered["adaemant"] and _tetrad_variety_triggered["aquae"] and _tetrad_variety_triggered["aethyr"],
             "effect": func(): archon_dialogue_manager.enqueue_all_fundaments(),
         },
         {
