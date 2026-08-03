@@ -341,7 +341,15 @@ func _ready() -> void:
         _settings_popout.save_requested.connect(save_game)
         _settings_popout.load_requested.connect(load_game)
         _settings_popout.reset_requested.connect(_on_reset_requested)
-        _settings_popout.quit_requested.connect(func(): get_tree().quit())
+        # A direct get_tree().quit() call bypasses NOTIFICATION_WM_CLOSE_
+        # REQUEST entirely (that only fires for an OS-level close request —
+        # see save_manager.gd's own handler for that path), so this button
+        # needs its own explicit save first. Previously quit immediately
+        # with no save at all, relying purely on the 60s autosave timer —
+        # trivially lost a brand-new game's entire progress if the player
+        # quit here before that timer had ever fired (e.g. mid-way through
+        # the very first Monad tutorial dialogue).
+        _settings_popout.quit_requested.connect(func(): save_game(); get_tree().quit())
         _settings_popout.ui_minimal_requested.connect(_on_ui_minimal_requested)
         
     _constellation_popout = find_child("ConstellationPopout", true, false)

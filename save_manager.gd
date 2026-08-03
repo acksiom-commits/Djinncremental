@@ -51,6 +51,26 @@ signal save_failed()
 var _save_disabled: bool = false
 
 
+# Nothing in this project previously saved on quit at all — the game relied
+# entirely on the 60s autosave timer (root_ui.gd's _process()). A player who
+# quits (via the OS window's close button, Alt+F4, etc.) before that timer
+# has ever fired — trivially possible in the first minute of a brand-new
+# game, e.g. mid-way through the very first Monad tutorial dialogue — has no
+# save file at all yet, so the next load falls into load_game()'s legitimate
+# "no save file found, starting fresh" branch. From the player's side that's
+# indistinguishable from "reloading wiped my progress", even though nothing
+# was actually lost that had ever been written. This notification is Godot's
+# standard hook for "the OS asked this window to close" and runs synchronously
+# before the engine proceeds to quit, so a blocking save_game() call here
+# (no async/await anywhere in this function) completes before exit.
+# Does NOT cover a direct get_tree().quit() call from in-game UI (e.g. the
+# Settings panel's Quit button) — that bypasses this notification entirely;
+# see root_ui.gd's quit_requested handler for that path's own save call.
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_WM_CLOSE_REQUEST:
+        save_game()
+
+
 func save_game() -> void:
     if _save_disabled:
         # A prior load found corrupt save files; writing now would overwrite
