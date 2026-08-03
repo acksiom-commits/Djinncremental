@@ -978,8 +978,7 @@ func manual_iota_assemble() -> bool:
 func manual_mote_compress() -> bool:
     if gc.is_locked("iota"): return false
     if not gc.spend_iota(_recipe_cost("mote_compress", "iota")): return false
-    gc.mote = gc.mote.add(BigNum.from_int(1))
-    gc.add_to_total("mote", BigNum.one())
+    _add_resource("mote", BigNum.one())
     return true
 
 
