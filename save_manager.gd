@@ -191,6 +191,11 @@ func load_game() -> void:
             emit_signal("save_load_failed")
             return
         push_warning("SaveManager: no save file found, starting fresh.")
+        # Re-enable saving here — this is the "real restart completed"
+        # signal reset_save() is waiting for (see its own comment). Also
+        # covers the ordinary brand-new-player case, where _save_disabled
+        # is already false and this is a no-op.
+        _save_disabled = false
         emit_signal("game_loaded", 0.0)
         return
 
@@ -226,18 +231,19 @@ func load_game() -> void:
     var elapsed := 0.0
     if timestamp > 0.0:
         elapsed = Time.get_unix_time_from_system() - timestamp
+    # A successful load of real save data is also a legitimate "restart
+    # completed" signal — re-enable saving in case a prior session's reset
+    # somehow left this disabled without the file actually being gone
+    # (e.g. only the backup survived deletion). Ordinarily already false.
+    _save_disabled = false
     emit_signal("game_loaded", elapsed)
 
 
 func reset_save() -> void:
     # Return values checked for the same reason as save_game()'s rotation
     # (see its comment): a transient lock (antivirus/cloud-sync on Windows)
-    # can silently no-op a delete with no error otherwise. A failed delete
-    # here isn't catastrophic on its own — the in-memory state still resets
-    # and the next autosave would normally overwrite the stale file within
-    # 60s — but if the player quits before that autosave fires, the next
-    # load would silently resurrect the pre-reset save, making Reset look
-    # like it did nothing. Warn so it's at least visible in the logs.
+    # can silently no-op a delete with no error otherwise. Warn so it's at
+    # least visible in the logs.
     if FileAccess.file_exists(SAVE_PATH):
         var err: Error = DirAccess.remove_absolute(SAVE_PATH)
         if err != OK:
@@ -250,8 +256,19 @@ func reset_save() -> void:
         var err: Error = DirAccess.remove_absolute(TMP_PATH)
         if err != OK:
             push_warning("SaveManager: could not remove temp save on reset (error %d)." % err)
-    # A fresh reset clears any prior corrupt-file lockout so saving resumes.
-    _save_disabled = false
+    # Reset does NOT touch any autoload's live in-memory state (game_context,
+    # archon_dialogue_manager, etc. keep running with the pre-reset session's
+    # values) — nothing anywhere listens for the save_reset signal to clear
+    # them either. So "Reset" only actually takes effect once the player
+    # restarts the app and boots into a genuinely fresh set of autoloads.
+    # Disabling saves here (instead of the old `_save_disabled = false`) is
+    # what makes that gap safe: without it, EITHER the 60s autosave timer OR
+    # (since the save-on-quit fix) literally any quit path would write the
+    # still-loaded pre-reset state straight back into the file this just
+    # deleted, making Reset look like it silently did nothing. load_game()
+    # re-enables saving once a real restart completes — see its two
+    # `_save_disabled = false` sites.
+    _save_disabled = true
     emit_signal("save_reset")
 
 
