@@ -1,6 +1,17 @@
 extends VBoxContainer
 
-# ================= FIRMAMENT UI v1.2.0 =================
+# ================= FIRMAMENT UI v1.3.0 =================
+# v1.3.0: Wired save_manager's game_loaded/save_load_failed signals, which
+#         were never connected here (unlike root_ui.gd) — clicking Load
+#         while already in Firmament left panel visibility stale and gave
+#         no feedback on a corrupt save. Added _apply_unlock_visibility()/
+#         _restore_subtree_input() (mirrors root_ui.gd) to resync the
+#         materials/allocation panels to the loaded save's ui_unlocks, an
+#         offline-progress notification pass, and the same corrupt-save
+#         AcceptDialog as root_ui.gd. Root_ui.gd's other _on_game_loaded
+#         logic (puzzle-cache bootstrap, Archon poke-minigame lockdown
+#         restore, click-vol label, dialogue-trigger-flag resync) is all
+#         gated on Primordial-only nodes/systems that don't exist here.
 # v1.2.0: Scene tree restructured to mirror RootUI top-level skeleton.
 #         SolidMaterialsPanel / LiquidMaterialsPanel / GasMaterialsPanel
 #         moved from flat children of FirmTopBandHBox into:
@@ -62,11 +73,17 @@ func _ready() -> void:
         # quit_requested handler.
         _settings_popout.quit_requested.connect(func(): save_game(); get_tree().quit())
 
+    if save_manager:
+        save_manager.game_loaded.connect(_on_game_loaded)
+        if save_manager.has_signal("save_load_failed"):
+            save_manager.save_load_failed.connect(_on_save_load_failed)
+
     if archon_dialogue_manager:
         archon_dialogue_manager.ui_reveal_requested.connect(_reveal_panel)
 
     _setup_panel_nodes()
     _hide_all_panels()
+    _apply_unlock_visibility()
 
     if archon_dialogue_manager:
         archon_dialogue_manager.enqueue_dialogue([
@@ -98,6 +115,34 @@ func _hide_all_panels() -> void:
             node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
+func _apply_unlock_visibility() -> void:
+    if not game_context:
+        return
+    for key in _panel_nodes:
+        var node = _panel_nodes[key]
+        if not node:
+            continue
+        if game_context.ui_unlocks.get(key, false):
+            node.modulate.a   = 1.0
+            node.mouse_filter = Control.MOUSE_FILTER_STOP
+            _restore_subtree_input(node)
+        else:
+            node.modulate.a   = 0.0
+            node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+func _restore_subtree_input(node: Node) -> void:
+    for child in node.get_children():
+        if child is Button:
+            child.mouse_filter = Control.MOUSE_FILTER_STOP
+        elif child is Container:
+            child.mouse_filter = Control.MOUSE_FILTER_PASS
+        elif child is Control:
+            if child.mouse_filter == Control.MOUSE_FILTER_IGNORE:
+                child.mouse_filter = Control.MOUSE_FILTER_PASS
+        _restore_subtree_input(child)
+
+
 func _reveal_panel(unlock_key: String) -> void:
     if not game_context:
         return
@@ -108,6 +153,7 @@ func _reveal_panel(unlock_key: String) -> void:
     if not node:
         return
     node.mouse_filter = Control.MOUSE_FILTER_STOP
+    _restore_subtree_input(node)
     var tween = create_tween()
     tween.tween_property(node, "modulate:a", 1.0, REVEAL_DURATION).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
@@ -128,6 +174,53 @@ func _transition_to_age(scene_path: String) -> void:
     var tween := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
     tween.tween_property(get_tree().current_scene, "modulate:a", 0.0, 0.6)
     tween.tween_callback(func(): get_tree().change_scene_to_file(scene_path))
+
+
+func _on_save_load_failed() -> void:
+    # Mirrors root_ui.gd's identical handler — save corruption is a global
+    # SaveManager condition, not tied to which age scene is currently active,
+    # so a player who clicks Load while in Firmament needs the same recovery
+    # info (saving is already paused by SaveManager; this just surfaces it).
+    var save_dir: String = ProjectSettings.globalize_path("user://")
+    var dlg := AcceptDialog.new()
+    dlg.title = "Save could not be read"
+    dlg.dialog_text = ("Your save file and its backup could not be read, so the game "
+        + "could not load your progress.\n\n"
+        + "To protect them, saving has been paused — your files have NOT been "
+        + "deleted or overwritten. You can find them here:\n\n"
+        + save_dir + "\n\n"
+        + "Back them up if you'd like to attempt recovery. To start over instead, "
+        + "use Reset in the Settings menu.")
+    dlg.dialog_autowrap = true
+    dlg.min_size = Vector2i(460, 0)
+    add_child(dlg)
+    dlg.popup_centered()
+    dlg.confirmed.connect(dlg.queue_free)
+    dlg.canceled.connect(dlg.queue_free)
+
+
+func _on_game_loaded(offline_seconds: float) -> void:
+    # Resync panel visibility to the just-loaded save's ui_unlocks — without
+    # this, clicking Load while already in Firmament leaves the materials
+    # panels showing whatever the CURRENT session had revealed, which may no
+    # longer match the state the player just loaded. Firmament has no
+    # dialogue-trigger flags or puzzle cache of its own (those live in
+    # root_ui.gd, gated on Primordial-only nodes like ConstellationOverlay
+    # and the Archon poke minigame), so this is the whole resync it needs.
+    _apply_unlock_visibility()
+    if offline_seconds < 30.0 or not production_manager:
+        return
+    var results: Dictionary = production_manager.apply_offline_progress(offline_seconds)
+    if results.is_empty():
+        return
+    var minutes := int(results.get("time_simulated", 0)) / 60.0
+    var lines   := ["Away for ~%d min. Offline gains:" % minutes]
+    for key in ["sparks", "monad", "tetrad", "particle", "iota", "mote", "grain"]:
+        if results.has(key):
+            lines.append("  +%s %s" % [results[key], key.capitalize()])
+    if archon_dialogue_manager:
+        archon_dialogue_manager.enqueue_notification("\n".join(lines))
+        archon_dialogue_manager.try_show_next_notification()
 
 
 func save_game() -> void:
