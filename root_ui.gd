@@ -654,6 +654,13 @@ func _check_volition_grant() -> void:
         _reveal_panel("uonite_creation")
         _reveal_panel("uonite_button")
         _reveal_panel("uonite_cooldown")
+    # This is the real gameplay path Volitions get earned through (Foci
+    # milestones at 5/25/125/...) — unlike the dev-cheat hotkeys (KEY_TAB/
+    # KEY_V) and the click-vol +/- handlers themselves, it never refreshed
+    # the Volumitions counter/light-up, so a Volition earned this way left
+    # both stale until the player happened to touch the +/- buttons
+    # directly. Called unconditionally, same as every other call site.
+    _update_click_vol_label()
 
 
 func _on_sequence_complete(sequence_name: String, _lines: Array) -> void:
@@ -1001,6 +1008,14 @@ func _on_save_load_failed() -> void:
 func _on_game_loaded(offline_seconds: float) -> void:
     _sync_trigger_flags_from_loaded_state()
     _apply_unlock_visibility()
+    # _apply_unlock_visibility() restores panel VISIBILITY from ui_unlocks,
+    # but the Volumitions counter text/+-button light-up is separate state
+    # (assignments["click_volitions"] vs game_context.get_volitions_free())
+    # that was never resynced on load at all — it kept showing whatever the
+    # scene file's default was until the player happened to click + or -
+    # themselves, which is what made it look like it wasn't "propagating"
+    # across a quit/reload.
+    _update_click_vol_label()
     # Bootstrap Archon puzzle (id 0) if not cached, version mismatch, or player seed changed.
     var cd_boot = get_node_or_null("/root/ConstellationData")
     if cd_boot:
