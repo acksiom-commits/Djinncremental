@@ -1069,6 +1069,16 @@ func _sync_trigger_flags_from_loaded_state() -> void:
         return
 
 
+    # monad_panel_done's trigger site (_check_monad_upgrade_trigger()) is
+    # gated by game_context.ui_unlocks["monad_panel"], which _reveal_panel()
+    # sets true at the SAME synchronous moment the dialogue is enqueued —
+    # so that gate is already persisted independently of whether the
+    # dialogue itself finished displaying, and stays true across a reload
+    # even when the flag below was correctly reverted to false. Resync
+    # explicitly instead of relying on that outer gate to re-open.
+    if not archon_dialogue_manager.monad_panel_done and game_context.ui_unlocks.get("monad_panel", false):
+        archon_dialogue_manager.enqueue_monad_panel_dialogue()
+
     # --- Monad type flags ---
     # Use watermarks: if a type was ever created, its watermark is non-zero.
     for type_key in _monad_type_triggered:
@@ -1083,6 +1093,25 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     _all_monads_triggered    = archon_dialogue_manager.all_monads_upgrade_done
     _tetrad_assembly_ready   = archon_dialogue_manager.all_monads_upgrade_done
 
+    # monad_random_done / second_monad_done are fired from
+    # _check_monad_upgrade_trigger()'s per-frame loop, but only from INSIDE
+    # the branch reached when a monad type's _monad_type_triggered entry is
+    # still false — which was just pre-seeded true above from watermarks
+    # (correctly, that type really was created). Once true, the outer loop
+    # `continue`s past it forever, so it never reaches the inner code that
+    # would otherwise re-fire these two dialogues after a save-time revert
+    # (see archon_dialogue_manager.gd's "MID-DIALOGUE SAVE PROTECTION").
+    # Resync explicitly instead, same reasoning as the prestige block below.
+    if not archon_dialogue_manager.monad_random_done:
+        for type_key in _monad_type_triggered:
+            if _monad_type_triggered[type_key]:
+                archon_dialogue_manager.enqueue_monad_random_dialogue(type_key)
+                break
+    if not archon_dialogue_manager.second_monad_done:
+        var monad_types_found: int = _monad_type_triggered.values().filter(func(v): return v == true).size()
+        if monad_types_found >= 2:
+            archon_dialogue_manager.enqueue_second_monad()
+
     # --- Tetrad variety flags ---
     # Use totals_created: survives prestige, is non-zero once ever created.
     for variety_key in _tetrad_variety_triggered:
@@ -1094,19 +1123,55 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     _first_fundament_triggered = archon_dialogue_manager.first_fundament_done
     _all_fundaments_triggered  = archon_dialogue_manager.all_fundaments_done
 
+    # tetrad_upgrade_done / first_fundament_done / all_tetrads_done are all
+    # reached from inside _check_tetrad_upgrade_trigger()'s per-variety
+    # loop, gated the same way as the monad case above by
+    # _tetrad_variety_triggered (just pre-seeded true from totals_created
+    # for every variety ever made) — once true, that variety is skipped
+    # forever, so a save-time revert of any of these three has nothing left
+    # to naturally re-trigger it. Resync explicitly.
+    if not archon_dialogue_manager.tetrad_upgrade_done:
+        for variety_key in _tetrad_variety_triggered:
+            if _tetrad_variety_triggered[variety_key]:
+                archon_dialogue_manager.enqueue_tetrad_upgrade(variety_key)
+                break
+    if not archon_dialogue_manager.first_fundament_done:
+        for variety_key in ["adaemant", "aquae", "aethyr"]:
+            if _tetrad_variety_triggered.get(variety_key, false):
+                archon_dialogue_manager.enqueue_first_fundament(variety_key)
+                break
+    if not archon_dialogue_manager.all_tetrads_done \
+    and not _tetrad_variety_triggered.values().has(false):
+        archon_dialogue_manager.enqueue_all_tetrads()
+
     # --- Chain resource flags ---
     # If uonite has ever been produced, every upstream chain resource
     # was also produced. Use this as a blanket guard for all five triggers
     # in addition to their own totals, to handle saves predating totals tracking.
     var uonite_ever_made: bool = not game_context.totals_created.get("uonite", BigNum.zero()).is_zero() \
                               or not game_context.uonite.is_zero()
-    _first_particle_triggered = uonite_ever_made or not game_context.totals_created.get("particle", BigNum.zero()).is_zero()
+    # first_particle/first_mote_dialogue/nineteenth_mote/twentieth_mote each
+    # gate a real tutorial dialogue (see archon_dialogue_manager.gd's
+    # "MID-DIALOGUE SAVE PROTECTION" block) — deferring to the dialogue
+    # manager's own X_done flag here, like every other archon_dialogue_
+    # manager-backed guard in this function already does, instead of OR-ing
+    # it with a gameplay-resource check. The OR used to force these true
+    # from raw totals alone, which meant a save-time revert of X_done (done
+    # specifically because the dialogue hadn't finished displaying yet) got
+    # silently overridden right back to true on the very next load, since
+    # the resource that trigger the dialogue in the first place obviously
+    # already exists by the time the dialogue could ever fire — completely
+    # defeating the revert. first_iota/first_mote/first_uonite have no
+    # corresponding tutorial dialogue (their _simple_triggers effects are
+    # plain notifications, not enqueue_X() calls), so they keep the
+    # original gameplay-totals fallback — there's no flag to defer to.
+    _first_particle_triggered = archon_dialogue_manager.first_particle_done
     _first_iota_triggered     = uonite_ever_made or not game_context.totals_created.get("iota",     BigNum.zero()).is_zero()
     _first_mote_triggered     = uonite_ever_made or not game_context.totals_created.get("mote",     BigNum.zero()).is_zero()
-    _first_mote_dialogue_triggered = uonite_ever_made or not game_context.totals_created.get("mote", BigNum.zero()).is_zero()
+    _first_mote_dialogue_triggered = archon_dialogue_manager.first_mote_dialogue_done
     _first_uonite_triggered   = uonite_ever_made
-    _nineteenth_mote_triggered = uonite_ever_made or game_context.motes_this_cycle >= 19
-    _twentieth_mote_triggered  = uonite_ever_made or game_context.motes_this_cycle >= 20
+    _nineteenth_mote_triggered = archon_dialogue_manager.nineteenth_mote_done
+    _twentieth_mote_triggered  = archon_dialogue_manager.twentieth_mote_done
     _end_first_prestige_triggered   = game_context.expansions >= 1 and \
         (archon_dialogue_manager.second_prestige_done if archon_dialogue_manager else false)
     _archon_volition_constellation_triggered = archon_dialogue_manager.archon_volition_constellation_done if archon_dialogue_manager else false
@@ -1129,6 +1194,29 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     if (_archon_volition_constellation_triggered or _no_archon_volition_constellation_triggered) \
             and _constellation_popout:
         _constellation_popout.show_slot_grid()
+
+    # Prestige-tier tutorial dialogues (see _do_prestige_reset()) are fired
+    # by a one-time event reaction at the moment game_context.expansions
+    # crosses a threshold, NOT by a continuously re-evaluated _simple_
+    # triggers condition like every dialogue guard above — so a save-time
+    # revert of one of these X_done flags (see archon_dialogue_manager.gd's
+    # "MID-DIALOGUE SAVE PROTECTION" block, used when the player quit
+    # before that dialogue finished displaying) has nothing left to
+    # naturally re-trigger it on the next load: expansions doesn't "become
+    # N" again just because the flag reverted. Explicitly resync each one
+    # here instead — this is the "master checklist" pass for the subset of
+    # dialogues _simple_triggers can't self-heal on its own.
+    if game_context.expansions >= 1 and not archon_dialogue_manager.first_prestige_done:
+        archon_dialogue_manager.enqueue_first_prestige()
+    if game_context.expansions >= 2 and not archon_dialogue_manager.start_second_prestige_done:
+        archon_dialogue_manager.enqueue_start_second_prestige()
+    if game_context.expansions >= 3 and not archon_dialogue_manager.third_prestige_done:
+        archon_dialogue_manager.enqueue_third_prestige()
+    if game_context.expansions >= 4 and not archon_dialogue_manager.fourth_prestige_done:
+        archon_dialogue_manager.enqueue_fourth_prestige()
+    if game_context.expansions >= 5 and not archon_dialogue_manager.fifth_prestige_done:
+        archon_dialogue_manager.enqueue_fifth_prestige()
+
     # _firmament_threshold_revealed had no re-derivation here previously —
     # confirmed gap during the refactor-order item #10 research: it reset
     # to false on every load, so a save with Uonite already produced would
