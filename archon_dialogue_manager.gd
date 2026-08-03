@@ -105,6 +105,29 @@ var _in_notification:  bool  = false
 var monad_panel_done: bool  = false
 var monad_random_done: 			bool  = false
 
+# ==================================================
+# MID-DIALOGUE SAVE PROTECTION
+# ==================================================
+# The "progress marker": save-key names of every "done" flag whose dialogue
+# was set true at enqueue time but hasn't actually finished displaying yet
+# this session (dialogue_ended hasn't fired since it was enqueued). Every
+# enqueue_X() sets its own X_done flag BEFORE the player has read a single
+# line — a save/quit in that window (which can be arbitrarily long if
+# another dialogue was already showing and this one is still queued behind
+# it, or just the width of one frame otherwise) would otherwise persist
+# "done" while the player never saw the completion — permanently losing
+# whatever [reveal:...] tags or dialogue_ended-gated one-shot effects (see
+# the _on_*_ended() family below) that sequence was supposed to deliver,
+# since the done-flag guard blocks it from ever being enqueued again.
+# get_save_data() consults this list and writes `false` for any flag still
+# pending instead of its true in-memory value, so the NEXT load re-enqueues
+# that exact sequence from the beginning — never touching game state itself,
+# only which flags this one save call reports as complete.
+var _pending_dialogue_flags: Array[String] = []
+
+func _persisted_flag(flag_name: String, live_value: bool) -> bool:
+    return false if _pending_dialogue_flags.has(flag_name) else live_value
+
 
 
 var _category_notified: Dictionary = {
@@ -174,7 +197,9 @@ func set_display_nodes(label: RichTextLabel, button: Button = null) -> void:
 # ==================================================
 # PUBLIC INTERFACE
 # ==================================================
-func enqueue_dialogue(lines: Array, is_tutorial: bool = false) -> void:
+func enqueue_dialogue(lines: Array, is_tutorial: bool = false, flag_name: String = "") -> void:
+    if flag_name != "" and not _pending_dialogue_flags.has(flag_name):
+        _pending_dialogue_flags.append(flag_name)
     if _fade_tween:
         _fade_tween.kill()
         _fade_tween = null
@@ -447,6 +472,12 @@ func _clear_dialogue() -> void:
         emit_signal("tutorial_dialogue_cleared")
     else:
         _tutorial_active = false
+    # Reaching here means the player has clicked all the way through every
+    # line that was ever queued (see _advance()'s termination condition) —
+    # including lines from multiple enqueue_X() calls that got merged into
+    # dialogue_queue before an earlier one finished — so every flag that
+    # was pending this session is now genuinely, fully displayed.
+    _pending_dialogue_flags.clear()
     emit_signal("dialogue_ended")
 
 
@@ -572,7 +603,7 @@ func start_intro() -> void:
         "Sparks are the ultimate quanta of reality, Boss - indivisible, unitary essences of identity and free will. Nothing material [i]can[/i] exist without that attached to it.||I SEE. \n\nWELL, BUILDING MY OWN WORLD DOES SOUND APPEALING. . .I'LL TRY IT.",
         "That's the spirit! Let's make something great together!||ALL RIGHT, DIAL BACK THE ENTHUSIASM THERE A LITTLE, PLEASE.",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "intro_done")
     emit_signal("sequence_complete", "Introduction", lines)
 
 func enqueue_monad_panel_dialogue() -> void:
@@ -586,7 +617,7 @@ func enqueue_monad_panel_dialogue() -> void:
         "Finish this conversation and press that Monad button and we'll enter a new era!||WHY CAN'T I JUST PRESS IT NOW?",
         "Because I can either talk directly to you or run the interface for you, Boss; I can't do both. Yet. I'll get there eventually; I'll grow in capability as your new dimension does.||FAIR ENOUGH. HERE WE GO.",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "monad_panel_done")
     emit_signal("sequence_complete", "Kaleb Introduces Himself", lines)
 
 func enqueue_monad_random_dialogue(first_type: String) -> void:
@@ -608,7 +639,7 @@ func enqueue_monad_random_dialogue(first_type: String) -> void:
         "And the best part is, now I can do one more of a lot of things for you, automatically!||AUTOMATION? EXCELLENT! NOW YOU'RE TALKING MY LANGUAGE!",
         "In that case, I'll bring up the Allocation Wheel right away, too! And then you can assign my Foci to Summoning more Sparks, and later, creating more Production Resources!||AH - NOW I'M STARTING TO SEE THE BENEFITS OF YOUR POSITIVE ATTITUDE.",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "monad_random_done")
     emit_signal("sequence_complete", "First Monad Created", lines)
 
 func enqueue_second_monad() -> void:
@@ -625,7 +656,7 @@ func enqueue_second_monad() -> void:
         "Well, we [i]are[/i] starting almost literally from nothing here, Boss. But it's not as bad as it sounds, because we can eventually use Grains to create Uonites, which are the smallest form of active intelligence that can be used for automation.||AHA - AND THEN THEY'LL TAKE OVER MORE OF THE PRODUCTION LOAD FOR US, SO WE CAN FOCUS ON BUILDING MY WORLD.",
         "Yep, that's the plan! [i]And[/i] I can use my Volitions to duplicate most of your actions, one-for-one! So assign those new Foci, and let's find out just how much you invested in my improvement - how about you keep making Monads until we have one of each type, and I'll bring up the Tetrad panel?||AGREED - WE SHOULD CHECK THAT NEXT.",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "second_monad_done")
     emit_signal("sequence_complete", "Second Monad Type", lines)
 
 func enqueue_all_monads_upgrade() -> void:
@@ -641,7 +672,7 @@ func enqueue_all_monads_upgrade() -> void:
         "Are you teasing me? You better be teasing me! I'm not getting paid for this, you know - I'm an Intern Archon, I'm here for the work experi. . .oh. \n\nOh no.||DO YOU SEE ME OVER HERE NOT BEING SMUG? \n\nBECAUSE THIS IS ME OVER HERE NOT BEING SMUG.",
         "[expr:spock_right,3.0]Yes, I definitely wouldn't call your behavior...'smug.' \n\nI might call it something [i]else[/i], but no, not 'smug'.||UH...HUH. \n\nNOTE TO SELF: CHECK LATER WHETHER I TOOK A 'SASSYPANTS ARCHON' FORFEIT TOO.",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "all_monads_upgrade_done")
     emit_signal("sequence_complete", "All Monad Types", lines)
 
 func enqueue_tetrad_upgrade(variety_key: String = "") -> void:
@@ -662,7 +693,7 @@ func enqueue_tetrad_upgrade(variety_key: String = "") -> void:
     ]
     if not dialogue_ended.is_connected(_on_tetrad_upgrade_ended):
         dialogue_ended.connect(_on_tetrad_upgrade_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "tetrad_upgrade_done")
     emit_signal("sequence_complete", "First Tetrad Created", lines)
 
 func enqueue_first_fundament(variety_key: String = "") -> void:
@@ -680,7 +711,7 @@ func enqueue_first_fundament(variety_key: String = "") -> void:
         "[i]And[/i] swapping Uonites around...when we. Um. Finally have some. Yes. But later, when we have Tools, and Appliances, and so on, I'll be able to use and operate them myself! And oversee tetrad production to achieve specific material goals. And things like that.||AH, THAT IS VERY GOOD, THEN. THERE'S NO USE IN IMPROVING YOU AND NOT TAKING ADVANTAGE OF IT, AFTER ALL.",
         "... \n\nYou really are utterly shameless, aren't you.",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "first_fundament_done")
     emit_signal("sequence_complete", "First Fundament", lines)
     
     
@@ -701,7 +732,7 @@ func enqueue_first_non_fundament(variety_key: String = "") -> void:
         "No actual plans; I'm still finding out where I fit best. I could go over to the security side and shoot for Subaltern Archon, or I could build on the Production experience I'm gaining here and grow into a Stockturn Archon.||UH...HUH. \n\nWHY DO I GET THE FEELING THERE'S A JOKE I'M MISSING HERE?",
         "Gosh, I have no idea. I can't imagine why. \n\nAnyways, on to completing the creation of all Tetrad varieties at least once!||HRRMGH. \n\nFINE.",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "first_non_fundament_done")
     emit_signal("sequence_complete", variety_key.capitalize() + " Category", lines)
 
     
@@ -719,7 +750,7 @@ func enqueue_all_fundaments() -> void:
         "No actual plans; I'm still finding out where I fit best. I could go over to the security side and shoot for Subaltern Archon, or I could build on the Production experience I'm gaining here and grow into a Stockturn Archon.||UH...HUH. \n\nWHY DO I GET THE FEELING THERE'S A JOKE I'M MISSING HERE?",
         "Gosh, I have no idea. I can't imagine why. \n\nAnyways, on to completing the creation of all Tetrad varieties at least once!||HRRMGH. \n\nFINE.",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "all_fundaments_done")
     emit_signal("sequence_complete", "All Fundaments", lines)
 
 
@@ -735,7 +766,7 @@ func enqueue_all_tetrads() -> void:
         "[font_size=14][i]Egor knows not this 'Kaleb', Marster[/i][/font_size] \n\nThe Terminal Threshold of Non-Reversibility! \n\nThe Definitive Ultimate Convergence of All Teleological Vectors!||OH, FOR THE LOVE OF MARTY FELDMAN...EGOR, JUST [i]PULL THE BLASTED SWITCH ALREADY![/i]",
         "Yesh, Marster![reveal:particle]\n\nTap it! Tap it! Hurry!||... \n\nYOU'RE LUCKY I'M SO CURIOUS MYSELF.",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "all_tetrads_done")
     emit_signal("sequence_complete", "All Tetrads", lines)
     
 func enqueue_first_particle() -> void:
@@ -748,7 +779,7 @@ func enqueue_first_particle() -> void:
     ]
     if not dialogue_ended.is_connected(_on_first_particle_ended):
         dialogue_ended.connect(_on_first_particle_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "first_particle_done")
     emit_signal("sequence_complete", "First Particle", lines)
     
 
@@ -761,7 +792,7 @@ func enqueue_first_mote_dialogue() -> void:
         "No, twenty per Uonite - and right now, just one Uonite per Expansion. So any extra Motes would just be consumed, this time. But the more Expansions we've done, the more Uonites we can Create each Expansion. And if you have enough Sparks stocked up beforehand, the Stoctagon gets bigger afterwards, too! ||THAT MAKES SENSE. YOU DID SAY WE'RE GOING TO BE MAKING A [i]LOT[/i] OF RESOURCES, EVENTUALLY.",
         "We sure are! We've got a whole world to build here!||AND FLOATING AROUND IN SPACE CHATTING ISN'T GOING TO GET IT DONE FOR US, SO LET'S GET BACK TO PUTTING IN THE WORK."
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "first_mote_dialogue_done")
     emit_signal("sequence_complete", "First Mote", lines)
 
 
@@ -773,7 +804,7 @@ func enqueue_nineteenth_mote() -> void:
         "Almost there, Boss! Just one more Mote to go - our first Expansion, our first Uonite! I'm so excited! Aren't you excited? Come on, be excited!||HMM...I'LL SETTLE FOR BEING AMUSED, I THINK.",
         "Ugh, fine. I guess that's the best I can expect...||I HEARD THAT UNSPOKEN 'FROM YOU', KALEB. \n\nWELL, THAT'S ALL RIGHT, THOUGH. YOU CAN BE EXCITED ENOUGH FOR BOTH OF US.",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "nineteenth_mote_done")
     emit_signal("sequence_complete", "Nineteenth Mote", lines)
 
 
@@ -788,7 +819,7 @@ func enqueue_twentieth_mote() -> void:
         "Yes, Boss?||GOOD WORK. SEE YOU ON THE FLIPSIDE, PARTNER.",
         "[font_size=14]...wait...what?[/font_size]",
     ]
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "twentieth_mote_done")
     emit_signal("sequence_complete", "Twentieth Mote", lines)
 
 
@@ -812,7 +843,7 @@ func enqueue_first_prestige() -> void:
     ]
     if not dialogue_ended.is_connected(_on_first_prestige_ended):
         dialogue_ended.connect(_on_first_prestige_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "first_prestige_done")
     emit_signal("sequence_complete", "First Prestige", lines)
     
 
@@ -828,7 +859,7 @@ func enqueue_spark_movement() -> void:
     ]
     if not dialogue_ended.is_connected(_on_spark_movement_ended):
         dialogue_ended.connect(_on_spark_movement_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "spark_movement_done")
     emit_signal("sequence_complete", "Spark Movement", lines)
 
 
@@ -846,7 +877,7 @@ func enqueue_first_constellation() -> void:
     ]
     if not dialogue_ended.is_connected(_on_first_constellation_ended):
         dialogue_ended.connect(_on_first_constellation_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "first_constellation_done")
     emit_signal("sequence_complete", "First Constellation", lines)
     
     
@@ -861,7 +892,7 @@ func enqueue_constellation_panel_creation() -> void:
     ]
     if not dialogue_ended.is_connected(_on_constellation_panel_creation_ended):
         dialogue_ended.connect(_on_constellation_panel_creation_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "constellation_panel_creation_done")
     emit_signal("sequence_complete", "Constellation Panel Created", lines)
     
     
@@ -879,7 +910,7 @@ func enqueue_open_constellation_panel() -> void:
     ]
     if not dialogue_ended.is_connected(_on_open_constellation_panel_ended):
         dialogue_ended.connect(_on_open_constellation_panel_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "open_constellation_panel_done")
     emit_signal("sequence_complete", "Constellation Panel Opened", lines)
     
     
@@ -894,7 +925,7 @@ func enqueue_tier1_archon_complete() -> void:
     ]
     if not dialogue_ended.is_connected(_on_tier1_archon_complete_ended):
         dialogue_ended.connect(_on_tier1_archon_complete_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "tier1_archon_complete_done")
     emit_signal("sequence_complete", "Tier 1 Archon Complete", lines)
 
 
@@ -908,7 +939,7 @@ func enqueue_study_panel_reveal() -> void:
     ]
     if not dialogue_ended.is_connected(_on_study_panel_reveal_ended):
         dialogue_ended.connect(_on_study_panel_reveal_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "study_panel_reveal_done")
     emit_signal("sequence_complete", "Study Panel Reveal", lines)
 
 
@@ -921,7 +952,7 @@ func enqueue_star_chase() -> void:
     ]
     if not dialogue_ended.is_connected(_on_star_chase_ended):
         dialogue_ended.connect(_on_star_chase_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "star_chase_done")
 
 
 func enqueue_end_first_prestige() -> void:
@@ -935,7 +966,7 @@ func enqueue_end_first_prestige() -> void:
     ]
     if not dialogue_ended.is_connected(_on_second_prestige_ended):
         dialogue_ended.connect(_on_second_prestige_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "second_prestige_done")
     emit_signal("sequence_complete", "End First Prestige", lines)
 
 
@@ -950,7 +981,7 @@ func enqueue_start_second_prestige() -> void:
     ]
     if not dialogue_ended.is_connected(_on_start_second_prestige_ended):
         dialogue_ended.connect(_on_start_second_prestige_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "start_second_prestige_done")
     emit_signal("sequence_complete", "Start Second Prestige", lines)
 
 
@@ -963,7 +994,7 @@ func enqueue_third_prestige() -> void:
     ]
     if not dialogue_ended.is_connected(_on_third_prestige_ended):
         dialogue_ended.connect(_on_third_prestige_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "third_prestige_done")
     emit_signal("sequence_complete", "Third Prestige", lines)
 
 
@@ -976,7 +1007,7 @@ func enqueue_fourth_prestige() -> void:
     ]
     if not dialogue_ended.is_connected(_on_fourth_prestige_ended):
         dialogue_ended.connect(_on_fourth_prestige_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "fourth_prestige_done")
     emit_signal("sequence_complete", "Fourth Prestige", lines)
 
 
@@ -989,7 +1020,7 @@ func enqueue_fifth_prestige() -> void:
     ]
     if not dialogue_ended.is_connected(_on_fifth_prestige_ended):
         dialogue_ended.connect(_on_fifth_prestige_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "fifth_prestige_done")
     emit_signal("sequence_complete", "Fifth Prestige", lines)
 
 
@@ -1002,7 +1033,7 @@ func enqueue_archon_volition_constellation() -> void:
     ]
     if not dialogue_ended.is_connected(_on_archon_volition_constellation_ended):
         dialogue_ended.connect(_on_archon_volition_constellation_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "archon_volition_constellation_done")
     emit_signal("sequence_complete", "Archon Volition Constellation", lines)
 
 
@@ -1015,7 +1046,7 @@ func enqueue_no_archon_volition_constellation() -> void:
     ]
     if not dialogue_ended.is_connected(_on_no_archon_volition_constellation_ended):
         dialogue_ended.connect(_on_no_archon_volition_constellation_ended)
-    enqueue_dialogue(lines, true)
+    enqueue_dialogue(lines, true, "no_archon_volition_constellation_done")
     emit_signal("sequence_complete", "No Archon Volition Constellation", lines)
 
 
@@ -1087,37 +1118,45 @@ func get_current_line() -> String:
     
     
 func get_save_data() -> Dictionary:
+    # Every X_done flag below is routed through _persisted_flag() — see the
+    # "MID-DIALOGUE SAVE PROTECTION" block near the top of this file. If
+    # that flag's dialogue was enqueued but hasn't actually finished
+    # displaying yet this session, this writes `false` instead of the true
+    # in-memory value, WITHOUT touching the live flag itself — so the
+    # current session keeps playing normally, but the next load re-enqueues
+    # that exact sequence from the beginning instead of silently treating
+    # it as already complete.
     return {
-        "intro_done":                           intro_done,
-        "second_monad_done":                    second_monad_done,
-        "tetrad_upgrade_done":                  tetrad_upgrade_done,
-        "all_monads_upgrade_done":              all_monads_upgrade_done,
-        "first_fundament_done":                 first_fundament_done,
-        "first_non_fundament_done":             first_non_fundament_done,
-        "all_fundaments_done":                  all_fundaments_done,
-        "all_tetrads_done":                     all_tetrads_done,
-        "first_particle_done":                  first_particle_done,
-        "first_mote_dialogue_done":             first_mote_dialogue_done,
-        "nineteenth_mote_done":                 nineteenth_mote_done,
-        "twentieth_mote_done":                  twentieth_mote_done,
-        "first_prestige_done":                  first_prestige_done,
-        "second_prestige_done":                 second_prestige_done,
-        "third_prestige_done":                  third_prestige_done,
-        "fourth_prestige_done":                 fourth_prestige_done,
-        "fifth_prestige_done":                  fifth_prestige_done,
-        "start_second_prestige_done":           start_second_prestige_done,
-        "archon_volition_constellation_done":   archon_volition_constellation_done,
-        "no_archon_volition_constellation_done": no_archon_volition_constellation_done,
-        "spark_movement_done":                  spark_movement_done,
-        "first_constellation_done":             first_constellation_done,
-        "constellation_panel_creation_done":    constellation_panel_creation_done,
-        "open_constellation_panel_done":        open_constellation_panel_done,
+        "intro_done":                           _persisted_flag("intro_done", intro_done),
+        "second_monad_done":                    _persisted_flag("second_monad_done", second_monad_done),
+        "tetrad_upgrade_done":                  _persisted_flag("tetrad_upgrade_done", tetrad_upgrade_done),
+        "all_monads_upgrade_done":              _persisted_flag("all_monads_upgrade_done", all_monads_upgrade_done),
+        "first_fundament_done":                 _persisted_flag("first_fundament_done", first_fundament_done),
+        "first_non_fundament_done":             _persisted_flag("first_non_fundament_done", first_non_fundament_done),
+        "all_fundaments_done":                  _persisted_flag("all_fundaments_done", all_fundaments_done),
+        "all_tetrads_done":                     _persisted_flag("all_tetrads_done", all_tetrads_done),
+        "first_particle_done":                  _persisted_flag("first_particle_done", first_particle_done),
+        "first_mote_dialogue_done":             _persisted_flag("first_mote_dialogue_done", first_mote_dialogue_done),
+        "nineteenth_mote_done":                 _persisted_flag("nineteenth_mote_done", nineteenth_mote_done),
+        "twentieth_mote_done":                  _persisted_flag("twentieth_mote_done", twentieth_mote_done),
+        "first_prestige_done":                  _persisted_flag("first_prestige_done", first_prestige_done),
+        "second_prestige_done":                 _persisted_flag("second_prestige_done", second_prestige_done),
+        "third_prestige_done":                  _persisted_flag("third_prestige_done", third_prestige_done),
+        "fourth_prestige_done":                 _persisted_flag("fourth_prestige_done", fourth_prestige_done),
+        "fifth_prestige_done":                  _persisted_flag("fifth_prestige_done", fifth_prestige_done),
+        "start_second_prestige_done":           _persisted_flag("start_second_prestige_done", start_second_prestige_done),
+        "archon_volition_constellation_done":   _persisted_flag("archon_volition_constellation_done", archon_volition_constellation_done),
+        "no_archon_volition_constellation_done": _persisted_flag("no_archon_volition_constellation_done", no_archon_volition_constellation_done),
+        "spark_movement_done":                  _persisted_flag("spark_movement_done", spark_movement_done),
+        "first_constellation_done":             _persisted_flag("first_constellation_done", first_constellation_done),
+        "constellation_panel_creation_done":    _persisted_flag("constellation_panel_creation_done", constellation_panel_creation_done),
+        "open_constellation_panel_done":        _persisted_flag("open_constellation_panel_done", open_constellation_panel_done),
         "close_constellation_panel_done":       close_constellation_panel_done,
-        "star_chase_done":                      star_chase_done,
-        "tier1_archon_complete_done":           tier1_archon_complete_done,
-        "study_panel_reveal_done":              study_panel_reveal_done,
-        "monad_panel_done":         monad_panel_done,
-        "monad_random_done":        monad_random_done,
+        "star_chase_done":                      _persisted_flag("star_chase_done", star_chase_done),
+        "tier1_archon_complete_done":           _persisted_flag("tier1_archon_complete_done", tier1_archon_complete_done),
+        "study_panel_reveal_done":              _persisted_flag("study_panel_reveal_done", study_panel_reveal_done),
+        "monad_panel_done":         _persisted_flag("monad_panel_done", monad_panel_done),
+        "monad_random_done":        _persisted_flag("monad_random_done", monad_random_done),
         "category_notified":        _category_notified.duplicate(),
         "all_tetrads_notified":     _all_tetrads_notified,
     }
