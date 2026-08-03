@@ -20,6 +20,7 @@
 [ext_resource type="PackedScene" uid="uid://bss27h236t4pj" path="res://JournalPopout.tscn" id="18_rt0g0"]
 [ext_resource type="PackedScene" uid="uid://dp4kf7wq1mxn3" path="res://AgesPopout.tscn" id="19_rt0g0"]
 [ext_resource type="PackedScene" uid="uid://ghxpihrmiisr" path="res://ButtonLabel.tscn" id="19_smciy"]
+[ext_resource type="PackedScene" uid="uid://cnj4rti3wfnae" path="res://SettingsPopout.tscn" id="20_rt0g0"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_q6d5h"]
 shader = ExtResource("1_qk86b")
@@ -626,6 +627,10 @@ unique_name_in_owner = true
 layout_mode = 2
 
 [node name="AgesPopout" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox" unique_id=660411531 instance=ExtResource("19_rt0g0")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="SettingsPopout" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox" unique_id=353190247 instance=ExtResource("20_rt0g0")]
 unique_name_in_owner = true
 layout_mode = 2
 

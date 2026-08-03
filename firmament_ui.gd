@@ -21,6 +21,7 @@ var archon_dialogue_manager: Node = null
 
 var _ages_popout:      Node = null
 var _journal_popout: Node = null
+var _settings_popout:  Node = null
 
 var _panel_nodes:      Dictionary = {}
 const REVEAL_DURATION: float = 1.5
@@ -48,6 +49,18 @@ func _ready() -> void:
             _journal_popout.append_sequence)
         archon_dialogue_manager.notification_shown.connect(
             _journal_popout.append_notification)
+
+    _settings_popout = find_child("SettingsPopout", true, false)
+    if _settings_popout:
+        _settings_popout.save_requested.connect(save_game)
+        _settings_popout.load_requested.connect(load_game)
+        _settings_popout.reset_requested.connect(_on_reset_requested)
+        # A direct get_tree().quit() call bypasses NOTIFICATION_WM_CLOSE_
+        # REQUEST entirely (that only fires for an OS-level close request —
+        # see save_manager.gd's own handler for that path), so this button
+        # needs its own explicit save first. Mirrors root_ui.gd's identical
+        # quit_requested handler.
+        _settings_popout.quit_requested.connect(func(): save_game(); get_tree().quit())
 
     if archon_dialogue_manager:
         archon_dialogue_manager.ui_reveal_requested.connect(_reveal_panel)
@@ -115,3 +128,18 @@ func _transition_to_age(scene_path: String) -> void:
     var tween := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
     tween.tween_property(get_tree().current_scene, "modulate:a", 0.0, 0.6)
     tween.tween_callback(func(): get_tree().change_scene_to_file(scene_path))
+
+
+func save_game() -> void:
+    if save_manager and save_manager.has_method("save_game"):
+        save_manager.save_game()
+
+
+func load_game() -> void:
+    if save_manager and save_manager.has_method("load_game"):
+        save_manager.load_game()
+
+
+func _on_reset_requested() -> void:
+    if save_manager and save_manager.has_method("reset_save"):
+        save_manager.reset_save()
