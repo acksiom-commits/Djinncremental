@@ -28,8 +28,6 @@ extends Control
 
 var _cd: Node = null
 
-const STUDY_BUTTON_REVEAL_DURATION: float = 1.5   # matches root_ui.gd's REVEAL_DURATION
-
 @onready var _constellation_art_rect: TextureRect = $ConstellationDisplay/ConstellationArtTextureRect
 @onready var _study_btn: Button = $StudyButton
 
@@ -111,28 +109,21 @@ func _on_study_pressed() -> void:
 ## player's first constellation-star click (see root_ui.gd's
 ## study_panel_reveal dialogue trigger).
 func reveal_study_button() -> void:
-    # See the v1.3.0 header note — root cause was `visible` itself, not
-    # anything about how the transition to visible was triggered. Reveals
-    # the same way every other gated panel in the game does (root_ui.gd's
-    # _reveal_panel): fade modulate.a up and flip mouse_filter to STOP.
-    # The button has been actively drawing at zero alpha the whole time,
-    # so there's no "just got re-included in the draw list" step for the
-    # renderer to ever get wrong.
-    #
-    # `disabled` is the actual interaction gate, not mouse_filter — this
-    # button lives inside ConstellationPanel, which root_ui.gd's own
-    # _restore_subtree_input() unconditionally flips every Button's
-    # mouse_filter to STOP for the moment the "constellation" panel
-    # itself gets revealed (much earlier than this). With the old
-    # `visible = false` that premature flip was harmless, since an
-    # invisible Control never receives input regardless of mouse_filter —
-    # but this button is visible (at alpha 0) the whole time now, so
-    # mouse_filter alone would let it be clicked well before its own
-    # reveal. _restore_subtree_input() never touches `disabled`, so it
-    # stays the reliable gate independent of that.
+    # v1.4.0: dropped the tween — root cause #3. User confirmed the button
+    # DOES appear correctly after a save reload, but never live, no matter
+    # what (this is run through the Godot editor's embedded game window, so
+    # window resize/minimize/alt-tab aren't meaningful reproduction tools
+    # here). The reload path (root_ui.gd's _apply_unlock_visibility) sets
+    # modulate.a on already-unlocked panels DIRECTLY, with no tween — this
+    # function was the one remaining place still animating modulate via
+    # create_tween().tween_property() instead. That matches root cause #1's
+    # underlying class of issue (this hardware/renderer doesn't reliably
+    # repaint some categories of property change) one level removed:
+    # tweened Button.modulate mid-animation isn't repainting live, even
+    # though a full scene boot (which redraws everything unconditionally
+    # as nodes enter the tree) always picks up the reload path's direct
+    # assignment correctly. Set modulate.a directly instead, trading the
+    # 1.5s fade-in for a reveal that's actually guaranteed to render.
     _study_btn.disabled = false
     _study_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-    var tween := create_tween()
-    tween.tween_property(_study_btn, "modulate:a", 1.0, STUDY_BUTTON_REVEAL_DURATION) \
-        .set_trans(Tween.TRANS_SINE) \
-        .set_ease(Tween.EASE_OUT)
+    _study_btn.modulate.a = 1.0
