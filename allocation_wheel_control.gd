@@ -54,6 +54,17 @@ const RESOURCE_OPERATIONS = {
 
 const POOL_SUFFIXES = ["uonites", "foci", "volitions"]
 
+# Particle/Iota/Mote/Grain share a single ui_unlocks reveal flag for their
+# whole panel (see game_context.gd's "particle" key), unlike Monad/Tetrad
+# which each have their own (monad_panel/tetrad_panel) that happens to
+# already precede wheel_full_access in the normal play order. That shared
+# flag isn't per-resource, so wheel_full_access alone lets a player assign
+# Foci/Volitions to any of these four before that resource has ever
+# actually been produced, well before its own manual button is meaningful.
+# Gated on totals_created instead — the same "ever produced" signal the
+# First Particle/Iota/Mote/Grain triggers themselves already key off of.
+const EVER_PRODUCED_GATED_RESOURCES = ["particle", "iota", "mote", "grain"]
+
 const MULTI_GRID = [
     ["10X",  10],
     ["100X", 100],
@@ -355,6 +366,27 @@ func _update_multi_button_states() -> void:
 
 
 # ==================================================
+# LOCK HELPERS
+# ==================================================
+## Sparks is always assignable. Everything else needs wheel_full_access
+## (all three Monad types made) — Monad/Tetrad's own manual displays
+## already precede that milestone in the normal play order, but Particle/
+## Iota/Mote/Grain share one panel-level reveal flag that doesn't, so
+## those four additionally require having actually produced at least one,
+## same as their own First-X dialogue triggers do.
+func _is_resource_wheel_locked(key: String) -> bool:
+    if not game_context:
+        return true
+    if key == "sparks":
+        return false
+    if not game_context.ui_unlocks.get("wheel_full_access", false):
+        return true
+    if EVER_PRODUCED_GATED_RESOURCES.has(key):
+        return game_context.totals_created.get(key, BigNum.zero()).is_zero()
+    return false
+
+
+# ==================================================
 # PLUS / MINUS HANDLERS
 # ==================================================
 func _on_plus_pressed(pool_suffix: String) -> void:
@@ -363,10 +395,8 @@ func _on_plus_pressed(pool_suffix: String) -> void:
     var op = RESOURCE_OPERATIONS.get(selected_resource, "")
     if op == "":
         return
-    # Lock all resources except Sparks until all three Monad types are created
-    if not game_context.ui_unlocks.get("wheel_full_access", false):
-        if selected_resource != "sparks":
-            return
+    if _is_resource_wheel_locked(selected_resource):
+        return
     var assignment_key = op + "_" + pool_suffix
 
     if pool_suffix == "uonites":
@@ -426,9 +456,8 @@ func _on_minus_pressed(pool_suffix: String) -> void:
     var op = RESOURCE_OPERATIONS.get(selected_resource, "")
     if op == "":
         return
-    if not game_context.ui_unlocks.get("wheel_full_access", false):
-        if selected_resource != "sparks":
-            return
+    if _is_resource_wheel_locked(selected_resource):
+        return
     var assignment_key = op + "_" + pool_suffix
 
     if pool_suffix == "uonites":
