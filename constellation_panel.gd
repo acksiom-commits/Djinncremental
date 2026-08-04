@@ -1,5 +1,24 @@
 extends Control
-# ================= CONSTELLATION PANEL v1.3.0 =================
+# ================= CONSTELLATION PANEL v1.5.0 =================
+# v1.5.0: Added a per-frame self-heal in _process() — reveal_study_button()
+#         re-runs automatically whenever study_panel_reveal_done is true but
+#         the button's disabled/modulate state doesn't match, independent of
+#         whichever signal/trigger was supposed to have called it. Three
+#         separate root causes (v1.3.0, v1.4.0, and the modulate-cascade fix
+#         in root_ui.gd) have now made this specific button end up stuck
+#         despite the underlying flag being correct — this makes any future
+#         divergence self-correct within a frame instead of requiring a
+#         fourth investigation.
+# v1.4.0: reveal_study_button() no longer tweens modulate.a — root cause #3.
+#         Confirmed (user: reload fixes it, live never does, regardless of
+#         window resize/minimize/alt-tab) that tween-driven modulate changes
+#         don't reliably repaint live on this hardware, the same underlying
+#         class of issue as v1.3.0 one level removed: root_ui.gd's reload
+#         path (_apply_unlock_visibility) sets modulate.a directly with no
+#         tween and always works, because a full scene boot redraws
+#         everything unconditionally as nodes enter the tree — a live,
+#         already-booted scene gets no such blanket redraw to fall back on.
+#         Set modulate.a directly instead; dropped STUDY_BUTTON_REVEAL_DURATION.
 # v1.3.0: reveal_study_button() root-caused: StudyButton was the only
 #         reveal-gated element in the whole game hidden via `visible`
 #         instead of `modulate.a` + `mouse_filter` (the pattern every
@@ -26,7 +45,8 @@ extends Control
 # Selection callbacks arrive via signal from ConstellationPopout,
 # wired in root_ui.gd _ready().
 
-var _cd: Node = null
+var _cd:  Node = null
+var _adm: Node = null
 
 @onready var _constellation_art_rect: TextureRect = $ConstellationDisplay/ConstellationArtTextureRect
 @onready var _study_btn: Button = $StudyButton
@@ -36,13 +56,33 @@ var _starfield:  Node = null
 
 
 func _ready() -> void:
-    _cd = get_node_or_null("/root/ConstellationData")
+    _cd  = get_node_or_null("/root/ConstellationData")
+    _adm = get_node_or_null("/root/ArchonDialogueManager")
     var display := get_node_or_null("ConstellationDisplay")
     if display is Control:
         display.draw.connect(_draw_border.bind(display))
         display.queue_redraw()
     _set_active_constellation(8)
     _study_btn.pressed.connect(_on_study_pressed)
+
+
+## Self-heals StudyButton's visual/interactive state against the
+## authoritative flag every frame, instead of relying solely on whichever
+## one-shot signal/trigger call happened to fire reveal_study_button().
+## This is deliberately independent of root_ui.gd's trigger machinery —
+## three separate root causes (see the v1.3.0/v1.4.0 header notes) have
+## now made this specific button end up logically-revealed-but-visually-
+## stuck, each via a different mechanism nobody had anticipated the time
+## before. Rather than trust the next fix to be the last one, this turns
+## "reveal once when told" into a continuously-enforced invariant: any
+## future divergence between study_panel_reveal_done and the button's
+## actual state — from a cause not yet discovered — self-corrects within
+## one frame instead of requiring another investigation.
+func _process(_delta: float) -> void:
+    if not _adm or not _adm.study_panel_reveal_done:
+        return
+    if _study_btn.disabled or _study_btn.modulate.a < 1.0:
+        reveal_study_button()
 
 
 func _get_starfield() -> Node:
