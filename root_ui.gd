@@ -79,6 +79,7 @@ var _first_particle_triggered:      bool = false
 var _first_iota_triggered:          bool = false
 var _first_mote_triggered:          bool = false
 var _first_mote_dialogue_triggered: bool = false
+var _first_grain_triggered:         bool = false
 var _nineteenth_mote_triggered:     bool = false
 var _twentieth_mote_triggered:      bool = false
 var _first_uonite_triggered:        bool = false
@@ -1169,6 +1170,7 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     _first_iota_triggered     = uonite_ever_made or not game_context.totals_created.get("iota",     BigNum.zero()).is_zero()
     _first_mote_triggered     = uonite_ever_made or not game_context.totals_created.get("mote",     BigNum.zero()).is_zero()
     _first_mote_dialogue_triggered = archon_dialogue_manager.first_mote_dialogue_done
+    _first_grain_triggered    = uonite_ever_made or not game_context.totals_created.get("grain",    BigNum.zero()).is_zero()
     _first_uonite_triggered   = uonite_ever_made
     _nineteenth_mote_triggered = archon_dialogue_manager.nineteenth_mote_done
     _twentieth_mote_triggered  = archon_dialogue_manager.twentieth_mote_done
@@ -1356,6 +1358,14 @@ func _build_simple_triggers() -> void:
             "effect": func():
                 _grant_foci()
                 archon_dialogue_manager.enqueue_first_mote_dialogue(),
+        },
+        {
+            "guard": "_first_grain_triggered",
+            "condition": func(): return not game_context.grain.is_zero(),
+            "effect": func():
+                _grant_foci()
+                archon_dialogue_manager.enqueue_notification("First Grain: +1 Focus.")
+                archon_dialogue_manager.try_show_next_notification(),
         },
         {
             "guard": "_nineteenth_mote_triggered",
