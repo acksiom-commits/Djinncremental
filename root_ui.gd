@@ -1365,7 +1365,6 @@ func _build_simple_triggers() -> void:
             "guard": "_first_grain_triggered",
             "condition": func(): return not game_context.grain.is_zero(),
             "effect": func():
-                _grant_foci()
                 archon_dialogue_manager.enqueue_notification("First Grain: +1 Focus.")
                 archon_dialogue_manager.try_show_next_notification(),
         },
