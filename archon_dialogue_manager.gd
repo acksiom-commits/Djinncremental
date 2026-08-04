@@ -61,6 +61,7 @@ var all_fundaments_done:                bool = false
 var all_tetrads_done:                   bool = false
 var first_particle_done:                bool = false
 var first_mote_dialogue_done:           bool = false
+var first_grain_dialogue_done:          bool = false
 var nineteenth_mote_done:               bool = false
 var twentieth_mote_done:                bool = false
 var first_prestige_done:                bool = false
@@ -796,6 +797,19 @@ func enqueue_first_mote_dialogue() -> void:
     emit_signal("sequence_complete", "First Mote", lines)
 
 
+func enqueue_first_grain_dialogue() -> void:
+    if first_grain_dialogue_done:
+        return
+    first_grain_dialogue_done = true
+    var lines = [
+        "Going for that extra Focus now, eh? Well, I won't complain!||YES. I NEED ALL THE HELP YOU CAN GET.",
+        "Aw, thank- wait a minute, what!?||YOU HEARD ME.",
+        "Yes, and I can't figure out whom you're actually mocking!||PUT IN THE WORK NOW, AND PONDER THE GREAT MYSTERIES OF EXISTENCE LATER.",
+    ]
+    enqueue_dialogue(lines, true, "first_grain_dialogue_done")
+    emit_signal("sequence_complete", "First Grain", lines)
+
+
 func enqueue_nineteenth_mote() -> void:
     if nineteenth_mote_done:
         return
@@ -1137,6 +1151,7 @@ func get_save_data() -> Dictionary:
         "all_tetrads_done":                     _persisted_flag("all_tetrads_done", all_tetrads_done),
         "first_particle_done":                  _persisted_flag("first_particle_done", first_particle_done),
         "first_mote_dialogue_done":             _persisted_flag("first_mote_dialogue_done", first_mote_dialogue_done),
+        "first_grain_dialogue_done":            _persisted_flag("first_grain_dialogue_done", first_grain_dialogue_done),
         "nineteenth_mote_done":                 _persisted_flag("nineteenth_mote_done", nineteenth_mote_done),
         "twentieth_mote_done":                  _persisted_flag("twentieth_mote_done", twentieth_mote_done),
         "first_prestige_done":                  _persisted_flag("first_prestige_done", first_prestige_done),
@@ -1191,6 +1206,7 @@ func load_save_data(data: Dictionary) -> void:
     first_particle_done     = _coerce_bool(data.get("first_particle_done"),       false)
 
     first_mote_dialogue_done = _coerce_bool(data.get("first_mote_dialogue_done"), false)
+    first_grain_dialogue_done = _coerce_bool(data.get("first_grain_dialogue_done"), false)
     nineteenth_mote_done  = _coerce_bool(data.get("nineteenth_mote_done"),  false)
     twentieth_mote_done   = _coerce_bool(data.get("twentieth_mote_done"),   false)
 
