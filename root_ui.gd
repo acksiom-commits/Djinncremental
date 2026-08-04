@@ -406,6 +406,7 @@ func _ready() -> void:
         archon_dialogue_manager.constellation_panel_creation_sequence_complete.connect(_on_constellation_panel_created)
         archon_dialogue_manager.open_constellation_panel_sequence_complete.connect(_on_constellation_panel_opened)
         archon_dialogue_manager.study_panel_reveal_sequence_complete.connect(_on_study_panel_reveal_complete)
+        archon_dialogue_manager.first_mote_dialogue_sequence_complete.connect(_on_first_mote_dialogue_complete)
     _build_simple_triggers()
     _setup_panel_nodes()
     _hide_all_panels()
@@ -657,13 +658,15 @@ func _check_volition_grant() -> void:
         game_context._ensure_slot_count(game_context.volitions)
         if not game_context.purity_locks_unlocked and volitions_earned > 0:
             game_context.purity_locks_unlocked = true
-    # Uonite reveal is checked independently — TAB-granted volitions
-    # can push game_context.volitions past the foci-earned threshold,
-    # so the reveal must not rely on the volitions comparison gate.
-    if game_context.archon_foci >= 25:
-        _reveal_panel("uonite_creation")
-        _reveal_panel("uonite_button")
-        _reveal_panel("uonite_cooldown")
+    # Uonite reveal used to fire here off a raw archon_foci >= 25 check,
+    # completely decoupled from the Mote-production dialogue chain — a
+    # player could cross 25 Foci via unrelated milestones (Fundaments,
+    # Tetrad varieties, totals thresholds, etc.) before ever hearing the
+    # First Mote dialogue that explains Uonite creation, showing the
+    # button early. Moved to _on_first_mote_dialogue_complete(), which
+    # fires only once that dialogue is actually read to completion (see
+    # first_mote_dialogue_sequence_complete), with the matching load-time
+    # catch-up in _sync_trigger_flags_from_loaded_state().
     # This is the real gameplay path Volitions get earned through (Foci
     # milestones at 5/25/125/...) — unlike the dev-cheat hotkeys (KEY_TAB/
     # KEY_V) and the click-vol +/- handlers themselves, it never refreshed
@@ -821,6 +824,12 @@ func _on_study_panel_reveal_complete() -> void:
     var cp := find_child("ConstellationPanel", true, false)
     if cp and cp.has_method("reveal_study_button"):
         cp.reveal_study_button()
+
+
+func _on_first_mote_dialogue_complete() -> void:
+    _reveal_panel("uonite_creation")
+    _reveal_panel("uonite_button")
+    _reveal_panel("uonite_cooldown")
 
 
 func _on_constellation_panel_opened() -> void:
@@ -1171,6 +1180,8 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     _first_iota_triggered     = uonite_ever_made or not game_context.totals_created.get("iota",     BigNum.zero()).is_zero()
     _first_mote_triggered     = uonite_ever_made or not game_context.totals_created.get("mote",     BigNum.zero()).is_zero()
     _first_mote_dialogue_triggered = archon_dialogue_manager.first_mote_dialogue_done
+    if _first_mote_dialogue_triggered:
+        _on_first_mote_dialogue_complete()
     _first_grain_triggered    = uonite_ever_made or not game_context.totals_created.get("grain",    BigNum.zero()).is_zero()
     _first_grain_dialogue_triggered = archon_dialogue_manager.first_grain_dialogue_done
     _first_uonite_triggered   = uonite_ever_made

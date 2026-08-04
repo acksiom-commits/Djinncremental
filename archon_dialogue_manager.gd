@@ -175,6 +175,7 @@ signal constellation_panel_creation_sequence_complete()
 signal open_constellation_panel_sequence_complete()
 signal close_constellation_panel_sequence_complete()
 signal study_panel_reveal_sequence_complete()
+signal first_mote_dialogue_sequence_complete()
 
 signal ui_reveal_requested(panel_key: String)
 signal tetrad_category_complete(category_name: String)
@@ -387,6 +388,11 @@ func _on_tier1_archon_complete_ended() -> void:
 func _on_study_panel_reveal_ended() -> void:
     dialogue_ended.disconnect(_on_study_panel_reveal_ended)
     emit_signal("study_panel_reveal_sequence_complete")
+
+
+func _on_first_mote_dialogue_ended() -> void:
+    dialogue_ended.disconnect(_on_first_mote_dialogue_ended)
+    emit_signal("first_mote_dialogue_sequence_complete")
 
     
 func _on_first_constellation_ended() -> void:
@@ -793,6 +799,8 @@ func enqueue_first_mote_dialogue() -> void:
         "No, twenty per Uonite - and right now, just one Uonite per Expansion. So any extra Motes would just be consumed, this time. But the more Expansions we've done, the more Uonites we can Create each Expansion. And if you have enough Sparks stocked up beforehand, the Stoctagon gets bigger afterwards, too! ||THAT MAKES SENSE. YOU DID SAY WE'RE GOING TO BE MAKING A [i]LOT[/i] OF RESOURCES, EVENTUALLY.",
         "We sure are! We've got a whole world to build here!||AND FLOATING AROUND IN SPACE CHATTING ISN'T GOING TO GET IT DONE FOR US, SO LET'S GET BACK TO PUTTING IN THE WORK."
     ]
+    if not dialogue_ended.is_connected(_on_first_mote_dialogue_ended):
+        dialogue_ended.connect(_on_first_mote_dialogue_ended)
     enqueue_dialogue(lines, true, "first_mote_dialogue_done")
     emit_signal("sequence_complete", "First Mote", lines)
 
