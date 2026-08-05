@@ -1,5 +1,23 @@
 extends Control
-# ================= CONSTELLATION PANEL v1.7.0 =================
+# ================= CONSTELLATION PANEL v1.8.0 =================
+# v1.8.0: Removed the v1.5.0/v1.6.0/v1.7.0 per-frame self-heal entirely.
+#         It was insurance against unknown future causes of the button/
+#         panel getting visually stuck — but the actual causes are now
+#         known and fixed at the structural level (v1.7.0's self_modulate
+#         decoupling removes the cascade dependency; v1.4.0's direct
+#         assignment removes the tween-doesn't-paint-live issue), so every
+#         reveal call site (reveal_study_button, _reveal_panel,
+#         _apply_unlock_visibility, _sync_trigger_flags_from_loaded_state)
+#         is already correct and reliable on its own. The self-heal's
+#         actual track record was net-negative: it contaminated the root
+#         cause #4 diagnosis by firing on a tween's very first frame
+#         (indistinguishable from a normal in-progress animation), then
+#         caused a real live bug (root cause #5) by revealing the button
+#         on star-click instead of dialogue completion, because the flag
+#         it polled as a "completion" proxy was actually an enqueue-time
+#         re-entry guard. Two real problems, zero cases where it caught
+#         something the direct call sites didn't already handle. Removed
+#         rather than fixed a third time.
 # v1.7.0: Root cause #2/#4, fixed at the source instead of patched around.
 #         This panel (ConstellationPanel) draws nothing of its own — it's a
 #         VBoxContainer purely for layout, stacking ConstellationDisplay and
@@ -70,64 +88,22 @@ extends Control
 # wired in root_ui.gd _ready().
 
 var _cd:  Node = null
-var _adm: Node = null
-var _gc:  Node = null
 
 @onready var _constellation_art_rect: TextureRect = $ConstellationDisplay/ConstellationArtTextureRect
-@onready var _display: Control = $ConstellationDisplay
 @onready var _study_btn: Button = $StudyButton
 
 var _active_id:  int  = 8
 var _starfield:  Node = null
 
-## Set ONLY by the study_panel_reveal_sequence_complete signal, which only
-## fires once the placeholder dialogue has actually been read to
-## completion (dialogue_ended). Deliberately NOT archon_dialogue_manager's
-## own study_panel_reveal_done — that flag goes true the instant the
-## dialogue is enqueued (the moment the star is clicked), not when it's
-## actually finished, which made the v1.5.0 self-heal below reveal the
-## button immediately on click instead of waiting for the dialogue like
-## the signal-driven path (_on_study_panel_reveal_complete in root_ui.gd)
-## always correctly did. This flag tracks the SAME "truly complete" event
-## that signal represents, so the self-heal can no longer race ahead of it.
-## Stays false for a save where the dialogue already completed in a PRIOR
-## session (the signal won't refire) — that's fine, root_ui.gd's own
-## load-time resync (_sync_trigger_flags_from_loaded_state) already reveals
-## the button directly for that case, independent of this self-heal.
-var _study_reveal_complete: bool = false
-
 
 func _ready() -> void:
     _cd  = get_node_or_null("/root/ConstellationData")
-    _adm = get_node_or_null("/root/ArchonDialogueManager")
-    _gc  = get_node_or_null("/root/GameContext")
-    if _adm:
-        _adm.study_panel_reveal_sequence_complete.connect(func(): _study_reveal_complete = true)
     var display := get_node_or_null("ConstellationDisplay")
     if display is Control:
         display.draw.connect(_draw_border.bind(display))
         display.queue_redraw()
     _set_active_constellation(8)
     _study_btn.pressed.connect(_on_study_pressed)
-
-
-## Self-heals StudyButton's visual/interactive state, and (v1.7.0) this
-## panel's own self_modulate + ConstellationDisplay's modulate, against
-## their authoritative flags every frame — instead of relying solely on
-## whichever one-shot signal/trigger call happened to set them. Genuine
-## defense-in-depth now that all three are direct-assigned rather than
-## tweened (see v1.7.0 header note for why the button and the panel both
-## used to be tween-driven and unreliable live).
-func _process(_delta: float) -> void:
-    if _gc and _gc.ui_unlocks.get("constellation", false):
-        if self_modulate.a < 1.0:
-            self_modulate.a = 1.0
-        if _display and _display.modulate.a < 1.0:
-            _display.modulate.a = 1.0
-    if not _study_reveal_complete:
-        return
-    if _study_btn.disabled or _study_btn.modulate.a < 1.0:
-        reveal_study_button()
 
 
 func _get_starfield() -> Node:
