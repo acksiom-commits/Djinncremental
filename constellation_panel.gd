@@ -80,11 +80,29 @@ var _gc:  Node = null
 var _active_id:  int  = 8
 var _starfield:  Node = null
 
+## Set ONLY by the study_panel_reveal_sequence_complete signal, which only
+## fires once the placeholder dialogue has actually been read to
+## completion (dialogue_ended). Deliberately NOT archon_dialogue_manager's
+## own study_panel_reveal_done — that flag goes true the instant the
+## dialogue is enqueued (the moment the star is clicked), not when it's
+## actually finished, which made the v1.5.0 self-heal below reveal the
+## button immediately on click instead of waiting for the dialogue like
+## the signal-driven path (_on_study_panel_reveal_complete in root_ui.gd)
+## always correctly did. This flag tracks the SAME "truly complete" event
+## that signal represents, so the self-heal can no longer race ahead of it.
+## Stays false for a save where the dialogue already completed in a PRIOR
+## session (the signal won't refire) — that's fine, root_ui.gd's own
+## load-time resync (_sync_trigger_flags_from_loaded_state) already reveals
+## the button directly for that case, independent of this self-heal.
+var _study_reveal_complete: bool = false
+
 
 func _ready() -> void:
     _cd  = get_node_or_null("/root/ConstellationData")
     _adm = get_node_or_null("/root/ArchonDialogueManager")
     _gc  = get_node_or_null("/root/GameContext")
+    if _adm:
+        _adm.study_panel_reveal_sequence_complete.connect(func(): _study_reveal_complete = true)
     var display := get_node_or_null("ConstellationDisplay")
     if display is Control:
         display.draw.connect(_draw_border.bind(display))
@@ -106,7 +124,7 @@ func _process(_delta: float) -> void:
             self_modulate.a = 1.0
         if _display and _display.modulate.a < 1.0:
             _display.modulate.a = 1.0
-    if not _adm or not _adm.study_panel_reveal_done:
+    if not _study_reveal_complete:
         return
     if _study_btn.disabled or _study_btn.modulate.a < 1.0:
         reveal_study_button()
