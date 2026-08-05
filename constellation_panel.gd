@@ -1,5 +1,29 @@
 extends Control
-# ================= CONSTELLATION PANEL v1.5.0 =================
+# ================= CONSTELLATION PANEL v1.7.0 =================
+# v1.7.0: Root cause #2/#4, fixed at the source instead of patched around.
+#         This panel (ConstellationPanel) draws nothing of its own — it's a
+#         VBoxContainer purely for layout, stacking ConstellationDisplay and
+#         StudyButton. Its `modulate` was only ever being used as a shortcut
+#         to hide/show both children at once via cascade, but
+#         CanvasItem.modulate cascades MULTIPLICATIVELY, so StudyButton's
+#         effective on-screen alpha was always parent.modulate.a x its own —
+#         never purely dependent on its own reveal (the placeholder study-
+#         panel dialogue), no matter how correct that reveal logic was.
+#         root_ui.gd's _reveal_panel/_hide_all_panels/_apply_unlock_
+#         visibility now use `self_modulate` for this panel's own reveal
+#         instead — self_modulate tints only a node's own drawing and does
+#         NOT cascade to children, so StudyButton's visibility is now purely
+#         its own, full stop. ConstellationDisplay (the other child, which
+#         has no modulate of its own and relied entirely on inheriting this
+#         panel's hidden-by-default state) now gets that applied to it
+#         directly by root_ui.gd wherever this panel's own visibility
+#         changes. Both also skip the tween now (direct assignment) — no
+#         reason to reintroduce the live-tween-doesn't-paint pattern (root
+#         causes #3/#4) on the two nodes it was just found on.
+#         The self-heal below now watches self_modulate (not modulate) and
+#         ConstellationDisplay's modulate, matching the new mechanism —
+#         genuine defense-in-depth now, not compensating for a known-broken
+#         path, since both are direct-assigned rather than tweened.
 # v1.5.0: Added a per-frame self-heal in _process() — reveal_study_button()
 #         re-runs automatically whenever study_panel_reveal_done is true but
 #         the button's disabled/modulate state doesn't match, independent of
@@ -50,6 +74,7 @@ var _adm: Node = null
 var _gc:  Node = null
 
 @onready var _constellation_art_rect: TextureRect = $ConstellationDisplay/ConstellationArtTextureRect
+@onready var _display: Control = $ConstellationDisplay
 @onready var _study_btn: Button = $StudyButton
 
 var _active_id:  int  = 8
@@ -68,36 +93,19 @@ func _ready() -> void:
     _study_btn.pressed.connect(_on_study_pressed)
 
 
-## Self-heals StudyButton's visual/interactive state against the
-## authoritative flag every frame, instead of relying solely on whichever
-## one-shot signal/trigger call happened to fire reveal_study_button().
-## This is deliberately independent of root_ui.gd's trigger machinery —
-## three separate root causes (see the v1.3.0/v1.4.0 header notes) have
-## now made this specific button end up logically-revealed-but-visually-
-## stuck, each via a different mechanism nobody had anticipated the time
-## before. Rather than trust the next fix to be the last one, this turns
-## "reveal once when told" into a continuously-enforced invariant: any
-## future divergence between study_panel_reveal_done and the button's
-## actual state — from a cause not yet discovered — self-corrects within
-## one frame instead of requiring another investigation.
-##
-## v1.6.0: ALSO self-heals this panel's OWN modulate against ui_unlocks
-## ["constellation"], not just the button's. The button's own reveal being
-## correct was never sufficient by itself — modulate cascades
-## multiplicatively (root cause #2), so a button sitting at alpha 1 inside
-## a PARENT still stuck at alpha 0 is still invisible, and the button-only
-## check above can't see that, since it only ever looks at the button's
-## own modulate. This panel's own live reveal (root_ui.gd's
-## _reveal_panel("constellation")) still tweens modulate.a instead of
-## setting it directly — the same class of live-repaint unreliability
-## root cause #3 fixed for the button one level up. Rather than widen
-## _reveal_panel() itself (used by every panel in the game, with no
-## confirmed report any of the others are actually affected), self-heal
-## this one specific panel's modulate directly, the same way the button's
-## is already self-healed.
+## Self-heals StudyButton's visual/interactive state, and (v1.7.0) this
+## panel's own self_modulate + ConstellationDisplay's modulate, against
+## their authoritative flags every frame — instead of relying solely on
+## whichever one-shot signal/trigger call happened to set them. Genuine
+## defense-in-depth now that all three are direct-assigned rather than
+## tweened (see v1.7.0 header note for why the button and the panel both
+## used to be tween-driven and unreliable live).
 func _process(_delta: float) -> void:
-    if _gc and _gc.ui_unlocks.get("constellation", false) and modulate.a < 1.0:
-        modulate.a = 1.0
+    if _gc and _gc.ui_unlocks.get("constellation", false):
+        if self_modulate.a < 1.0:
+            self_modulate.a = 1.0
+        if _display and _display.modulate.a < 1.0:
+            _display.modulate.a = 1.0
     if not _adm or not _adm.study_panel_reveal_done:
         return
     if _study_btn.disabled or _study_btn.modulate.a < 1.0:

@@ -204,6 +204,7 @@ mouse_filter = 2
 script = ExtResource("6_dcit8")
 
 [node name="ConstellationDisplay" type="Control" parent="CanvasLayer/RootUI/TopBandHBox/AllocationConstellationVBox/ConstellationLeftMargin/ConstellationPanel" unique_id=662104733]
+modulate = Color(1, 1, 1, 0)
 custom_minimum_size = Vector2(0, 175)
 layout_mode = 2
 size_flags_vertical = 0
