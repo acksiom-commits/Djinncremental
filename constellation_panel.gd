@@ -47,6 +47,7 @@ extends Control
 
 var _cd:  Node = null
 var _adm: Node = null
+var _gc:  Node = null
 
 @onready var _constellation_art_rect: TextureRect = $ConstellationDisplay/ConstellationArtTextureRect
 @onready var _study_btn: Button = $StudyButton
@@ -58,6 +59,7 @@ var _starfield:  Node = null
 func _ready() -> void:
     _cd  = get_node_or_null("/root/ConstellationData")
     _adm = get_node_or_null("/root/ArchonDialogueManager")
+    _gc  = get_node_or_null("/root/GameContext")
     var display := get_node_or_null("ConstellationDisplay")
     if display is Control:
         display.draw.connect(_draw_border.bind(display))
@@ -78,7 +80,24 @@ func _ready() -> void:
 ## future divergence between study_panel_reveal_done and the button's
 ## actual state — from a cause not yet discovered — self-corrects within
 ## one frame instead of requiring another investigation.
+##
+## v1.6.0: ALSO self-heals this panel's OWN modulate against ui_unlocks
+## ["constellation"], not just the button's. The button's own reveal being
+## correct was never sufficient by itself — modulate cascades
+## multiplicatively (root cause #2), so a button sitting at alpha 1 inside
+## a PARENT still stuck at alpha 0 is still invisible, and the button-only
+## check above can't see that, since it only ever looks at the button's
+## own modulate. This panel's own live reveal (root_ui.gd's
+## _reveal_panel("constellation")) still tweens modulate.a instead of
+## setting it directly — the same class of live-repaint unreliability
+## root cause #3 fixed for the button one level up. Rather than widen
+## _reveal_panel() itself (used by every panel in the game, with no
+## confirmed report any of the others are actually affected), self-heal
+## this one specific panel's modulate directly, the same way the button's
+## is already self-healed.
 func _process(_delta: float) -> void:
+    if _gc and _gc.ui_unlocks.get("constellation", false) and modulate.a < 1.0:
+        modulate.a = 1.0
     if not _adm or not _adm.study_panel_reveal_done:
         return
     if _study_btn.disabled or _study_btn.modulate.a < 1.0:
