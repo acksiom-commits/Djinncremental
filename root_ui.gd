@@ -426,6 +426,29 @@ func _ready() -> void:
 # children (e.g. StudyButton) are still handled by _restore_subtree_input.
 const CLICK_THROUGH_PANEL_KEYS := {"constellation": true}
 
+# "constellation" (ConstellationPanel) draws nothing of its own — it's a
+# VBoxContainer purely for layout, stacking ConstellationDisplay and
+# StudyButton. Its `modulate` was only ever being toggled as a shortcut to
+# hide/show both children at once via cascade — but CanvasItem.modulate
+# cascades MULTIPLICATIVELY, so StudyButton's effective on-screen alpha was
+# always parent.modulate.a x its own, not purely its own. That's root
+# causes #2 and #4 of the Study Constellation button saga: the button's own
+# reveal (gated on the placeholder dialogue) was always correct, but stayed
+# invisible whenever the panel's own SEPARATE reveal (gated on Spark
+# Endowment/unlock) hadn't independently completed, or its live tween
+# failed to paint. Panels in this set use `self_modulate` for their own
+# reveal instead — self_modulate tints ONLY the node's own drawing and does
+# NOT cascade to children, so StudyButton's visibility is now purely its
+# own, with zero dependency on this panel. The one child that DID rely on
+# inheriting the panel's hidden-by-default state (ConstellationDisplay, no
+# modulate of its own) gets that applied to it directly instead, wherever
+# this panel's own visibility changes. Also skips the tween for both this
+# panel's self_modulate AND ConstellationDisplay's modulate — direct
+# assignment, not animated — since this exact live-tween-not-painting
+# pattern is what caused root causes #3/#4 in the first place, and there's
+# no reason to reintroduce it on the two nodes most recently proven to hit it.
+const SELF_MODULATE_PANEL_KEYS := {"constellation": true}
+
 
 func _setup_panel_nodes() -> void:
     _panel_nodes = {
@@ -448,8 +471,14 @@ func _hide_all_panels() -> void:
     for key in _panel_nodes:
         var node = _panel_nodes[key]
         if node:
-            node.modulate.a = 0.0
+            if SELF_MODULATE_PANEL_KEYS.has(key):
+                node.self_modulate.a = 0.0
+            else:
+                node.modulate.a = 0.0
             node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    var display := find_child("ConstellationDisplay", true, false)
+    if display:
+        display.modulate.a = 0.0
 
 
 func _apply_unlock_visibility() -> void:
@@ -461,13 +490,23 @@ func _apply_unlock_visibility() -> void:
             continue
         if _ui_minimal_active and _ui_minimal_hidden.has(node):
             continue
+        var self_mod := SELF_MODULATE_PANEL_KEYS.has(key)
         if game_context.ui_unlocks.get(key, false):
-            node.modulate.a   = 1.0
+            if self_mod:
+                node.self_modulate.a = 1.0
+            else:
+                node.modulate.a = 1.0
             node.mouse_filter = Control.MOUSE_FILTER_IGNORE if CLICK_THROUGH_PANEL_KEYS.has(key) else Control.MOUSE_FILTER_STOP
             _restore_subtree_input(node)
         else:
-            node.modulate.a   = 0.0
+            if self_mod:
+                node.self_modulate.a = 0.0
+            else:
+                node.modulate.a = 0.0
             node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    var display := find_child("ConstellationDisplay", true, false)
+    if display:
+        display.modulate.a = 1.0 if game_context.ui_unlocks.get("constellation", false) else 0.0
     # Restore tetrad assembly gate for saves past the all-monads sequence
     if archon_dialogue_manager and archon_dialogue_manager.all_monads_upgrade_done:
         _tetrad_assembly_ready = true
@@ -485,6 +524,12 @@ func _reveal_panel(unlock_key: String) -> void:
     # See CLICK_THROUGH_PANEL_KEYS — the constellation frame stays click-through.
     node.mouse_filter = Control.MOUSE_FILTER_IGNORE if CLICK_THROUGH_PANEL_KEYS.has(unlock_key) else Control.MOUSE_FILTER_STOP
     _restore_subtree_input(node)
+    if SELF_MODULATE_PANEL_KEYS.has(unlock_key):
+        node.self_modulate.a = 1.0
+        var display := find_child("ConstellationDisplay", true, false)
+        if display:
+            display.modulate.a = 1.0
+        return
     var tween = create_tween()
     tween.tween_property(node, "modulate:a", 1.0, REVEAL_DURATION) \
         .set_trans(Tween.TRANS_SINE) \
