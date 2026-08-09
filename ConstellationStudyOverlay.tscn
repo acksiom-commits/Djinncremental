@@ -84,7 +84,7 @@ theme_override_constants/separation = 8
 [node name="TitleLabel" type="Label" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=1015319127]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.92, 0.88, 0.78, 1)
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 23
 text = "The Constellation"
 vertical_alignment = 1
 
@@ -102,7 +102,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 4
 theme_override_colors/default_color = Color(0.82, 0.78, 0.92, 1)
-theme_override_font_sizes/normal_font_size = 16
+theme_override_font_sizes/normal_font_size = 19
 bbcode_enabled = true
 text = "Select a clue below to pin it here."
 
@@ -111,7 +111,7 @@ custom_minimum_size = Vector2(32, 32)
 layout_mode = 2
 focus_mode = 0
 theme_override_colors/font_color = Color(1, 0.5, 0.5, 1)
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 19
 theme_override_styles/normal = SubResource("StyleBoxFlat_close_btn")
 text = "✕"
 
@@ -153,7 +153,7 @@ custom_minimum_size = Vector2(0, 80)
 layout_mode = 2
 
 [node name="MarkersVBox" type="VBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox" unique_id=1716107462]
-custom_minimum_size = Vector2(340, 0)
+custom_minimum_size = Vector2(400, 0)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 0
@@ -161,7 +161,7 @@ theme_override_constants/separation = 0
 [node name="MarkersPanelTitle" type="Label" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=2043930607]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.58, 0.9, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 16
 text = "MARKERS"
 horizontal_alignment = 1
 
@@ -169,38 +169,44 @@ horizontal_alignment = 1
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="TabPlaceholder" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=1922528262]
-layout_mode = 2
-focus_behavior_recursive = 1
-text = "Name"
-
-[node name="TabSequence" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=2024991309]
+[node name="TabUnused" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=295307069]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 16
-text = "Sequence"
+theme_override_font_sizes/font_size = 19
+text = "Unused"
 
-[node name="TabColor" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=295307069]
+[node name="TabUseful" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=2024991309]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 16
-text = "Color"
+theme_override_font_sizes/font_size = 19
+text = "Useful"
+
+[node name="TabGuide" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=1922528263]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 19
+text = "GUIDE"
 
 [node name="MarkerTabBar2" type="HBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=808034110]
 layout_mode = 2
 
-[node name="TabPitch" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=394915045]
-layout_mode = 2
-text = "Pitch"
-
-[node name="TabAdjacency" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=671060694]
+[node name="TabUsedUp" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=394915045]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
+theme_override_font_sizes/font_size = 19
+text = "Used Up"
+
+[node name="ResetButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=1600000002]
+layout_mode = 2
+focus_mode = 0
+theme_override_colors/font_color = Color(1, 0.5, 0.5, 1)
 theme_override_font_sizes/font_size = 16
-text = "Proximity"
+theme_override_styles/normal = SubResource("StyleBoxFlat_close_btn")
+text = " RESET "
 
 [node name="MarkerTabSep" type="Panel" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=1186065417]
 custom_minimum_size = Vector2(0, 1)
@@ -218,4 +224,11 @@ horizontal_scroll_mode = 0
 [node name="MarkersContentVBox" type="VBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkersScrollContainer" unique_id=1335870837]
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="ResetPuzzleConfirmDialog" type="ConfirmationDialog" parent="." unique_id=1600000003]
+ok_button_text = "RESET"
+dialog_text = "Generate a brand new arrangement for this constellation?
+Star names, colors, and which star plays which note will all reshuffle. Your clues, deduction notes, and current progress on this constellation will be lost.
+This cannot be undone."
+cancel_button_text = "CANCEL"
 theme_override_constants/separation = 4

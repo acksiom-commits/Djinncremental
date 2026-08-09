@@ -1,5 +1,10 @@
 extends Control
 class_name ConstellationStudyOverlay
+
+## Emitted when the player confirms the RESET button's dialog. root_ui.gd
+## connects this to reset_constellation_puzzle() — this overlay only owns
+## the confirm UI, not the actual reshuffle/resync logic.
+signal reset_requested(constellation_id: int)
 # ================ CONSTELLATION STUDY OVERLAY v1.0.0 ================
 # Modal overlay presenting an enlarged, interactive star map for a
 # single constellation alongside its logic puzzle clue list.
@@ -41,6 +46,8 @@ const MARKERS_BASE_PATH:    String = PANE1_BASE_PATH + "/MarkersVBox"
 @onready var _close_btn:           Button        = get_node(HEADER_BASE_PATH + "/CloseButton")
 @onready var _fork_btn: Button = get_node(HEADER_BASE_PATH + "/TuningForkButton")
 @onready var _pitch_listen_btn: Button = get_node(HEADER_BASE_PATH + "/PitchListenButton")
+@onready var _reset_btn: Button = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/ResetButton")
+@onready var _reset_confirm: ConfirmationDialog = get_node("ResetPuzzleConfirmDialog")
 @onready var _selected_clue_display: RichTextLabel = get_node(HEADER_BASE_PATH + "/SelectedClueDisplay")
 @onready var _synth:    Node   = get_node_or_null("../RootUI/PuzzleSynths")
 @onready var _star_map_control:    Control = get_node(STAR_MAP_COLUMN_PATH + "/StarMapControl")
@@ -74,12 +81,10 @@ const UNKNOWN_SEQ_COLOR := Color(0.35, 0.75, 0.45, 1.0)
 
 # Shared puzzle-state color palette — see puzzle_state_colors.gd.
 const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
-@onready var _tab_color:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabColor")
-@onready var _tab_sequence:        Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabSequence")
-
-@onready var _tab_pitch:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabPitch")
-@onready var _tab_proximity:       Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabAdjacency")
-@onready var _tab_name_clues:      Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabPlaceholder")
+@onready var _tab_unused:          Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabUnused")
+@onready var _tab_useful:          Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabUseful")
+@onready var _tab_used_up:         Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabUsedUp")
+@onready var _tab_guide:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabGuide")
 
 # ── STYLE CACHE ──────────────────────────────────────────────────────
 # Shared with constellation_overlay.gd — see star_color_palette.gd.
@@ -113,9 +118,7 @@ var _star_screen_pos:     Array = []     # Array[Vector2], map-space
 var _star_names:          Array = []     # Array[String] from cache
 var _star_colors:         Array = []     # Array[int] 0-3
 var _name_assignments:    Array = []     # Array[String], per-star slot
-var _active_marker_tab:   int   = -1     # -1=Default(Matches) 0=Color 1=Sequence 2=Pitch 3=Proximity 4=NameClues
-# Proximity marker states: key = "a:b" (a<b), value = int 0=neutral 1=✓ 2=✗
-var _proximity_states:    Dictionary = {}
+var _active_marker_tab:   int   = -1     # -1=Default(Matches) 0=Unused 1=Useful 2=UsedUp 3=Guide
 var _widget_closed: Dictionary = {}             # star_idx -> bool, closed via X button
 var _pitch_rank_solution:   Array = []     # Array[int], melody step per star
 var _star_pitch_index:      Array = []     # Array[int], raw note index per star (ConstellationData)
@@ -126,7 +129,7 @@ var _player_seed:          int = 0
 var _puzzle_seed_used:      int = 0     # actual seed used for THIS cached puzzle instance
                                           # (differs from _player_seed after a dev regenerate)
 
-var _form_clues_cache: Array = []     # cached chosen_form_clues dicts: {form_id, form_name, text, characteristics}
+var _form_clues_cache: Array = []     # cached chosen_form_clues dicts: {form_id, form_name, text, characteristics, chars}
 
 # ── PUZZLE NOTES STATE ───────────────────────────────────────────────
 # Sequence range and per-star name elimination now live entirely on
@@ -177,11 +180,10 @@ func _ready() -> void:
     _widgets.setup(self, _deduction)
     _build_style_boxes()
 
-    _tab_color.pressed.connect(func(): _widgets._set_marker_tab(0))
-    _tab_sequence.pressed.connect(func(): _widgets._set_marker_tab(1))
-    _tab_pitch.pressed.connect(func(): _widgets._set_marker_tab(2))
-    _tab_proximity.pressed.connect(func(): _widgets._set_marker_tab(3))
-    _tab_name_clues.pressed.connect(func(): _widgets._set_marker_tab(4))
+    _tab_unused.pressed.connect(func(): _widgets._set_marker_tab(0))
+    _tab_useful.pressed.connect(func(): _widgets._set_marker_tab(1))
+    _tab_used_up.pressed.connect(func(): _widgets._set_marker_tab(2))
+    _tab_guide.pressed.connect(func(): _widgets._set_marker_tab(3))
 
     _star_map_control.draw.connect(_draw_star_map)
     _star_map_control.gui_input.connect(_on_map_input)
@@ -238,8 +240,20 @@ func _ready() -> void:
     _fork_btn.pressed.connect(_on_fork_toggle_pressed)
 
     _pitch_listen_btn.pressed.connect(_on_pitch_listen_toggle_pressed)
+
+    # Same confirm-before-acting pattern as SettingsPopout's Reset Save —
+    # get_ok_button()/get_cancel_button() text+theme set here rather than
+    # relying on the .tscn's ok_button_text/cancel_button_text alone, to
+    # match that established styling (DialogConfirmButton variation on
+    # both), not just the wording.
+    _reset_btn.pressed.connect(func(): _reset_confirm.popup_centered())
+    _reset_confirm.confirmed.connect(func(): reset_requested.emit(_constellation_id))
+    _reset_confirm.get_ok_button().text = "Yes, Reset"
+    _reset_confirm.get_cancel_button().text = "Keep Playing"
+    _reset_confirm.get_ok_button().theme_type_variation     = "DialogConfirmButton"
+    _reset_confirm.get_cancel_button().theme_type_variation = "DialogConfirmButton"
     _pitch_reveal_label = Label.new()
-    _pitch_reveal_label.add_theme_font_size_override("font_size", 18)
+    _pitch_reveal_label.add_theme_font_size_override("font_size", 21)
     _pitch_reveal_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.6, 1.0))
     _pitch_reveal_label.visible = false
     _pitch_reveal_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -286,6 +300,15 @@ func _coerce_dict(val, default: Dictionary) -> Dictionary:
 
 func _coerce_string(val, default: String) -> String:
     if typeof(val) == TYPE_STRING:
+        return val
+    return default
+
+
+func _coerce_bool(val, default: bool) -> bool:
+    # Added alongside the cached clue "cells" read — bool() on a wrong-typed
+    # save-derived value hangs rather than raising (same class as the typed
+    # int/array assignments the helpers above guard).
+    if typeof(val) == TYPE_BOOL:
         return val
     return default
 
@@ -372,20 +395,11 @@ func _load_constellation_data() -> void:
     # Puzzle notes.
     var notes: Dictionary = _cd.get_player_puzzle_notes(_constellation_id)
 
-    _proximity_states.clear()
-    var raw_adj: Dictionary = _coerce_dict(notes.get("adjacency_states"), {})
-    for k in raw_adj:
-        _proximity_states[str(k)] = _coerce_int(raw_adj[k], 0)
-
-    _deduction._protected_names.clear()
-    var raw_prot: Dictionary = _coerce_dict(notes.get("protected_names"), {})
-    for k in raw_prot:
-        _deduction._protected_names[str(k)] = true
-
-    _deduction._user_blocks.clear()
-    var raw_blocks: Dictionary = _coerce_dict(notes.get("user_blocks"), {})
-    for k in raw_blocks:
-        _deduction._user_blocks[str(k)] = true
+    # The old "protected_names" / "user_blocks" note fields are gone: the
+    # star widget's protect and manual-block flags moved onto each star's
+    # own match record, so they load with match_records below. An older
+    # save's copies are simply ignored — they were flags on a UI row, not
+    # deduced facts, so there's nothing worth migrating.
 
     # _load_match_records(data: Array) has a typed parameter — a wrong-
     # typed value would hang at the call boundary, one hop before that
@@ -402,8 +416,57 @@ func _load_constellation_data() -> void:
         _star_pitch_index.append(_coerce_int(v, 0))
     _pitch_freqs = _cd.get_note_freqs(_constellation_id)
 
-    var raw_form_clues = _coerce_array(cache.get("chosen_form_clues"), [])
-    _form_clues_cache = raw_form_clues.duplicate(true)
+    # Same manual per-field coercion as every other cache-derived array in
+    # this function — this bypasses ConstellationLogicPuzzle.from_cache_dict()
+    # entirely (always has; see that function's own coercion for the OTHER
+    # path that still uses it), so a wrong-typed "chars" entry from a
+    # corrupted save would otherwise reach _deduction._clue_coverage()'s
+    # typed int(...) reads directly and hang, same bug class as everywhere
+    # else in this file.
+    var raw_form_clues: Array = _coerce_array(cache.get("chosen_form_clues"), [])
+    _form_clues_cache = []
+    for raw_clue in raw_form_clues:
+        if not (raw_clue is Dictionary):
+            continue
+        var rc: Dictionary = raw_clue
+        var raw_tags: Array = _coerce_array(rc.get("characteristics"), [])
+        var tags: Array = []
+        for t in raw_tags:
+            tags.append(str(t))
+        var raw_chars: Array = _coerce_array(rc.get("chars"), [])
+        var chars: Array = []
+        for raw_ch in raw_chars:
+            if not (raw_ch is Dictionary):
+                continue
+            var ch: Dictionary = raw_ch
+            var coerced_ch: Dictionary = {
+                "cat":  _coerce_int(ch.get("cat"), -1),
+                "star": _coerce_int(ch.get("star"), -1),
+            }
+            if ch.has("ref"):
+                coerced_ch["ref"] = _coerce_int(ch.get("ref"), -1)
+            chars.append(coerced_ch)
+        var raw_cells: Array = _coerce_array(rc.get("cells"), [])
+        var cells: Array = []
+        for raw_cell in raw_cells:
+            if not (raw_cell is Dictionary):
+                continue
+            var cl: Dictionary = raw_cell
+            cells.append({
+                "cat_a":  _coerce_int(cl.get("cat_a"), -1),
+                "star_a": _coerce_int(cl.get("star_a"), -1),
+                "cat_b":  _coerce_int(cl.get("cat_b"), -1),
+                "star_b": _coerce_int(cl.get("star_b"), -1),
+                "is_true": _coerce_bool(cl.get("is_true"), false),
+            })
+        _form_clues_cache.append({
+            "form_id":         _coerce_int(rc.get("form_id"), 0),
+            "form_name":       str(rc.get("form_name", "")),
+            "text":            str(rc.get("text", "")),
+            "characteristics": tags,
+            "chars":           chars,
+            "cells":           cells,
+        })
 
     _compute_star_screen_positions()
     _selected_star = -1

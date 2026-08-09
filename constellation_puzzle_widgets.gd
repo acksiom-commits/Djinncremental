@@ -40,21 +40,37 @@ func setup(host: ConstellationStudyOverlay, deduction: ConstellationPuzzleDeduct
     _deduction = deduction
 
 
+## Character budget for the middle sequence field (the explicit
+## candidate-position list, e.g. "1,4-8,12-15"). Was a flat max_length=12,
+## which silently truncated real clue-derived lists — confirmed live: a
+## fully-enumerated 15-star list needs 35 characters, and even a modest
+## "1,3,5,7,9,11,13" is 15. Computed from the actual worst case (every
+## position listed individually) rather than guessed at, so it scales with
+## whatever constellation is open; a range form ("1-15") is always shorter
+## than the enumeration it stands for, so this is a true upper bound.
+func _max_candidate_list_length() -> int:
+    var n: int = _host._star_count
+    if n <= 0:
+        return 32
+    var digits: int = 0
+    for p in range(1, n + 1):
+        digits += str(p).length()
+    return digits + maxi(0, n - 1)   # + one comma between each pair
+
+
 # ==================================================
 # MARKERS PANEL
 # ==================================================
 func _set_marker_tab(tab_idx: int) -> void:
     _host._active_marker_tab = tab_idx
-    _host._tab_color.add_theme_stylebox_override("normal",
+    _host._tab_unused.add_theme_stylebox_override("normal",
         _host._sb_tab_active if tab_idx == 0 else _host._sb_tab_inactive)
-    _host._tab_sequence.add_theme_stylebox_override("normal",
+    _host._tab_useful.add_theme_stylebox_override("normal",
         _host._sb_tab_active if tab_idx == 1 else _host._sb_tab_inactive)
-    _host._tab_pitch.add_theme_stylebox_override("normal",
+    _host._tab_used_up.add_theme_stylebox_override("normal",
         _host._sb_tab_active if tab_idx == 2 else _host._sb_tab_inactive)
-    _host._tab_proximity.add_theme_stylebox_override("normal",
+    _host._tab_guide.add_theme_stylebox_override("normal",
         _host._sb_tab_active if tab_idx == 3 else _host._sb_tab_inactive)
-    _host._tab_name_clues.add_theme_stylebox_override("normal",
-        _host._sb_tab_active if tab_idx == 4 else _host._sb_tab_inactive)
     _populate_markers_panel()
 
 
@@ -63,11 +79,10 @@ func _populate_markers_panel() -> void:
         child.queue_free()
 
     match _host._active_marker_tab:
-        0: _populate_color_markers()
-        1: _populate_sequence_markers()
-        2: _populate_pitch_markers()
-        3: _populate_proximity_markers()
-        4: _populate_name_clues_markers()
+        0: _populate_unused_markers()
+        1: _populate_useful_markers()
+        2: _populate_used_up_markers()
+        3: _populate_guide_markers()
         _: _populate_name_markers()
 
 
@@ -91,10 +106,18 @@ func _all_final_clues_for_tabs() -> Array[Dictionary]:
         if not (raw is Dictionary):
             continue
         var characteristics: Array = raw["characteristics"] if raw.get("characteristics") is Array else []
+        # chars (CACHE_VERSION 3) and cells (CACHE_VERSION 4) are both
+        # already per-element coerced by _load_constellation_data() — these
+        # only guard each outer field's own type, same belt-and-suspenders
+        # reasoning as characteristics/text/form_id above.
+        var chars: Array = raw["chars"] if raw.get("chars") is Array else []
+        var cells: Array = raw["cells"] if raw.get("cells") is Array else []
         result.append({
             "characteristics": characteristics,
             "text": str(raw.get("text", "")),
             "form_id": _coerce_int(raw.get("form_id", 0), 0),
+            "chars": chars,
+            "cells": cells,
         })
     return result
 
@@ -123,15 +146,25 @@ func _jump_to_selected_clue() -> void:
             break
 
 
-func _populate_color_markers() -> void:
+# Replaced the five characteristic tabs (Color/Sequence/Pitch/Proximity/
+# NameClues) with three coverage-ranked ones. A clue's coverage fraction —
+# _deduction._clue_coverage_fraction(cells) — is how many of the ASSERTIONS
+# that clue makes the player's own notes have already resolved, checked on
+# the shared cell/grid model (see that function's section comment). Covers
+# all three input surfaces at once for free: Star Map popup, Staff popup,
+# and Sort:tab all write into the same _match_records. "Waiting" (a clue
+# blocked on a fact from a DIFFERENT not-yet-known clue) needs cross-clue
+# dependency reasoning that per-clue coverage doesn't carry, so it's
+# deliberately not one of these three — see memory
+# (planned_clues_tab_utility_rework) for that gap.
+func _populate_unused_markers() -> void:
     var shown: bool = false
     var neutral_col := STATE_COLORS.muted
     for clue in _all_final_clues_for_tabs():
-        var characteristics: Array = clue.get("characteristics", [])
-        if not ("Color" in characteristics):
-            continue
         var text: String = str(clue.get("text", ""))
         if text == "":
+            continue
+        if _deduction._clue_coverage_fraction(clue.get("cells", [])) > 0.0:
             continue
         var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
         _host._markers_content.add_child(_make_clue_label(text, col))
@@ -139,43 +172,22 @@ func _populate_color_markers() -> void:
 
     if not shown:
         var lbl := Label.new()
-        lbl.text = "Color clues will appear here once the puzzle is generated."
+        lbl.text = "No unused clues right now — every generated clue has at least one fact already in your notes."
         lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
-        lbl.add_theme_font_size_override("font_size", 13)
+        lbl.add_theme_font_size_override("font_size", 16)
         lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _host._markers_content.add_child(lbl)
 
 
-func _populate_sequence_markers() -> void:
-    var shown: bool = false
-    for clue in _all_final_clues_for_tabs():
-        var characteristics: Array = clue.get("characteristics", [])
-        if not ("Sequence" in characteristics):
-            continue
-        var text: String = str(clue.get("text", ""))
-        if text == "":
-            continue
-        _host._markers_content.add_child(_make_clue_label(text, STATE_COLORS.neutral))
-        shown = true
-
-    if not shown:
-        var lbl := Label.new()
-        lbl.text = "Sequence clues will appear here once the puzzle is generated."
-        lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
-        lbl.add_theme_font_size_override("font_size", 13)
-        lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-        _host._markers_content.add_child(lbl)
-
-
-func _populate_pitch_markers() -> void:
+func _populate_useful_markers() -> void:
     var shown: bool = false
     var neutral_col := STATE_COLORS.muted
     for clue in _all_final_clues_for_tabs():
-        var characteristics: Array = clue.get("characteristics", [])
-        if not ("Pitch" in characteristics):
-            continue
         var text: String = str(clue.get("text", ""))
         if text == "":
+            continue
+        var frac: float = _deduction._clue_coverage_fraction(clue.get("cells", []))
+        if frac <= 0.0 or frac >= 1.0:
             continue
         var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
         _host._markers_content.add_child(_make_clue_label(text, col))
@@ -183,53 +195,81 @@ func _populate_pitch_markers() -> void:
 
     if not shown:
         var lbl := Label.new()
-        lbl.text = "Pitch clues will appear here once the puzzle is generated."
+        lbl.text = "No partially-worked clues right now."
         lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
-        lbl.add_theme_font_size_override("font_size", 13)
+        lbl.add_theme_font_size_override("font_size", 16)
         lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _host._markers_content.add_child(lbl)
 
 
-func _populate_proximity_markers() -> void:
+func _populate_used_up_markers() -> void:
     var shown: bool = false
+    var neutral_col := STATE_COLORS.muted
     for clue in _all_final_clues_for_tabs():
-        var characteristics: Array = clue.get("characteristics", [])
-        if not ("Proximity" in characteristics):
-            continue
         var text: String = str(clue.get("text", ""))
         if text == "":
             continue
-        _host._markers_content.add_child(_make_clue_label(text, STATE_COLORS.neutral))
+        if _deduction._clue_coverage_fraction(clue.get("cells", [])) < 1.0:
+            continue
+        var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
+        _host._markers_content.add_child(_make_clue_label(text, col))
         shown = true
 
     if not shown:
         var lbl := Label.new()
-        lbl.text = "Proximity clues will appear here once the puzzle is generated."
+        lbl.text = "No fully-captured clues yet — everything generated still has unconfirmed facts."
         lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
-        lbl.add_theme_font_size_override("font_size", 13)
+        lbl.add_theme_font_size_override("font_size", 16)
         lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _host._markers_content.add_child(lbl)
 
 
-func _populate_name_clues_markers() -> void:
-    var shown: bool = false
-    for clue in _all_final_clues_for_tabs():
-        var characteristics: Array = clue.get("characteristics", [])
-        var text: String = str(clue.get("text", ""))
-        if text == "":
-            continue
-        if not ("NameClues" in characteristics or _text_mentions_star_name(text)):
-            continue
-        _host._markers_content.add_child(_make_clue_label(text, STATE_COLORS.neutral))
-        shown = true
-
-    if not shown:
-        var lbl := Label.new()
-        lbl.text = "Name clues will appear here once the puzzle is generated."
-        lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
-        lbl.add_theme_font_size_override("font_size", 13)
-        lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-        _host._markers_content.add_child(lbl)
+# DEV: GUIDE TAB — placeholder for later use as a list of BOTH the standard
+# logic-puzzle language conventions (e.g. "earlier than", "fires immediately
+# after", "is 1 hop from", "exactly N of X's connected stars fire before it",
+# "the star that plays <note>") AND those specific to these constellation
+# puzzles (sub-rank labels like "Blue-B"/"A4-C", star-name references, the
+# note/fire-step naming, hop-distance graph language). No clue rows here yet —
+# this tab is intentionally empty until that reference content is written.
+#
+# ── GUIDE CONTENT NOTES (drafted 2026-08-07, verified against the clue
+# ── builders; write these up as player-facing entries when the tab is built)
+#
+# "CONNECTED" MEANS EXACTLY ONE HOP — direct line-neighbours only, never
+# multi-hop reach. All three clue forms using the word read proximity[star],
+# built by constellation_logic_puzzle.gd's _build_proximity() straight from
+# the constellation's authored line_pairs: each pair records only its two
+# endpoints as neighbours of each other. There is no transitive closure and
+# no traversal, so a star's "connected stars" are precisely the stars it has
+# a line drawn directly to — the same set its Degree counts.
+#   - "X is the earliest/latest to fire among its connected stars."
+#     (_build_form_extreme) Among ONLY X's direct line-neighbours. Says
+#     nothing about stars two or more hops away.
+#   - "Exactly N of X's connected stars fire before it."
+#     (_build_form_count) Of X's direct neighbours only, exactly N are
+#     earlier. Implies X has >= N neighbours, and combined with X's Degree,
+#     that the remaining neighbours all fire after it.
+#   - "X is not connected to Y." (_build_form_distance_negation) No line
+#     drawn DIRECTLY between X and Y. They may still be linked through
+#     intermediate stars.
+#
+# The third one is the trap worth calling out explicitly for players:
+# "not connected" is strictly weaker than "far apart". Reading it as
+# "unrelated / nowhere near each other" leads to over-elimination.
+#
+# Also worth distinguishing in the same entry, since it's the same map data
+# phrased differently: the HOP clues ("X is 1 hop from a star that plays
+# E5", "X is 2 hops from...") are the multi-hop language, counting
+# shortest-path steps through _distances. So "connected" == 1 hop always;
+# "N hops" is the general distance relation, of which 1 hop and "connected"
+# are the same statement.
+func _populate_guide_markers() -> void:
+    var lbl := Label.new()
+    lbl.text = "Guide content will appear here in a future update."
+    lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
+    lbl.add_theme_font_size_override("font_size", 16)
+    lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _host._markers_content.add_child(lbl)
 
 
 func _sort_matches(mode: int) -> void:
@@ -271,7 +311,7 @@ func _populate_name_markers() -> void:
     for entry in sort_entries:
         var btn := Button.new()
         btn.text = "Sort: %s" % entry["label"]
-        btn.add_theme_font_size_override("font_size", 16)
+        btn.add_theme_font_size_override("font_size", 19)
         btn.custom_minimum_size = Vector2(0, 40)
         btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         btn.focus_mode = Control.FOCUS_NONE
@@ -294,32 +334,6 @@ func _populate_name_markers() -> void:
             push_warning("StudyOverlay: unknown _matches_sort_mode %d, resetting to Name" % _host._matches_sort_mode)
             _host._matches_sort_mode = 0
             _populate_name_rows()
-
-
-func _text_mentions_star_name(text: String) -> bool:
-    for n in _host._star_names:
-        var name_str: String = str(n)
-        if name_str != "" and text.find(name_str) != -1:
-            return true
-    return false
-
-
-func _on_proximity_check(edge_key: String, btn_check: Button, btn_x: Button) -> void:
-    var cur: int = int(_host._proximity_states.get(edge_key, 0))
-    var new_state: int = 0 if cur == 1 else 1
-    _host._proximity_states[edge_key] = new_state
-    btn_check.modulate = STATE_COLORS.confirmed if new_state == 1 else Color(1,1,1,1.0)
-    btn_x.modulate = Color(1,1,1,1.0)
-    _deduction._save_puzzle_notes()
-
-
-func _on_proximity_x(edge_key: String, btn_check: Button, btn_x: Button) -> void:
-    var cur: int = int(_host._proximity_states.get(edge_key, 0))
-    var new_state: int = 0 if cur == 2 else 2
-    _host._proximity_states[edge_key] = new_state
-    btn_x.modulate = STATE_COLORS.eliminated if new_state == 2 else Color(1,1,1,1.0)
-    btn_check.modulate = Color(1,1,1,1.0)
-    _deduction._save_puzzle_notes()
 
 
 # ==================================================
@@ -366,7 +380,7 @@ func _make_name_checklist_trigger_button(record_idx: int) -> Button:
     # frequently has no resolved star_idx yet to key against.
     var btn := Button.new()
     btn.custom_minimum_size = Vector2(110, 0)
-    btn.add_theme_font_size_override("font_size", 13)
+    btn.add_theme_font_size_override("font_size", 16)
     btn.focus_mode = Control.FOCUS_NONE
     # Checks BOTH the record's own "name" field (set by identity confirms
     # elsewhere) and name_states (set by this checklist itself, either a
@@ -422,9 +436,12 @@ func _on_slot_name_check(record_idx: int, star_name: String, _row: StaffPopupRow
     var cur: int = int(name_states.get(star_name, 0))
     if cur == 1:
         # Toggling back off — see _on_staff_name_check for why siblings
-        # aren't restored here.
+        # aren't restored here, and for why r["name"] also needs clearing
+        # here now that the confirm path promotes into it.
         name_states[star_name] = 0
         r["name_states"] = name_states
+        if str(r.get("name", "")) == star_name:
+            r["name"] = ""
     else:
         _deduction._propagate_name_states_confirmed_same_record(record_idx, star_name)
     _deduction._save_puzzle_notes()
@@ -499,7 +516,7 @@ func _make_pitch_checklist_trigger_button(record_idx: int) -> Button:
     # get_screen_transform() is required on the position passed to open().
     var btn := Button.new()
     btn.custom_minimum_size = Vector2(110, 0)
-    btn.add_theme_font_size_override("font_size", 13)
+    btn.add_theme_font_size_override("font_size", 16)
     btn.focus_mode = Control.FOCUS_NONE
     var confirmed_note: String = ""
     var pitch_states: Dictionary = _deduction._match_records[record_idx].get("pitch_states", {})
@@ -654,7 +671,7 @@ func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
         var btn := Button.new()
         btn.custom_minimum_size = Vector2(26, 24)
         btn.focus_mode = Control.FOCUS_NONE
-        btn.add_theme_font_size_override("font_size", 13)
+        btn.add_theme_font_size_override("font_size", 16)
         var cidx: int = int(ci)
         var ridx := record_idx
         btn.pressed.connect(func(): _on_record_color_toggle(ridx, cidx, btn))
@@ -743,12 +760,21 @@ func _make_degree_toggle_row_for_record(record_idx: int) -> HBoxContainer:
         degrees_set[deg] = true
     var degree_list: Array = degrees_set.keys()
     degree_list.sort()
+    # A record another Sort:tab has already proven distinct from this one,
+    # that has ITSELF confirmed a degree whose incidence count is exactly 1
+    # (the only case where excluding it elsewhere is sound), rules that
+    # degree out here too — see _compute_excluded_degrees_for. Same pattern
+    # as _make_color_toggle_row_for_record; Degree previously had neither
+    # this cross-record overlay nor even _effective_degree_state's
+    # ground-truth tier, reading the record's own raw degree_states dict
+    # directly instead.
+    var excluded_degrees: Array[int] = _deduction._compute_excluded_degrees_for(record_idx)
     for deg in degree_list:
         var btn := Button.new()
         btn.text = str(deg)
         btn.custom_minimum_size = Vector2(32, 24)
         btn.focus_mode = Control.FOCUS_NONE
-        btn.add_theme_font_size_override("font_size", 13)
+        btn.add_theme_font_size_override("font_size", 16)
         var deg_val: int = int(deg)
         var ridx := record_idx
         btn.pressed.connect(func(): _on_record_degree_toggle(ridx, deg_val, btn))
@@ -756,7 +782,9 @@ func _make_degree_toggle_row_for_record(record_idx: int) -> HBoxContainer:
             if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
                 _on_record_degree_eliminate(ridx, deg_val, btn)
                 btn.get_viewport().set_input_as_handled())
-        var cur_state: int = int(_deduction._match_records[record_idx]["degree_states"].get(deg, 0))
+        var cur_state: int = _deduction._effective_degree_state(record_idx, deg_val)
+        if cur_state == 0 and excluded_degrees.has(deg_val):
+            cur_state = 2
         _style_degree_toggle_btn(btn, deg_val, cur_state)
         row.add_child(btn)
     return row
@@ -803,38 +831,37 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
 
-    var bounds: Array = _deduction._effective_seq_bounds(record_idx)
-
     var edit_lo := LineEdit.new()
-    edit_lo.custom_minimum_size = Vector2(20, 24)
-    edit_lo.max_length = 2
+    # Wide enough for the "= N" exact-pin form _refresh_range_edits renders
+    # (up to "= 15"), not just a bare two-digit bound.
+    edit_lo.custom_minimum_size = Vector2(38, 24)
+    edit_lo.max_length = 4
     edit_lo.placeholder_text = "–"
-    var lo_val: int = _deduction._exclusive_display_lo(int(bounds[0]), int(bounds[1]))
-    edit_lo.text = str(lo_val) if lo_val > 0 else ""
-    edit_lo.add_theme_font_size_override("font_size", 12)
+    edit_lo.add_theme_font_size_override("font_size", 15)
     edit_lo.add_theme_constant_override("minimum_character_width", 2)
     _style_range_edit(edit_lo, row_color)
     row.add_child(edit_lo)
 
     var lbl_lt := Label.new()
     lbl_lt.text = "<"
-    lbl_lt.add_theme_font_size_override("font_size", 13)
+    lbl_lt.add_theme_font_size_override("font_size", 16)
     lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
     row.add_child(lbl_lt)
 
     var edit_mid := LineEdit.new()
-    edit_mid.custom_minimum_size = Vector2(58, 24)
-    edit_mid.max_length = 12
+    edit_mid.custom_minimum_size = Vector2(96, 24)
+    edit_mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    edit_mid.max_length = _max_candidate_list_length()
     edit_mid.placeholder_text = "–"
     edit_mid.text = _deduction._compressed_possible_positions_str(record_idx)
-    edit_mid.add_theme_font_size_override("font_size", 11)
+    edit_mid.add_theme_font_size_override("font_size", 14)
     edit_mid.alignment = HORIZONTAL_ALIGNMENT_CENTER
     _style_range_edit(edit_mid, row_color)
     row.add_child(edit_mid)
 
     var lbl_gt := Label.new()
     lbl_gt.text = "<"
-    lbl_gt.add_theme_font_size_override("font_size", 13)
+    lbl_gt.add_theme_font_size_override("font_size", 16)
     lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
     row.add_child(lbl_gt)
 
@@ -842,35 +869,96 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     edit_hi.custom_minimum_size = Vector2(20, 24)
     edit_hi.max_length = 2
     edit_hi.placeholder_text = "–"
-    var hi_val: int = _deduction._exclusive_display_hi(int(bounds[0]), int(bounds[1]))
-    edit_hi.text = str(hi_val) if hi_val > 0 else ""
-    edit_hi.add_theme_font_size_override("font_size", 12)
+    edit_hi.add_theme_font_size_override("font_size", 15)
     edit_hi.add_theme_constant_override("minimum_character_width", 2)
     _style_range_edit(edit_hi, row_color)
     row.add_child(edit_hi)
 
     var ridx := record_idx
-    edit_lo.text_submitted.connect(func(_t): _on_record_range_committed(ridx, edit_lo, edit_hi))
-    edit_lo.focus_exited.connect(func(): _on_record_range_committed(ridx, edit_lo, edit_hi))
-    edit_hi.text_submitted.connect(func(_t): _on_record_range_committed(ridx, edit_lo, edit_hi))
-    edit_hi.focus_exited.connect(func(): _on_record_range_committed(ridx, edit_lo, edit_hi))
-    edit_mid.text_submitted.connect(func(_t): _on_record_middle_committed(ridx, edit_lo, edit_mid, edit_hi))
-    edit_mid.focus_exited.connect(func(): _on_record_middle_committed(ridx, edit_lo, edit_mid, edit_hi))
+    edit_lo.text_submitted.connect(func(_t): _commit_sequence_range(ridx, edit_lo, edit_hi))
+    edit_lo.focus_exited.connect(func(): _commit_sequence_range(ridx, edit_lo, edit_hi))
+    edit_hi.text_submitted.connect(func(_t): _commit_sequence_range(ridx, edit_lo, edit_hi))
+    edit_hi.focus_exited.connect(func(): _commit_sequence_range(ridx, edit_lo, edit_hi))
+    edit_mid.text_submitted.connect(func(_t): _commit_sequence_candidates(ridx, edit_lo, edit_mid, edit_hi))
+    edit_mid.focus_exited.connect(func(): _commit_sequence_candidates(ridx, edit_lo, edit_mid, edit_hi))
+
+    # Initial render goes through the same formatter the commit path uses,
+    # so an exact pin shows as "= N" here too rather than the contradictory
+    # "N < x < N" the raw display helpers produce.
+    _refresh_range_edits(record_idx, edit_lo, edit_hi)
 
     return row
 
 
-func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
+# ==================================================
+# SEQUENCE RANGE COMMIT — one implementation, two entry points.
+#
+# The Sort:tab row and the floating star-widget row were near-identical
+# copies differing only in how the record is obtained (passed in vs.
+# resolved from a star index). Every fix to the commit logic had to be
+# hand-mirrored between them — done three separate times in one session
+# before this extraction — which is exactly how the two silently drift.
+# The shared body lives here; the two _on_*_committed functions below are
+# thin adapters that resolve a record and delegate.
+# ==================================================
+## Re-renders a record's two bound boxes from its CURRENT stored state.
+## Used both after a successful commit and to snap the row back when an
+## entry is rejected, so a refused entry visibly reverts instead of sitting
+## there looking accepted. Single source for the display formatting, which
+## the commit path and the conflict-cancel path each used to spell out.
+func _refresh_range_edits(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
+    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+        lo_edit.text = ""
+        hi_edit.text = ""
+        return
+    # EFFECTIVE bounds, not the raw stored pair — matches what the row
+    # builders show (derived narrowing included), so a rebuild and a
+    # post-commit refresh can't disagree about the same row.
+    var bounds: Array = _deduction._effective_seq_bounds(record_idx)
+    var lo: int = int(bounds[0])
+    var hi: int = int(bounds[1])
+    # An exact pin is shown as the value in BOTH boxes by the display
+    # helpers, which under this row's "lo < position < hi" notation reads
+    # as the contradiction "7 < x < 7". Render it as "= 7" in the low box
+    # with the high box cleared instead, so the notation never contradicts
+    # itself — the commit path already treats two equal typed values as an
+    # exact pin, and _parse_exclusive_bounds keeps accepting that form.
+    if lo > 0 and lo == hi:
+        lo_edit.text = "= %d" % lo
+        hi_edit.text = ""
+        return
+    var lo_val: int = _deduction._exclusive_display_lo(lo, hi)
+    var hi_val: int = _deduction._exclusive_display_hi(lo, hi)
+    lo_edit.text = str(lo_val) if lo_val > 0 else ""
+    hi_edit.text = str(hi_val) if hi_val > 0 else ""
+
+
+func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
     if record_idx < 0 or record_idx >= _deduction._match_records.size():
         return
     var raw_lo: String = lo_edit.text.strip_edges()
     var raw_hi: String = hi_edit.text.strip_edges()
+
+    # "= N" is how _refresh_range_edits renders an exact pin (see there for
+    # why it isn't shown as "N < x < N"). It has to survive being committed
+    # again — focus_exited fires on any interaction with the row — so it's
+    # parsed back into the equal-values form the exact branch expects.
+    # A player typing "=12" by hand works for the same reason.
+    var exact_typed: bool = raw_lo.begins_with("=")
+    if exact_typed:
+        raw_lo = raw_lo.substr(1).strip_edges()
 
     var typed_lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
     var typed_hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
 
     if typed_lo < 1 or typed_lo > _host._star_count: typed_lo = 0
     if typed_hi < 1 or typed_hi > _host._star_count: typed_hi = 0
+
+    if exact_typed:
+        if typed_lo <= 0:
+            _refresh_range_edits(record_idx, lo_edit, hi_edit)
+            return
+        typed_hi = typed_lo
 
     if typed_lo > 0 and typed_hi > 0 and typed_lo > typed_hi:
         var tmp := typed_lo; typed_lo = typed_hi; typed_hi = tmp
@@ -880,6 +968,33 @@ func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: Lin
     var hi: int = int(converted[1])
 
     var r: Dictionary = _deduction._match_records[record_idx]
+
+    # Reject an entry whose CONVERTED bounds can't be satisfied, instead of
+    # writing a meaningless range. The clamps above only check the typed
+    # numbers are within 1..star_count; they say nothing about whether the
+    # exclusive bound those numbers produce is reachable, and the two
+    # extremes used to fail silently in opposite directions:
+    #   * "< 1" (typing 1 in the high box) converts to hi = 0, which is the
+    #     sentinel for NO upper bound — an impossible constraint silently
+    #     became "any position", the exact inverse of the request.
+    #   * "> star_count" (typing the last position in the low box) converts
+    #     to lo = star_count + 1, giving an empty candidate set that reads
+    #     as "no information" in _record_descriptor_state but as a genuinely
+    #     empty set in _effective_seq_bounds.
+    # Same shape as _merge_match_records' "bounds contradict once
+    # intersected" guard: keep what was there and re-render it, so the row
+    # visibly snaps back rather than appearing to accept the entry.
+    # The equal-values case is an EXACT pin, not a pair of exclusive bounds
+    # (see _parse_exclusive_bounds' first branch), so "1 and 1" or
+    # "15 and 15" are perfectly valid and must skip these checks — they'd
+    # otherwise be rejected as "< 1" and "> 15".
+    var is_exact_entry: bool = typed_lo > 0 and typed_lo == typed_hi
+    if not is_exact_entry:
+        var impossible_hi: bool = typed_hi > 0 and typed_hi <= 1
+        var impossible_lo: bool = typed_lo > 0 and typed_lo >= _host._star_count
+        if impossible_hi or impossible_lo or (lo > 0 and hi > 0 and lo > hi):
+            _refresh_range_edits(record_idx, lo_edit, hi_edit)
+            return
 
     # Same self-conflict protection _confirm_match_record_identity already
     # gives star identity: if this record was already pinned to an exact
@@ -891,8 +1006,7 @@ func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: Lin
     if old_lo > 0 and old_lo == old_hi and lo > 0 and lo == hi and old_lo != lo:
         var winner: String = await _deduction._conflict_dialog_fn.call("sequence position", str(old_lo), str(lo))
         if winner == str(old_lo):
-            lo_edit.text = str(_deduction._exclusive_display_lo(old_lo, old_hi))
-            hi_edit.text = str(_deduction._exclusive_display_hi(old_lo, old_hi))
+            _refresh_range_edits(record_idx, lo_edit, hi_edit)
             _deduction._full_propagation_refresh()
             return
 
@@ -900,8 +1014,7 @@ func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: Lin
     r["seq_hi"] = hi
     r["seq_candidates"] = []
 
-    lo_edit.text = str(_deduction._exclusive_display_lo(lo, hi)) if lo > 0 else ""
-    hi_edit.text = str(_deduction._exclusive_display_hi(lo, hi)) if hi > 0 else ""
+    _refresh_range_edits(record_idx, lo_edit, hi_edit)
 
     if lo > 0 and lo == hi:
         var existing_idx: int = _deduction._find_match_record_by_exact_seq(lo)
@@ -912,7 +1025,7 @@ func _on_record_range_committed(record_idx: int, lo_edit: LineEdit, hi_edit: Lin
     _deduction._full_propagation_refresh()
 
 
-func _on_record_middle_committed(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
+func _commit_sequence_candidates(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
     if record_idx < 0 or record_idx >= _deduction._match_records.size():
         return
     var raw: String = mid_edit.text.strip_edges()
@@ -934,7 +1047,7 @@ func _on_record_middle_committed(record_idx: int, lo_edit: LineEdit, mid_edit: L
     if valid.size() == 1:
         lo_edit.text = str(valid[0])
         hi_edit.text = str(valid[0])
-        _on_record_range_committed(record_idx, lo_edit, hi_edit)
+        _commit_sequence_range(record_idx, lo_edit, hi_edit)
         return
 
     _deduction._match_records[record_idx]["seq_candidates"] = valid
@@ -977,85 +1090,24 @@ func _on_record_name_selected(record_idx: int, selected_name: String) -> void:
 
 
 # ==================================================
-# RANGE CALLBACKS (floating star-widget versions — see the Sort:tab
-# versions above for the record-row equivalents)
+# RANGE CALLBACKS — floating star-widget entry points. Both used to
+# be full copies of the Sort:tab versions above; they are adapters
+# now, resolving the star to its record and delegating to the one
+# shared implementation (_commit_sequence_range /
+# _commit_sequence_candidates).
 # ==================================================
 func _on_widget_range_committed(star_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
     if star_idx < 0 or star_idx >= _host._star_count:
         return
-    var raw_lo: String = lo_edit.text.strip_edges()
-    var raw_hi: String = hi_edit.text.strip_edges()
-
-    var typed_lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
-    var typed_hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
-
-    if typed_lo < 1 or typed_lo > _host._star_count: typed_lo = 0
-    if typed_hi < 1 or typed_hi > _host._star_count: typed_hi = 0
-
-    if typed_lo > 0 and typed_hi > 0 and typed_lo > typed_hi:
-        var tmp := typed_lo; typed_lo = typed_hi; typed_hi = tmp
-
-    var converted: Array = _deduction._parse_exclusive_bounds(typed_lo, typed_hi)
-    var lo: int = int(converted[0])
-    var hi: int = int(converted[1])
-
-    var record_idx: int = _deduction._get_or_create_match_record_for_star_idx(star_idx)
-    var r: Dictionary = _deduction._match_records[record_idx]
-
-    # Same self-conflict protection as the sequence-slot row's own commit
-    # handler above — this star's record was already pinned to an exact
-    # position and this commit pins it to a DIFFERENT exact position.
-    var old_lo: int = int(r.get("seq_lo", 0))
-    var old_hi: int = int(r.get("seq_hi", 0))
-    if old_lo > 0 and old_lo == old_hi and lo > 0 and lo == hi and old_lo != lo:
-        var winner: String = await _deduction._conflict_dialog_fn.call("sequence position", str(old_lo), str(lo))
-        if winner == str(old_lo):
-            lo_edit.text = str(_deduction._exclusive_display_lo(old_lo, old_hi))
-            hi_edit.text = str(_deduction._exclusive_display_hi(old_lo, old_hi))
-            _deduction._full_propagation_refresh()
-            return
-
-    lo_edit.text = str(_deduction._exclusive_display_lo(lo, hi)) if lo > 0 else ""
-    hi_edit.text = str(_deduction._exclusive_display_hi(lo, hi)) if hi > 0 else ""
-
-    r["seq_lo"] = lo
-    r["seq_hi"] = hi
-    r["seq_candidates"] = []
-
-    if lo > 0 and lo == hi:
-        var existing_idx: int = _deduction._find_match_record_by_exact_seq(lo)
-        if existing_idx >= 0 and existing_idx != record_idx:
-            record_idx = await _deduction._merge_match_records(record_idx, existing_idx)
-
-    _deduction._save_puzzle_notes()
-    _deduction._full_propagation_refresh()
+    _commit_sequence_range(
+        _deduction._get_or_create_match_record_for_star_idx(star_idx), lo_edit, hi_edit)
 
 
 func _on_widget_middle_committed(star_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
-    var record_idx: int = _deduction._get_or_create_match_record_for_star_idx(star_idx)
-    var raw: String = mid_edit.text.strip_edges()
-    if raw == "":
-        _deduction._match_records[record_idx]["seq_candidates"] = []
-        mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
+    if star_idx < 0 or star_idx >= _host._star_count:
         return
-    var parsed: Array = _deduction._parse_candidate_list(raw)
-    var valid: Array = []
-    for p in parsed:
-        if p >= 1 and p <= _host._star_count:
-            valid.append(p)
-    if valid.is_empty():
-        mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
-        return
-    if valid.size() == 1:
-        lo_edit.text = str(valid[0])
-        hi_edit.text = str(valid[0])
-        _on_widget_range_committed(star_idx, lo_edit, hi_edit)
-        return
-    _deduction._match_records[record_idx]["seq_candidates"] = valid
-    _deduction._match_records[record_idx]["seq_lo"] = 0
-    _deduction._match_records[record_idx]["seq_hi"] = 0
-    _deduction._save_puzzle_notes()
-    _deduction._full_propagation_refresh()
+    _commit_sequence_candidates(
+        _deduction._get_or_create_match_record_for_star_idx(star_idx), lo_edit, mid_edit, hi_edit)
 
 
 # ==================================================
@@ -1127,7 +1179,7 @@ func _make_fact_row(label_text: String, control: Control, color: Color) -> HBoxC
     row.add_theme_constant_override("separation", 4)
     var lbl := Label.new()
     lbl.text = label_text
-    lbl.add_theme_font_size_override("font_size", 16)
+    lbl.add_theme_font_size_override("font_size", 19)
     lbl.add_theme_color_override("font_color", Color(color.r, color.g, color.b, 1.0))
     row.add_child(lbl)
     row.add_child(control)
@@ -1137,7 +1189,7 @@ func _make_fact_row(label_text: String, control: Control, color: Color) -> HBoxC
 func _make_fact_line(text: String, color: Color) -> Label:
     var lbl := Label.new()
     lbl.text = text
-    lbl.add_theme_font_size_override("font_size", 16)
+    lbl.add_theme_font_size_override("font_size", 19)
     lbl.add_theme_color_override("font_color", Color(color.r, color.g, color.b, 0.9))
     lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     return lbl
@@ -1159,7 +1211,7 @@ func _build_sequence_slot_row(slot: int) -> void:
     var seq_lbl := Label.new()
     seq_lbl.text = _ordinal(slot)
     seq_lbl.custom_minimum_size = Vector2(64, 0)
-    seq_lbl.add_theme_font_size_override("font_size", 16)
+    seq_lbl.add_theme_font_size_override("font_size", 19)
     seq_lbl.add_theme_color_override("font_color", row_color)
     row.add_child(seq_lbl)
 
@@ -1192,7 +1244,7 @@ func _build_color_group_row(color_idx: int, position_in_group: int) -> void:
     var color_lbl := Label.new()
     color_lbl.text = _host.COLOR_NAME_LABELS[color_idx]
     color_lbl.custom_minimum_size = Vector2(64, 0)
-    color_lbl.add_theme_font_size_override("font_size", 16)
+    color_lbl.add_theme_font_size_override("font_size", 19)
     color_lbl.add_theme_color_override("font_color", _host.STAR_COLORS_BY_IDX[color_idx])
     row.add_child(color_lbl)
 
@@ -1241,7 +1293,7 @@ func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
     var pitch_lbl := Label.new()
     pitch_lbl.text = ConstellationLogicPuzzle.note_name_for_freq(pitch_freq)
     pitch_lbl.custom_minimum_size = Vector2(64, 0)
-    pitch_lbl.add_theme_font_size_override("font_size", 16)
+    pitch_lbl.add_theme_font_size_override("font_size", 19)
     pitch_lbl.add_theme_color_override("font_color",
         _host.STAR_COLORS_BY_IDX[known_star_color] if known_star_color >= 0 else row_color)
     row.add_child(pitch_lbl)
@@ -1310,7 +1362,7 @@ func _build_degree_group_row(degree: int, position_in_group: int) -> void:
     var word: String = "connection" if degree == 1 else "connections"
     degree_lbl.text = "%d %s" % [degree, word]
     degree_lbl.custom_minimum_size = Vector2(80, 0)
-    degree_lbl.add_theme_font_size_override("font_size", 16)
+    degree_lbl.add_theme_font_size_override("font_size", 19)
     degree_lbl.add_theme_color_override("font_color", row_color)
     row.add_child(degree_lbl)
     var facts_vbox := VBoxContainer.new()
@@ -1336,7 +1388,7 @@ func _build_name_row(name_str: String) -> void:
     name_lbl.text = name_str
     name_lbl.custom_minimum_size = Vector2(90, 0)
     name_lbl.clip_text = true
-    name_lbl.add_theme_font_size_override("font_size", 16)
+    name_lbl.add_theme_font_size_override("font_size", 19)
     name_lbl.add_theme_color_override("font_color", row_color)
     row.add_child(name_lbl)
 
@@ -1643,9 +1695,16 @@ func _on_staff_name_check(record_idx: int, star_name: String, _row: StaffPopupRo
     if cur == 1:
         # Toggling back off — just this name reverts to neutral; siblings
         # already eliminated by the confirm below stay as they were, same
-        # "eliminations are sticky" behavior as color/pitch/degree.
+        # "eliminations are sticky" behavior as color/pitch/degree. Also
+        # clears r["name"] when it's this same name — _propagate_name_
+        # states_confirmed_same_record now promotes into r["name"] on
+        # confirm (see its own comment), so leaving it set here would keep
+        # this record permanently identified even after the player
+        # explicitly undoes the confirm that set it.
         name_states[star_name] = 0
         r["name_states"] = name_states
+        if str(r.get("name", "")) == star_name:
+            r["name"] = ""
     else:
         _deduction._propagate_name_states_confirmed_same_record(record_idx, star_name)
     _deduction._save_puzzle_notes()
@@ -1849,39 +1908,38 @@ func _build_star_widgets_impl() -> void:
         range_row.add_theme_constant_override("separation", 3)
 
         var existing_record: int = _deduction._get_or_create_match_record_for_star_idx(i)
-        var star_bounds: Array = _deduction._effective_seq_bounds(existing_record)
 
         var edit_lo := LineEdit.new()
-        edit_lo.custom_minimum_size = Vector2(20, 28)
-        edit_lo.max_length = 2
+        # Wide enough for the "= N" exact-pin form (see _refresh_range_edits).
+        edit_lo.custom_minimum_size = Vector2(38, 28)
+        edit_lo.max_length = 4
         edit_lo.placeholder_text = "–"
-        var display_lo: int = _deduction._exclusive_display_lo(int(star_bounds[0]), int(star_bounds[1]))
-        edit_lo.text = str(display_lo) if display_lo > 0 else ""
-        edit_lo.add_theme_font_size_override("font_size", 13)
+        edit_lo.add_theme_font_size_override("font_size", 16)
         edit_lo.add_theme_constant_override("minimum_character_width", 2)
         _style_range_edit(edit_lo, star_color)
         range_row.add_child(edit_lo)
 
         var lbl_lt := Label.new()
         lbl_lt.text = "<"
-        lbl_lt.add_theme_font_size_override("font_size", 14)
+        lbl_lt.add_theme_font_size_override("font_size", 17)
         lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 1.0))
         lbl_lt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         range_row.add_child(lbl_lt)
 
         var edit_mid := LineEdit.new()
-        edit_mid.custom_minimum_size = Vector2(62, 28)
-        edit_mid.max_length = 12
+        edit_mid.custom_minimum_size = Vector2(96, 28)
+        edit_mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        edit_mid.max_length = _max_candidate_list_length()
         edit_mid.placeholder_text = "–"
         edit_mid.text = _deduction._compressed_possible_positions_str(existing_record)
-        edit_mid.add_theme_font_size_override("font_size", 11)
+        edit_mid.add_theme_font_size_override("font_size", 14)
         edit_mid.alignment = HORIZONTAL_ALIGNMENT_CENTER
         _style_range_edit(edit_mid, star_color)
         range_row.add_child(edit_mid)
 
         var lbl_gt := Label.new()
         lbl_gt.text = "<"
-        lbl_gt.add_theme_font_size_override("font_size", 14)
+        lbl_gt.add_theme_font_size_override("font_size", 17)
         lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 1.0))
         lbl_gt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
         range_row.add_child(lbl_gt)
@@ -1890,9 +1948,7 @@ func _build_star_widgets_impl() -> void:
         edit_hi.custom_minimum_size = Vector2(20, 28)
         edit_hi.max_length = 2
         edit_hi.placeholder_text = "–"
-        var display_hi: int = _deduction._exclusive_display_hi(int(star_bounds[0]), int(star_bounds[1]))
-        edit_hi.text = str(display_hi) if display_hi > 0 else ""
-        edit_hi.add_theme_font_size_override("font_size", 13)
+        edit_hi.add_theme_font_size_override("font_size", 16)
         edit_hi.add_theme_constant_override("minimum_character_width", 2)
         _style_range_edit(edit_hi, star_color)
         range_row.add_child(edit_hi)
@@ -1906,7 +1962,7 @@ func _build_star_widgets_impl() -> void:
         btn_close.custom_minimum_size = Vector2(28, 28)
         btn_close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         btn_close.focus_mode = Control.FOCUS_NONE
-        btn_close.add_theme_font_size_override("font_size", 14)
+        btn_close.add_theme_font_size_override("font_size", 17)
         btn_close.flat = false
         range_row.add_child(btn_close)
 
@@ -1921,7 +1977,7 @@ func _build_star_widgets_impl() -> void:
         # only inferred some other way.
         var pitch_lbl := Label.new()
         pitch_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        pitch_lbl.add_theme_font_size_override("font_size", 13)
+        pitch_lbl.add_theme_font_size_override("font_size", 16)
         if bool(_deduction._match_records[existing_record].get("pitch_revealed", false)):
             pitch_lbl.text = _confirmed_pitch_str_for_star(i)
             pitch_lbl.add_theme_color_override("font_color", star_color)
@@ -1942,6 +1998,10 @@ func _build_star_widgets_impl() -> void:
         edit_mid.text_submitted.connect(func(_t): _on_widget_middle_committed(si, lo_ref, mid_ref, hi_ref))
         edit_mid.focus_exited.connect(func(): _on_widget_middle_committed(si, lo_ref, mid_ref, hi_ref))
 
+        # Same shared formatter as the Sort:tab row (see there).
+        if existing_record >= 0:
+            _refresh_range_edits(existing_record, edit_lo, edit_hi)
+
         var close_si := i
         btn_close.pressed.connect(func(): _host._widget_closed[close_si] = true; root.visible = false)
 
@@ -1956,7 +2016,7 @@ func _build_star_widgets_impl() -> void:
         btn_undo_sel.focus_mode = Control.FOCUS_NONE
         btn_undo_sel.custom_minimum_size = Vector2(0, 30)
         btn_undo_sel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        btn_undo_sel.add_theme_font_size_override("font_size", 11)
+        btn_undo_sel.add_theme_font_size_override("font_size", 14)
         reset_row.add_child(btn_undo_sel)
 
         var btn_undo_block := Button.new()
@@ -1964,7 +2024,7 @@ func _build_star_widgets_impl() -> void:
         btn_undo_block.focus_mode = Control.FOCUS_NONE
         btn_undo_block.custom_minimum_size = Vector2(0, 30)
         btn_undo_block.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        btn_undo_block.add_theme_font_size_override("font_size", 11)
+        btn_undo_block.add_theme_font_size_override("font_size", 14)
         reset_row.add_child(btn_undo_block)
 
         var btn_undo_all := Button.new()
@@ -1972,7 +2032,7 @@ func _build_star_widgets_impl() -> void:
         btn_undo_all.focus_mode = Control.FOCUS_NONE
         btn_undo_all.custom_minimum_size = Vector2(0, 30)
         btn_undo_all.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        btn_undo_all.add_theme_font_size_override("font_size", 11)
+        btn_undo_all.add_theme_font_size_override("font_size", 14)
         reset_row.add_child(btn_undo_all)
 
         var si_reset := i
@@ -2031,7 +2091,7 @@ func _build_star_widgets_impl() -> void:
                     var name_lbl := Label.new()
                     name_lbl.text = name_str
                     name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-                    name_lbl.add_theme_font_size_override("font_size", 16)
+                    name_lbl.add_theme_font_size_override("font_size", 19)
                     name_lbl.add_theme_color_override("font_color", star_color)
                     name_lbl.clip_text = true
                     row.add_child(name_lbl)
@@ -2040,14 +2100,14 @@ func _build_star_widgets_impl() -> void:
                     btn_check.text = "✓"
                     btn_check.custom_minimum_size = Vector2(28, 26)
                     btn_check.focus_mode = Control.FOCUS_NONE
-                    btn_check.add_theme_font_size_override("font_size", 15)
+                    btn_check.add_theme_font_size_override("font_size", 18)
                     row.add_child(btn_check)
 
                     var btn_x := Button.new()
                     btn_x.text = "✗"
                     btn_x.custom_minimum_size = Vector2(28, 26)
                     btn_x.focus_mode = Control.FOCUS_NONE
-                    btn_x.add_theme_font_size_override("font_size", 15)
+                    btn_x.add_theme_font_size_override("font_size", 18)
                     row.add_child(btn_x)
 
                     col_vbox.add_child(row)
@@ -2256,21 +2316,21 @@ func _build_star_tags_impl() -> void:
         var name_lbl := Label.new()
         name_lbl.name = "NameLabel"
         name_lbl.text = name_str
-        name_lbl.add_theme_font_size_override("font_size", 16)
+        name_lbl.add_theme_font_size_override("font_size", 19)
         name_lbl.add_theme_color_override("font_color", star_color)
         name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
         var seq_lbl := Label.new()
         seq_lbl.name = "SeqLabel"
         seq_lbl.text = "%s" % _ordinal_str(seq_str)
-        seq_lbl.add_theme_font_size_override("font_size", 16)
+        seq_lbl.add_theme_font_size_override("font_size", 19)
         seq_lbl.add_theme_color_override("font_color", Color(star_color.r, star_color.g, star_color.b, 0.75))
         seq_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
         var pitch_lbl := Label.new()
         pitch_lbl.name = "PitchLabel"
         pitch_lbl.text = pitch_str
-        pitch_lbl.add_theme_font_size_override("font_size", 16)
+        pitch_lbl.add_theme_font_size_override("font_size", 19)
         pitch_lbl.add_theme_color_override("font_color", Color(star_color.r, star_color.g, star_color.b, 0.75))
         pitch_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
@@ -2434,11 +2494,7 @@ func _on_name_x(star_idx: int, star_name: String,
     _deduction._match_records[record_idx]["star_elim"] = elim
     _apply_name_row_visual(new_state, name_lbl, btn_check, btn_x, star_color)
 
-    var ukey: String = "%d:%s" % [star_idx, star_name]
-    if new_state == 2:
-        _deduction._user_blocks[ukey] = true
-    else:
-        _deduction._user_blocks.erase(ukey)
+    _deduction._set_star_name_user_blocked(star_idx, star_name, new_state == 2)
 
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
@@ -2469,8 +2525,7 @@ func _on_undo_name_selects(star_idx: int) -> void:
         if other_star >= 0 and other_star != star_idx:
             continue
         var other_name: String = str(other.get("name", ""))
-        var ukey: String = "%d:%s" % [star_idx, other_name]
-        if _deduction._user_blocks.has(ukey):
+        if _deduction._is_star_name_user_blocked(star_idx, other_name):
             continue
         var elim2: Dictionary = other.get("star_elim", {})
         if int(elim2.get(star_idx, 0)) == 2:
@@ -2482,19 +2537,14 @@ func _on_undo_name_selects(star_idx: int) -> void:
 
 
 func _on_undo_name_blocks(star_idx: int) -> void:
-    var user_blocked_names: Array[String] = []
-    for ukey in _deduction._user_blocks.keys():
-        var parts: PackedStringArray = ukey.split(":")
-        if parts.size() == 2 and parts[0].is_valid_int() and int(parts[0]) == star_idx:
-            user_blocked_names.append(parts[1])
-    for name_str in user_blocked_names:
+    for name_str in _deduction._user_blocked_names_for_star(star_idx):
         var rec: int = _deduction._find_match_record_by_name(name_str)
         if rec >= 0:
             var elim: Dictionary = _deduction._match_records[rec].get("star_elim", {})
             if elim.has(star_idx):
                 elim.erase(star_idx)
                 _deduction._match_records[rec]["star_elim"] = elim
-        _deduction._user_blocks.erase("%d:%s" % [star_idx, name_str])
+    _deduction._clear_star_name_user_blocks(star_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
 
@@ -2531,13 +2581,7 @@ func _on_undo_name_all(star_idx: int) -> void:
 
     _deduction._clear_protected_names_for_star(star_idx)
 
-    var user_blocked_names: Array[String] = []
-    for ukey in _deduction._user_blocks.keys():
-        var parts: PackedStringArray = ukey.split(":")
-        if parts.size() == 2 and parts[0].is_valid_int() and int(parts[0]) == star_idx:
-            user_blocked_names.append(parts[1])
-    for name_str in user_blocked_names:
-        _deduction._user_blocks.erase("%d:%s" % [star_idx, name_str])
+    _deduction._clear_star_name_user_blocks(star_idx)
 
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
@@ -2547,10 +2591,7 @@ func _on_name_protect_toggle(star_idx: int, star_name: String) -> void:
     var base: int = _deduction._star_elim_state(star_idx, star_name)
     if base != 0:
         return   # already hard-confirmed or hard-eliminated; right-click no-ops
-    var key: String = _deduction._protect_key(star_idx, star_name)
-    if _deduction._protected_names.has(key):
-        _deduction._protected_names.erase(key)
-    else:
-        _deduction._protected_names[key] = true
+    _deduction._set_name_protected(
+        star_idx, star_name, not _deduction._is_name_protected(star_idx, star_name))
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()

@@ -28,8 +28,16 @@ const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres"
 # screen" dependency behind one injected seam.
 var _conflict_dialog_fn: Callable = Callable()
 
-var _protected_names: Dictionary = {}   # key "star_idx:name" -> true; right-click "still possible" flags
-var _user_blocks: Dictionary = {}       # "star_idx:name" -> true; blocks placed by user clicking X, not by propagation
+# The star widget's own per-star name checklist used to keep its protect
+# and manual-block flags in two GLOBAL dicts keyed "star_idx:name",
+# separate from the identical per-record fields every other surface uses
+# (protected_staff_names / manual_name_blocks). That wasn't just
+# duplication: because they were keyed by star and lived outside
+# _match_records, _merge_match_records never merged them, so those flags
+# sat entirely outside propagation, save-merging, and every settle pass.
+# They now live on the star's own record, where the keying is identical
+# (by name) and the existing merge/save paths pick them up for free.
+# See _star_name_flags_record() below.
 
 # Match records — one per set of facts the player has asserted belong to the same star.
 # Each record: {
@@ -218,13 +226,16 @@ func _propagate_pitch_confirmed_same_record(record_idx: int, confirmed_note: Str
 
 
 func _save_puzzle_notes() -> void:
+    # Every mutation path calls this, so it's the reliable choke point for
+    # invalidating the derived caches — see _clear_deduction_caches().
+    _clear_deduction_caches()
     if not _host._cd or _host._constellation_id < 0:
         return
     var notes: Dictionary = {}
-    notes["adjacency_states"] = _host._proximity_states.duplicate()
     notes["match_records"] = _save_match_records()
-    notes["protected_names"] = _protected_names.duplicate()
-    notes["user_blocks"] = _user_blocks.duplicate()
+    # protected_names / user_blocks are gone as separate note fields — the
+    # star widget's protect and manual-block flags now live on each star's
+    # own record, so they round-trip inside match_records above.
     _host._cd.set_player_puzzle_notes(_host._constellation_id, notes)
 
 # ==================================================
@@ -232,13 +243,9 @@ func _save_puzzle_notes() -> void:
 # propagation, merge/conflict logic, save/load
 # ==================================================
 func _clear_protected_names_for_star(star_idx: int) -> void:
-    var to_erase: Array[String] = []
-    for key in _protected_names.keys():
-        var parts: PackedStringArray = key.split(":")
-        if parts.size() == 2 and parts[0].is_valid_int() and int(parts[0]) == star_idx:
-            to_erase.append(key)
-    for k in to_erase:
-        _protected_names.erase(k)
+    var idx: int = _find_match_record_by_star_idx(star_idx)
+    if idx >= 0:
+        _match_records[idx]["protected_staff_names"] = {}
 
 
 
@@ -307,72 +314,72 @@ func _star_elim_state(star_idx: int, name_str: String) -> int:
     return int(r.get("star_elim", {}).get(star_idx, 0))
 
 
-func _star_confirmed_name(star_idx: int) -> String:
-    for r in _match_records:
-        if int(r.get("star_idx", -1)) == star_idx:
-            return str(r.get("name", ""))
-    return ""
 
-
-func _possible_names_for_record(record_idx: int) -> Array[String]:
-    if record_idx < 0 or record_idx >= _match_records.size():
-        return []
-    var r: Dictionary = _match_records[record_idx]
-    var this_star_idx: int = int(r.get("star_idx", -1))
-    var this_name: String = str(r.get("name", ""))
-    var this_seq_lo: int = int(r.get("seq_lo", 0))
-    var this_seq_hi: int = int(r.get("seq_hi", 0))
-    var this_seq_exact: int = this_seq_lo if this_seq_lo > 0 and this_seq_lo == this_seq_hi else -1
-    var this_color_label: String = str(r.get("color_slot_label", ""))
-    var this_pitch_label: String = str(r.get("pitch_slot_label", ""))
-    var this_degree_label: String = str(r.get("degree_slot_label", ""))
-
-    var result: Array[String] = []
-    for n in _host._star_names:
-        var name_str: String = str(n)
-        if name_str == this_name:
-            result.append(name_str)
-            continue
-
-        var other_idx: int = _find_match_record_by_name(name_str)
-        if other_idx >= 0 and other_idx != record_idx:
-            var other: Dictionary = _match_records[other_idx]
-            var other_star: int = int(other.get("star_idx", -1))
-            var other_seq_lo: int = int(other.get("seq_lo", 0))
-            var other_seq_hi: int = int(other.get("seq_hi", 0))
-            var other_seq_exact: int = other_seq_lo if other_seq_lo > 0 and other_seq_lo == other_seq_hi else -1
-            var other_color_label: String = str(other.get("color_slot_label", ""))
-            var other_pitch_label: String = str(other.get("pitch_slot_label", ""))
-            var other_degree_label: String = str(other.get("degree_slot_label", ""))
-
-            var conflict: bool = false
-            if this_star_idx >= 0 and other_star >= 0 and other_star != this_star_idx:
-                conflict = true
-            if this_seq_exact > 0 and other_seq_exact > 0 and other_seq_exact != this_seq_exact:
-                conflict = true
-            if this_color_label != "" and other_color_label != "" and other_color_label != this_color_label:
-                conflict = true
-            if this_pitch_label != "" and other_pitch_label != "" and other_pitch_label != this_pitch_label:
-                conflict = true
-            if this_degree_label != "" and other_degree_label != "" and this_degree_label != other_degree_label:
-                conflict = true
-            if conflict:
-                continue
-
-        if this_star_idx >= 0 and _star_elim_state(this_star_idx, name_str) == 2:
-            continue
-
-        result.append(name_str)
-    result.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
-    return result
-
-
-func _protect_key(star_idx: int, name_str: String) -> String:
-    return "%d:%s" % [star_idx, name_str]
+## The record that owns a star's own per-star name-checklist flags. Same
+## record the star widget already binds to, so its protect/manual-block
+## state now merges, saves, and propagates like every other record field
+## (see the note where _protected_names/_user_blocks used to be declared).
+func _star_name_flags_record(star_idx: int) -> int:
+    if star_idx < 0 or star_idx >= _host._star_count:
+        return -1
+    return _get_or_create_match_record_for_star_idx(star_idx)
 
 
 func _is_name_protected(star_idx: int, name_str: String) -> bool:
-    return _protected_names.has(_protect_key(star_idx, name_str))
+    var idx: int = _find_match_record_by_star_idx(star_idx)
+    if idx < 0:
+        return false
+    return (_match_records[idx].get("protected_staff_names", {}) as Dictionary).has(name_str)
+
+
+func _set_name_protected(star_idx: int, name_str: String, on: bool) -> void:
+    var idx: int = _star_name_flags_record(star_idx)
+    if idx < 0:
+        return
+    var protected: Dictionary = _match_records[idx].get("protected_staff_names", {})
+    if on:
+        protected[name_str] = true
+    else:
+        protected.erase(name_str)
+    _match_records[idx]["protected_staff_names"] = protected
+
+
+func _is_star_name_user_blocked(star_idx: int, name_str: String) -> bool:
+    var idx: int = _find_match_record_by_star_idx(star_idx)
+    if idx < 0:
+        return false
+    return (_match_records[idx].get("manual_name_blocks", {}) as Dictionary).has(name_str)
+
+
+func _set_star_name_user_blocked(star_idx: int, name_str: String, on: bool) -> void:
+    var idx: int = _star_name_flags_record(star_idx)
+    if idx < 0:
+        return
+    var manual: Dictionary = _match_records[idx].get("manual_name_blocks", {})
+    if on:
+        manual[name_str] = true
+    else:
+        manual.erase(name_str)
+    _match_records[idx]["manual_name_blocks"] = manual
+
+
+## Every name this star's row has a manual block on — replaces scanning a
+## global dict's "star:name" keys with a straight read of that star's own
+## record.
+func _user_blocked_names_for_star(star_idx: int) -> Array[String]:
+    var out: Array[String] = []
+    var idx: int = _find_match_record_by_star_idx(star_idx)
+    if idx < 0:
+        return out
+    for k in (_match_records[idx].get("manual_name_blocks", {}) as Dictionary):
+        out.append(str(k))
+    return out
+
+
+func _clear_star_name_user_blocks(star_idx: int) -> void:
+    var idx: int = _find_match_record_by_star_idx(star_idx)
+    if idx >= 0:
+        _match_records[idx]["manual_name_blocks"] = {}
 
 
 func _star_has_any_protected(star_idx: int, all_names_for_star: Array) -> bool:
@@ -586,58 +593,21 @@ func _sync_color_states_from_star_idx(record_idx: int) -> void:
         r["color_slot_label"] = ""
 
 
-func _get_or_create_match_record_for_color_slot(color_idx: int, position_in_group: int) -> int:
-    var label: String = "%s %s" % [_host.COLOR_NAME_LABELS[color_idx], _slot_letter(position_in_group)]
-    for i in _match_records.size():
-        if str(_match_records[i].get("color_slot_label", "")) == label:
-            return i
-    for i in _match_records.size():
-        var r: Dictionary = _match_records[i]
-        if str(r.get("color_slot_label", "")) != "":
-            continue
-        if int(r.get("color_states", {}).get(color_idx, 0)) == 1:
-            r["color_slot_label"] = label
-            return i
-    _match_records.append({
-        "name": "",
-        "seq_lo": 0, "seq_hi": 0,
-        "seq_candidates": [],
-        "color_states": {},
-        "pitch_states": {},
-        "degree_states": {},
-        "name_states": {},
-        "manual_name_blocks": {},
-        "manual_pitch_blocks": {},
-        "manual_color_blocks": {},
-        "protected_pitch_notes": {},
-        "protected_color_idxs": {},
-        "protected_staff_names": {},
-        "pitch_revealed": false,
-        "star_elim": {},
-        "color_star_elim_marks": {},
-        "star_idx": -1,
-        "color_slot_label": label,
-        "pitch_slot_label": "",
-        "degree_slot_label": "",
-    })
-    return _match_records.size() - 1
-
-
-func _get_or_create_match_record_for_pitch_slot(pitch_freq: float, position_in_group: int) -> int:
-    var pitch_name: String = ConstellationLogicPuzzle.note_name_for_freq(pitch_freq)
-    var label: String = "%s %s" % [pitch_name, _slot_letter(position_in_group)]
-    for i in _match_records.size():
-        if str(_match_records[i].get("pitch_slot_label", "")) == label:
-            return i
-    var note_name: String = pitch_name
-    for i in _match_records.size():
-        var r: Dictionary = _match_records[i]
-        if str(r.get("pitch_slot_label", "")) != "":
-            continue
-        if int(r.get("pitch_states", {}).get(note_name, 0)) == 1:
-            r["pitch_slot_label"] = label
-            return i
-    _match_records.append({
+## Single source of truth for a match record's field set. The full literal
+## used to be written out SIX times (once per _get_or_create_match_record_
+## for_* function) with _save_match_records()/_load_match_records() carrying
+## their own hand-maintained copies of the same field list on top — eight
+## places to keep in sync, every one of them by hand. Adding or removing one
+## field meant eight correct edits or a silently-dropped value; proven live
+## when a field added for one experiment had to be threaded through all
+## eight and then unpicked from all eight again.
+##
+## `overrides` sets whatever the specific creation site needs; everything
+## else takes the default below. Load also starts from this, so a save
+## written before a field existed comes back with that field's default
+## rather than missing entirely.
+func _new_match_record(overrides: Dictionary = {}) -> Dictionary:
+    var r: Dictionary = {
         "name": "",
         "seq_lo": 0, "seq_hi": 0,
         "seq_candidates": [],
@@ -656,9 +626,45 @@ func _get_or_create_match_record_for_pitch_slot(pitch_freq: float, position_in_g
         "color_star_elim_marks": {},
         "star_idx": -1,
         "color_slot_label": "",
-        "pitch_slot_label": label,
+        "pitch_slot_label": "",
         "degree_slot_label": "",
-    })
+    }
+    for k in overrides:
+        r[k] = overrides[k]
+    return r
+
+
+func _get_or_create_match_record_for_color_slot(color_idx: int, position_in_group: int) -> int:
+    var label: String = "%s %s" % [_host.COLOR_NAME_LABELS[color_idx], _slot_letter(position_in_group)]
+    for i in _match_records.size():
+        if str(_match_records[i].get("color_slot_label", "")) == label:
+            return i
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        if str(r.get("color_slot_label", "")) != "":
+            continue
+        if int(r.get("color_states", {}).get(color_idx, 0)) == 1:
+            r["color_slot_label"] = label
+            return i
+    _match_records.append(_new_match_record({"color_slot_label": label}))
+    return _match_records.size() - 1
+
+
+func _get_or_create_match_record_for_pitch_slot(pitch_freq: float, position_in_group: int) -> int:
+    var pitch_name: String = ConstellationLogicPuzzle.note_name_for_freq(pitch_freq)
+    var label: String = "%s %s" % [pitch_name, _slot_letter(position_in_group)]
+    for i in _match_records.size():
+        if str(_match_records[i].get("pitch_slot_label", "")) == label:
+            return i
+    var note_name: String = pitch_name
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        if str(r.get("pitch_slot_label", "")) != "":
+            continue
+        if int(r.get("pitch_states", {}).get(note_name, 0)) == 1:
+            r["pitch_slot_label"] = label
+            return i
+    _match_records.append(_new_match_record({"pitch_slot_label": label}))
     return _match_records.size() - 1
 
 
@@ -695,28 +701,7 @@ func _get_or_create_match_record_for_name(name_str: String) -> int:
     var idx: int = _find_match_record_by_name(name_str)
     if idx >= 0:
         return idx
-    _match_records.append({
-        "name": name_str,
-        "seq_lo": 0, "seq_hi": 0,
-        "seq_candidates": [],
-        "color_states": {},
-        "pitch_states": {},
-        "degree_states": {},
-        "name_states": {},
-        "manual_name_blocks": {},
-        "manual_pitch_blocks": {},
-        "manual_color_blocks": {},
-        "protected_pitch_notes": {},
-        "protected_color_idxs": {},
-        "protected_staff_names": {},
-        "pitch_revealed": false,
-        "star_elim": {},
-        "color_star_elim_marks": {},
-        "star_idx": -1,
-        "color_slot_label": "",
-        "pitch_slot_label": "",
-        "degree_slot_label": "",
-    })
+    _match_records.append(_new_match_record({"name": name_str}))
     return _match_records.size() - 1
 
 
@@ -724,28 +709,7 @@ func _get_or_create_match_record_for_seq(slot: int) -> int:
     var idx: int = _find_match_record_by_exact_seq(slot)
     if idx >= 0:
         return idx
-    _match_records.append({
-        "name": "",
-        "seq_lo": slot, "seq_hi": slot,
-        "seq_candidates": [],
-        "color_states": {},
-        "pitch_states": {},
-        "degree_states": {},
-        "name_states": {},
-        "manual_name_blocks": {},
-        "manual_pitch_blocks": {},
-        "manual_color_blocks": {},
-        "protected_pitch_notes": {},
-        "protected_color_idxs": {},
-        "protected_staff_names": {},
-        "pitch_revealed": false,
-        "star_elim": {},
-        "color_star_elim_marks": {},
-        "star_idx": -1,
-        "color_slot_label": "",
-        "pitch_slot_label": "",
-        "degree_slot_label": "",
-    })
+    _match_records.append(_new_match_record({"seq_lo": slot, "seq_hi": slot}))
     return _match_records.size() - 1
 
 
@@ -753,33 +717,20 @@ func _get_or_create_match_record_for_star_idx(star_idx: int) -> int:
     var idx: int = _find_match_record_by_star_idx(star_idx)
     if idx >= 0:
         return idx
-    _match_records.append({
-        "name": "",
-        "seq_lo": 0, "seq_hi": 0,
-        "seq_candidates": [],
-        "color_states": {},
-        "pitch_states": {},
-        "degree_states": {},
-        "name_states": {},
-        "manual_name_blocks": {},
-        "manual_pitch_blocks": {},
-        "manual_color_blocks": {},
-        "protected_pitch_notes": {},
-        "protected_color_idxs": {},
-        "protected_staff_names": {},
-        "pitch_revealed": false,
-        "star_elim": {},
-        "color_star_elim_marks": {},
-        "star_idx": star_idx,
-        "color_slot_label": "",
-        "pitch_slot_label": "",
-        "degree_slot_label": "",
-    })
+    _match_records.append(_new_match_record({"star_idx": star_idx}))
     return _match_records.size() - 1
 
 
 func _get_or_create_match_record_for_degree_slot(degree: int, position_in_group: int) -> int:
-    var label: String = "%s %s" % ["Conn", _slot_letter(position_in_group)]
+    # Label carries the degree VALUE ("Conn3 A"), not a bare "Conn A". The
+    # old format collided across groups: the degree-2 group's "A" slot and
+    # the degree-3 group's "A" slot produced the identical string, so any
+    # label-equality check treated two records for provably DIFFERENT stars
+    # as the same slot — including _records_provably_identical's slot-label
+    # branch, which would have merged them outright. Also what blocked
+    # Degree from participating in group/member propagation at all, since
+    # the group couldn't be identified from the label.
+    var label: String = "Conn%d %s" % [degree, _slot_letter(position_in_group)]
     for i in _match_records.size():
         if str(_match_records[i].get("degree_slot_label", "")) == label:
             return i
@@ -790,28 +741,7 @@ func _get_or_create_match_record_for_degree_slot(degree: int, position_in_group:
         if int(r.get("degree_states", {}).get(degree, 0)) == 1:
             r["degree_slot_label"] = label
             return i
-    _match_records.append({
-        "name": "",
-        "seq_lo": 0, "seq_hi": 0,
-        "seq_candidates": [],
-        "color_states": {},
-        "pitch_states": {},
-        "degree_states": {},
-        "name_states": {},
-        "manual_name_blocks": {},
-        "manual_pitch_blocks": {},
-        "manual_color_blocks": {},
-        "protected_pitch_notes": {},
-        "protected_color_idxs": {},
-        "protected_staff_names": {},
-        "pitch_revealed": false,
-        "star_elim": {},
-        "color_star_elim_marks": {},
-        "star_idx": -1,
-        "color_slot_label": "",
-        "pitch_slot_label": "",
-        "degree_slot_label": label,
-    })
+    _match_records.append(_new_match_record({"degree_slot_label": label}))
     return _match_records.size() - 1
 
 
@@ -834,11 +764,26 @@ func _find_match_record_by_star_idx(star_idx: int) -> int:
 
 
 
-func _merge_match_records(target_idx: int, source_idx: int) -> int:
+## allow_await=false is for SYNCHRONOUS callers (currently
+## _settle_identical_records, which runs inside the non-async
+## _full_propagation_refresh). A coroutine suspended mid-merge would
+## silently abandon the rest of the refresh, so in that mode this function
+## refuses any merge that would need a conflict dialog and leaves the pair
+## for the explicit commit paths, which can await properly.
+##
+## Two layers keep that honest: the _merge_conflict_kinds() check below —
+## the SINGLE place conflicts are detected, shared with
+## _records_have_merge_conflict() so the two can't drift — and a fail-safe
+## `if not allow_await: return` at every dialog site, so a future conflict
+## added without updating the kinds list degrades to an abandoned merge
+## rather than a suspended refresh.
+func _merge_match_records(target_idx: int, source_idx: int, allow_await: bool = true) -> int:
     if target_idx == source_idx:
         return target_idx
     if target_idx < 0 or target_idx >= _match_records.size() \
             or source_idx < 0 or source_idx >= _match_records.size():
+        return target_idx
+    if not allow_await and not _merge_conflict_kinds(target_idx, source_idx).is_empty():
         return target_idx
     var entry_generation: int = _match_records_generation
     var target: Dictionary = _match_records[target_idx]
@@ -853,18 +798,54 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
     if target["name"] == "" and source["name"] != "":
         target["name"] = source["name"]
     elif target["name"] != "" and source["name"] != "" and target["name"] != source["name"]:
+        # Fail-safe (see allow_await): unreachable while
+        # _merge_conflict_kinds() lists every conflict below, and an
+        # abandoned merge if it ever stops doing so — never a suspend.
+        if not allow_await:
+            return target_idx
         var kept_name: String = await _conflict_dialog_fn.call("name", target["name"], source["name"])
         discarded_name = source["name"] if kept_name == target["name"] else target["name"]
         target["name"] = kept_name
 
-    if int(target["seq_lo"]) == 0 and int(source["seq_lo"]) > 0:
-        target["seq_lo"] = source["seq_lo"]
-        target["seq_hi"] = source["seq_hi"]
-    elif int(target["seq_lo"]) > 0 and int(source["seq_lo"]) > 0 and int(target["seq_lo"]) != int(source["seq_lo"]):
+    # Intersect both sides' bounds (0 = unconstrained on that side) instead
+    # of branching on seq_lo alone. The old branch only ever checked
+    # seq_lo>0 to decide whether source had "real" sequence info — a
+    # hi-only exclusive bound (seq_lo==0, seq_hi>0, e.g. "not the last
+    # position") carries real information too, but was silently DROPPED
+    # whenever it merged into a target with no lo of its own (neither
+    # branch matched), and silently OVERWRITTEN by whichever side merged in
+    # second otherwise — losing exactly the kind of fact
+    # _records_provably_distinct's sequence check now depends on.
+    var t_lo: int = int(target["seq_lo"])
+    var t_hi: int = int(target["seq_hi"])
+    var s_lo: int = int(source["seq_lo"])
+    var s_hi: int = int(source["seq_hi"])
+    var t_exact: bool = t_lo > 0 and t_lo == t_hi
+    var s_exact: bool = s_lo > 0 and s_lo == s_hi
+    if t_exact and s_exact and t_lo != s_lo:
+        # Fail-safe (see allow_await): unreachable while
+        # _merge_conflict_kinds() lists every conflict below, and an
+        # abandoned merge if it ever stops doing so — never a suspend.
+        if not allow_await:
+            return target_idx
         var winning_seq: int = int(await _conflict_dialog_fn.call(
-            "sequence position", str(int(target["seq_lo"])), str(int(source["seq_lo"]))))
+            "sequence position", str(t_lo), str(s_lo)))
         target["seq_lo"] = winning_seq
         target["seq_hi"] = winning_seq
+    elif t_lo > 0 or t_hi > 0 or s_lo > 0 or s_hi > 0:
+        var new_lo: int = max(t_lo, s_lo)
+        var hi_candidates: Array = []
+        if t_hi > 0: hi_candidates.append(t_hi)
+        if s_hi > 0: hi_candidates.append(s_hi)
+        var new_hi: int = hi_candidates.min() if not hi_candidates.is_empty() else 0
+        if new_lo > 0 and new_hi > 0 and new_lo > new_hi:
+            # The two partial bounds contradict once intersected (shouldn't
+            # arise from sound player input) — keep target's own prior
+            # bounds rather than write an inverted, meaningless range.
+            new_lo = t_lo
+            new_hi = t_hi
+        target["seq_lo"] = new_lo
+        target["seq_hi"] = new_hi
 
     var target_cand: Array = target.get("seq_candidates", [])
     var source_cand: Array = source.get("seq_candidates", [])
@@ -894,6 +875,11 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
             source_confirmed_color = int(ck1)
             break
     if target_confirmed_color >= 0 and source_confirmed_color >= 0 and target_confirmed_color != source_confirmed_color:
+        # Fail-safe (see allow_await): unreachable while
+        # _merge_conflict_kinds() lists every conflict below, and an
+        # abandoned merge if it ever stops doing so — never a suspend.
+        if not allow_await:
+            return target_idx
         var winning_color: String = await _conflict_dialog_fn.call(
             "confirmed color", _host.COLOR_NAME_LABELS[target_confirmed_color], _host.COLOR_NAME_LABELS[source_confirmed_color])
         if winning_color == _host.COLOR_NAME_LABELS[source_confirmed_color]:
@@ -925,6 +911,11 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
             source_confirmed_degree = int(dk1)
             break
     if target_confirmed_degree >= 0 and source_confirmed_degree >= 0 and target_confirmed_degree != source_confirmed_degree:
+        # Fail-safe (see allow_await): unreachable while
+        # _merge_conflict_kinds() lists every conflict below, and an
+        # abandoned merge if it ever stops doing so — never a suspend.
+        if not allow_await:
+            return target_idx
         var winning_degree: String = await _conflict_dialog_fn.call(
             "confirmed degree", str(target_confirmed_degree), str(source_confirmed_degree))
         if winning_degree == str(source_confirmed_degree):
@@ -955,6 +946,11 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
             source_confirmed_note = str(pk1)
             break
     if target_confirmed_note != "" and source_confirmed_note != "" and target_confirmed_note != source_confirmed_note:
+        # Fail-safe (see allow_await): unreachable while
+        # _merge_conflict_kinds() lists every conflict below, and an
+        # abandoned merge if it ever stops doing so — never a suspend.
+        if not allow_await:
+            return target_idx
         var winning_note: String = await _conflict_dialog_fn.call(
             "confirmed pitch", target_confirmed_note, source_confirmed_note)
         if winning_note == source_confirmed_note:
@@ -1021,6 +1017,11 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
     if target_label == "" and source_label != "":
         target["color_slot_label"] = source_label
     elif target_label != "" and source_label != "" and target_label != source_label:
+        # Fail-safe (see allow_await): unreachable while
+        # _merge_conflict_kinds() lists every conflict below, and an
+        # abandoned merge if it ever stops doing so — never a suspend.
+        if not allow_await:
+            return target_idx
         target["color_slot_label"] = await _conflict_dialog_fn.call("color slot label", target_label, source_label)
 
     var target_pitch_label: String = str(target.get("pitch_slot_label", ""))
@@ -1028,6 +1029,11 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
     if target_pitch_label == "" and source_pitch_label != "":
         target["pitch_slot_label"] = source_pitch_label
     elif target_pitch_label != "" and source_pitch_label != "" and target_pitch_label != source_pitch_label:
+        # Fail-safe (see allow_await): unreachable while
+        # _merge_conflict_kinds() lists every conflict below, and an
+        # abandoned merge if it ever stops doing so — never a suspend.
+        if not allow_await:
+            return target_idx
         target["pitch_slot_label"] = await _conflict_dialog_fn.call("pitch slot label", target_pitch_label, source_pitch_label)
 
     var target_degree_label: String = str(target.get("degree_slot_label", ""))
@@ -1035,6 +1041,11 @@ func _merge_match_records(target_idx: int, source_idx: int) -> int:
     if target_degree_label == "" and source_degree_label != "":
         target["degree_slot_label"] = source_degree_label
     elif target_degree_label != "" and source_degree_label != "" and target_degree_label != source_degree_label:
+        # Fail-safe (see allow_await): unreachable while
+        # _merge_conflict_kinds() lists every conflict below, and an
+        # abandoned merge if it ever stops doing so — never a suspend.
+        if not allow_await:
+            return target_idx
         target["degree_slot_label"] = await _conflict_dialog_fn.call("degree slot label", target_degree_label, source_degree_label)
 
     # _match_records may have been cleared/rebuilt by one of the awaits
@@ -1140,36 +1151,25 @@ func _confirm_match_record_identity(record_idx: int, star_idx: int, star_name: S
 
 
 func _save_match_records() -> Array:
+    # Deep-copies whatever the record actually holds instead of restating
+    # the field list a third time. The old per-field version had to be kept
+    # in sync with _new_match_record() and _load_match_records() by hand,
+    # and a field missing from THIS list was written to disk as gone —
+    # silent, and invisible until the next load. Values are already
+    # correctly typed in memory (creation goes through _new_match_record,
+    # load coerces on the way in), so no per-field coercion is needed here;
+    # the int-key-becomes-String hazard of a JSON round-trip is handled on
+    # the load side by _coerce_int_key, which is where it actually happens.
     var out: Array = []
     for r in _match_records:
-        out.append({
-            "name": r["name"],
-            "seq_lo": r["seq_lo"], "seq_hi": r["seq_hi"],
-            "seq_candidates": (r.get("seq_candidates", []) as Array).duplicate(),
-            "color_states": (r["color_states"] as Dictionary).duplicate(),
-            "pitch_states": (r["pitch_states"] as Dictionary).duplicate(),
-            "degree_states": (r.get("degree_states", {}) as Dictionary).duplicate(),
-            "name_states": (r.get("name_states", {}) as Dictionary).duplicate(),
-            "manual_name_blocks": (r.get("manual_name_blocks", {}) as Dictionary).duplicate(),
-            "manual_pitch_blocks": (r.get("manual_pitch_blocks", {}) as Dictionary).duplicate(),
-            "manual_color_blocks": (r.get("manual_color_blocks", {}) as Dictionary).duplicate(),
-            "protected_pitch_notes": (r.get("protected_pitch_notes", {}) as Dictionary).duplicate(),
-            "protected_color_idxs": (r.get("protected_color_idxs", {}) as Dictionary).duplicate(),
-            "protected_staff_names": (r.get("protected_staff_names", {}) as Dictionary).duplicate(),
-            "pitch_revealed": bool(r.get("pitch_revealed", false)),
-            "star_elim": (r.get("star_elim", {}) as Dictionary).duplicate(),
-            "color_star_elim_marks": (r.get("color_star_elim_marks", {}) as Dictionary).duplicate(),
-            "star_idx": r["star_idx"],
-            "color_slot_label": str(r.get("color_slot_label", "")),
-            "pitch_slot_label": str(r.get("pitch_slot_label", "")),
-            "degree_slot_label": str(r.get("degree_slot_label", "")),
-        })
+        out.append((r as Dictionary).duplicate(true))
     return out
 
 
 func _load_match_records(data: Array) -> void:
     _match_records.clear()
     _match_records_generation += 1
+    _clear_deduction_caches()
     for entry in data:
         if not entry is Dictionary:
             continue
@@ -1260,7 +1260,11 @@ func _load_match_records(data: Array) -> void:
         for v in _coerce_array(e.get("seq_candidates"), []):
             seq_candidates.append(_coerce_int(v, 0))
 
-        _match_records.append({
+        # Built on _new_match_record() rather than as its own literal, so a
+        # save written before some field existed comes back carrying that
+        # field's current default instead of missing it entirely — and so
+        # adding a field never again means remembering to edit this list.
+        _match_records.append(_new_match_record({
             "name": str(e.get("name", "")),
             "seq_lo": _coerce_int(e.get("seq_lo"), 0), "seq_hi": _coerce_int(e.get("seq_hi"), 0),
             "seq_candidates": seq_candidates,
@@ -1281,7 +1285,7 @@ func _load_match_records(data: Array) -> void:
             "color_slot_label": str(e.get("color_slot_label", "")),
             "pitch_slot_label": str(e.get("pitch_slot_label", "")),
             "degree_slot_label": str(e.get("degree_slot_label", "")),
-        })
+        }))
 
 
 func _display_color_for_record(record_idx: int) -> Color:
@@ -1336,6 +1340,19 @@ func _color_star_count(color_idx: int) -> int:
     for s in _host._star_count:
         var sc: int = _host._star_colors[s] if s < _host._star_colors.size() else 1
         if sc == color_idx:
+            count += 1
+    return count
+
+
+func _degree_star_count(degree: int) -> int:
+    # Same shape as _color_star_count/_pitch_star_count, keyed by Degree
+    # (per-star connection count) — gates _compute_excluded_degrees_for the
+    # same way, since a degree value is only safe to exclude elsewhere when
+    # exactly one star has it.
+    var count: int = 0
+    for s in _host._star_count:
+        var d: int = int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0
+        if d == degree:
             count += 1
     return count
 
@@ -1460,6 +1477,27 @@ func _propagate_name_states_confirmed_same_record(record_idx: int, confirmed_nam
         manual_name.erase(confirmed_name)
         r["manual_name_blocks"] = manual_name
 
+    # Promote into the real identity field (r["name"]), same reasoning as
+    # _settle_singleton_sequences promoting a narrowed-to-one Sequence
+    # range into seq_lo==seq_hi. Without this, every caller of this
+    # function (_on_staff_name_check, _on_slot_name_check, and this file's
+    # own _settle_singleton_names) only ever wrote name_states — never
+    # r["name"], the ONLY field _find_match_record_by_name/
+    # _get_or_create_match_record_for_name ever look at. Checking a name
+    # off via the Staff popup or the NameChecklistPopup therefore never
+    # linked that record to the one the Sort:Name tab creates/reuses for
+    # the same name — two permanently separate records for the same star,
+    # exactly the same failure shape as the Sequence propagation bug this
+    # file's _records_provably_distinct fix addressed, just on the write
+    # side instead of the read side. Skips promotion (same rule
+    # _settle_singleton_sequences already uses) when a DIFFERENT record
+    # already owns this name — a real contradiction needing a conflict
+    # dialog, which this function can't await; it surfaces on the next
+    # explicit Sort:Name-tab interaction with that name instead.
+    if str(r.get("name", "")) == "":
+        var existing_idx: int = _find_match_record_by_name(confirmed_name)
+        if existing_idx < 0 or existing_idx == record_idx:
+            r["name"] = confirmed_name
 
 
 
@@ -1621,6 +1659,238 @@ func _effective_star_state(record_idx: int, star_idx: int) -> int:
     return int(r.get("star_elim", {}).get(star_idx, 0))
 
 
+## Raw (non-recursive) possible-position set for a record: the explicit
+## seq_candidates list if one exists, else the seq_lo..seq_hi range with 0
+## bounds treated as fully open (1.._star_count). Empty means "no sequence
+## information at all" — distinct from "narrowed to nothing," which can't
+## happen for a live record. Used only by _records_provably_distinct(),
+## which must not call _effective_seq_candidates()/
+## _compute_excluded_positions_for() — see that function's comment.
+func _raw_seq_candidate_set(r: Dictionary) -> Array:
+    var explicit: Array = r.get("seq_candidates", [])
+    if not explicit.is_empty():
+        return explicit
+    var lo: int = int(r.get("seq_lo", 0))
+    var hi: int = int(r.get("seq_hi", 0))
+    if lo <= 0 and hi <= 0:
+        return []
+    if lo <= 0:
+        lo = 1
+    if hi <= 0:
+        hi = _host._star_count
+    var out: Array = []
+    for p in range(lo, hi + 1):
+        out.append(p)
+    return out
+
+
+# ==================================================
+# RECORD IDENTITY UNIFICATION — the missing mirror of
+# _records_provably_distinct below.
+#
+# Every merge in this codebase used to happen only at a hardcoded pairwise
+# UI entry point: the Listen handler merging into a pitch SLOT record
+# (_reconcile_unique_pitch_slot), an identity confirm merging by star_idx,
+# a Sequence commit merging by exact position, a name pick merging by name.
+# Each of those only fires when the player touches that specific control,
+# and only unifies records colliding on that ONE key. Nothing ever asked
+# the general question: "do these two records provably describe the same
+# star, whatever route each of them got its facts by?"
+#
+# So a record identified by NAME that the player gave a singleton Pitch to,
+# and a star-map record whose pitch was legitimately revealed by Listen,
+# stayed permanently separate — each holding half the picture, neither
+# showing the other's facts, on every surface. Confirmed live (2026-08-07,
+# Helios/C#5): four separate reported symptoms — Sort:Name missing its
+# Color, the star map missing its Name, and the Sort:Pitch slot missing its
+# Name — were all one instance of this single missing rule, and every
+# earlier propagation bug this session was another.
+#
+# _records_provably_identical mirrors _records_provably_distinct exactly:
+# same category sweep, same singleton-incidence gating for the non-alldiff
+# axes (Color/Pitch/Degree), same unconfirmed-stub guard for Pitch.
+# ==================================================
+
+## The confirmed value of one raw states dict, or -1/"" when none. Reads
+## the RAW dict (not _effective_*_state) deliberately — _merge_match_records
+## compares raw states when deciding whether a merge conflicts, so the
+## conflict pre-check below has to look at exactly what it will look at.
+func _raw_confirmed_int_key(r: Dictionary, states_key: String) -> int:
+    for k in r.get(states_key, {}):
+        if int(r[states_key][k]) == 1:
+            return int(k)
+    return -1
+
+
+func _raw_confirmed_string_key(r: Dictionary, states_key: String) -> String:
+    for k in r.get(states_key, {}):
+        if int(r[states_key][k]) == 1:
+            return str(k)
+    return ""
+
+
+## THE single place a merge conflict is detected. Returns one identifier
+## per conflict that _merge_match_records() would raise a dialog for, in
+## the same order it raises them; empty means the merge is purely additive.
+##
+## Both consumers read this rather than restating the conditions:
+## _merge_match_records()'s allow_await=false guard, and
+## _records_have_merge_conflict() below. Keeping ONE list is the point —
+## the two used to be independent copies of the same six-way check, which
+## is precisely the shape of duplication that silently rots.
+##
+## Reads RAW state dicts, not _effective_*_state, because that is what the
+## merge itself compares when deciding to raise each dialog.
+func _merge_conflict_kinds(idx_a: int, idx_b: int) -> Array[String]:
+    var kinds: Array[String] = []
+    if idx_a < 0 or idx_a >= _match_records.size() \
+            or idx_b < 0 or idx_b >= _match_records.size():
+        return kinds
+    var a: Dictionary = _match_records[idx_a]
+    var b: Dictionary = _match_records[idx_b]
+
+    var a_name: String = str(a.get("name", ""))
+    var b_name: String = str(b.get("name", ""))
+    if a_name != "" and b_name != "" and a_name != b_name:
+        kinds.append("name")
+
+    var a_lo: int = int(a.get("seq_lo", 0))
+    var b_lo: int = int(b.get("seq_lo", 0))
+    if a_lo > 0 and a_lo == int(a.get("seq_hi", 0)) \
+            and b_lo > 0 and b_lo == int(b.get("seq_hi", 0)) and a_lo != b_lo:
+        kinds.append("sequence")
+
+    var ac: int = _raw_confirmed_int_key(a, "color_states")
+    var bc: int = _raw_confirmed_int_key(b, "color_states")
+    if ac >= 0 and bc >= 0 and ac != bc:
+        kinds.append("color")
+
+    var ad: int = _raw_confirmed_int_key(a, "degree_states")
+    var bd: int = _raw_confirmed_int_key(b, "degree_states")
+    if ad >= 0 and bd >= 0 and ad != bd:
+        kinds.append("degree")
+
+    var ap: String = _raw_confirmed_string_key(a, "pitch_states")
+    var bp: String = _raw_confirmed_string_key(b, "pitch_states")
+    if ap != "" and bp != "" and ap != bp:
+        kinds.append("pitch")
+
+    for label_key in ["color_slot_label", "pitch_slot_label", "degree_slot_label"]:
+        var al: String = str(a.get(label_key, ""))
+        var bl: String = str(b.get(label_key, ""))
+        if al != "" and bl != "" and al != bl:
+            kinds.append(label_key)
+
+    return kinds
+
+
+func _records_have_merge_conflict(idx_a: int, idx_b: int) -> bool:
+    return not _merge_conflict_kinds(idx_a, idx_b).is_empty()
+
+
+## Do these two records provably describe the SAME star? True when they
+## share any fact that uniquely identifies one star. Exact mirror of
+## _records_provably_distinct's category sweep.
+func _records_provably_identical(idx_a: int, idx_b: int) -> bool:
+    if idx_a < 0 or idx_a >= _match_records.size() \
+            or idx_b < 0 or idx_b >= _match_records.size() or idx_a == idx_b:
+        return false
+    var a: Dictionary = _match_records[idx_a]
+    var b: Dictionary = _match_records[idx_b]
+
+    # Same resolved star, or same player-confirmed name — both unique by
+    # construction (Name is alldiff).
+    var a_star: int = int(a.get("star_idx", -1))
+    var b_star: int = int(b.get("star_idx", -1))
+    if a_star >= 0 and b_star >= 0:
+        return a_star == b_star
+    var a_name: String = str(a.get("name", ""))
+    if a_name != "" and a_name == str(b.get("name", "")):
+        return true
+
+    # Same exact sequence position — Sequence is alldiff, so one position
+    # is one star.
+    var a_lo: int = int(a.get("seq_lo", 0))
+    if a_lo > 0 and a_lo == int(a.get("seq_hi", 0)) \
+            and a_lo == int(b.get("seq_lo", 0)) and a_lo == int(b.get("seq_hi", 0)):
+        return true
+
+    # Same slot label — a "Blue A"/"C#5 A"/"Conn A" slot is one specific
+    # star by definition of the slot.
+    for label_key in ["color_slot_label", "pitch_slot_label", "degree_slot_label"]:
+        var al: String = str(a.get(label_key, ""))
+        if al != "" and al == str(b.get(label_key, "")):
+            return true
+
+    # Same confirmed value on a SINGLETON Color/Pitch/Degree. Gated on
+    # incidence exactly like _compute_excluded_*_for: a shared value proves
+    # nothing (two stars can both be blue), a singleton one pins the star.
+    for ci in _host.COLOR_NAME_LABELS.size():
+        if _color_star_count(ci) == 1 \
+                and _effective_color_state(idx_a, ci) == 1 and _effective_color_state(idx_b, ci) == 1:
+            return true
+
+    for note in _host._widgets._distinct_note_names():
+        if _pitch_star_count(note) != 1:
+            continue
+        # Same unconfirmed-stub guard as _compute_excluded_pitches_for — a
+        # bare auto-created star-widget record's ground-truth pitch is not
+        # earned until Listen has fired for it.
+        if _record_is_unconfirmed_star_widget_stub(idx_a) and not bool(a.get("pitch_revealed", false)):
+            continue
+        if _record_is_unconfirmed_star_widget_stub(idx_b) and not bool(b.get("pitch_revealed", false)):
+            continue
+        if _effective_pitch_state(idx_a, note) == 1 and _effective_pitch_state(idx_b, note) == 1:
+            return true
+
+    var degrees_set: Dictionary = {}
+    for s in _host._star_count:
+        degrees_set[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
+    for deg in degrees_set.keys():
+        if _degree_star_count(deg) == 1 \
+                and _effective_degree_state(idx_a, deg) == 1 and _effective_degree_state(idx_b, deg) == 1:
+            return true
+
+    return false
+
+
+## Merges every pair of records that provably describe the same star, so
+## facts gathered through different surfaces end up on one record instead
+## of sitting in two half-pictures. Runs first in
+## _full_propagation_refresh() so the singleton-settle passes after it see
+## unified records.
+##
+## Skips any pair whose merge would need a conflict dialog
+## (_records_have_merge_conflict) — this pass is synchronous and must not
+## suspend. Those pairs keep surfacing to the player through the normal
+## explicit-commit paths, which CAN await, rather than being silently
+## resolved one way or the other here.
+##
+## Restarts the scan after each merge: _merge_match_records() removes the
+## source record, so every index past it shifts. Bounded by record count
+## since each merge strictly reduces the array.
+func _settle_identical_records() -> void:
+    var guard: int = 0
+    var merged: bool = true
+    while merged and guard < 64:
+        guard += 1
+        merged = false
+        for i in _match_records.size():
+            for j in range(i + 1, _match_records.size()):
+                if not _records_provably_identical(i, j):
+                    continue
+                # allow_await=false: the merge itself refuses anything that
+                # would open a dialog, so this call cannot suspend. The
+                # pre-check that used to live here is gone — it was a second
+                # copy of the same conditions, which is exactly what
+                # _merge_conflict_kinds() now exists to prevent.
+                _merge_match_records(i, j, false)
+                merged = true
+                break
+            if merged:
+                break
+
+
 func _records_provably_distinct(idx_a: int, idx_b: int) -> bool:
     if idx_a < 0 or idx_a >= _match_records.size() or idx_b < 0 or idx_b >= _match_records.size():
         return false  # can't prove distinctness with an invalid index
@@ -1636,6 +1906,29 @@ func _records_provably_distinct(idx_a: int, idx_b: int) -> bool:
     var b_name: String = str(b.get("name", ""))
     if a_name != "" and b_name != "" and a_name != b_name:
         return true
+
+    # Sequence-range disjointness: if the two records' possible-position
+    # sets don't overlap at all, they can't be the same star, regardless of
+    # whether either side is pinned to an exact position. This was missing
+    # entirely — every _compute_excluded_*_for() function gates its
+    # cross-record exclusion on this function, so a Sort:Name record's
+    # Sequence range (e.g. "not position 15") could never exclude that name
+    # from a different, position-keyed record's Staff-popup checklist no
+    # matter how correctly it was entered, since nothing here ever compared
+    # ranges. Deliberately reads the RAW seq_lo/seq_hi/seq_candidates
+    # fields, not _effective_seq_candidates() — that function calls
+    # _compute_excluded_positions_for(), which calls back into this
+    # function, so using it here would recurse.
+    var a_seq: Array = _raw_seq_candidate_set(a)
+    var b_seq: Array = _raw_seq_candidate_set(b)
+    if not a_seq.is_empty() and not b_seq.is_empty():
+        var overlap: bool = false
+        for v in a_seq:
+            if b_seq.has(v):
+                overlap = true
+                break
+        if not overlap:
+            return true
 
     for ci in _host.COLOR_NAME_LABELS.size():
         var sa: int = _effective_color_state(idx_a, ci)
@@ -1776,6 +2069,7 @@ func _settle_singleton_names() -> void:
     for i in _match_records.size():
         var r: Dictionary = _match_records[i]
         var name_states: Dictionary = r.get("name_states", {})
+        var confirmed_name: String = ""
         var remaining: String = ""
         var remaining_count: int = 0
         var already_confirmed: bool = false
@@ -1784,12 +2078,22 @@ func _settle_singleton_names() -> void:
             var state: int = int(name_states.get(name_str, 0))
             if state == 1:
                 already_confirmed = true
+                confirmed_name = name_str
                 break
             if state != 2:
                 remaining_count += 1
                 remaining = name_str
         if not already_confirmed and remaining_count == 1:
             _propagate_name_states_confirmed_same_record(i, remaining)
+        elif already_confirmed and str(r.get("name", "")) == "":
+            # Re-run on every refresh (not just once) so a record confirmed
+            # before the r["name"] promotion existed — or one whose
+            # promotion was skipped earlier because another record still
+            # held this name at the time — keeps retrying as state changes,
+            # same self-healing shape _settle_singleton_sequences already
+            # has for Sequence. Idempotent: sibling-clearing/manual-block
+            # erase are no-ops when already applied.
+            _propagate_name_states_confirmed_same_record(i, confirmed_name)
 
 
 func _settle_singleton_pitches() -> void:
@@ -1846,6 +2150,39 @@ func _settle_singleton_colors() -> void:
             _recompute_color_star_elim(i)
 
 
+func _settle_singleton_degrees() -> void:
+    # The fourth axis's version of the same "narrowed to one remaining
+    # candidate IS a confirm" promotion that Sequence, Name, Pitch and
+    # Colour each already had. Degree simply never got one — the same
+    # systematic under-featuring that left it with no cross-record
+    # exclusion until _compute_excluded_degrees_for was added. Degree's
+    # value set is the distinct degrees actually present among this
+    # constellation's stars, not a fixed table, so it's enumerated the same
+    # way _propagate_degree_confirmed_same_record enumerates it.
+    var degrees_set: Dictionary = {}
+    for s in _host._star_count:
+        degrees_set[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
+    var degree_values: Array = degrees_set.keys()
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        if int(r.get("star_idx", -1)) >= 0:
+            continue   # ground truth already governs this record's degree
+        var degree_states: Dictionary = r.get("degree_states", {})
+        var remaining: int = -1
+        var remaining_count: int = 0
+        var already_confirmed: bool = false
+        for dv in degree_values:
+            var state: int = int(degree_states.get(int(dv), 0))
+            if state == 1:
+                already_confirmed = true
+                break
+            if state != 2:
+                remaining_count += 1
+                remaining = int(dv)
+        if not already_confirmed and remaining_count == 1:
+            _propagate_degree_confirmed_same_record(i, remaining)
+
+
 func _compute_excluded_positions_for(record_idx: int) -> Array:
     # Scans the CURRENT full set of records live, every call. Nothing is
     # stored or pushed, so a record created AFTER some other record's
@@ -1887,49 +2224,317 @@ func _compute_excluded_names_for(record_idx: int) -> Array[String]:
     return excluded
 
 
+# ==================================================
+# CROSS-RECORD VALUE EXCLUSION — general cardinality (pigeonhole) rule.
+#
+# All three non-alldiff axes (Color, Pitch, Degree) used to gate on
+# `_X_star_count(v) != 1` — i.e. they implemented ONLY the k=1 special case
+# of the real rule, and silently did nothing for every value with two or
+# more stars. The general rule:
+#
+#   A value V can be ruled out for record R once the number of OTHER
+#   records that confirm V, and are provably distinct from R and from each
+#   other, has reached V's total incidence count. All the stars carrying V
+#   are then accounted for, so R cannot be another one.
+#
+# k=1 is just that with incidence 1. Confirmed live (2026-08-07): with
+# every star's pitch revealed via Listen and colors sorted, all Blue stars
+# were G4 or A#4 — two stars per note, so incidence 2 — and G4/A#4 were
+# never excluded from any other colour's slot, because `!= 1` skipped them
+# outright. The counting idea already existed in this file for VALIDATION
+# (_confirm_color_against_cap catches "5 records confirmed Blue when only 4
+# stars are Blue"); it just never reached the exclusion side.
+#
+# Name and Sequence deliberately keep their own simpler functions: both are
+# alldiff, so incidence is always 1 and the general rule collapses back to
+# the pairwise check they already do.
+# ==================================================
+
+## Largest set of records that all confirm one value AND are pairwise
+## provably distinct — i.e. how many DIFFERENT stars are demonstrably
+## accounted for by that value so far. Greedy, so it can undercount when
+## the distinctness graph is awkward (exact maximum clique is NP-hard);
+## undercounting only ever means "exclude later than strictly possible",
+## never a wrong exclusion, so the approximation is safe in the sound
+## direction. Cached per value for the reasons in _clear_deduction_caches().
+func _confirmer_clique(cache_key: String, confirms: Callable) -> Array:
+    if _confirmer_clique_cache.has(cache_key):
+        return _confirmer_clique_cache[cache_key]
+    var clique: Array = []
+    for i in _match_records.size():
+        if not bool(confirms.call(i)):
+            continue
+        var independent: bool = true
+        for j in clique:
+            if not _records_provably_distinct(i, int(j)):
+                independent = false
+                break
+        if independent:
+            clique.append(i)
+    _confirmer_clique_cache[cache_key] = clique
+    return clique
+
+
+## Is every star carrying this value already accounted for by records other
+## than record_idx? See this section's header comment for the rule.
+func _value_fully_accounted_for(record_idx: int, clique: Array, incidence: int) -> bool:
+    if incidence <= 0:
+        return false
+    var n: int = 0
+    for i in clique:
+        var idx: int = int(i)
+        if idx == record_idx:
+            return false   # this record is itself one of the carriers
+        if _records_provably_distinct(record_idx, idx):
+            n += 1
+    return n >= incidence
+
+
 func _compute_excluded_pitches_for(record_idx: int) -> Array[String]:
-    # Same shape as _compute_excluded_names_for, but Pitch is NOT alldiff
-    # (see _pitch_star_count) — a note can legitimately be confirmed on
-    # several different records at once (e.g. two stars sharing "C4"), so
-    # excluding it everywhere else would be unsound. Only excludes a note
-    # when its incidence count is exactly 1 — the same uniquely-
-    # identifies-a-single-star guard as constellation_logic_puzzle.gd's
-    # _category_uniquely_labels (clue generation), applied here to the
-    # player-facing deduction engine instead.
     var excluded: Array[String] = []
     for note_name in _host._widgets._distinct_note_names():
-        if _pitch_star_count(note_name) != 1:
-            continue
-        for i in _match_records.size():
-            if i == record_idx or _record_is_unconfirmed_star_widget_stub(i):
-                continue
-            if _effective_pitch_state(i, note_name) == 1 and _records_provably_distinct(record_idx, i):
-                excluded.append(note_name)
-                break
+        var note: String = str(note_name)
+        var clique: Array = _confirmer_clique("P:" + note, func(i: int) -> bool:
+            # The stub-skip stops an UNEARNED pitch leaking (a record's
+            # star_idx is set the instant its floating widget is built, with
+            # nothing actually confirmed) — but once pitch_revealed is true
+            # the Listen mechanic has legitimately earned that ground truth,
+            # exactly the way Color's is earned for free.
+            if _record_is_unconfirmed_star_widget_stub(i) \
+                    and not bool(_match_records[i].get("pitch_revealed", false)):
+                return false
+            return _effective_pitch_state(i, note) == 1)
+        if _value_fully_accounted_for(record_idx, clique, _pitch_star_count(note)):
+            excluded.append(note)
     return excluded
 
 
 func _compute_excluded_colors_for(record_idx: int) -> Array[int]:
-    # Same shape as _compute_excluded_pitches_for, gated the same way via
-    # _color_star_count for the same not-alldiff reason. Deliberately does
-    # NOT skip unconfirmed star-widget stubs the way the Name/Pitch
-    # exclusion functions do: Color is a "given" axis (see
-    # constellation_puzzle_category_facts memory) — painted on the map,
-    # zero effort, true for every star whether or not its identity has
-    # been confirmed — so _effective_color_state's ground-truth tier
-    # isn't a leak here the way it was for Name (never confirmed for
-    # free) or would be for Pitch (gated behind the listen mechanic).
+    # Deliberately does NOT skip unconfirmed star-widget stubs the way the
+    # Name/Pitch exclusions do: Color is a "given" axis (see
+    # constellation_puzzle_category_facts memory) — painted on the map, zero
+    # effort, true for every star whether or not its identity is confirmed —
+    # so _effective_color_state's ground-truth tier isn't a leak here.
     var excluded: Array[int] = []
     for ci in _host.COLOR_NAME_LABELS.size():
-        if _color_star_count(ci) != 1:
-            continue
-        for i in _match_records.size():
-            if i == record_idx:
-                continue
-            if _effective_color_state(i, ci) == 1 and _records_provably_distinct(record_idx, i):
-                excluded.append(ci)
-                break
+        var color_idx: int = int(ci)
+        var clique: Array = _confirmer_clique("C:%d" % color_idx, func(i: int) -> bool:
+            return _effective_color_state(i, color_idx) == 1)
+        if _value_fully_accounted_for(record_idx, clique, _color_star_count(color_idx)):
+            excluded.append(color_idx)
     return excluded
+
+
+func _compute_excluded_degrees_for(record_idx: int) -> Array[int]:
+    # Same "given axis" reasoning as Color — Degree is structural, visible
+    # on the map by tracing connections.
+    var excluded: Array[int] = []
+    var degrees_set: Dictionary = {}
+    for s in _host._star_count:
+        degrees_set[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
+    for deg in degrees_set.keys():
+        var degree: int = int(deg)
+        var clique: Array = _confirmer_clique("D:%d" % degree, func(i: int) -> bool:
+            return _effective_degree_state(i, degree) == 1)
+        if _value_fully_accounted_for(record_idx, clique, _degree_star_count(degree)):
+            excluded.append(degree)
+    return excluded
+
+
+# ==================================================
+# CLUE COVERAGE — built on the CELL model, per the unified-grid design
+# intent (the grid is meant to be the one shared checker for entropy,
+# trimming, and coverage alike, not a parallel ad-hoc checker per consumer).
+#
+# A clue's persisted "cells" (ConstellationLogicPuzzle CACHE_VERSION 4) are
+# its actual ASSERTIONS, each {cat_a, star_a, cat_b, star_b, is_true}
+# meaning "the star identified via cat_a and the star identified via cat_b
+# are (is_true) / are not (not is_true) the same star" — see
+# _build_matrix()'s own `is_true: star_a == star_b`.
+#
+# _match_records models exactly that same thing: one record IS a
+# hypothesized star identity with descriptors attached. So a cell is
+# "resolved" when the player's own records assert the same relation, and
+# the sign falls out natively — an ELIMINATION resolves an is_true==false
+# cell just as fully as a confirm resolves an is_true==true one. That is
+# the whole reason the previous chars-based version could not be made
+# correct by adjustment: "chars" records which entities a clue MENTIONS,
+# and two clues asserting opposite things carry identical chars.
+#
+# Also note what's gone: no ground-truth lookup (pitch_rank_solution /
+# star_names / star_colors as an answer key) appears below any more. Both
+# sides are expressed in the same descriptor space, so coverage no longer
+# asks "is the truth about this star known" — only "did the player record
+# this relation."
+# ==================================================
+
+## Player-space state of one descriptor — "is this record the star that
+## (has this name / fires at this position / is this color / plays this
+## note)" — as 1 confirmed, 2 ruled out, 0 unknown. `star` identifies WHICH
+## descriptor via the cached ground-truth arrays, exactly the way each
+## Form's own label rendering does; it is not itself an answer-key read,
+## since nothing here returns the star.
+func _record_descriptor_state(record_idx: int, cat: int, star: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return 0
+    if star < 0 or star >= _host._star_count:
+        return 0
+    match cat:
+        ConstellationLogicPuzzle.Category.NAME:
+            if star >= _host._star_names.size():
+                return 0
+            return _effective_name_state(record_idx, str(_host._star_names[star]))
+        ConstellationLogicPuzzle.Category.SEQUENCE:
+            if star >= _host._pitch_rank_solution.size():
+                return 0
+            var pos: int = int(_host._pitch_rank_solution[star]) + 1
+            var r: Dictionary = _match_records[record_idx]
+            var lo: int = int(r.get("seq_lo", 0))
+            var hi: int = int(r.get("seq_hi", 0))
+            if lo > 0 and lo == hi:
+                return 1 if lo == pos else 2
+            # Deliberately _raw_seq_candidate_set (this record's own stored
+            # bounds/candidates), NOT _effective_seq_candidates: the latter
+            # calls _compute_excluded_positions_for, which loops every
+            # record calling _records_provably_distinct, which itself sweeps
+            # every category — all of that nested inside this function's own
+            # per-record loop, inside a per-cell loop, inside a per-clue
+            # loop, re-run on every _populate_markers_panel(). That was the
+            # multi-second Study-panel delay (roughly 10^6 ops per repaint).
+            # No coverage is lost: an exclusion that _compute_excluded_
+            # positions_for would have derived gets promoted into real
+            # bounds by _settle_singleton_sequences() on the same refresh.
+            var raw_set: Array = _raw_seq_candidate_set(r)
+            if raw_set.is_empty():
+                return 0   # no sequence information at all on this record
+            return 0 if raw_set.has(pos) else 2
+        ConstellationLogicPuzzle.Category.COLOR:
+            if star >= _host._star_colors.size():
+                return 0
+            return _effective_color_state(record_idx, int(_host._star_colors[star]))
+        ConstellationLogicPuzzle.Category.PITCH:
+            # Skip an auto-created star-widget stub's un-earned ground-truth
+            # tier, same guard _compute_excluded_pitches_for uses — a stub
+            # exists for every star the instant its widget renders, and its
+            # pitch is only legitimately known once Listen has fired.
+            if _record_is_unconfirmed_star_widget_stub(record_idx) \
+                    and not bool(_match_records[record_idx].get("pitch_revealed", false)):
+                return 0
+            var note: String = _host._widgets._note_name_for_star(star)
+            if note == "?":
+                return 0
+            return _effective_pitch_state(record_idx, note)
+    return 0
+
+
+## Has the player's own note state resolved this cell to the value the clue
+## asserts? Three sound routes, matching how the records actually get used:
+##  - is_true: one record confirms BOTH descriptors (they're the same star).
+##  - not is_true: one record confirms one descriptor and rules out the
+##    other (same record can't be both) ...
+##  - not is_true: ...or two DIFFERENT records confirm one descriptor each
+##    and are provably distinct (so the descriptors are on different stars).
+func _cell_resolved_by_player(cell: Dictionary) -> bool:
+    var cat_a: int = int(cell.get("cat_a", -1))
+    var star_a: int = int(cell.get("star_a", -1))
+    var cat_b: int = int(cell.get("cat_b", -1))
+    var star_b: int = int(cell.get("star_b", -1))
+    var want_true: bool = bool(cell.get("is_true", false))
+
+    var confirms_a: Array[int] = []
+    var confirms_b: Array[int] = []
+    for i in _match_records.size():
+        var sa: int = _record_descriptor_state(i, cat_a, star_a)
+        var sb: int = _record_descriptor_state(i, cat_b, star_b)
+        if want_true:
+            if sa == 1 and sb == 1:
+                return true
+        else:
+            if (sa == 1 and sb == 2) or (sb == 1 and sa == 2):
+                return true
+        if sa == 1:
+            confirms_a.append(i)
+        if sb == 1:
+            confirms_b.append(i)
+
+    if not want_true:
+        for ia in confirms_a:
+            for ib in confirms_b:
+                if ia != ib and _records_provably_distinct(ia, ib):
+                    return true
+    return false
+
+
+## Coverage for one clue: how many of its asserted cells the player's own
+## notes have resolved. Returns {"covered": int, "total": int}; total drops
+## any cell with an out-of-range star (corrupted/stale cache), so it can be
+## zero — check before dividing.
+func _clue_coverage(cells: Array) -> Dictionary:
+    var covered: int = 0
+    var total: int = 0
+    for cell in cells:
+        if not (cell is Dictionary):
+            continue
+        var c: Dictionary = cell
+        var star_a: int = int(c.get("star_a", -1))
+        var star_b: int = int(c.get("star_b", -1))
+        if star_a < 0 or star_a >= _host._star_count \
+                or star_b < 0 or star_b >= _host._star_count:
+            continue
+        total += 1
+        if _cell_resolved_by_player(c):
+            covered += 1
+    return {"covered": covered, "total": total}
+
+
+## Memoizes _clue_coverage_fraction within one refresh cycle. Each of the
+## three coverage tabs iterates the FULL clue list and asks every clue for
+## its fraction, so without this the same answer is recomputed once per tab
+## per repaint. Cleared at the top of _full_propagation_refresh() (the only
+## thing that can change the answer) and on _load_match_records().
+var _coverage_cache: Dictionary = {}
+
+## Per-value confirmer cliques (see _confirmer_clique). Building one is
+## O(records²) in _records_provably_distinct calls, and every Sort:tab row
+## and popup asks for the same values over and over while a panel rebuilds,
+## so without this the cardinality rule would reintroduce the same
+## multi-second stall the coverage code just had. Cleared by
+## _clear_deduction_caches().
+var _confirmer_clique_cache: Dictionary = {}
+
+
+## Candidate-star sets, keyed by record index. Split out of the clique
+## cache rather than sharing it: the two have genuinely different
+## lifetimes — a clique stays valid for a whole refresh, while a candidate
+## set is invalidated the moment that record's own colour/pitch/degree
+## state changes, which _settle_derived_eliminations() does mid-pass. They
+## were briefly in one dict; nothing read a stale entry on today's call
+## order, but that was luck, not design.
+var _candidate_star_cache: Dictionary = {}
+
+
+## Invalidated by any change to _match_records. Called at the start of
+## _full_propagation_refresh() (which precedes every full UI rebuild) and
+## from _save_puzzle_notes() (which every mutation path already calls), so
+## a popup opened without an intervening refresh can't read stale data.
+func _clear_deduction_caches() -> void:
+    _coverage_cache.clear()
+    _confirmer_clique_cache.clear()
+    _candidate_star_cache.clear()
+
+
+## Convenience wrapper — 0.0 (nothing recorded yet) to 1.0 (every assertion
+## this clue makes is already in the player's notes), 0.0 for a clue with
+## no usable cells rather than dividing by zero.
+func _clue_coverage_fraction(cells: Array) -> float:
+    var key: String = str(cells)
+    if _coverage_cache.has(key):
+        return float(_coverage_cache[key])
+    var cov: Dictionary = _clue_coverage(cells)
+    var total: int = int(cov["total"])
+    var result: float = 0.0 if total <= 0 else float(cov["covered"]) / float(total)
+    _coverage_cache[key] = result
+    return result
 
 
 func _record_is_unconfirmed_star_widget_stub(record_idx: int) -> bool:
@@ -2009,15 +2614,302 @@ func _effective_seq_bounds(record_idx: int) -> Array:
 
 
 func _full_propagation_refresh() -> void:
+    _clear_deduction_caches()
+    _settle_identical_records()
     _derive_color_eliminations_from_star_elim()
+    # Candidate-star closure before the per-axis settles: it can resolve a
+    # record's identity outright (star_idx), which every downstream pass
+    # then reads ground truth through.
+    _settle_star_identity_from_candidates()
+    _settle_derived_eliminations()
+    _settle_group_sequence_bounds()
     _settle_singleton_sequences()
     _settle_singleton_names()
     _settle_singleton_pitches()
     _settle_singleton_colors()
+    _settle_singleton_degrees()
     _host._widgets._build_star_widgets()
     _host._widgets._build_star_tags()
     _host._melody_staff_panel.queue_redraw()
     _host._widgets.call_deferred("_populate_markers_panel")
+
+
+# ==================================================
+# CANDIDATE-STAR SET — the general closure for group/member propagation on
+# every "given" axis at once, replacing what would otherwise be a separate
+# hand-written rule per (axis x direction) pair.
+#
+# Every record has a set of stars it could still be. Once that set is
+# known, ALL of these fall out of it uniformly instead of needing their own
+# implementations:
+#   * member -> group: a "White A" slot's candidates are the white stars,
+#     so any value no white star carries is eliminated for it (this is the
+#     "all Blue stars are G4/A#4, so Blue slots can't be anything else"
+#     case).
+#   * group -> member: a star-bound record's candidate set is that one
+#     star, so its given values are pinned (already the ground-truth tier
+#     in _effective_*_state).
+#   * identity by elimination: a candidate set narrowed to exactly ONE star
+#     means the record IS that star — set star_idx and every ground-truth
+#     tier cascades at once.
+#
+# Only Colour and Degree drive the set unconditionally: both are "given"
+# axes (painted on the map / traceable by eye), so reading them leaks
+# nothing. Pitch contributes ONLY for stars whose pitch the player has
+# actually revealed via Listen — using ground-truth pitch otherwise would
+# hand over an un-earned answer, the leak class documented throughout this
+# file. Name and Sequence never contribute: their star mapping is precisely
+# what the puzzle withholds.
+# ==================================================
+
+func _player_knows_star_pitch(star: int) -> bool:
+    for r in _match_records:
+        if int(r.get("star_idx", -1)) == star and bool(r.get("pitch_revealed", false)):
+            return true
+    return false
+
+
+## Stars this record could still be. Intersects every constraint that maps
+## soundly onto stars; returns every star when nothing constrains it.
+func _candidate_stars_for_record(record_idx: int) -> Array:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return []
+    if _candidate_star_cache.has(record_idx):
+        return _candidate_star_cache[record_idx]
+
+    var r: Dictionary = _match_records[record_idx]
+    var out: Array = []
+    var pinned: int = int(r.get("star_idx", -1))
+    if pinned >= 0 and pinned < _host._star_count:
+        out = [pinned]
+        _candidate_star_cache[record_idx] = out
+        return out
+
+    var elim: Dictionary = r.get("star_elim", {})
+    for s in _host._star_count:
+        if int(elim.get(s, 0)) == 2:
+            continue
+        # Colour — always given.
+        var sc: int = int(_host._star_colors[s]) if s < _host._star_colors.size() else -1
+        if sc >= 0 and _effective_color_state(record_idx, sc) == 2:
+            continue
+        # Degree — always given.
+        var sd: int = int(_host._star_degrees[s]) if s < _host._star_degrees.size() else -1
+        if sd >= 0 and _effective_degree_state(record_idx, sd) == 2:
+            continue
+        # Pitch — only for stars the player has actually listened to.
+        if _player_knows_star_pitch(s):
+            var note: String = _host._widgets._note_name_for_star(s)
+            if note != "?" and _effective_pitch_state(record_idx, note) == 2:
+                continue
+        out.append(s)
+    _candidate_star_cache[record_idx] = out
+    return out
+
+
+## |candidates| == 1 means the record IS that star. Setting star_idx makes
+## every _effective_*_state ground-truth tier fire at once, so Colour,
+## Degree, and (once listened) Pitch all resolve without their own rules.
+func _settle_star_identity_from_candidates() -> void:
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        if int(r.get("star_idx", -1)) >= 0:
+            continue
+        var cands: Array = _candidate_stars_for_record(i)
+        if cands.size() != 1:
+            continue
+        var s: int = int(cands[0])
+        # Refuse if another record already owns that star — a real conflict
+        # belongs on an explicit path that can await the dialog, not here.
+        if _find_match_record_by_star_idx(s) >= 0:
+            continue
+        r["star_idx"] = s
+        _sync_color_states_from_star_idx(i)
+        # Identity resolution invalidates BOTH: cliques depend on
+        # provable-distinctness, candidate sets on this record's own state.
+        _confirmer_clique_cache.clear()
+        _candidate_star_cache.clear()
+
+
+## Eliminates every given-axis value that NO candidate star carries. This
+## is the member -> group half; the group -> member half is the ground-truth
+## tier that fires once star_idx resolves.
+func _settle_derived_eliminations() -> void:
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        if int(r.get("star_idx", -1)) >= 0:
+            continue   # ground truth already governs this record
+        var cands: Array = _candidate_stars_for_record(i)
+        if cands.is_empty() or cands.size() >= _host._star_count:
+            continue   # unconstrained: nothing to derive
+
+        var colors: Dictionary = {}
+        var degrees: Dictionary = {}
+        var notes: Dictionary = {}
+        var all_pitches_known: bool = true
+        for c in cands:
+            var s: int = int(c)
+            if s < _host._star_colors.size():
+                colors[int(_host._star_colors[s])] = true
+            if s < _host._star_degrees.size():
+                degrees[int(_host._star_degrees[s])] = true
+            if _player_knows_star_pitch(s):
+                var n: String = _host._widgets._note_name_for_star(s)
+                if n != "?":
+                    notes[n] = true
+            else:
+                all_pitches_known = false
+
+        var color_states: Dictionary = r.get("color_states", {})
+        for ci in _host.COLOR_NAME_LABELS.size():
+            if not colors.has(int(ci)) and int(color_states.get(ci, 0)) == 0:
+                color_states[ci] = 2
+        r["color_states"] = color_states
+
+        var degree_states: Dictionary = r.get("degree_states", {})
+        for s2 in _host._star_count:
+            var dv: int = int(_host._star_degrees[s2]) if s2 < _host._star_degrees.size() else -1
+            if dv >= 0 and not degrees.has(dv) and int(degree_states.get(dv, 0)) == 0:
+                degree_states[dv] = 2
+        r["degree_states"] = degree_states
+
+        # Only sound once EVERY candidate's pitch is player-known: an
+        # unlistened candidate could be carrying the very note about to be
+        # eliminated.
+        if all_pitches_known and not bool(r.get("pitch_revealed", false)):
+            var pitch_states: Dictionary = r.get("pitch_states", {})
+            for n2 in _host._widgets._distinct_note_names():
+                var nn: String = str(n2)
+                if not notes.has(nn) and int(pitch_states.get(nn, 0)) == 0:
+                    pitch_states[nn] = 2
+            r["pitch_states"] = pitch_states
+
+    # This pass writes the very colour/degree/pitch state that candidate
+    # sets are derived FROM, so every cached set is now potentially stale.
+    # Today's call order happens not to re-read one afterwards, but relying
+    # on that is exactly the fragility that splitting this cache out was
+    # meant to remove.
+    _candidate_star_cache.clear()
+
+
+# ==================================================
+# GROUP -> MEMBER PROPAGATION (disjunction narrowing).
+#
+# THIRD distinct structural rule class in this engine, after record-identity
+# unification and the cardinality/pigeonhole exclusion rule. This one is
+# about facts that apply to a GROUP rather than to one record:
+#
+#   A star known to be (say) White is one of the White slot records, though
+#   we can't tell WHICH. So any constraint true of EVERY White slot is true
+#   of that star, even though no merge is possible and none should be —
+#   "White A" is an arbitrary discovery-order letter, not an identity.
+#
+# The engine already had the opposite direction for exactly one axis pair
+# (_derive_color_eliminations_from_star_elim: every star of a colour X'd
+# for a name => that colour eliminated for that name), and nothing at all
+# in this direction. Confirmed live 2026-08-07: "The star that plays D5
+# precedes every white star" entered as a lower bound on every White slot's
+# Sequence row never reached any white star's own map widget.
+#
+# SCOPE — deliberately narrow, stated rather than assumed complete:
+#   * Implemented: Sequence-position narrowing, from Colour and Pitch slot
+#     groups onto a star-bound record.
+#   * NOT implemented: the same narrowing driven by Degree groups (their
+#     "Conn A"/"Conn B" labels collide across different degree values —
+#     see _effective_degree_state's own comment — so the group can't be
+#     identified reliably); group->member propagation on the Name, Colour
+#     or Pitch axes; and member->group in any direction beyond the one
+#     colour/name case that already existed.
+# ==================================================
+
+## Union of the sequence positions still available to a slot group, or []
+## when the group can't be trusted to cover the value's stars exactly, or
+## when any member is wholly unconstrained (union would be everything, so
+## narrowing is a no-op anyway).
+func _group_position_union(record_idx: int, label_key: String, prefix: String, incidence: int) -> Array:
+    if incidence <= 0 or prefix == "":
+        return []
+    var group: Array = []
+    for j in _match_records.size():
+        if j == record_idx:
+            continue
+        var lbl: String = str(_match_records[j].get(label_key, ""))
+        if lbl != "" and lbl.begins_with(prefix):
+            group.append(j)
+    # The group must account for every star carrying the value; a partial
+    # set proves nothing about which slot this star is.
+    if group.size() != incidence:
+        return []
+    var union: Dictionary = {}
+    for j in group:
+        var member_set: Array = _raw_seq_candidate_set(_match_records[int(j)])
+        if member_set.is_empty():
+            return []   # unconstrained member — union is every position
+        for p in member_set:
+            union[int(p)] = true
+    var out: Array = union.keys()
+    out.sort()
+    return out
+
+
+func _settle_group_sequence_bounds() -> void:
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        var s: int = int(r.get("star_idx", -1))
+        if s < 0 or s >= _host._star_count:
+            continue   # only a star-bound record has a knowable group
+        var lo: int = int(r.get("seq_lo", 0))
+        if lo > 0 and lo == int(r.get("seq_hi", 0)):
+            continue   # already pinned exactly; nothing left to narrow
+
+        var unions: Array = []
+        if s < _host._star_colors.size():
+            var ci: int = int(_host._star_colors[s])
+            if ci >= 0 and ci < _host.COLOR_NAME_LABELS.size():
+                var cu: Array = _group_position_union(
+                    i, "color_slot_label", str(_host.COLOR_NAME_LABELS[ci]), _color_star_count(ci))
+                if not cu.is_empty():
+                    unions.append(cu)
+        # Pitch group — only when the player has actually revealed this
+        # star's pitch, else the group membership itself is un-earned.
+        if _player_knows_star_pitch(s):
+            var note: String = _host._widgets._note_name_for_star(s)
+            if note != "?":
+                var pu: Array = _group_position_union(
+                    i, "pitch_slot_label", note, _pitch_star_count(note))
+                if not pu.is_empty():
+                    unions.append(pu)
+        # Degree group — now identifiable, since the slot label carries the
+        # degree value (see _get_or_create_match_record_for_degree_slot).
+        if s < _host._star_degrees.size():
+            var dg: int = int(_host._star_degrees[s])
+            var du: Array = _group_position_union(
+                i, "degree_slot_label", "Conn%d " % dg, _degree_star_count(dg))
+            if not du.is_empty():
+                unions.append(du)
+        if unions.is_empty():
+            continue
+
+        var current: Array = _raw_seq_candidate_set(r)
+        if current.is_empty():
+            current = []
+            for p in range(1, _host._star_count + 1):
+                current.append(p)
+        var narrowed: Array = current.duplicate()
+        for u in unions:
+            var next: Array = []
+            for p in narrowed:
+                if (u as Array).has(p):
+                    next.append(p)
+            narrowed = next
+        # An empty result would mean the player's own entries contradict;
+        # surface that through their explicit entries rather than silently
+        # writing an impossible record here.
+        if narrowed.is_empty() or narrowed.size() >= current.size():
+            continue
+        r["seq_candidates"] = narrowed
+        r["seq_lo"] = 0
+        r["seq_hi"] = 0
 
 
 func _derive_color_eliminations_from_star_elim() -> void:

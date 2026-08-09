@@ -188,21 +188,19 @@ func _draw() -> void:
             continue
 
         var visual_state: String = _cd.get_visual_state(id)
-        var fraction:     float  = _cd.get_spark_fraction(id)
+        var invested:     float  = _cd.get_sparks_invested(id)
         var draw_lines: bool = (
             visual_state == "lines" or visual_state == "art"
         )
 
         if draw_lines:
-            # get_constellation_def() also serves player_constellations/
-            # patron_constellations (loaded from save data), so a corrupted
-            # "line_threshold" field could be wrong-typed — a typed float
-            # assignment from it hangs rather than raising a catchable
-            # error (confirmed this session, same field fixed the same way
-            # in constellation_popout.gd).
-            var raw_lt = _cd.get_constellation_def(id).get("line_threshold", 0.3)
-            var def_lt: float = float(raw_lt) if typeof(raw_lt) in [TYPE_INT, TYPE_FLOAT] else 0.3
-            var line_frac: float = clampf((fraction - def_lt) / (0.85 - def_lt), 0.0, 1.0)
+            # Line brightness ramps from dim at the lines tier up to bright at
+            # the art tier, using the hardcoded absolute spark tiers. The old
+            # per-def fraction-based "line_threshold" / 0.85 math was removed
+            # with the SPARKS_TIER_* rebalance (see constellation_data.gd).
+            var line_frac: float = clampf(
+                (invested - _cd.SPARKS_TIER_LINES) /
+                (_cd.SPARKS_TIER_ART - _cd.SPARKS_TIER_LINES), 0.0, 1.0)
             var line_color: Color = LINE_COLOR_DIM.lerp(LINE_COLOR_BRIGHT, line_frac)
             var def:   Dictionary = _cd.get_constellation_def(id)
             var pairs: Array      = def.get("line_pairs", [])

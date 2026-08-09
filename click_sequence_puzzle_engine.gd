@@ -113,6 +113,21 @@ func reset() -> void:
 func check_availability() -> void:
     if not cd or not gc or constellation_id < 0:
         return
+    # Gate on the Constellation UI having actually been revealed to the
+    # player, not just on this constellation's own unlocked/visual-state
+    # data. Without this, cd.unlocked/get_visual_state() can go non-dark
+    # via a path that never goes through root_ui.gd's own reveal chain —
+    # concretely, constellation_data.gd's on_achievement() calls
+    # _unlock_constellation(), which unconditionally sets
+    # ui_unlocks["constellation"]=true and appends to `unlocked`, entirely
+    # independent of _first_constellation_triggered/_reveal_panel — so the
+    # overlay could accept star clicks (and fire the "any star click"
+    # study-panel-reveal dialogue trigger in root_ui.gd's
+    # _on_puzzle_star_clicked) before the player has ever seen the
+    # Constellation panel exist.
+    if not bool(gc.ui_unlocks.get("constellation", false)):
+        state = State.IDLE
+        return
     var def: Dictionary = cd.get_constellation_def(constellation_id)
     if not def.has("puzzle_sequence"):
         state = State.IDLE

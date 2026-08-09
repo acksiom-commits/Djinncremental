@@ -549,8 +549,6 @@ func _refresh_spark_counter() -> void:
     var raw_invested:   float = _gc.constellation_spark_totals.get(
                                     str(_selected_slot), 0.0) if _gc else 0.0
     var fraction:       float = _cd.get_spark_fraction(_selected_slot)
-    var def:            Dictionary = _cd.get_constellation_def(_selected_slot)
-    var line_threshold: float = _coerce_float(def.get("line_threshold"), 0.3)
     var state:          String = _cd.get_visual_state(_selected_slot)
     var toggle_unlocked: bool = _is_numeric_toggle_unlocked()
     var counter_text: String
@@ -563,19 +561,23 @@ func _refresh_spark_counter() -> void:
         else:
             counter_text = "%s Sparks Endowed" % _fmt_sparks(raw_invested)
     else:
+        # Percent progress toward the next visual tier uses the hardcoded
+        # absolute spark amounts (SPARKS_TIER_STARS / LINES / ART). The old
+        # fraction-based THRESHOLD_STARS / line_threshold ranges were retired
+        # with the rebalance (see constellation_data.gd constants).
         match state:
             "dark":
-                var pct := int((fraction / _cd.THRESHOLD_STARS) * 100.0) \
-                    if _cd.THRESHOLD_STARS > 0.0 else 0
+                var pct := int((raw_invested / _cd.SPARKS_TIER_STARS) * 100.0) \
+                    if _cd.SPARKS_TIER_STARS > 0.0 else 0
                 counter_text = "%d%% to Stars" % clampi(pct, 0, 100)
             "stars":
-                var range_size: float = line_threshold - _cd.THRESHOLD_STARS
-                var pct := int(((fraction - _cd.THRESHOLD_STARS) / range_size) * 100.0) \
+                var range_size: float = _cd.SPARKS_TIER_LINES - _cd.SPARKS_TIER_STARS
+                var pct := int(((raw_invested - _cd.SPARKS_TIER_STARS) / range_size) * 100.0) \
                     if range_size > 0.0 else 100
                 counter_text = "%d%% to Lines" % clampi(pct, 0, 100)
             "lines":
-                var range_size: float = _cd.THRESHOLD_ART - line_threshold
-                var pct := int(((fraction - line_threshold) / range_size) * 100.0) \
+                var range_size: float = _cd.SPARKS_TIER_ART - _cd.SPARKS_TIER_LINES
+                var pct := int(((raw_invested - _cd.SPARKS_TIER_LINES) / range_size) * 100.0) \
                     if range_size > 0.0 else 100
                 counter_text = "%d%% to Art" % clampi(pct, 0, 100)
             "art":
