@@ -240,7 +240,9 @@ func _populate_unused_markers() -> void:
         var text: String = str(clue.get("text", ""))
         if text == "":
             continue
-        if _deduction._clue_coverage_fraction(clue.get("cells", [])) > 0.0:
+        # Unmeasurable clues are NOT unused — see COVERAGE_UNMEASURABLE.
+        var f_un: float = _deduction._clue_coverage_fraction(clue.get("cells", []), clue.get("search_terms", []), clue.get("disclosures", []))
+        if f_un != 0.0:
             continue
         var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
         _host._markers_content.add_child(_make_clue_label(text, col))
@@ -262,8 +264,12 @@ func _populate_useful_markers() -> void:
         var text: String = str(clue.get("text", ""))
         if text == "":
             continue
-        var frac: float = _deduction._clue_coverage_fraction(clue.get("cells", []))
-        if frac <= 0.0 or frac >= 1.0:
+        var frac: float = _deduction._clue_coverage_fraction(clue.get("cells", []), clue.get("search_terms", []), clue.get("disclosures", []))
+        # Partially worked, OR not scoreable at all — an unmeasurable clue
+        # still has something to give, so it belongs here rather than being
+        # buried in Unused (see COVERAGE_UNMEASURABLE).
+        var unmeasurable: bool = frac == _deduction.COVERAGE_UNMEASURABLE
+        if not unmeasurable and (frac <= 0.0 or frac >= 1.0):
             continue
         var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
         _host._markers_content.add_child(_make_clue_label(text, col))
@@ -285,7 +291,8 @@ func _populate_used_up_markers() -> void:
         var text: String = str(clue.get("text", ""))
         if text == "":
             continue
-        if _deduction._clue_coverage_fraction(clue.get("cells", [])) < 1.0:
+        # Never claim "used up" for a clue we cannot score.
+        if _deduction._clue_coverage_fraction(clue.get("cells", []), clue.get("search_terms", []), clue.get("disclosures", [])) < 1.0:
             continue
         var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
         _host._markers_content.add_child(_make_clue_label(text, col))

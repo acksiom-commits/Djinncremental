@@ -2699,9 +2699,367 @@ func _cell_resolved_by_player(cell: Dictionary) -> bool:
 ## notes have resolved. Returns {"covered": int, "total": int}; total drops
 ## any cell with an out-of-range star (corrupted/stale cache), so it can be
 ## zero — check before dividing.
-func _clue_coverage(cells: Array) -> Dictionary:
+## The search-term token a descriptor would render as, matching the format
+## _characteristic_label() writes into search_terms. Used to tell a cell
+## the clue actually STATED from one it merely consumed.
+func _descriptor_term(cat: int, star: int) -> String:
+    if star < 0 or star >= _host._star_count:
+        return ""
+    match cat:
+        ConstellationLogicPuzzle.Category.NAME:
+            return "N:" + str(_host._star_names[star]) if star < _host._star_names.size() else ""
+        ConstellationLogicPuzzle.Category.SEQUENCE:
+            if star >= _host._pitch_rank_solution.size():
+                return ""
+            return "S:%d" % (int(_host._pitch_rank_solution[star]) + 1)
+        ConstellationLogicPuzzle.Category.COLOR:
+            if star >= _host._star_colors.size():
+                return ""
+            return "C:" + str(_host.COLOR_NAME_LABELS[int(_host._star_colors[star])])
+        ConstellationLogicPuzzle.Category.PITCH:
+            var n: String = _host._widgets._note_name_for_star(star)
+            return "P:" + n if n != "?" else ""
+    return ""
+
+
+## Is this cell something the clue TOLD the player, or just the matrix cell
+## the generator happened to consume?
+##
+## grid_updates marks the sampled cell, which is routinely stronger than the
+## sentence: Form 8/Range emits {id x SEQUENCE(exact rank), true} while its
+## text only says "among the first N" — its own comment says so — and Form
+## 5/Pairwise Order emits BOTH stars' exact position cells while the text
+## gives only an ordering. Coverage built on raw cells therefore demanded
+## exact positions the clue never disclosed, so relational and range Forms
+## could never reach "Used Up".
+##
+## A cell was genuinely stated exactly when BOTH of its descriptors were
+## rendered into the text — which search_terms records verbatim. Form 1
+## ("the star that fires 3rd IS X") renders both, so it counts; Range and
+## Pairwise Order never render the exact rank, so their bookkeeping cells
+## are skipped. Negation Forms render both sides, so False cells keep
+## working as before.
+func _cell_was_stated(cell: Dictionary, terms: Array) -> bool:
+    if terms.is_empty():
+        return true   # pre-CACHE_VERSION-5 clue: fall back to counting it
+    var ta: String = _descriptor_term(int(cell.get("cat_a", -1)), int(cell.get("star_a", -1)))
+    var tb: String = _descriptor_term(int(cell.get("cat_b", -1)), int(cell.get("star_b", -1)))
+    if ta == "" or tb == "":
+        return false
+    return terms.has(ta) and terms.has(tb)
+
+
+# ==================================================
+# DISCLOSURE EVALUATION — coverage for RELATIONAL clue content.
+#
+# A cell can only ever say "these two descriptors are the same star / are
+# different stars." Most Forms' actual content is relational — ordering,
+# offsets, adjacency, counts, extremes, ranges, and Mutual Exclusion's
+# "all have different pitches" — and none of that fits in a cell. Measured
+# on real puzzles, that left ~78% of clues with nothing coverage could
+# score at all (they fell back to COVERAGE_UNMEASURABLE).
+#
+# `disclosures` (CACHE_VERSION 6) is the encoding that does fit: the same
+# typed constraint vocabulary the generator already built for the
+# uniqueness CSP, now persisted, plus two value-axis kinds the CSP has no
+# use for. See [[clue-encodings-four-representations]] for why this is the
+# right one of the four and `cells` was the wrong one.
+#
+# EVERY test below is deliberately CONSERVATIVE — it answers "do the
+# player's own notes already FORCE this, in every assignment still open to
+# them?", never "does this look consistent with their notes?". A clue is
+# far better left in Useful one refresh too long than moved to Used Up
+# while it still has something to give.
+# ==================================================
+
+## Records the player has provably pinned to `star`. Only Name and
+## Sequence can do that: they are the alldiff axes, so confirming one
+## names exactly one star. Colour and Pitch are shared across stars, so a
+## confirmed colour identifies nothing on its own and is not consulted
+## here. star_idx counts too, but only past the auto-stub guard — every
+## star gets a star_idx-bound record the moment its widget is built,
+## regardless of anything the player has done.
+func _records_identifying_star(star: int) -> Array:
+    var out: Array = []
+    for i in _match_records.size():
+        if int(_match_records[i].get("star_idx", -1)) == star \
+                and not _record_is_unconfirmed_star_widget_stub(i):
+            out.append(i)
+            continue
+        if _record_descriptor_state(i, ConstellationLogicPuzzle.Category.NAME, star) == 1 \
+                or _record_descriptor_state(i, ConstellationLogicPuzzle.Category.SEQUENCE, star) == 1:
+            out.append(i)
+    return out
+
+
+## Star-index-keyed sequence candidates. _effective_seq_candidates() is the
+## expensive reader (_compute_excluded_positions_for sweeps every record),
+## and a single Mutual Exclusion or Extreme clue asks about the same star
+## repeatedly, as do the three coverage tabs in turn. Cleared with the rest
+## by _clear_deduction_caches().
+var _star_positions_cache: Dictionary = {}
+
+
+## The 1-based sequence positions still open to `star` under the player's
+## notes. Empty means UNKNOWN (nothing identifies the star yet), which
+## every caller must read as "not entailed" — never as "no positions".
+func _player_positions_for_star(star: int) -> Array:
+    if _star_positions_cache.has(star):
+        return _star_positions_cache[star]
+    var recs: Array = _records_identifying_star(star)
+    var out: Array = []
+    var seeded: bool = false
+    for idx in recs:
+        var c: Array = _effective_seq_candidates(int(idx))
+        if c.is_empty():
+            continue
+        if not seeded:
+            out = c.duplicate()
+            seeded = true
+            continue
+        # Identity unification should have merged these already; intersect
+        # rather than trust that, so a stale split can only under-report.
+        var merged: Array = []
+        for p in out:
+            if c.has(p):
+                merged.append(p)
+        out = merged
+    _star_positions_cache[star] = out
+    return out
+
+
+## True only when EVERY still-open position pair satisfies `relation` — the
+## definition of "the player's notes force this". Unknown on either side
+## (empty set) is false, never vacuously true.
+func _all_position_pairs_satisfy(pa: Array, pb: Array, relation: Callable) -> bool:
+    if pa.is_empty() or pb.is_empty():
+        return false
+    for x in pa:
+        for y in pb:
+            if not bool(relation.call(int(x), int(y))):
+                return false
+    return true
+
+
+func _positions_strictly_before(pa: Array, pb: Array) -> bool:
+    return _all_position_pairs_satisfy(pa, pb, func(x: int, y: int) -> bool: return x < y)
+
+
+## Full value domain for a shared-value axis, read from ground truth (every
+## colour and every note in the constellation sits on some star).
+func _value_domain(cat: int) -> Array:
+    var out: Array = []
+    for s in _host._star_count:
+        var v
+        if cat == ConstellationLogicPuzzle.Category.COLOR:
+            if s >= _host._star_colors.size():
+                continue
+            v = int(_host._star_colors[s])
+        else:
+            var n: String = _host._widgets._note_name_for_star(s)
+            if n == "?":
+                continue
+            v = n
+        if not out.has(v):
+            out.append(v)
+    return out
+
+
+## Values on `cat` still open to `star`. Empty means UNKNOWN, same contract
+## as _player_positions_for_star().
+## Same lifetime and reasoning as _star_positions_cache: values_all_different
+## asks about the same star once per pair, and _effective_pitch_state is not
+## cheap enough to redo O(pairs x domain) times per tab repaint.
+var _star_values_cache: Dictionary = {}
+
+
+func _possible_values_for_star(star: int, cat: int) -> Array:
+    var vkey: String = "%d:%d" % [star, cat]
+    if _star_values_cache.has(vkey):
+        return _star_values_cache[vkey]
+    var recs: Array = _records_identifying_star(star)
+    if recs.is_empty():
+        _star_values_cache[vkey] = []
+        return []
+    var out: Array = []
+    for v in _value_domain(cat):
+        var eliminated: bool = false
+        for idx in recs:
+            var st: int = 0
+            if cat == ConstellationLogicPuzzle.Category.COLOR:
+                st = _effective_color_state(int(idx), int(v))
+            else:
+                st = _effective_pitch_state(int(idx), str(v))
+            if st == 2:
+                eliminated = true
+                break
+        if not eliminated:
+            out.append(v)
+    _star_values_cache[vkey] = out
+    return out
+
+
+func _value_sets_disjoint(a: Array, b: Array) -> bool:
+    if a.is_empty() or b.is_empty():
+        return false
+    for v in a:
+        if b.has(v):
+            return false
+    return true
+
+
+## Has the player already derived everything this disclosure says?
+##
+## Rank fields in the fact vocabulary are 0-based (they index
+## pitch_rank_solution); player-side positions are 1-based, hence the +1
+## on every crossing.
+func _disclosure_satisfied(f: Dictionary) -> bool:
+    var kind: String = str(f.get("kind", ""))
+    match kind:
+        "ordinal_exact":
+            var p: Array = _player_positions_for_star(int(f.get("s", -1)))
+            return p.size() == 1 and int(p[0]) == int(f.get("r", -1)) + 1
+        "ordinal_neg":
+            var pn: Array = _player_positions_for_star(int(f.get("s", -1)))
+            return not pn.is_empty() and not pn.has(int(f.get("r", -1)) + 1)
+        "ordinal_cmp":
+            var pa: Array = _player_positions_for_star(int(f.get("a", -1)))
+            var pb: Array = _player_positions_for_star(int(f.get("b", -1)))
+            if bool(f.get("a_gt_b", false)):
+                return _positions_strictly_before(pb, pa)
+            return _positions_strictly_before(pa, pb)
+        "ordinal_chain":
+            var ca: Array = _player_positions_for_star(int(f.get("a", -1)))
+            var cm: Array = _player_positions_for_star(int(f.get("mid", -1)))
+            var cb: Array = _player_positions_for_star(int(f.get("b", -1)))
+            return _positions_strictly_before(ca, cm) and _positions_strictly_before(cm, cb)
+        "ordinal_adjacent", "ordinal_offset":
+            var off: int = int(f.get("offset", 1))
+            var oa: Array = _player_positions_for_star(int(f.get("a", -1)))
+            var ob: Array = _player_positions_for_star(int(f.get("b", -1)))
+            return _all_position_pairs_satisfy(oa, ob,
+                func(x: int, y: int) -> bool: return x == y + off)
+        "ordinal_range":
+            var rp: Array = _player_positions_for_star(int(f.get("s", -1)))
+            if rp.is_empty():
+                return false
+            var lo: int = int(f.get("lo", 0)) + 1
+            var hi: int = int(f.get("hi", 0)) + 1
+            for x in rp:
+                if int(x) < lo or int(x) > hi:
+                    return false
+            return true
+        "ordinal_either_or":
+            var ep: Array = _player_positions_for_star(int(f.get("s", -1)))
+            if ep.is_empty():
+                return false
+            var r1: int = int(f.get("r1", -1)) + 1
+            var r2: int = int(f.get("r2", -1)) + 1
+            for x in ep:
+                if int(x) != r1 and int(x) != r2:
+                    return false
+            return true
+        "ordinal_extreme":
+            var xs: Array = _player_positions_for_star(int(f.get("s", -1)))
+            var want_lowest: bool = bool(f.get("want_lowest", false))
+            var neighbors: Array = f.get("neighbors", [])
+            if neighbors.is_empty():
+                return false
+            for n in neighbors:
+                var np: Array = _player_positions_for_star(int(n))
+                var ok: bool = _positions_strictly_before(xs, np) if want_lowest \
+                    else _positions_strictly_before(np, xs)
+                if not ok:
+                    return false
+            return true
+        "ordinal_count_before":
+            # Needs EVERY neighbour's side settled, not just enough of them
+            # to hit k — an undecided neighbour could still land either
+            # way and change the count.
+            var cs: Array = _player_positions_for_star(int(f.get("s", -1)))
+            var cneighbors: Array = f.get("neighbors", [])
+            if cneighbors.is_empty():
+                return false
+            var before: int = 0
+            for n2 in cneighbors:
+                var n2p: Array = _player_positions_for_star(int(n2))
+                if _positions_strictly_before(n2p, cs):
+                    before += 1
+                elif not _positions_strictly_before(cs, n2p):
+                    return false   # this neighbour is still undecided
+            return before == int(f.get("k", -1))
+        "values_all_different":
+            var cat: int = int(f.get("cat", -1))
+            var stars: Array = f.get("stars", [])
+            if stars.size() < 2:
+                return false
+            var sets: Array = []
+            for s2 in stars:
+                sets.append(_possible_values_for_star(int(s2), cat))
+            for i2 in sets.size():
+                for j2 in range(i2 + 1, sets.size()):
+                    if not _value_sets_disjoint(sets[i2], sets[j2]):
+                        return false
+            return true
+        "descriptor_either_or":
+            # "A is either B or C." Entailed when the player has ruled out
+            # every OTHER value on that axis for the record holding A —
+            # narrowing to the same two the clue named. Compared by
+            # rendered term, not star index, so shared-value axes
+            # (Colour/Pitch) don't demand eliminating a star whose value
+            # is one of the two named.
+            var acat: int = int(f.get("cat_a", -1))
+            var astar: int = int(f.get("star_a", -1))
+            var bcat: int = int(f.get("cat_b", -1))
+            var t1: String = _descriptor_term(bcat, int(f.get("s1", -1)))
+            var t2: String = _descriptor_term(bcat, int(f.get("s2", -1)))
+            if t1 == "" or t2 == "":
+                return false
+            for i3 in _match_records.size():
+                if _record_descriptor_state(i3, acat, astar) != 1:
+                    continue
+                var all_others_out: bool = true
+                for t3 in _host._star_count:
+                    var term: String = _descriptor_term(bcat, int(t3))
+                    if term == "" or term == t1 or term == t2:
+                        continue
+                    if _record_descriptor_state(i3, bcat, int(t3)) != 2:
+                        all_others_out = false
+                        break
+                if all_others_out:
+                    return true
+            return false
+        "values_same":
+            var vcat: int = int(f.get("cat", -1))
+            var va: Array = _possible_values_for_star(int(f.get("a", -1)), vcat)
+            var vb: Array = _possible_values_for_star(int(f.get("b", -1)), vcat)
+            return va.size() == 1 and vb.size() == 1 and va[0] == vb[0]
+    return false
+
+
+## Kinds _disclosure_satisfied() can actually rule on. Anything else (today
+## only "flavor", which asserts nothing) must not enter the denominator —
+## counting an unscoreable disclosure as unmet would pin its clue below
+## 1.0 forever, which is exactly the failure mode raw `cells` had.
+const SCOREABLE_DISCLOSURE_KINDS: Array = [
+    "ordinal_exact", "ordinal_neg", "ordinal_cmp", "ordinal_chain",
+    "ordinal_adjacent", "ordinal_offset", "ordinal_range",
+    "ordinal_either_or", "ordinal_extreme", "ordinal_count_before",
+    "values_all_different", "values_same", "descriptor_either_or",
+]
+
+
+func _clue_coverage(cells: Array, terms: Array = [], disclosures: Array = []) -> Dictionary:
     var covered: int = 0
     var total: int = 0
+    for d in disclosures:
+        if not (d is Dictionary):
+            continue
+        if not SCOREABLE_DISCLOSURE_KINDS.has(str((d as Dictionary).get("kind", ""))):
+            continue
+        total += 1
+        if _disclosure_satisfied(d):
+            covered += 1
     for cell in cells:
         if not (cell is Dictionary):
             continue
@@ -2711,6 +3069,8 @@ func _clue_coverage(cells: Array) -> Dictionary:
         if star_a < 0 or star_a >= _host._star_count \
                 or star_b < 0 or star_b >= _host._star_count:
             continue
+        if not _cell_was_stated(c, terms):
+            continue   # consumed-but-unstated bookkeeping cell
         total += 1
         if _cell_resolved_by_player(c):
             covered += 1
@@ -2749,6 +3109,8 @@ var _candidate_star_cache: Dictionary = {}
 ## a popup opened without an intervening refresh can't read stale data.
 func _clear_deduction_caches() -> void:
     _coverage_cache.clear()
+    _star_positions_cache.clear()
+    _star_values_cache.clear()
     _confirmer_clique_cache.clear()
     _candidate_star_cache.clear()
     _distinct_pair_cache.clear()
@@ -2761,13 +3123,33 @@ func _clear_deduction_caches() -> void:
 ## Convenience wrapper — 0.0 (nothing recorded yet) to 1.0 (every assertion
 ## this clue makes is already in the player's notes), 0.0 for a clue with
 ## no usable cells rather than dividing by zero.
-func _clue_coverage_fraction(cells: Array) -> float:
-    var key: String = str(cells)
+## Returns 0.0-1.0, or UNMEASURABLE (-1.0) when the clue has no cell this
+## engine can score.
+##
+## That is the common case, not an edge case: a cell can only express "these
+## two descriptors are the same star / different stars", and most Forms'
+## content is RELATIONAL — ordering, offsets, adjacency, counts, extremes,
+## and Mutual Exclusion's "all have different pitches", the single largest
+## bucket. Measured on real puzzles, ~78% of clues have no scoreable cell.
+## Sequence-axis relational content does have an encoding (solver_facts:
+## ordinal_cmp / ordinal_range / ordinal_offset / ...), but it is neither
+## persisted nor consumed here yet, and the non-Sequence axes have no
+## encoding at all.
+##
+## Reporting those as 0.0 would bury them in "Unused" permanently — a worse
+## failure than the over-counting this replaced. UNMEASURABLE lets the tabs
+## show them as actionable instead of asserting something false about them.
+const COVERAGE_UNMEASURABLE: float = -1.0
+
+
+func _clue_coverage_fraction(cells: Array, terms: Array = [], disclosures: Array = []) -> float:
+    var key: String = str(cells) + "|" + str(terms) + "|" + str(disclosures)
     if _coverage_cache.has(key):
         return float(_coverage_cache[key])
-    var cov: Dictionary = _clue_coverage(cells)
+    var cov: Dictionary = _clue_coverage(cells, terms, disclosures)
     var total: int = int(cov["total"])
-    var result: float = 0.0 if total <= 0 else float(cov["covered"]) / float(total)
+    var result: float = COVERAGE_UNMEASURABLE if total <= 0 \
+        else float(cov["covered"]) / float(total)
     _coverage_cache[key] = result
     return result
 

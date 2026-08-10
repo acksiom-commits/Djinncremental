@@ -1157,7 +1157,13 @@ func check_solution(candidate: Array) -> bool:
 # can serve the Clues SEARCH tab: chars lists nodes a Form may never render
 # (Range's Sequence node, Pairwise Order's axis nodes), and hop amounts are
 # computed from _distances, which is generator-internal and never cached.
-const CACHE_VERSION: int = 5
+# version 6: each entry also carries "disclosures" — the clue's solver_facts,
+# i.e. what it actually TELLS the player, in a typed constraint vocabulary
+# (ordinal_cmp / ordinal_range / all_different / ...). Cells cannot express
+# relational content at all (a cell only says "same star / different star"),
+# so ~78%% of clues had nothing coverage could score. See
+# ConstellationPuzzleDeduction._disclosure_satisfied().
+const CACHE_VERSION: int = 6
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -1275,6 +1281,7 @@ func from_cache_dict(data: Dictionary) -> bool:
             "chars":           loaded_chars,
             "cells":           loaded_cells,
             "search_terms":    loaded_terms,
+            "disclosures":     _coerce_array(rc.get("disclosures"), []).duplicate(true),
         })
 
     return star_count > 0 and _generation_complete
@@ -2188,7 +2195,18 @@ func _build_form_disjunction(chain: Dictionary) -> Dictionary:
     var solver_facts: Array = _seq_fact_for_label(subject_ch) + _seq_fact_for_label(true_ch) + _seq_fact_for_label(decoy_ch)
     if cat_b == Category.SEQUENCE:
         solver_facts.append({"kind": "ordinal_either_or", "s": star_a, "r1": true_val_b, "r2": decoy_val_b})
+    # The disjunction itself, on ANY axis — the above only captures it when
+    # cat_b is Sequence, which left every Colour/Pitch/Name disjunction with
+    # no scoreable content at all. Rides in value_facts so the CSP's input is
+    # untouched; see Form 13.
+    var value_facts: Array = [{
+        "kind": "descriptor_either_or",
+        "cat_a": cat_a, "star_a": star_a, "cat_b": cat_b,
+        "s1": int(_cat_value_to_star[cat_b][true_val_b]),
+        "s2": int(_cat_value_to_star[cat_b][decoy_val_b]),
+    }]
     return {
+        "value_facts": value_facts,
         "chars": [subject_ch, true_ch, decoy_ch],
         "text": text,
         "grid_updates": [
@@ -2457,6 +2475,8 @@ func _build_form_equality_pair(chain: Dictionary) -> Dictionary:
     # be Sequence, in which case its label directly discloses an exact rank.
     var solver_facts: Array = _seq_fact_for_label(id_a) + _seq_fact_for_label(id_b)
     return {
+        # See Form 13 for why value content rides in its own array.
+        "value_facts": [{"kind": "values_same", "cat": axis, "a": star_a, "b": star_b}],
         "chars": [id_a, id_b, axis_a, axis_b],
         "text": text,
         "grid_updates": [
@@ -2708,7 +2728,16 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
         solver_facts.append_array(_seq_fact_for_label(id_ch))
     var noun: String = "colors" if axis == Category.COLOR else "pitches"
     var text: String = "%s all have different %s." % [_join_names_and(_sort_labels_for_join(label_items)), noun]
-    return {"chars": chars, "text": text, "grid_updates": grid_updates, "solver_facts": solver_facts}
+    # The clue.s ACTUAL content is pairwise distinctness on `axis` — which no
+    # cell can express (a cell only says same-star/different-star) and which
+    # solver_facts cannot carry either, being Sequence-only. Kept in a
+    # separate array rather than appended to solver_facts so the uniqueness
+    # CSP's input is untouched; the persist site merges the two into "disclosures".
+    var mx_stars: Array = []
+    for p2 in participants:
+        mx_stars.append(int(p2["star"]))
+    var value_facts: Array = [{"kind": "values_all_different", "cat": axis, "stars": mx_stars}]
+    return {"chars": chars, "text": text, "grid_updates": grid_updates, "solver_facts": solver_facts, "value_facts": value_facts}
 
 
 # ── Form 14: Group Comparison — multi-axis abstraction (explicit list of
@@ -3591,6 +3620,12 @@ func _generate_clues_forms_attempt() -> Dictionary:
                     # What the clue's text VISIBLY states — see
                     # CACHE_VERSION 5 and _characteristic_label().
                     "search_terms": _rendered_terms.keys(),
+                    # What the clue DISCLOSES, as evaluable constraints — see
+                    # CACHE_VERSION 6. solver_facts is the CSP.s own input, so
+                    # the Sequence half can never drift from what the puzzle
+                    # was proven unique against; value_facts carries the
+                    # Colour/Pitch content the CSP has no use for.
+                    "disclosures": (_coerce_array(result.get("solver_facts"), []) + _coerce_array(result.get("value_facts"), [])).duplicate(true),
                 })
                 if result.has("solver_facts"):
                     for f in result["solver_facts"]:
