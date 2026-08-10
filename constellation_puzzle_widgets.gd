@@ -71,6 +71,8 @@ func _set_marker_tab(tab_idx: int) -> void:
         _host._sb_tab_active if tab_idx == 2 else _host._sb_tab_inactive)
     _host._tab_guide.add_theme_stylebox_override("normal",
         _host._sb_tab_active if tab_idx == 3 else _host._sb_tab_inactive)
+    _host._tab_search.add_theme_stylebox_override("normal",
+        _host._sb_tab_active if tab_idx == 4 else _host._sb_tab_inactive)
     _populate_markers_panel()
 
 
@@ -95,6 +97,7 @@ func _populate_markers_panel() -> void:
         1: _populate_useful_markers()
         2: _populate_used_up_markers()
         3: _populate_guide_markers()
+        4: _populate_search_markers()
         _: _populate_name_markers()
 
 
@@ -124,14 +127,75 @@ func _all_final_clues_for_tabs() -> Array[Dictionary]:
         # reasoning as characteristics/text/form_id above.
         var chars: Array = raw["chars"] if raw.get("chars") is Array else []
         var cells: Array = raw["cells"] if raw.get("cells") is Array else []
+        var terms: Array = raw["search_terms"] if raw.get("search_terms") is Array else []
         result.append({
             "characteristics": characteristics,
             "text": str(raw.get("text", "")),
             "form_id": _coerce_int(raw.get("form_id", 0), 0),
             "chars": chars,
             "cells": cells,
+            "search_terms": terms,
         })
     return result
+
+
+# ==================================================
+# CLUES SEARCH TAB
+#
+# Terms come from each clue's "search_terms" (CACHE_VERSION 5) — the values
+# its text VISIBLY states, recorded by _characteristic_label() as it renders
+# them. Deliberately NOT derived from "chars", which lists nodes several
+# Forms never render, nor from "cells", which records assertions rather than
+# mentions (a clue saying a name is NOT something must still be findable
+# under that name).
+# ==================================================
+
+## The term the player last picked, e.g. "N:Theryis". "" = none chosen yet,
+## so the tab shows its prompt instead of an empty result list.
+var _search_term: String = ""
+
+## Set order and headings for the popup. Keys are the token prefixes
+## _characteristic_label() writes.
+const SEARCH_SETS: Array = [
+    {"key": "N", "title": "Names"},
+    {"key": "C", "title": "Colors"},
+    {"key": "S", "title": "Sequence positions"},
+    {"key": "P", "title": "Pitches"},
+    {"key": "H", "title": "Hop distances"},
+]
+
+
+## Every term of one kind that appears in at least one clue, deduplicated
+## and ordered for display — numerically for the two integer sets, and
+## alphabetically otherwise.
+func _search_terms_of_kind(kind: String) -> Array:
+    var seen: Dictionary = {}
+    for clue in _all_final_clues_for_tabs():
+        for t in (clue.get("search_terms", []) as Array):
+            var term: String = str(t)
+            if term.begins_with(kind + ":"):
+                seen[term.substr(kind.length() + 1)] = true
+    var out: Array = seen.keys()
+    if kind == "S" or kind == "H":
+        out.sort_custom(func(a, b): return int(a) < int(b))
+    else:
+        out.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
+    return out
+
+
+## Human-readable form of a token, for the header above the results.
+func _search_term_display(term: String) -> String:
+    if term == "" or not term.contains(":"):
+        return term
+    var kind: String = term.get_slice(":", 0)
+    var val: String = term.substr(kind.length() + 1)
+    match kind:
+        "N": return val
+        "C": return "%s stars" % val
+        "S": return "the %s note" % ConstellationLogicPuzzle._ordinal(int(val))
+        "P": return "pitch %s" % val
+        "H": return "%s %s" % [val, "hop" if int(val) == 1 else "hops"]
+    return val
 
 
 ## Called when the player clicks the pinned-clue readout in the study
@@ -234,6 +298,122 @@ func _populate_used_up_markers() -> void:
         lbl.add_theme_font_size_override("font_size", 16)
         lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _host._markers_content.add_child(lbl)
+
+
+func _populate_search_markers() -> void:
+    if _search_term == "":
+        var hint := Label.new()
+        hint.text = "Press SEARCH again to pick a name, color, sequence position, pitch, or hop distance — only those actually written into this constellation's clues are listed."
+        hint.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
+        hint.add_theme_font_size_override("font_size", 16)
+        hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        _host._markers_content.add_child(hint)
+        return
+
+    var header := Label.new()
+    header.text = "Clues mentioning %s" % _search_term_display(_search_term)
+    header.add_theme_color_override("font_color", Color(0.70, 0.58, 0.90, 1))
+    header.add_theme_font_size_override("font_size", 16)
+    header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _host._markers_content.add_child(header)
+
+    var shown: bool = false
+    var neutral_col := STATE_COLORS.muted
+    for clue in _all_final_clues_for_tabs():
+        var text: String = str(clue.get("text", ""))
+        if text == "":
+            continue
+        if not (clue.get("search_terms", []) as Array).has(_search_term):
+            continue
+        var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
+        _host._markers_content.add_child(_make_clue_label(text, col))
+        shown = true
+
+    if not shown:
+        var lbl := Label.new()
+        lbl.text = "No clue mentions that."
+        lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
+        lbl.add_theme_font_size_override("font_size", 16)
+        lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        _host._markers_content.add_child(lbl)
+
+
+## The picker. Built fresh each open so it always reflects the current
+## puzzle — a RESET reshuffles which values the clues actually use.
+func _open_search_popup() -> void:
+    var popup := PopupPanel.new()
+    _host.add_child(popup)
+
+    var margin := MarginContainer.new()
+    for side in ["left", "right", "top", "bottom"]:
+        margin.add_theme_constant_override("margin_" + side, 12)
+    popup.add_child(margin)
+
+    var outer := VBoxContainer.new()
+    outer.add_theme_constant_override("separation", 10)
+    margin.add_child(outer)
+
+    var title := Label.new()
+    title.text = "SEARCH CLUES"
+    title.add_theme_color_override("font_color", Color(0.70, 0.58, 0.90, 1))
+    title.add_theme_font_size_override("font_size", 19)
+    title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    outer.add_child(title)
+
+    var columns := HBoxContainer.new()
+    columns.add_theme_constant_override("separation", 18)
+    outer.add_child(columns)
+
+    var any_terms: bool = false
+    for set_def in SEARCH_SETS:
+        var kind: String = str(set_def["key"])
+        var values: Array = _search_terms_of_kind(kind)
+        if values.is_empty():
+            continue   # this constellation's clues never state one
+        any_terms = true
+
+        var col := VBoxContainer.new()
+        col.add_theme_constant_override("separation", 3)
+        col.size_flags_vertical = Control.SIZE_FILL
+        columns.add_child(col)
+
+        var heading := Label.new()
+        heading.text = str(set_def["title"])
+        heading.add_theme_color_override("font_color", Color(0.70, 0.58, 0.90, 1))
+        heading.add_theme_font_size_override("font_size", 16)
+        col.add_child(heading)
+
+        var sep := HSeparator.new()
+        col.add_child(sep)
+
+        for v in values:
+            var term: String = "%s:%s" % [kind, str(v)]
+            var btn := Button.new()
+            btn.text = str(v)
+            btn.focus_mode = Control.FOCUS_NONE
+            btn.add_theme_font_size_override("font_size", 16)
+            btn.custom_minimum_size = Vector2(96, 26)
+            if term == _search_term:
+                btn.add_theme_color_override("font_color", STATE_COLORS.confirmed)
+            var chosen := term
+            btn.pressed.connect(func():
+                _search_term = chosen
+                popup.hide()
+                popup.queue_free()
+                _set_marker_tab(4))
+            col.add_child(btn)
+
+    if not any_terms:
+        var none := Label.new()
+        none.text = "No clues generated yet."
+        none.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
+        none.add_theme_font_size_override("font_size", 16)
+        outer.add_child(none)
+
+    # Dismissing without choosing leaves the previous result in place.
+    popup.popup_hide.connect(func(): popup.queue_free())
+    var panel: Control = _host.get_node(_host.PANEL_ROOT_PATH)
+    popup.popup_centered(Vector2i(mini(1000, int(panel.size.x) - 80), 0))
 
 
 # DEV: GUIDE TAB — placeholder for later use as a list of BOTH the standard
@@ -2203,8 +2383,13 @@ func _confirmed_sequence_str(star_idx: int) -> String:
     var idx: int = _deduction._find_match_record_by_star_idx(star_idx)
     if idx < 0:
         return "?"
-    var lo_i: int = int(_deduction._match_records[idx].get("seq_lo", 0))
-    var hi_i: int = int(_deduction._match_records[idx].get("seq_hi", 0))
+    # EFFECTIVE bounds, matching what the Sort rows render — reading raw
+    # seq_lo/seq_hi let a position that is pinned only through derived
+    # narrowing show as "?" on the tag while the row beside it showed the
+    # number. Same raw-vs-effective split as the colour and pitch readers.
+    var bounds: Array = _deduction._effective_seq_bounds(idx)
+    var lo_i: int = int(bounds[0])
+    var hi_i: int = int(bounds[1])
     if lo_i > 0 and lo_i == hi_i:
         return str(lo_i)
     return "?"
@@ -2216,11 +2401,13 @@ func _confirmed_pitch_str_for_star(star_idx: int) -> String:
     var idx: int = _deduction._find_match_record_by_star_idx(star_idx)
     if idx < 0:
         return "?"
-    var pitch_states: Dictionary = _deduction._match_records[idx].get("pitch_states", {})
-    for note in pitch_states:
-        if int(pitch_states[note]) == 1:
-            return str(note)
-    return "?"
+    # Shared displayable-pitch guard rather than a raw pitch_states scan: a
+    # Listen-revealed note lives in ground truth via star_idx and never
+    # enters that dict, so star tags showed "?" for pitches the player had
+    # already earned — while the guard still refuses to read ground truth
+    # off an un-listened stub.
+    var note: String = _deduction._displayable_pitch_for_record(idx)
+    return note if note != "" else "?"
 
 
 func _ordinal(n: int) -> String:

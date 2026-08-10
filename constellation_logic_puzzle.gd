@@ -1151,7 +1151,13 @@ func check_solution(candidate: Array) -> bool:
 # bijection those indices are relative to) is generator-internal and never
 # cached; star indices are what the overlay already has for every other
 # cached field. See ConstellationPuzzleDeduction._clue_coverage().
-const CACHE_VERSION: int = 4
+# version 5: each entry also carries "search_terms" — the values the clue's
+# text VISIBLY states, as "N:"/"S:"/"C:"/"P:"/"H:" prefixed tokens, recorded
+# by _characteristic_label() as it renders them. Neither "chars" nor "cells"
+# can serve the Clues SEARCH tab: chars lists nodes a Form may never render
+# (Range's Sequence node, Pairwise Order's axis nodes), and hop amounts are
+# computed from _distances, which is generator-internal and never cached.
+const CACHE_VERSION: int = 5
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -1258,6 +1264,9 @@ func from_cache_dict(data: Dictionary) -> bool:
                 "star_b": _coerce_int(cl.get("star_b"), -1),
                 "is_true": _coerce_bool(cl.get("is_true"), false),
             })
+        var loaded_terms: Array = []
+        for raw_term in _coerce_array(rc.get("search_terms"), []):
+            loaded_terms.append(str(raw_term))
         chosen_form_clues.append({
             "form_id":         _coerce_int(rc.get("form_id"), 0),
             "form_name":       str(rc.get("form_name", "")),
@@ -1265,6 +1274,7 @@ func from_cache_dict(data: Dictionary) -> bool:
             "characteristics": tags,
             "chars":           loaded_chars,
             "cells":           loaded_cells,
+            "search_terms":    loaded_terms,
         })
 
     return star_count > 0 and _generation_complete
@@ -1428,6 +1438,36 @@ func _characteristic_from_key(key: String) -> Dictionary:
     return {"cat": int(parts[0]), "star": int(parts[1])}
 
 
+# Search terms rendered by _characteristic_label() for the clue currently
+# being built. This function is the ONE place a visible star reference is
+# produced, which is what makes it the correct source for "explicitly used
+# in clues": the `chars` node list is not, because several Forms carry
+# nodes they never render (Form 8/Range's Sequence node is bookkeeping
+# only; Pairwise Order's axis nodes are never individually rendered), and
+# hop amounts appear nowhere in cached data at all.
+#
+# Reset before each Form attempt and harvested only when a clue actually
+# commits — see generate_clues_forms()'s attempt loop.
+var _rendered_terms: Dictionary = {}
+
+
+func _note_rendered_term(kind: String, value) -> void:
+    _rendered_terms["%s:%s" % [kind, str(value)]] = true
+
+
+## For the GROUP phrasings a few Forms build themselves rather than through
+## _characteristic_label ("every blue star", "a star that plays A#4", "the
+## blue stars"). Those state a colour or a pitch just as explicitly as a
+## label does, and were invisible to the search sets until this existed —
+## caught by a harness that found the Colour and Hop sets coming back
+## completely empty on a real puzzle.
+func _note_group_value_term(cat: int, star: int) -> void:
+    if cat == Category.COLOR:
+        _note_rendered_term("C", COLOR_NAMES[star_colors[star]])
+    elif cat == Category.PITCH:
+        _note_rendered_term("P", note_name_for_freq(_freq_for_star(star)))
+
+
 func _characteristic_label(ch: Dictionary) -> String:
     # Always a uniquely-resolving descriptor (sub-rank included whenever the
     # raw group has more than one member) — a Characteristic always refers
@@ -1437,15 +1477,22 @@ func _characteristic_label(ch: Dictionary) -> String:
     var s: int = int(ch["star"])
     match int(ch["cat"]):
         Category.NAME:
+            _note_rendered_term("N", star_names[s])
             return star_names[s]
         Category.SEQUENCE:
+            _note_rendered_term("S", pitch_rank_solution[s] + 1)
             return "the star that fires %s" % _ordinal(pitch_rank_solution[s] + 1)
         Category.COLOR:
+            # The sub-rank letter ("marked B") is internal bookkeeping with
+            # no player-facing meaning, so the searchable term is the colour
+            # itself either way.
+            _note_rendered_term("C", COLOR_NAMES[star_colors[s]])
             if _group_size(Category.COLOR, s) <= 1:
                 return "the %s star" % COLOR_NAMES[star_colors[s]].to_lower()
             return "the %s star marked %s" % [COLOR_NAMES[star_colors[s]].to_lower(), _sub_rank_letter(_color_sub_rank[s])]
         Category.PITCH:
             var pname: String = note_name_for_freq(_freq_for_star(s))
+            _note_rendered_term("P", pname)
             if _group_size(Category.PITCH, s) <= 1:
                 return "the star that plays %s" % pname
             return "the star that plays %s marked %s" % [pname, _sub_rank_letter(_pitch_sub_rank[s])]
@@ -1453,6 +1500,11 @@ func _characteristic_label(ch: Dictionary) -> String:
             var ref: int = int(ch["ref"])
             var d: int = _distances[ref][s]
             var article: String = "the" if _stars_at_distance(ref, d).size() <= 1 else "a"
+            # This phrasing states TWO searchable things: the hop amount and
+            # the reference star's name ("a star 2 hops from Theryis"), so a
+            # search for that name must find this clue.
+            _note_rendered_term("H", d)
+            _note_rendered_term("N", star_names[ref])
             return "%s star %d %s from %s" % [article, d, _hop_word(d), star_names[ref]]
     return "?"
 
@@ -2803,6 +2855,7 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
     var subject_id: Dictionary = {"cat": subj_id_cat, "star": subject_star}
     var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
     var group_def_ch: Dictionary = {"cat": group_cat, "star": def_star}
+    _note_group_value_term(group_cat, def_star)
     var group_phrase: String = ("every %s star" % COLOR_NAMES[star_colors[def_star]].to_lower()) if group_cat == Category.COLOR else ("every star that plays %s" % note_name_for_freq(_freq_for_star(def_star)))
     var verb_word: String = "precedes" if precedes else "follows"
     var text: String = "%s %s %s." % [_characteristic_label(subject_id), verb_word, group_phrase]
@@ -2919,9 +2972,11 @@ func _build_form_distance_existential(chain: Dictionary) -> Dictionary:
         return {}
     var target: int = int(candidates[_rng.randi_range(0, candidates.size() - 1)])
     var hop: int = _distances[subject_star][target]
+    _note_group_value_term(prop_cat, target)
     var prop_noun: String = ("a %s star" % COLOR_NAMES[star_colors[target]].to_lower()) if prop_cat == Category.COLOR else ("a star that plays %s" % note_name_for_freq(_freq_for_star(target)))
     var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
     var dist_ch: Dictionary = {"cat": Category.DISTANCE, "star": target, "ref": subject_star}
+    _note_rendered_term("H", hop)
     var text: String = "%s is %d %s from %s." % [_characteristic_label(subject_id), hop, _hop_word(hop), prop_noun]
     # prop_noun is a raw custom string (color/pitch description), never
     # built via _characteristic_label — only subject_id's label discloses
@@ -3190,6 +3245,7 @@ func _build_form_cross_domain_bridge(chain: Dictionary) -> Dictionary:
     var d2_ch: Dictionary = {"cat": d2, "star": extreme_star}
     var d1_ch: Dictionary = {"cat": d1, "star": extreme_star}
     var group_def_ch: Dictionary = {"cat": group_cat, "star": def_star}
+    _note_group_value_term(group_cat, def_star)
     var group_phrase: String = ("the %s stars" % COLOR_NAMES[star_colors[def_star]].to_lower()) if group_cat == Category.COLOR else ("the stars that play %s" % note_name_for_freq(_freq_for_star(def_star)))
     var extreme_word: String = "earliest-firing" if want_lowest else "latest-firing"
     var text: String = "Among %s, the %s one is %s." % [group_phrase, extreme_word, _characteristic_label(d2_ch)]
@@ -3495,6 +3551,10 @@ func _generate_clues_forms_attempt() -> Dictionary:
                 tier_attempts += 1
                 var form_id: int = int(tier_forms[tier_attempts % tier_forms.size()])
                 var chain: Dictionary = _pick_chain_characteristic()
+                # Cleared per ATTEMPT, not per committed clue: a Form that
+                # renders labels and then bails still dirtied the
+                # accumulator, and those terms belong to no clue.
+                _rendered_terms = {}
                 var result: Dictionary = _build_form(form_id, chain)
                 if result.is_empty():
                     continue
@@ -3528,6 +3588,9 @@ func _generate_clues_forms_attempt() -> Dictionary:
                     # What the clue actually ASSERTS, not merely mentions —
                     # see CACHE_VERSION 4's comment and _cells_for_cache().
                     "cells": _cells_for_cache(_coerce_array(result.get("grid_updates"), [])),
+                    # What the clue's text VISIBLY states — see
+                    # CACHE_VERSION 5 and _characteristic_label().
+                    "search_terms": _rendered_terms.keys(),
                 })
                 if result.has("solver_facts"):
                     for f in result["solver_facts"]:

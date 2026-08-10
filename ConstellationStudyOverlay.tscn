@@ -200,6 +200,13 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 19
 text = "Used Up"
 
+[node name="TabSearch" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=1600000004]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 19
+text = "SEARCH"
+
 [node name="ResetButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=1600000002]
 layout_mode = 2
 focus_mode = 0

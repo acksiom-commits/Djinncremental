@@ -153,17 +153,40 @@ func _coerce_array(val, default: Array) -> Array:
 # record; a confirmed slot with unconfirmed pitch gets a "?" at neutral
 # height; a wholly unconfirmed slot draws nothing.
 # ==================================================
+## The note a record can legitimately DISPLAY, or "" — the shared guard for
+## every pitch-showing surface. Uses _effective_pitch_state so a pitch known
+## through Listen (which lives in ground truth via star_idx, not in
+## pitch_states) is shown, while refusing to read ground truth off a bare
+## auto-created star-widget stub, which would hand over an un-earned answer.
+func _displayable_pitch_for_record(record_idx: int) -> String:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return ""
+    var r: Dictionary = _match_records[record_idx]
+    if _record_is_unconfirmed_star_widget_stub(record_idx) \
+            and not bool(r.get("pitch_revealed", false)):
+        return ""
+    for note in _host._widgets._distinct_note_names():
+        if _effective_pitch_state(record_idx, str(note)) == 1:
+            return str(note)
+    return ""
+
+
 func _melody_marker_for_position(seq_pos: int) -> Dictionary:
+    # Reads the EFFECTIVE pitch, not raw pitch_states: a Listen-revealed
+    # note lives in ground truth via star_idx and never lands in that dict,
+    # so the staff used to show "?" for positions whose pitch was fully
+    # known. Same bypass-the-effective-layer class as _known_color_for_
+    # seq_position and _display_color_for_record below.
     var has_position: bool = false
-    for r in _match_records:
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
         var lo: int = int(r.get("seq_lo", 0))
         var hi: int = int(r.get("seq_hi", 0))
         if lo == seq_pos and hi == seq_pos:
             has_position = true
-            var pitch_states: Dictionary = r.get("pitch_states", {})
-            for note_name in pitch_states:
-                if int(pitch_states[note_name]) == 1:
-                    return {"has_position": true, "pitch_known": true, "note_name": str(note_name)}
+            var note: String = _displayable_pitch_for_record(i)
+            if note != "":
+                return {"has_position": true, "pitch_known": true, "note_name": note}
     return {"has_position": has_position, "pitch_known": false, "note_name": ""}
 
 
@@ -173,17 +196,21 @@ func _known_color_for_seq_position(seq_pos: int) -> int:
     # propagated in from a Sort: tab) has narrowed it down to the single
     # remaining candidate — that's the same "resolves by elimination"
     # pattern already used for identity anchors elsewhere in this panel.
-    for r in _match_records:
+    # EFFECTIVE colour, not raw color_states — a colour known because the
+    # record is pinned to a star, or because it wears a "Blue A" slot label,
+    # never lands in that dict. Colour is a given axis (painted on the map),
+    # so reading its ground-truth tier leaks nothing.
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
         var lo: int = int(r.get("seq_lo", 0))
         var hi: int = int(r.get("seq_hi", 0))
         if lo != seq_pos or hi != seq_pos:
             continue
-        var cs: Dictionary = r.get("color_states", {})
         var confirmed: int = -1
         var eliminated_count: int = 0
         var remaining: int = -1
         for ci in _host.COLOR_NAME_LABELS.size():
-            var state: int = int(cs.get(ci, 0))
+            var state: int = _effective_color_state(i, ci)
             if state == 1:
                 confirmed = ci
             elif state == 2:
@@ -507,26 +534,42 @@ func _recompute_color_star_elim(record_idx: int) -> void:
         return
     if int(r.get("star_idx", -1)) >= 0:
         return   # identity already pinned; a wholesale overwrite owns star_elim now
-    var color_states: Dictionary = r.get("color_states", {})
-    var confirmed_color: int = -1
-    for ci in _host.COLOR_NAME_LABELS.size():
-        if int(color_states.get(ci, 0)) == 1:
-            confirmed_color = ci
-            break
+    # GENERALISED 2026-08-07 — was colour-only, deriving ruled-out stars
+    # straight from color_states. It now rules out every star outside the
+    # record's CANDIDATE SET, which is the same closure the rest of the
+    # engine already uses (_candidate_stars_for_record): colour, degree,
+    # and Listen-revealed pitch all narrow it, with the same leak guards.
+    #
+    # Colour-only wasn't the real rule, and it left a reported hole: a name
+    # record with two colours eliminated correctly stopped being a
+    # candidate for those stars internally, but the star-map widgets read
+    # star_elim and so kept offering that name on them. Anything that
+    # narrows the candidate set now reaches the star checklist.
+    #
+    # The marks key keeps its original "color_star_elim_marks" name because
+    # it is a persisted save field — renaming it would silently drop every
+    # existing record's ownership record on load. It tracks stars THIS
+    # function ruled out, so one that stops being ruled out gets released
+    # back to 0 — unless something stronger (a direct identity confirm,
+    # which overwrites star_elim wholesale) has since claimed elim=1.
     var elim: Dictionary = r.get("star_elim", {})
     var prev_marks: Dictionary = r.get("color_star_elim_marks", {})
     var new_marks: Dictionary = {}
-    for s in _host._star_count:
-        var sc: int = _host._star_colors[s] if s < _host._star_colors.size() else 1
-        var ruled_out: bool = false
-        if confirmed_color >= 0:
-            ruled_out = sc != confirmed_color
-        else:
-            ruled_out = int(color_states.get(sc, 0)) == 2
-        if ruled_out:
-            new_marks[s] = true
-            if int(elim.get(s, 0)) != 1:
-                elim[s] = 2
+    # honour_derived=false — this function WRITES star_elim from the
+    # candidate set, so it must not read back its own previous marks or
+    # each one re-justifies itself and can never be released.
+    var cands: Array = _candidate_stars_for_record(record_idx, false)
+    var cand_set: Dictionary = {}
+    for c in cands:
+        cand_set[int(c)] = true
+    # An empty or all-inclusive candidate set means nothing is known well
+    # enough to rule anything out; don't mark, and release prior marks.
+    if not cands.is_empty() and cands.size() < _host._star_count:
+        for s in _host._star_count:
+            if not cand_set.has(s):
+                new_marks[s] = true
+                if int(elim.get(s, 0)) != 1:
+                    elim[s] = 2
     for s in prev_marks.keys():
         if not new_marks.has(s) and int(elim.get(s, 0)) == 2:
             elim[s] = 0
@@ -624,6 +667,14 @@ func _new_match_record(overrides: Dictionary = {}) -> Dictionary:
         "pitch_revealed": false,
         "star_elim": {},
         "color_star_elim_marks": {},
+        # Which Colour/Pitch/Degree eliminations THIS engine derived from the
+        # candidate set (keys "C:i" / "P:note" / "D:d"), as opposed to ones
+        # the player entered. Derived conclusions used to be written into
+        # the same state dicts as player input with no ownership record, so
+        # they could never be released — and because candidate sets are
+        # computed FROM those dicts, each derivation re-justified itself
+        # every refresh. Undoing the input that caused one left it stuck.
+        "derived_value_elim_marks": {},
         "star_idx": -1,
         "color_slot_label": "",
         "pitch_slot_label": "",
@@ -1207,6 +1258,9 @@ func _load_match_records(data: Array) -> void:
             star_elim[star_key] = _coerce_int(raw_star_elim[sk], 0)
 
         var color_star_elim_marks: Dictionary = {}
+        var derived_value_marks: Dictionary = {}
+        for dvk in _coerce_dict(e.get("derived_value_elim_marks"), {}):
+            derived_value_marks[str(dvk)] = true
         for csk in _coerce_dict(e.get("color_star_elim_marks"), {}):
             var elim_star_key: int = _coerce_int_key(csk, -1)
             if elim_star_key < 0:
@@ -1281,6 +1335,7 @@ func _load_match_records(data: Array) -> void:
             "pitch_revealed": _coerce_bool(e.get("pitch_revealed"), false),
             "star_elim": star_elim,
             "color_star_elim_marks": color_star_elim_marks,
+            "derived_value_elim_marks": derived_value_marks,
             "star_idx": _coerce_int(e.get("star_idx"), -1),
             "color_slot_label": str(e.get("color_slot_label", "")),
             "pitch_slot_label": str(e.get("pitch_slot_label", "")),
@@ -1291,10 +1346,12 @@ func _load_match_records(data: Array) -> void:
 func _display_color_for_record(record_idx: int) -> Color:
     if record_idx < 0 or record_idx >= _match_records.size():
         return STATE_COLORS.unresolved_fallback
-    var r: Dictionary = _match_records[record_idx]
-    for ck in r["color_states"]:
-        if int(r["color_states"][ck]) == 1:
-            return _host.STAR_COLORS_BY_IDX[int(ck)]
+    # EFFECTIVE colour — see _known_color_for_seq_position. Reading raw
+    # color_states left every row that knows its colour through star_idx or
+    # a slot label stuck on the unresolved fallback tint.
+    for ci in _host.COLOR_NAME_LABELS.size():
+        if _effective_color_state(record_idx, ci) == 1:
+            return _host.STAR_COLORS_BY_IDX[ci]
     return STATE_COLORS.unresolved_fallback
 
 
@@ -2794,12 +2851,31 @@ func _effective_seq_bounds(record_idx: int) -> Array:
 func _full_propagation_refresh() -> void:
     _clear_deduction_caches()
     _settle_identical_records()
-    _derive_color_eliminations_from_star_elim()
+    # _derive_color_eliminations_from_star_elim() was REMOVED here (2026-08-07).
+    # It was the member->group special case for exactly one axis pair (every
+    # star of a colour X'd for a name => that colour eliminated for that
+    # name), and _settle_derived_eliminations now subsumes it for
+    # Colour, Pitch and Degree alike — any value no candidate star carries
+    # gets eliminated, WITH ownership marks so it can be released again.
+    #
+    # Keeping both was actively harmful: this one ran first, re-deriving
+    # colour eliminations from a star_elim that still held last refresh's
+    # derived marks, and wrote them with no ownership record — so the
+    # release logic downstream could never undo them. That was the third
+    # strand of the self-sustaining loop (star_elim -> colour -> candidates
+    # -> star_elim) that kept a star ruled out after the player undid the
+    # elimination which caused it.
     # Candidate-star closure before the per-axis settles: it can resolve a
     # record's identity outright (star_idx), which every downstream pass
     # then reads ground truth through.
     _settle_star_identity_from_candidates()
     _settle_derived_eliminations()
+    # AFTER the eliminations above, so it sees the narrowest candidate sets.
+    # Runs for EVERY record rather than only the one whose colour button was
+    # just clicked: _recompute_color_star_elim used to be reachable only
+    # from the direct colour-toggle handlers, so a candidate set narrowed by
+    # any other route never reached the star-map name checklists.
+    _settle_star_elim_from_candidates()
     _settle_group_sequence_bounds()
     _settle_singleton_sequences()
     _settle_singleton_names()
@@ -2862,23 +2938,33 @@ func _player_knows_star_pitch(star: int) -> bool:
 
 ## Stars this record could still be. Intersects every constraint that maps
 ## soundly onto stars; returns every star when nothing constrains it.
-func _candidate_stars_for_record(record_idx: int) -> Array:
+## honour_derived=false ignores the star_elim entries THIS engine derived
+## from the candidate set itself (tracked in color_star_elim_marks), leaving
+## only marks that came from elsewhere — a direct player X, or an identity
+## confirm. _recompute_color_star_elim needs that view because it WRITES
+## star_elim from candidates: with the derived marks fed back in, a mark
+## re-justifies itself every refresh and can never be released, so undoing
+## the colour elimination that caused it left the star ruled out forever.
+## Caught by the regression net, not by reading the code.
+func _candidate_stars_for_record(record_idx: int, honour_derived: bool = true) -> Array:
     if record_idx < 0 or record_idx >= _match_records.size():
         return []
-    if _candidate_star_cache.has(record_idx):
-        return _candidate_star_cache[record_idx]
+    var cache_key: String = "%d:%d" % [record_idx, int(honour_derived)]
+    if _candidate_star_cache.has(cache_key):
+        return _candidate_star_cache[cache_key]
 
     var r: Dictionary = _match_records[record_idx]
     var out: Array = []
     var pinned: int = int(r.get("star_idx", -1))
     if pinned >= 0 and pinned < _host._star_count:
         out = [pinned]
-        _candidate_star_cache[record_idx] = out
+        _candidate_star_cache[cache_key] = out
         return out
 
     var elim: Dictionary = r.get("star_elim", {})
+    var self_derived: Dictionary = {} if honour_derived else (r.get("color_star_elim_marks", {}) as Dictionary)
     for s in _host._star_count:
-        if int(elim.get(s, 0)) == 2:
+        if int(elim.get(s, 0)) == 2 and not self_derived.has(s):
             continue
         # Colour — always given.
         var sc: int = int(_host._star_colors[s]) if s < _host._star_colors.size() else -1
@@ -2894,7 +2980,7 @@ func _candidate_stars_for_record(record_idx: int) -> Array:
             if note != "?" and _effective_pitch_state(record_idx, note) == 2:
                 continue
         out.append(s)
-    _candidate_star_cache[record_idx] = out
+    _candidate_star_cache[cache_key] = out
     return out
 
 
@@ -2928,13 +3014,47 @@ func _settle_star_identity_from_candidates() -> void:
 ## is the member -> group half; the group -> member half is the ground-truth
 ## tier that fires once star_idx resolves.
 func _settle_derived_eliminations() -> void:
+    # RELEASE FIRST, then re-derive. These eliminations land in the same
+    # state dicts as player input, and candidate sets are computed FROM
+    # those dicts — so a derivation left in place re-justifies itself on
+    # the next refresh and becomes permanent. Undoing the input that caused
+    # one used to leave it stuck forever (caught by the regression net:
+    # clearing a record's colour eliminations never released the star marks
+    # they had produced). Clearing every previously-derived entry up front
+    # means each refresh re-derives from the player's actual state.
+    for ri in _match_records.size():
+        var rr: Dictionary = _match_records[ri]
+        var marks: Dictionary = rr.get("derived_value_elim_marks", {})
+        if marks.is_empty():
+            continue
+        for key in marks.keys():
+            var kind: String = str(key).get_slice(":", 0)
+            var val: String = str(key).substr(kind.length() + 1)
+            match kind:
+                "C":
+                    if int((rr["color_states"] as Dictionary).get(int(val), 0)) == 2:
+                        rr["color_states"][int(val)] = 0
+                "D":
+                    if int((rr["degree_states"] as Dictionary).get(int(val), 0)) == 2:
+                        rr["degree_states"][int(val)] = 0
+                "P":
+                    if int((rr["pitch_states"] as Dictionary).get(val, 0)) == 2:
+                        rr["pitch_states"][val] = 0
+        rr["derived_value_elim_marks"] = {}
+    _candidate_star_cache.clear()
+    _distinct_pair_cache.clear()
+
     for i in _match_records.size():
         var r: Dictionary = _match_records[i]
         if int(r.get("star_idx", -1)) >= 0:
             continue   # ground truth already governs this record
-        var cands: Array = _candidate_stars_for_record(i)
+        # honour_derived=false: star_elim also carries engine-derived marks
+        # (see _recompute_color_star_elim), and reading those back in here
+        # would reintroduce the same loop one hop wider.
+        var cands: Array = _candidate_stars_for_record(i, false)
         if cands.is_empty() or cands.size() >= _host._star_count:
             continue   # unconstrained: nothing to derive
+        var new_marks: Dictionary = {}
 
         var colors: Dictionary = {}
         var degrees: Dictionary = {}
@@ -2957,6 +3077,7 @@ func _settle_derived_eliminations() -> void:
         for ci in _host.COLOR_NAME_LABELS.size():
             if not colors.has(int(ci)) and int(color_states.get(ci, 0)) == 0:
                 color_states[ci] = 2
+                new_marks["C:%d" % int(ci)] = true
         r["color_states"] = color_states
 
         var degree_states: Dictionary = r.get("degree_states", {})
@@ -2964,6 +3085,7 @@ func _settle_derived_eliminations() -> void:
             var dv: int = int(_host._star_degrees[s2]) if s2 < _host._star_degrees.size() else -1
             if dv >= 0 and not degrees.has(dv) and int(degree_states.get(dv, 0)) == 0:
                 degree_states[dv] = 2
+                new_marks["D:%d" % dv] = true
         r["degree_states"] = degree_states
 
         # Only sound once EVERY candidate's pitch is player-known: an
@@ -2975,7 +3097,9 @@ func _settle_derived_eliminations() -> void:
                 var nn: String = str(n2)
                 if not notes.has(nn) and int(pitch_states.get(nn, 0)) == 0:
                     pitch_states[nn] = 2
+                    new_marks["P:" + nn] = true
             r["pitch_states"] = pitch_states
+        r["derived_value_elim_marks"] = new_marks
 
     # This pass writes the very colour/degree/pitch state that candidate
     # sets AND pairwise distinctness are derived FROM, so both caches are
@@ -3045,6 +3169,16 @@ func _group_position_union(record_idx: int, label_key: String, prefix: String, i
     return out
 
 
+## Pushes every record's candidate-star narrowing out into star_elim, which
+## is what the star-map widgets' per-star name checklists actually read.
+## _recompute_color_star_elim does the work; this just makes sure it runs
+## for all records on every refresh instead of only for whichever record a
+## colour button was clicked on.
+func _settle_star_elim_from_candidates() -> void:
+    for i in _match_records.size():
+        _recompute_color_star_elim(i)
+
+
 func _settle_group_sequence_bounds() -> void:
     for i in _match_records.size():
         var r: Dictionary = _match_records[i]
@@ -3105,29 +3239,3 @@ func _settle_group_sequence_bounds() -> void:
         r["seq_hi"] = 0
 
 
-func _derive_color_eliminations_from_star_elim() -> void:
-    # If every star of some color has been explicitly X'd for a name (via
-    # the star widget's own checklist — "System A"), that color is
-    # definitely not this name's color, even though nobody directly
-    # touched its Color buttons. Without this, a name's Sort:Name row (and
-    # anything else reading color_states) still lets that color through as
-    # if nothing had ruled it out.
-    for r in _match_records:
-        var elim: Dictionary = r.get("star_elim", {})
-        if elim.is_empty():
-            continue
-        var color_states: Dictionary = r.get("color_states", {})
-        for ci in _host.COLOR_NAME_LABELS.size():
-            if int(color_states.get(ci, 0)) != 0:
-                continue   # already confirmed or eliminated some other way
-            var any_star_of_color: bool = false
-            var all_eliminated: bool = true
-            for s in _host._star_count:
-                if s < _host._star_colors.size() and int(_host._star_colors[s]) == ci:
-                    any_star_of_color = true
-                    if int(elim.get(s, 0)) != 2:
-                        all_eliminated = false
-                        break
-            if any_star_of_color and all_eliminated:
-                color_states[ci] = 2
-        r["color_states"] = color_states

@@ -85,6 +85,7 @@ const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres"
 @onready var _tab_useful:          Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabUseful")
 @onready var _tab_used_up:         Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabUsedUp")
 @onready var _tab_guide:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabGuide")
+@onready var _tab_search:          Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabSearch")
 
 # ── STYLE CACHE ──────────────────────────────────────────────────────
 # Shared with constellation_overlay.gd — see star_color_palette.gd.
@@ -118,7 +119,7 @@ var _star_screen_pos:     Array = []     # Array[Vector2], map-space
 var _star_names:          Array = []     # Array[String] from cache
 var _star_colors:         Array = []     # Array[int] 0-3
 var _name_assignments:    Array = []     # Array[String], per-star slot
-var _active_marker_tab:   int   = -1     # -1=Default(Matches) 0=Unused 1=Useful 2=UsedUp 3=Guide
+var _active_marker_tab:   int   = -1     # -1=Default(Matches) 0=Unused 1=Useful 2=UsedUp 3=Guide 4=Search
 var _widget_closed: Dictionary = {}             # star_idx -> bool, closed via X button
 var _pitch_rank_solution:   Array = []     # Array[int], melody step per star
 var _star_pitch_index:      Array = []     # Array[int], raw note index per star (ConstellationData)
@@ -184,6 +185,11 @@ func _ready() -> void:
     _tab_useful.pressed.connect(func(): _widgets._set_marker_tab(1))
     _tab_used_up.pressed.connect(func(): _widgets._set_marker_tab(2))
     _tab_guide.pressed.connect(func(): _widgets._set_marker_tab(3))
+    # SEARCH always opens the picker (not just when switching TO the tab),
+    # so pressing it again while already on the tab is how you change term.
+    _tab_search.pressed.connect(func():
+        _widgets._set_marker_tab(4)
+        _widgets._open_search_popup())
 
     _star_map_control.draw.connect(_draw_star_map)
     _star_map_control.gui_input.connect(_on_map_input)
@@ -464,6 +470,9 @@ func _load_constellation_data() -> void:
                 "star_b": _coerce_int(cl.get("star_b"), -1),
                 "is_true": _coerce_bool(cl.get("is_true"), false),
             })
+        var terms: Array = []
+        for raw_term in _coerce_array(rc.get("search_terms"), []):
+            terms.append(str(raw_term))
         _form_clues_cache.append({
             "form_id":         _coerce_int(rc.get("form_id"), 0),
             "form_name":       str(rc.get("form_name", "")),
@@ -471,6 +480,7 @@ func _load_constellation_data() -> void:
             "characteristics": tags,
             "chars":           chars,
             "cells":           cells,
+            "search_terms":    terms,
         })
 
     _compute_star_screen_positions()
