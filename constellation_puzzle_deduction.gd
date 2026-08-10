@@ -1298,6 +1298,70 @@ func _display_color_for_record(record_idx: int) -> Color:
     return STATE_COLORS.unresolved_fallback
 
 
+## TEMPORARY DIAGNOSTIC (added 2026-08-07, remove once the Staff-popup ->
+## Sort:Pitch report is resolved). Dumps every match record that touches a
+## given note, plus the ground truth needed to interpret them, so the
+## actual in-game state can be compared against what the headless repro
+## produces — six scenarios of that repro pass, so the trigger is something
+## about live state rather than the linkage logic itself.
+## Bound to SHIFT+D in constellation_study_overlay.gd's _input().
+func _debug_dump_pitch_records(note_name: String) -> void:
+    print("")
+    print("========= PITCH RECORD DUMP: '%s' =========" % note_name)
+    print("  incidence (_pitch_star_count) = %d   [1 = singleton, linkage expected]"
+        % _pitch_star_count(note_name))
+    var carriers: Array = []
+    for s in _host._star_count:
+        if _host._widgets._note_name_for_star(s) == note_name:
+            carriers.append(s)
+    print("  stars actually carrying it   = %s" % str(carriers))
+    for s2 in carriers:
+        print("    star %d: name='%s' colour=%d degree=%d true_rank(1-based)=%d" % [
+            int(s2),
+            str(_host._star_names[int(s2)]) if int(s2) < _host._star_names.size() else "?",
+            int(_host._star_colors[int(s2)]) if int(s2) < _host._star_colors.size() else -1,
+            int(_host._star_degrees[int(s2)]) if int(s2) < _host._star_degrees.size() else -1,
+            (int(_host._pitch_rank_solution[int(s2)]) + 1) if int(s2) < _host._pitch_rank_solution.size() else -1,
+        ])
+    print("  --- records mentioning this note ---")
+    var shown: int = 0
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        var raw: int = int((r.get("pitch_states", {}) as Dictionary).get(note_name, 0))
+        var eff: int = _effective_pitch_state(i, note_name)
+        var label: String = str(r.get("pitch_slot_label", ""))
+        # Only the interesting ones: anything asserting/denying this note,
+        # anything wearing its slot label, and anything pinned to a carrier.
+        if raw == 0 and eff == 0 and label == "" and not carriers.has(int(r.get("star_idx", -1))):
+            continue
+        shown += 1
+        print("    [%d] name='%s' star_idx=%d seq=%d..%d cand=%s" % [
+            i, str(r.get("name", "")), int(r.get("star_idx", -1)),
+            int(r.get("seq_lo", 0)), int(r.get("seq_hi", 0)),
+            str(r.get("seq_candidates", []))])
+        print("         raw_pitch=%d effective_pitch=%d pitch_revealed=%s" % [
+            raw, eff, str(bool(r.get("pitch_revealed", false)))])
+        print("         labels: pitch='%s' colour='%s' degree='%s'" % [
+            label, str(r.get("color_slot_label", "")), str(r.get("degree_slot_label", ""))])
+        print("         stub?=%s  candidate_stars=%s" % [
+            str(_record_is_unconfirmed_star_widget_stub(i)),
+            str(_candidate_stars_for_record(i))])
+    if shown == 0:
+        print("    (no record mentions this note at all)")
+    # Why any two of them did or didn't unify — the actual question.
+    print("  --- pairwise identity/conflict among those records ---")
+    for i2 in _match_records.size():
+        for j2 in range(i2 + 1, _match_records.size()):
+            var same: bool = _records_provably_identical(i2, j2)
+            var distinct: bool = _records_provably_distinct(i2, j2)
+            if not same and not distinct:
+                continue
+            print("    [%d]x[%d] identical=%s distinct=%s conflicts=%s" % [
+                i2, j2, str(same), str(distinct), str(_merge_conflict_kinds(i2, j2))])
+    print("=========================================")
+    print("")
+
+
 func _debug_dump_named_records() -> void:
     for watch_name in ["Eosaara", "Pyrios"]:
         var idx: int = _find_match_record_by_name(watch_name)
@@ -1788,112 +1852,207 @@ func _records_have_merge_conflict(idx_a: int, idx_b: int) -> bool:
     return not _merge_conflict_kinds(idx_a, idx_b).is_empty()
 
 
-## Do these two records provably describe the SAME star? True when they
-## share any fact that uniquely identifies one star. Exact mirror of
-## _records_provably_distinct's category sweep.
-func _records_provably_identical(idx_a: int, idx_b: int) -> bool:
-    if idx_a < 0 or idx_a >= _match_records.size() \
-            or idx_b < 0 or idx_b >= _match_records.size() or idx_a == idx_b:
-        return false
-    var a: Dictionary = _match_records[idx_a]
-    var b: Dictionary = _match_records[idx_b]
+## Every uniquely-identifying fact a record confirms, as a token set. Two
+## records describe the same star exactly when their sets intersect, which
+## turns the identity test from a full category sweep PER PAIR into one
+## sweep per record plus a small set intersection.
+##
+## This was measured, not guessed: at 75 records _settle_identical_records
+## was taking 2.2-3.5 SECONDS, essentially the whole sequence-entry stall,
+## because it re-swept 4 colours + 10 notes + every degree for each of
+## ~2800 pairs, on every rescan.
+##
+## Only genuinely unique facts become tokens — Colour/Pitch/Degree qualify
+## only at incidence 1, same gating as the exclusion rules, since a shared
+## value proves nothing about identity.
+func _identity_signature(record_idx: int) -> Dictionary:
+    if _identity_sig_cache.has(record_idx):
+        return _identity_sig_cache[record_idx]
+    var sig: Dictionary = {}
+    var r: Dictionary = _match_records[record_idx]
 
-    # Same resolved star, or same player-confirmed name — both unique by
-    # construction (Name is alldiff).
-    var a_star: int = int(a.get("star_idx", -1))
-    var b_star: int = int(b.get("star_idx", -1))
-    if a_star >= 0 and b_star >= 0:
-        return a_star == b_star
-    var a_name: String = str(a.get("name", ""))
-    if a_name != "" and a_name == str(b.get("name", "")):
-        return true
-
-    # Same exact sequence position — Sequence is alldiff, so one position
-    # is one star.
-    var a_lo: int = int(a.get("seq_lo", 0))
-    if a_lo > 0 and a_lo == int(a.get("seq_hi", 0)) \
-            and a_lo == int(b.get("seq_lo", 0)) and a_lo == int(b.get("seq_hi", 0)):
-        return true
-
-    # Same slot label — a "Blue A"/"C#5 A"/"Conn A" slot is one specific
-    # star by definition of the slot.
+    var star: int = int(r.get("star_idx", -1))
+    if star >= 0:
+        sig["X:%d" % star] = true
+    var nm: String = str(r.get("name", ""))
+    if nm != "":
+        sig["N:" + nm] = true
+    var lo: int = int(r.get("seq_lo", 0))
+    if lo > 0 and lo == int(r.get("seq_hi", 0)):
+        sig["S:%d" % lo] = true
     for label_key in ["color_slot_label", "pitch_slot_label", "degree_slot_label"]:
-        var al: String = str(a.get(label_key, ""))
-        if al != "" and al == str(b.get(label_key, "")):
-            return true
+        var lbl: String = str(r.get(label_key, ""))
+        if lbl != "":
+            sig["L:" + lbl] = true
 
-    # Same confirmed value on a SINGLETON Color/Pitch/Degree. Gated on
-    # incidence exactly like _compute_excluded_*_for: a shared value proves
-    # nothing (two stars can both be blue), a singleton one pins the star.
     for ci in _host.COLOR_NAME_LABELS.size():
-        if _color_star_count(ci) == 1 \
-                and _effective_color_state(idx_a, ci) == 1 and _effective_color_state(idx_b, ci) == 1:
-            return true
+        if _color_star_count(ci) == 1 and _effective_color_state(record_idx, ci) == 1:
+            sig["C:%d" % ci] = true
 
-    for note in _host._widgets._distinct_note_names():
-        if _pitch_star_count(note) != 1:
-            continue
-        # Same unconfirmed-stub guard as _compute_excluded_pitches_for — a
-        # bare auto-created star-widget record's ground-truth pitch is not
-        # earned until Listen has fired for it.
-        if _record_is_unconfirmed_star_widget_stub(idx_a) and not bool(a.get("pitch_revealed", false)):
-            continue
-        if _record_is_unconfirmed_star_widget_stub(idx_b) and not bool(b.get("pitch_revealed", false)):
-            continue
-        if _effective_pitch_state(idx_a, note) == 1 and _effective_pitch_state(idx_b, note) == 1:
-            return true
+    # Same unconfirmed-stub guard as everywhere else: a bare auto-created
+    # star-widget record's ground-truth pitch isn't earned until Listen.
+    if not (_record_is_unconfirmed_star_widget_stub(record_idx) \
+            and not bool(r.get("pitch_revealed", false))):
+        for note in _host._widgets._distinct_note_names():
+            if _pitch_star_count(note) == 1 and _effective_pitch_state(record_idx, note) == 1:
+                sig["P:" + str(note)] = true
 
     var degrees_set: Dictionary = {}
     for s in _host._star_count:
         degrees_set[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
     for deg in degrees_set.keys():
-        if _degree_star_count(deg) == 1 \
-                and _effective_degree_state(idx_a, deg) == 1 and _effective_degree_state(idx_b, deg) == 1:
-            return true
+        if _degree_star_count(int(deg)) == 1 and _effective_degree_state(record_idx, int(deg)) == 1:
+            sig["D:%d" % int(deg)] = true
 
+    _identity_sig_cache[record_idx] = sig
+    return sig
+
+
+## Do these two records provably describe the SAME star? True when they
+## share any fact that uniquely identifies one star.
+func _records_provably_identical(idx_a: int, idx_b: int) -> bool:
+    if idx_a < 0 or idx_a >= _match_records.size() \
+            or idx_b < 0 or idx_b >= _match_records.size() or idx_a == idx_b:
+        return false
+    # Both pinned to a star is decisive either way, and cheap — check it
+    # before building signatures.
+    var a_star: int = int(_match_records[idx_a].get("star_idx", -1))
+    var b_star: int = int(_match_records[idx_b].get("star_idx", -1))
+    if a_star >= 0 and b_star >= 0:
+        return a_star == b_star
+    var sig_a: Dictionary = _identity_signature(idx_a)
+    if sig_a.is_empty():
+        return false
+    var sig_b: Dictionary = _identity_signature(idx_b)
+    for k in sig_a:
+        if sig_b.has(k):
+            return true
     return false
 
 
 ## Merges every pair of records that provably describe the same star, so
 ## facts gathered through different surfaces end up on one record instead
-## of sitting in two half-pictures. Runs first in
-## _full_propagation_refresh() so the singleton-settle passes after it see
-## unified records.
+## of two half-pictures. Runs first in _full_propagation_refresh() so the
+## later settle passes see unified records.
 ##
-## Skips any pair whose merge would need a conflict dialog
-## (_records_have_merge_conflict) — this pass is synchronous and must not
-## suspend. Those pairs keep surfacing to the player through the normal
-## explicit-commit paths, which CAN await, rather than being silently
-## resolved one way or the other here.
+## Skips any pair needing a conflict dialog (allow_await=false makes the
+## merge itself refuse) — this pass is synchronous and must not suspend.
+## Those pairs keep surfacing through the explicit commit paths, which can
+## await properly.
 ##
-## Restarts the scan after each merge: _merge_match_records() removes the
-## source record, so every index past it shifts. Bounded by record count
-## since each merge strictly reduces the array.
+## SCANS EACH j DESCENDING, AND DOES NOT RESTART. _merge_match_records()
+## removes the source record, shifting every index above it — which is why
+## this used to restart the whole O(n^2) sweep after every single merge.
+## Measured at 75 records that cost 2.2-3.5 SECONDS and was essentially the
+## entire sequence-entry stall. Walking j from high to low means a removal
+## only ever shifts indices we have already passed, so the scan stays
+## valid and the pass is O(n^2) once instead of O(merges x n^2).
 func _settle_identical_records() -> void:
-    var guard: int = 0
-    var merged: bool = true
-    while merged and guard < 64:
-        guard += 1
-        merged = false
-        for i in _match_records.size():
-            for j in range(i + 1, _match_records.size()):
-                if not _records_provably_identical(i, j):
-                    continue
-                # allow_await=false: the merge itself refuses anything that
-                # would open a dialog, so this call cannot suspend. The
-                # pre-check that used to live here is gone — it was a second
-                # copy of the same conditions, which is exactly what
-                # _merge_conflict_kinds() now exists to prevent.
+    var i: int = 0
+    while i < _match_records.size():
+        var j: int = _match_records.size() - 1
+        while j > i:
+            if _records_provably_identical(i, j):
                 _merge_match_records(i, j, false)
-                merged = true
-                break
-            if merged:
-                break
+                # Record indices just shifted, and _identity_sig_cache /
+                # _distinct_pair_cache / _candidate_star_cache /
+                # _confirmer_clique_cache are all keyed by (or store) them.
+                _clear_deduction_caches()
+            j -= 1
+        i += 1
+
+
+## Pairwise distinctness memo. This is the innermost primitive of the whole
+## engine — every exclusion function, every confirmer clique, coverage, and
+## each Sort row's bounds derivation bottoms out here, and each call sweeps
+## all five categories. Cached per refresh; same lifetime as the candidate
+## sets, so it's cleared everywhere they are.
+var _distinct_pair_cache: Dictionary = {}
+
+## Per-record identity token sets — see _identity_signature(). Same
+## index-keyed lifetime as the caches above.
+var _identity_sig_cache: Dictionary = {}
+
+## Per-record distinctness profiles — see _distinct_profile(). Same
+## index-keyed lifetime as the caches above.
+var _distinct_profile_cache: Dictionary = {}
 
 
 func _records_provably_distinct(idx_a: int, idx_b: int) -> bool:
     if idx_a < 0 or idx_a >= _match_records.size() or idx_b < 0 or idx_b >= _match_records.size():
         return false  # can't prove distinctness with an invalid index
+    # Symmetric, so normalise the key rather than caching both orderings.
+    var key: String = "%d:%d" % [mini(idx_a, idx_b), maxi(idx_a, idx_b)]
+    if _distinct_pair_cache.has(key):
+        return bool(_distinct_pair_cache[key])
+    var verdict: bool = _compute_records_provably_distinct(idx_a, idx_b)
+    _distinct_pair_cache[key] = verdict
+    return verdict
+
+
+## Per-record view of everything _compute_records_provably_distinct needs:
+## the raw possible-position set, and per axis the single confirmed value
+## (null if none) plus the set of eliminated ones. Built once per record;
+## the pairwise test is then a handful of dictionary lookups instead of
+## ~90 _effective_*_state() calls.
+##
+## Uses the same _effective_*_state functions the loops did, so the verdict
+## is unchanged — only how often they're evaluated. Note each axis can hold
+## at most one confirmed value by construction (a record can't be two
+## colours), which is what makes the collapse valid.
+func _distinct_profile(record_idx: int) -> Dictionary:
+    if _distinct_profile_cache.has(record_idx):
+        return _distinct_profile_cache[record_idx]
+
+    var seq_set: Dictionary = {}
+    for p in _raw_seq_candidate_set(_match_records[record_idx]):
+        seq_set[int(p)] = true
+
+    var prof: Dictionary = {"seq": seq_set}
+
+    var col: Dictionary = {"confirmed": null, "eliminated": {}}
+    for ci in _host.COLOR_NAME_LABELS.size():
+        var s: int = _effective_color_state(record_idx, ci)
+        if s == 1: col["confirmed"] = ci
+        elif s == 2: (col["eliminated"] as Dictionary)[ci] = true
+    prof["color"] = col
+
+    var pit: Dictionary = {"confirmed": null, "eliminated": {}}
+    for note in _host._widgets._distinct_note_names():
+        var s2: int = _effective_pitch_state(record_idx, str(note))
+        if s2 == 1: pit["confirmed"] = str(note)
+        elif s2 == 2: (pit["eliminated"] as Dictionary)[str(note)] = true
+    prof["pitch"] = pit
+
+    var nam: Dictionary = {"confirmed": null, "eliminated": {}}
+    for n in _host._star_names:
+        var s3: int = _effective_name_state(record_idx, str(n))
+        if s3 == 1: nam["confirmed"] = str(n)
+        elif s3 == 2: (nam["eliminated"] as Dictionary)[str(n)] = true
+    prof["name"] = nam
+
+    var st: Dictionary = {"confirmed": null, "eliminated": {}}
+    for si in _host._star_count:
+        var s4: int = _effective_star_state(record_idx, si)
+        if s4 == 1: st["confirmed"] = si
+        elif s4 == 2: (st["eliminated"] as Dictionary)[si] = true
+    prof["star"] = st
+
+    var deg: Dictionary = {"confirmed": null, "eliminated": {}}
+    var degrees_set: Dictionary = {}
+    for s5 in _host._star_count:
+        degrees_set[int(_host._star_degrees[s5]) if s5 < _host._star_degrees.size() else 0] = true
+    for d in degrees_set.keys():
+        var s6: int = _effective_degree_state(record_idx, int(d))
+        if s6 == 1: deg["confirmed"] = int(d)
+        elif s6 == 2: (deg["eliminated"] as Dictionary)[int(d)] = true
+    prof["degree"] = deg
+
+    _distinct_profile_cache[record_idx] = prof
+    return prof
+
+
+func _compute_records_provably_distinct(idx_a: int, idx_b: int) -> bool:
     var a: Dictionary = _match_records[idx_a]
     var b: Dictionary = _match_records[idx_b]
 
@@ -1919,8 +2078,11 @@ func _records_provably_distinct(idx_a: int, idx_b: int) -> bool:
     # fields, not _effective_seq_candidates() — that function calls
     # _compute_excluded_positions_for(), which calls back into this
     # function, so using it here would recurse.
-    var a_seq: Array = _raw_seq_candidate_set(a)
-    var b_seq: Array = _raw_seq_candidate_set(b)
+    var pa_prof: Dictionary = _distinct_profile(idx_a)
+    var pb_prof: Dictionary = _distinct_profile(idx_b)
+
+    var a_seq: Dictionary = pa_prof["seq"]
+    var b_seq: Dictionary = pb_prof["seq"]
     if not a_seq.is_empty() and not b_seq.is_empty():
         var overlap: bool = false
         for v in a_seq:
@@ -1930,28 +2092,17 @@ func _records_provably_distinct(idx_a: int, idx_b: int) -> bool:
         if not overlap:
             return true
 
-    for ci in _host.COLOR_NAME_LABELS.size():
-        var sa: int = _effective_color_state(idx_a, ci)
-        var sb: int = _effective_color_state(idx_b, ci)
-        if (sa == 1 and sb == 2) or (sb == 1 and sa == 2):
+    # One confirmed value landing in the other side's eliminated set is
+    # exactly what the five per-category loops used to look for, but those
+    # ran ~90 _effective_*_state() calls PER PAIR — the dominant cost of
+    # warming the pairwise cache (measured: ~590 ms for a full sweep cold
+    # vs ~8 ms warm). The profile does that work once per record instead.
+    for axis in ["color", "pitch", "name", "star", "degree"]:
+        var ca = pa_prof[axis]["confirmed"]
+        var cb = pb_prof[axis]["confirmed"]
+        if ca != null and (pb_prof[axis]["eliminated"] as Dictionary).has(ca):
             return true
-
-    for note in _host._widgets._distinct_note_names():
-        var pa: int = _effective_pitch_state(idx_a, note)
-        var pb: int = _effective_pitch_state(idx_b, note)
-        if (pa == 1 and pb == 2) or (pb == 1 and pa == 2):
-            return true
-
-    for name_str in _host._star_names:
-        var na: int = _effective_name_state(idx_a, str(name_str))
-        var nb: int = _effective_name_state(idx_b, str(name_str))
-        if (na == 1 and nb == 2) or (nb == 1 and na == 2):
-            return true
-
-    for si in _host._star_count:
-        var ea: int = _effective_star_state(idx_a, si)
-        var eb: int = _effective_star_state(idx_b, si)
-        if (ea == 1 and eb == 2) or (eb == 1 and ea == 2):
+        if cb != null and (pa_prof[axis]["eliminated"] as Dictionary).has(cb):
             return true
 
     var degrees_set: Dictionary = {}
@@ -2213,15 +2364,37 @@ func _compute_excluded_names_for(record_idx: int) -> Array[String]:
     # slot-label/raw tier, safe to call here with no recursion, since the
     # cross-record exclusion this computes is layered on TOP of it only at
     # display call sites, never inside _effective_name_state itself.
+    # Name is alldiff, so a record confirms at most ONE name — found once
+    # per record here rather than by asking _effective_name_state about all
+    # 15 of them. The distinctness check is hoisted out of that loop too:
+    # it never depended on the name, so it was being recomputed once per
+    # (record x name) instead of once per record. Together those made this
+    # the second-largest cost in a refresh at 75 records (~640 ms across a
+    # full set of rows, measured).
     var excluded: Array[String] = []
     for i in _match_records.size():
         if i == record_idx or _record_is_unconfirmed_star_widget_stub(i):
             continue
-        for n in _host._star_names:
-            var name_str: String = str(n)
-            if _effective_name_state(i, name_str) == 1 and _records_provably_distinct(record_idx, i):
-                excluded.append(name_str)
+        var confirmed: String = _confirmed_name_for_record(i)
+        if confirmed == "":
+            continue
+        if _records_provably_distinct(record_idx, i):
+            excluded.append(confirmed)
     return excluded
+
+
+## The single name a record confirms, or "". Checks the identity field
+## first (set by every real confirmation path) and falls back to a scan of
+## name_states for a record confirmed before that promotion existed.
+func _confirmed_name_for_record(record_idx: int) -> String:
+    var r: Dictionary = _match_records[record_idx]
+    var nm: String = str(r.get("name", ""))
+    if nm != "":
+        return nm
+    for k in (r.get("name_states", {}) as Dictionary):
+        if int(r["name_states"][k]) == 1:
+            return str(k)
+    return ""
 
 
 # ==================================================
@@ -2521,6 +2694,11 @@ func _clear_deduction_caches() -> void:
     _coverage_cache.clear()
     _confirmer_clique_cache.clear()
     _candidate_star_cache.clear()
+    _distinct_pair_cache.clear()
+    _identity_sig_cache.clear()
+    _distinct_profile_cache.clear()
+    _listened_stars_cache.clear()
+    _listened_stars_built = false
 
 
 ## Convenience wrapper — 0.0 (nothing recorded yet) to 1.0 (every assertion
@@ -2631,7 +2809,7 @@ func _full_propagation_refresh() -> void:
     _host._widgets._build_star_widgets()
     _host._widgets._build_star_tags()
     _host._melody_staff_panel.queue_redraw()
-    _host._widgets.call_deferred("_populate_markers_panel")
+    _host._widgets.request_markers_rebuild()
 
 
 # ==================================================
@@ -2662,11 +2840,24 @@ func _full_propagation_refresh() -> void:
 # what the puzzle withholds.
 # ==================================================
 
+## Scanned every record on every call, and is called inside per-star loops
+## that are themselves inside per-record loops (_candidate_stars_for_record,
+## _settle_derived_eliminations) — O(records^2 x stars). Built once per
+## refresh instead; invalidated by _clear_deduction_caches() along with
+## everything else derived from _match_records.
+var _listened_stars_cache: Dictionary = {}
+var _listened_stars_built: bool = false
+
+
 func _player_knows_star_pitch(star: int) -> bool:
-    for r in _match_records:
-        if int(r.get("star_idx", -1)) == star and bool(r.get("pitch_revealed", false)):
-            return true
-    return false
+    if not _listened_stars_built:
+        _listened_stars_cache.clear()
+        for r in _match_records:
+            var s: int = int(r.get("star_idx", -1))
+            if s >= 0 and bool(r.get("pitch_revealed", false)):
+                _listened_stars_cache[s] = true
+        _listened_stars_built = true
+    return _listened_stars_cache.has(star)
 
 
 ## Stars this record could still be. Intersects every constraint that maps
@@ -2725,10 +2916,12 @@ func _settle_star_identity_from_candidates() -> void:
             continue
         r["star_idx"] = s
         _sync_color_states_from_star_idx(i)
-        # Identity resolution invalidates BOTH: cliques depend on
-        # provable-distinctness, candidate sets on this record's own state.
-        _confirmer_clique_cache.clear()
-        _candidate_star_cache.clear()
+        # Identity resolution invalidates every derived cache: cliques
+        # depend on provable-distinctness, candidate sets on this record's
+        # own state, and the listened-stars set on which record owns which
+        # star_idx — which is exactly what just changed. Routed through the
+        # shared helper so a cache added later can't be missed here.
+        _clear_deduction_caches()
 
 
 ## Eliminates every given-axis value that NO candidate star carries. This
@@ -2785,11 +2978,11 @@ func _settle_derived_eliminations() -> void:
             r["pitch_states"] = pitch_states
 
     # This pass writes the very colour/degree/pitch state that candidate
-    # sets are derived FROM, so every cached set is now potentially stale.
-    # Today's call order happens not to re-read one afterwards, but relying
-    # on that is exactly the fragility that splitting this cache out was
-    # meant to remove.
+    # sets AND pairwise distinctness are derived FROM, so both caches are
+    # now potentially stale. Relying on the call order not to re-read one
+    # is exactly the fragility these caches were split out to avoid.
     _candidate_star_cache.clear()
+    _distinct_pair_cache.clear()
 
 
 # ==================================================

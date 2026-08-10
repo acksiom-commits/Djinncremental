@@ -74,7 +74,19 @@ func _set_marker_tab(tab_idx: int) -> void:
     _populate_markers_panel()
 
 
+## Deferred, coalescing entry point — call this rather than
+## call_deferred("_populate_markers_panel") directly, so repeat requests in
+## one frame collapse to a single rebuild (see the note above
+## _build_star_widgets()).
+func request_markers_rebuild() -> void:
+    if _markers_dirty:
+        return
+    _markers_dirty = true
+    call_deferred("_populate_markers_panel")
+
+
 func _populate_markers_panel() -> void:
+    _markers_dirty = false
     for child in _host._markers_content.get_children():
         child.queue_free()
 
@@ -968,6 +980,21 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdi
     var hi: int = int(converted[1])
 
     var r: Dictionary = _deduction._match_records[record_idx]
+
+    # NO-OP EARLY-OUT. This handler is bound to text_submitted AND
+    # focus_exited on both boxes, so a single Enter press used to run the
+    # whole thing twice: the commit rebuilds every row (replacing the very
+    # LineEdit being edited), focus then leaves the stale node, and
+    # focus_exited fires a second identical commit — each one a full
+    # _full_propagation_refresh with a synchronous rebuild of all 15 star
+    # widgets and every Sort row. Merely tabbing through a row without
+    # editing did the same. Bailing when the parsed result already matches
+    # what's stored removes that entire duplicate pass; the display is
+    # already correct by construction in that case, so there is nothing to
+    # re-render either.
+    if lo == int(r.get("seq_lo", 0)) and hi == int(r.get("seq_hi", 0)) \
+            and (r.get("seq_candidates", []) as Array).is_empty():
+        return
 
     # Reject an entry whose CONVERTED bounds can't be satisfied, instead of
     # writing a meaningless range. The clamps above only check the typed
@@ -1866,6 +1893,18 @@ func _on_record_value_protect_toggle(record_idx: int, states_key: String, protec
 # ==================================================
 # FLOATING STAR WIDGETS
 # ==================================================
+# Coalescing flags for the three deferred UI rebuilds below. call_deferred()
+# QUEUES every call rather than collapsing duplicates, so a frame that
+# triggers several _full_propagation_refresh() passes used to run the full
+# teardown-and-rebuild of ~15 star widgets (each carrying a 15-name
+# checklist), their tags, and the markers panel once PER pass. The result is
+# identical either way — each rebuild reads the same settled state — so only
+# the first request in a frame needs to survive.
+var _star_widgets_dirty: bool = false
+var _star_tags_dirty: bool = false
+var _markers_dirty: bool = false
+
+
 func _build_star_widgets() -> void:
     # Always deferred: this tears down and rebuilds every star widget,
     # including whichever one's own LineEdit/Button signal may currently be
@@ -1876,10 +1915,14 @@ func _build_star_widgets() -> void:
     # children") — deferring by one frame, imperceptible for a UI rebuild,
     # removes the race entirely rather than requiring every call site to
     # remember to defer it themselves.
+    if _star_widgets_dirty:
+        return   # already queued this frame; one rebuild is enough
+    _star_widgets_dirty = true
     call_deferred("_build_star_widgets_impl")
 
 
 func _build_star_widgets_impl() -> void:
+    _star_widgets_dirty = false
     # Tear down any previous widgets.
     for w in _host._star_widgets:
         if is_instance_valid(w):
@@ -2198,15 +2241,38 @@ func _ordinal_str(raw: String) -> String:
 
 
 func _note_name_for_star(star_idx: int) -> String:
+    if _note_name_cache.has(star_idx):
+        return str(_note_name_cache[star_idx])
     if star_idx < 0 or star_idx >= _host._star_pitch_index.size():
         return "?"
     var p: int = _host._star_pitch_index[star_idx]
     if p < 0 or p >= _host._pitch_freqs.size():
         return "?"
-    return ConstellationLogicPuzzle.note_name_for_freq(_host._pitch_freqs[p])
+    var n: String = ConstellationLogicPuzzle.note_name_for_freq(_host._pitch_freqs[p])
+    _note_name_cache[star_idx] = n
+    return n
+
+
+# Both of these are pure functions of _pitch_freqs / _star_pitch_index,
+# which change only when a puzzle is loaded — but they were being recomputed
+# inside nested per-record loops. _distinct_note_names() in particular is
+# called from _records_provably_identical(), i.e. once per record PAIR, and
+# each call re-deduped, re-sorted, and re-ran note_name_for_freq() over the
+# whole table. Together with _note_name_for_star()'s own repeated
+# frequency->name conversion this was the multi-second stall on sequence
+# entry. Cleared by clear_pitch_caches() from _load_constellation_data().
+var _distinct_notes_cache: Array[String] = []
+var _note_name_cache: Dictionary = {}
+
+
+func clear_pitch_caches() -> void:
+    _distinct_notes_cache = []
+    _note_name_cache.clear()
 
 
 func _distinct_note_names() -> Array[String]:
+    if not _distinct_notes_cache.is_empty():
+        return _distinct_notes_cache
     var uniq_freqs: Array = []
     for f in _host._pitch_freqs:
         if not uniq_freqs.has(f):
@@ -2215,6 +2281,7 @@ func _distinct_note_names() -> Array[String]:
     var names: Array[String] = []
     for f in uniq_freqs:
         names.append(ConstellationLogicPuzzle.note_name_for_freq(f))
+    _distinct_notes_cache = names
     return names
 
 
@@ -2276,10 +2343,14 @@ func _reposition_star_widgets() -> void:
 
 
 func _build_star_tags() -> void:
+    if _star_tags_dirty:
+        return   # see the coalescing note above _build_star_widgets()
+    _star_tags_dirty = true
     call_deferred("_build_star_tags_impl")
 
 
 func _build_star_tags_impl() -> void:
+    _star_tags_dirty = false
     for t in _host._star_tags:
         if is_instance_valid(t):
             t.queue_free()

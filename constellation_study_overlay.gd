@@ -415,6 +415,11 @@ func _load_constellation_data() -> void:
     for v in _cd.get_note_assignment(_constellation_id):
         _star_pitch_index.append(_coerce_int(v, 0))
     _pitch_freqs = _cd.get_note_freqs(_constellation_id)
+    # Note-name lookups are memoised off exactly these two arrays, so they
+    # have to be dropped whenever the arrays are replaced — otherwise a
+    # different constellation (or a RESET-reshuffled one) keeps serving the
+    # previous puzzle's note names. See _widgets.clear_pitch_caches().
+    _widgets.clear_pitch_caches()
 
     # Same manual per-field coercion as every other cache-derived array in
     # this function — this bypasses ConstellationLogicPuzzle.from_cache_dict()
@@ -749,6 +754,17 @@ func _input(event: InputEvent) -> void:
     if event is InputEventKey and (event as InputEventKey).pressed:
         if (event as InputEventKey).keycode == KEY_ESCAPE:
             visible = false
+            get_viewport().set_input_as_handled()
+        # TEMPORARY DIAGNOSTIC (2026-08-07) — SHIFT+D dumps every match
+        # record touching each note, with the ground truth and the pairwise
+        # identity/conflict verdicts needed to read them. For the
+        # Staff-popup -> Sort:Pitch report, which a six-scenario headless
+        # repro could not reproduce. Remove with
+        # _debug_dump_pitch_records() once that's resolved.
+        elif (event as InputEventKey).keycode == KEY_D \
+                and (event as InputEventKey).shift_pressed:
+            for note in _widgets._distinct_note_names():
+                _deduction._debug_dump_pitch_records(str(note))
             get_viewport().set_input_as_handled()
     elif event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
         var mpos: Vector2 = get_local_mouse_position()
