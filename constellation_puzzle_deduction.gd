@@ -566,13 +566,44 @@ func _recompute_color_star_elim(record_idx: int) -> void:
     # enough to rule anything out; don't mark, and release prior marks.
     if not cands.is_empty() and cands.size() < _host._star_count:
         for s in _host._star_count:
-            if not cand_set.has(s):
-                new_marks[s] = true
-                if int(elim.get(s, 0)) != 1:
-                    elim[s] = 2
+            if cand_set.has(s):
+                continue
+            var cur: int = int(elim.get(s, 0))
+            if cur == 1:
+                continue          # a confirm outranks anything derived
+            if cur == 0:
+                elim[s] = 2
+                new_marks[s] = true       # newly derived — ours to release later
+            elif prev_marks.has(s):
+                new_marks[s] = true       # already ours, and still holds
+            # else: cur == 2 that we did NOT set = the player's own
+            # elimination. Leave the value alone and, critically, do not
+            # claim it in new_marks — see the ownership note below.
+    # OWNERSHIP (fixed 2026-08-10). This loop releases marks whose reason no
+    # longer holds, and it can only do that safely for marks THIS function
+    # made. It used to write new_marks[s] unconditionally, so any star the
+    # player had already X'd got silently adopted as engine-derived — and
+    # the next refresh that widened the candidate set released the player's
+    # own input back to neutral.
+    #
+    # Reported live: with "Keriion fires between the star that plays F5 and
+    # Selion", X-ing both Keriion and Selion off the F5 star's checklist was
+    # impossible (the second X released the first), and typing Keriion's
+    # sequence position un-X'd it again. Both were this one line.
+    #
+    # _settle_derived_eliminations() already had the correct contract — it
+    # only ever marks a value sitting at 0 — so this is that same rule,
+    # applied to the one derived writer that was missing it. The manual-block
+    # check is a second, independent net: it also repairs saves written
+    # before the fix, whose marks dict already contains stolen entries.
     for s in prev_marks.keys():
-        if not new_marks.has(s) and int(elim.get(s, 0)) == 2:
-            elim[s] = 0
+        if new_marks.has(s):
+            continue
+        if int(elim.get(s, 0)) != 2:
+            continue
+        if _is_star_name_user_blocked(int(s), name_str):
+            continue      # player asserted this directly; never ours to release
+        elim[s] = 0
     r["star_elim"] = elim
     r["color_star_elim_marks"] = new_marks
 
