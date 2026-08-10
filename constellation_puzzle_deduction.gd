@@ -1745,7 +1745,26 @@ func _compressed_possible_positions_str(record_idx: int) -> String:
 
 
 
-func _effective_color_state(record_idx: int, color_idx: int) -> int:
+# ── collapse_soft: the LOGIC/DISPLAY split ───────────────────────────────
+# The three readers below serve two different callers with one body.
+#
+# Deduction needs a hard answer, so by default the soft protect tier is
+# COLLAPSED: 3 (soft-eliminated, because a sibling value on this record was
+# right-clicked "still possible") reads as 2, and 4 (protected) reads as 0,
+# since "still possible" is a hint, never a confirmation. Every candidate
+# set, distinctness test and exclusion sweep depends on that.
+#
+# Popup rows need the opposite. staff_popup_row.gd and the Sort:Colour
+# toggle both already paint 3 dimmer and 4 magenta — that styling was
+# simply never reachable, because the collapse happened before the state
+# ever got to them. Only the star-map name checklist showed magenta, and
+# only because it goes through _effective_name_display_state(), which is a
+# hand-written fourth copy of this same tier for the star_elim axis.
+#
+# collapse_soft=false returns the uncollapsed 0-4 for display. Callers must
+# still let a HARD cross-record exclusion win over a soft 3/4 — see the
+# popup call sites, which apply that overlay when the state is 0 or 4.
+func _effective_color_state(record_idx: int, color_idx: int, collapse_soft: bool = true) -> int:
     if record_idx < 0 or record_idx >= _match_records.size():
         return 0
     # Four sources of "known color" for a record, checked in order of
@@ -1767,14 +1786,16 @@ func _effective_color_state(record_idx: int, color_idx: int) -> int:
         if label_color >= 0:
             return 1 if label_color == color_idx else 2
 
-    var derived: int = _record_effective_state(record_idx, "color_states", "protected_color_idxs", color_idx)
-    match derived:
+    var soft: int = _record_effective_state(record_idx, "color_states", "protected_color_idxs", color_idx)
+    if not collapse_soft:
+        return soft
+    match soft:
         3: return 2   # soft-eliminated (a sibling color is protected) counts as eliminated
         4: return 0   # protected ("still possible") is not a confirmation — stays neutral
-        _: return derived
+        _: return soft
 
 
-func _effective_pitch_state(record_idx: int, note_name: String) -> int:
+func _effective_pitch_state(record_idx: int, note_name: String, collapse_soft: bool = true) -> int:
     if record_idx < 0 or record_idx >= _match_records.size():
         return 0
     # Same three tiers as _effective_color_state (ground truth, slot label,
@@ -1798,14 +1819,16 @@ func _effective_pitch_state(record_idx: int, note_name: String) -> int:
         var label_note: String = label.get_slice(" ", 0)
         return 1 if label_note == note_name else 2
 
-    var derived: int = _record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", note_name)
-    match derived:
+    var soft: int = _record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", note_name)
+    if not collapse_soft:
+        return soft
+    match soft:
         3: return 2   # soft-eliminated (a sibling note is protected) counts as eliminated
         4: return 0   # protected ("still possible") is not a confirmation — stays neutral
-        _: return derived
+        _: return soft
 
 
-func _effective_name_state(record_idx: int, name_str: String) -> int:
+func _effective_name_state(record_idx: int, name_str: String, collapse_soft: bool = true) -> int:
     if record_idx < 0 or record_idx >= _match_records.size():
         return 0
     # Deliberately does NOT shortcut via star_idx the way
@@ -1830,11 +1853,13 @@ func _effective_name_state(record_idx: int, name_str: String) -> int:
     if rn != "":
         return 1 if rn == name_str else 2
 
-    var derived: int = _record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
-    match derived:
+    var soft: int = _record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
+    if not collapse_soft:
+        return soft
+    match soft:
         3: return 2
         4: return 0
-        _: return derived
+        _: return soft
 
 
 func _effective_degree_state(record_idx: int, degree: int) -> int:

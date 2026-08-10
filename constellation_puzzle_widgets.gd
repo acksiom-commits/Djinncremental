@@ -618,10 +618,14 @@ func _open_name_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     var excluded_names: Array[String] = _deduction._compute_excluded_names_for(record_idx)
     for n in names_sorted:
         var name_str: String = str(n)
-        var state: int = _deduction._effective_name_state(record_idx, name_str)
-        # Only checked when still neutral: a hard confirm/eliminate/
-        # protect already decided wins over a cross-record inference.
-        if state == 0 and excluded_names.has(name_str):
+        # collapse_soft=false so the row can paint the protect tier: 3
+        # dimmer, 4 magenta. StaffPopupRow has always styled both; the
+        # collapse upstream just meant it never saw them.
+        var state: int = _deduction._effective_name_state(record_idx, name_str, false)
+        # Only when nothing hard has decided it. 0 and 4 are exactly the
+        # states with no hard fact behind them (4 is "still possible", a
+        # hint), so a real cross-record exclusion outranks both.
+        if (state == 0 or state == 4) and excluded_names.has(name_str):
             state = 2
         _host._name_checklist_popup.add_name_row(name_str, state, STATE_COLORS.neutral)
     _host._name_checklist_popup.open(record_idx, screen_pos)
@@ -745,8 +749,9 @@ func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
         var f: float = _host._pitch_freqs[pitch_idx]
         var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(f)
         var incidence_count: int = _deduction._pitch_star_count(note_name)
-        var state: int = _deduction._effective_pitch_state(record_idx, note_name)
-        if state == 0 and excluded_pitches.has(note_name):
+        # See the name checklist above for collapse_soft / the 0-or-4 rule.
+        var state: int = _deduction._effective_pitch_state(record_idx, note_name, false)
+        if (state == 0 or state == 4) and excluded_pitches.has(note_name):
             state = 2
         _host._pitch_checklist_popup.add_pitch_row(note_name, incidence_count, state, STATE_COLORS.neutral)
     _host._pitch_checklist_popup.open(record_idx, screen_pos)
@@ -878,9 +883,11 @@ func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
             if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
                 _on_record_color_eliminate(ridx, cidx, btn)
                 btn.get_viewport().set_input_as_handled())
-        # Effective state so a staff-popup "still possible" mark shows here too.
-        var cur_state: int = _deduction._effective_color_state(record_idx, ci)
-        if cur_state == 0 and excluded_colors.has(ci):
+        # Effective state so a staff-popup "still possible" mark shows here
+        # too — collapse_soft=false, since _style_color_toggle_btn already
+        # paints 3 dimmed and 4 magenta and was only ever handed 0/1/2.
+        var cur_state: int = _deduction._effective_color_state(record_idx, ci, false)
+        if (cur_state == 0 or cur_state == 4) and excluded_colors.has(ci):
             cur_state = 2
         _style_color_toggle_btn(btn, ci, cur_state)
         row.add_child(btn)
@@ -1767,8 +1774,9 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
         var f: float = _host._pitch_freqs[pitch_idx]
         var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(f)
         var incidence_count: int = _deduction._pitch_star_count(note_name)
-        var state: int = _deduction._effective_pitch_state(record_idx, note_name)
-        if state == 0 and excluded_pitches.has(note_name):
+        # See _open_name_checklist_popup for collapse_soft / the 0-or-4 rule.
+        var state: int = _deduction._effective_pitch_state(record_idx, note_name, false)
+        if (state == 0 or state == 4) and excluded_pitches.has(note_name):
             state = 2
         _host._staff_popup.add_pitch_row(note_name, incidence_count, state, STATE_COLORS.neutral)
 
@@ -1776,8 +1784,8 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
     # _make_color_toggle_row_for_record (see _compute_excluded_colors_for).
     var excluded_colors: Array[int] = _deduction._compute_excluded_colors_for(record_idx)
     for ci in _host.COLOR_NAME_LABELS.size():
-        var cstate: int = _deduction._effective_color_state(record_idx, ci)
-        if cstate == 0 and excluded_colors.has(ci):
+        var cstate: int = _deduction._effective_color_state(record_idx, ci, false)
+        if (cstate == 0 or cstate == 4) and excluded_colors.has(ci):
             cstate = 2
         _host._staff_popup.add_color_row(_host.COLOR_NAME_LABELS[ci], ci, cstate, _host.STAR_COLORS_BY_IDX[ci])
 
@@ -1789,8 +1797,8 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
     all_names.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
     var excluded_names: Array[String] = _deduction._compute_excluded_names_for(record_idx)
     for name_str in all_names:
-        var state: int = _deduction._effective_name_state(record_idx, name_str)
-        if state == 0 and excluded_names.has(name_str):
+        var state: int = _deduction._effective_name_state(record_idx, name_str, false)
+        if (state == 0 or state == 4) and excluded_names.has(name_str):
             state = 2
         _host._staff_popup.add_name_row(name_str, state, STATE_COLORS.neutral)
 
