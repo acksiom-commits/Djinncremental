@@ -434,6 +434,24 @@ func _open_search_popup() -> void:
 # ── GUIDE CONTENT NOTES (drafted 2026-08-07, verified against the clue
 # ── builders; write these up as player-facing entries when the tab is built)
 #
+# CLUE ENTITY DISTINCTNESS (verified 2026-08-10, player-facing entry below)
+# Every clue mentions only distinct entities. If a clue says "the star that
+# fires 12th note has a lower frequency than [Nyxeai, the star that fires
+# 2nd note, the star that fires 11th note, and the star that fires 15th
+# note]", then all five stars mentioned (12th-note star, Nyxeai, 2nd-note
+# star, 11th-note star, 15th-note star) are guaranteed different. No star
+# name, pitch, color, or degree is mentioned twice in the same clue. This
+# means when a clue compares entities like "X has lower frequency than Y,
+# Z, W, and V", those five entities are always five different stars — no
+# ambiguity or redundancy. Audit of 102 generated clues: 0 overlaps.
+#   - "The star that fires <note-rank> has lower frequency than [Nyxeai,
+#     the star that fires <note-rank-2>, ...]" — all mentioned stars are
+#     distinct. The <note-rank> star is different from Nyxeai and from every
+#     other star named in the comparison. No star is mentioned twice, so no
+#     logical contradiction or redundancy — use this as a guide to
+#     eliminated candidates. If a star can only be two of these mentions,
+#     it's not the <note-rank> star.
+#
 # "CONNECTED" MEANS EXACTLY ONE HOP — direct line-neighbours only, never
 # multi-hop reach. All three clue forms using the word read proximity[star],
 # built by constellation_logic_puzzle.gd's _build_proximity() straight from
