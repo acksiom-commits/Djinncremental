@@ -2327,7 +2327,18 @@ func _build_form_pairwise_order(chain: Dictionary) -> Dictionary:
     # rank) and its true frequency-rank ordering (with ties) are different
     # numberings; comparing the wrong one would silently misorder Pitch
     # clues even though the matrix bookkeeping itself stayed correct.
-    var a_gt_b: bool = _order_value(axis, star_a) > _order_value(axis, star_b)
+    var val_a: int = _order_value(axis, star_a)
+    var val_b: int = _order_value(axis, star_b)
+    # Distinct STARS is not distinct RANKS. star_b is only sampled to differ
+    # from star_a, but Pitch ranks tie whenever two stars play the same note
+    # (constellation 0 has 15 stars across 10 notes), and a tie fell through
+    # to `a_gt_b = false` and rendered a strict "is lower than" — a flatly
+    # false clue, and one a correct solver uses to eliminate the true
+    # solution. Same guard, same reason, as Betweenness and Exact Offset.
+    # Sequence is a permutation and never ties, so this only fires on Pitch.
+    if val_a == val_b:
+        return {}
+    var a_gt_b: bool = val_a > val_b
     var id_a: Dictionary = {"cat": int(a["id_cat"]), "star": star_a}
     var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
     var axis_a: Dictionary = {"cat": axis, "star": star_a}
@@ -3364,6 +3375,13 @@ func _build_form_pseudo_true_pair_staggered(chain: Dictionary) -> Dictionary:
     # here, and the decoy candidate (a third, genuinely different star)
     # needs the same check in the loop below.
     if not _category_uniquely_labels(axis, s_x) or not _category_uniquely_labels(axis, s_y):
+        return {}
+    # This Form's tail clause is a strict comparison ("...and X is lower
+    # than Y"), so it needs the same tie guard as Pairwise Order: s_y is
+    # only sampled to differ from s_x, and two distinct stars can share a
+    # Pitch rank. Checked here rather than at the _order_word call so the
+    # decoy search below isn't done for a sample that cannot be used.
+    if _order_value(axis, s_x) == _order_value(axis, s_y):
         return {}
     var id_cat_a: int = int(a["id_cat"])
     var id_val_a: int = int(a["id_val"])

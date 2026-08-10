@@ -434,23 +434,33 @@ func _open_search_popup() -> void:
 # ── GUIDE CONTENT NOTES (drafted 2026-08-07, verified against the clue
 # ── builders; write these up as player-facing entries when the tab is built)
 #
-# CLUE ENTITY DISTINCTNESS (verified 2026-08-10, player-facing entry below)
-# Every clue mentions only distinct entities. If a clue says "the star that
-# fires 12th note has a lower frequency than [Nyxeai, the star that fires
-# 2nd note, the star that fires 11th note, and the star that fires 15th
-# note]", then all five stars mentioned (12th-note star, Nyxeai, 2nd-note
-# star, 11th-note star, 15th-note star) are guaranteed different. No star
-# name, pitch, color, or degree is mentioned twice in the same clue. This
-# means when a clue compares entities like "X has lower frequency than Y,
-# Z, W, and V", those five entities are always five different stars — no
-# ambiguity or redundancy. Audit of 102 generated clues: 0 overlaps.
-#   - "The star that fires <note-rank> has lower frequency than [Nyxeai,
-#     the star that fires <note-rank-2>, ...]" — all mentioned stars are
-#     distinct. The <note-rank> star is different from Nyxeai and from every
-#     other star named in the comparison. No star is mentioned twice, so no
-#     logical contradiction or redundancy — use this as a guide to
-#     eliminated candidates. If a star can only be two of these mentions,
-#     it's not the <note-rank> star.
+# DISTINCT STARS, NOT DISTINCT PITCHES (measured 2026-08-10)
+# Every star a clue names is a different star — a clue never refers to the
+# same star twice under two labels. It does NOT follow that they all have
+# different PITCHES. Notes repeat: constellation 0 has 15 stars across 10
+# distinct notes, and _order_value() ranks Pitch with ties shared. Of 90
+# generated clues naming 2+ stars, 11 named two stars carrying the same
+# note.
+#
+# This is the trap worth writing up for players, because the wrong reading
+# over-eliminates. Given:
+#
+#   "The star that fires 12th note has a lower pitch than Nyxeai, the star
+#    that fires 2nd note, the star that fires 11th note, and the star that
+#    fires 15th note."
+#
+# the sound inference is "lower than each of those four stars" — NOT
+# "outside the top four pitches". If two of the four happen to share a
+# note, they span only three distinct pitch values, and the subject can sit
+# as high as the 4th-highest. The listed stars are each strictly above the
+# subject (_build_form_group_comparison filters on v <= subject_val), but
+# nothing orders them against EACH OTHER.
+#
+# Corrected from an earlier note that claimed pitch-distinctness. The audit
+# behind it read search_terms — the rendered-label encoding, where every
+# star already gets a unique label, so "no duplicates" was true by
+# construction and could not have detected this. Read `chars` for mentions.
+# See [[clue_encodings_four_representations]].
 #
 # "CONNECTED" MEANS EXACTLY ONE HOP — direct line-neighbours only, never
 # multi-hop reach. All three clue forms using the word read proximity[star],
