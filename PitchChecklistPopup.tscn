@@ -29,7 +29,7 @@ theme_override_constants/separation = 4
 
 [node name="TitleLabel" type="Label" parent="VBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
 text = "SELECT PITCH"
 
@@ -46,7 +46,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo selects"
 
 [node name="BtnUndoBlocks" type="Button" parent="VBox/UndoRow"]
@@ -55,7 +55,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo blocks"
 
 [node name="BtnUndoAll" type="Button" parent="VBox/UndoRow"]
@@ -64,7 +64,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo all"
 
 [node name="Sep2" type="HSeparator" parent="VBox"]

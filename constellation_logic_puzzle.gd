@@ -1135,7 +1135,23 @@ func check_solution(candidate: Array) -> bool:
 # (version 1, header-only, predating the Forms clue set entirely) are
 # invalidated below and regenerated — there is nothing meaningful to migrate
 # from a cache that never stored a clue set at all.
-const CACHE_VERSION: int = 2
+# version 3: each chosen_form_clues entry also carries "chars" — the raw
+# {cat, star[, ref]} node list the clue's text was built from (previously
+# discarded down to coarse "characteristics" tab tags before caching).
+# version 4: each entry also carries "cells" — the clue's actual ASSERTIONS,
+# converted from its grid_updates into star space. "chars" only records
+# which entities a clue MENTIONS; two clues asserting opposite things
+# ("X is 7th" vs "neither X nor Y is 7th") have identical chars, so coverage
+# built on chars structurally cannot tell a confirm from an elimination.
+# A cell is {cat_a, star_a, cat_b, star_b, is_true} meaning "the star
+# identified via cat_a and the star identified via cat_b are (is_true) or
+# are not (not is_true) the same star" — see _build_matrix()'s
+# `is_true: star_a == star_b`. Persisted in star space rather than the
+# matrix's own per-category value indices because _cat_value_to_star (the
+# bijection those indices are relative to) is generator-internal and never
+# cached; star indices are what the overlay already has for every other
+# cached field. See ConstellationPuzzleDeduction._clue_coverage().
+const CACHE_VERSION: int = 4
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -1218,11 +1234,37 @@ func from_cache_dict(data: Dictionary) -> bool:
         var tags: Array[String] = []
         for t in _coerce_array(rc.get("characteristics"), []):
             tags.append(str(t))
+        var loaded_chars: Array = []
+        for raw_ch in _coerce_array(rc.get("chars"), []):
+            if not (raw_ch is Dictionary):
+                continue
+            var ch: Dictionary = raw_ch
+            var coerced_ch: Dictionary = {
+                "cat":  _coerce_int(ch.get("cat"), -1),
+                "star": _coerce_int(ch.get("star"), -1),
+            }
+            if ch.has("ref"):
+                coerced_ch["ref"] = _coerce_int(ch.get("ref"), -1)
+            loaded_chars.append(coerced_ch)
+        var loaded_cells: Array = []
+        for raw_cell in _coerce_array(rc.get("cells"), []):
+            if not (raw_cell is Dictionary):
+                continue
+            var cl: Dictionary = raw_cell
+            loaded_cells.append({
+                "cat_a":  _coerce_int(cl.get("cat_a"), -1),
+                "star_a": _coerce_int(cl.get("star_a"), -1),
+                "cat_b":  _coerce_int(cl.get("cat_b"), -1),
+                "star_b": _coerce_int(cl.get("star_b"), -1),
+                "is_true": _coerce_bool(cl.get("is_true"), false),
+            })
         chosen_form_clues.append({
             "form_id":         _coerce_int(rc.get("form_id"), 0),
             "form_name":       str(rc.get("form_name", "")),
             "text":            str(rc.get("text", "")),
             "characteristics": tags,
+            "chars":           loaded_chars,
+            "cells":           loaded_cells,
         })
 
     return star_count > 0 and _generation_complete
@@ -1878,6 +1920,36 @@ func _validate_sequence_fact(f: Dictionary) -> String:
     return ""
 
 
+## Converts a Form's grid_updates (matrix cells, addressed by each
+## category's own bijective value index) into the star-space form that gets
+## cached — see CACHE_VERSION 4's comment for why the conversion happens
+## here at generation time rather than in the consumer. Distance is not a
+## bijective category and has no matrix grid, so a cell naming it (no Form
+## currently emits one) is dropped rather than mis-indexed.
+func _cells_for_cache(grid_updates: Array) -> Array:
+    var out: Array = []
+    for gu in grid_updates:
+        if not (gu is Dictionary):
+            continue
+        var cell: Dictionary = gu
+        var ca: int = int(cell.get("cat_a", -1))
+        var cb: int = int(cell.get("cat_b", -1))
+        if not (ca in BIJECTIVE_CATEGORIES) or not (cb in BIJECTIVE_CATEGORIES):
+            continue
+        var va: int = int(cell.get("val_a", -1))
+        var vb: int = int(cell.get("val_b", -1))
+        if va < 0 or va >= star_count or vb < 0 or vb >= star_count:
+            continue
+        out.append({
+            "cat_a":  ca,
+            "star_a": int(_cat_value_to_star[ca][va]),
+            "cat_b":  cb,
+            "star_b": int(_cat_value_to_star[cb][vb]),
+            "is_true": bool(cell.get("is_true", false)),
+        })
+    return out
+
+
 func _clue_characteristics(chars: Array) -> Array[String]:
     # Replaces the old kind-string -> static-table indirection (_kind_ui_tabs)
     # with a tag computed straight from a clue's actual node composition —
@@ -2438,6 +2510,57 @@ func _build_form_dual_negation(chain: Dictionary) -> Dictionary:
     }
 
 
+## Category display-priority for grouping a mixed-category label list
+## before sorting — Forms 13/14 (Mutual Exclusion, Group Comparison) can
+## identify each participant via a DIFFERENT category, so a joined list
+## isn't always homogeneous. Group by category first in this fixed order,
+## then apply each group's own rule within it; anything outside the four
+## covered categories (Distance) has no rule here and sorts last, keeping
+## its original relative order.
+const _LABEL_SORT_PRIORITY: Dictionary = {
+    Category.NAME: 0, Category.SEQUENCE: 1, Category.COLOR: 2, Category.PITCH: 3,
+}
+
+## Comparator for _sort_labels_for_join() — split into its own named
+## function rather than an inline lambda passed to sort_custom(): GDScript's
+## inline `func(a, b): <block>` lambdas are indentation-delimited, not
+## paren-delimited, and a multi-branch match statement nested inside one
+## does not reliably terminate at a `)` written on the same line as its
+## last arm — confirmed directly (this exact shape produced "Could not
+## parse global class" on this file). A named method passed by reference
+## (sort_custom(_label_sort_less_than)) sidesteps the ambiguity entirely.
+func _label_sort_less_than(a: Dictionary, b: Dictionary) -> bool:
+    var pa: int = int(_LABEL_SORT_PRIORITY.get(int(a["cat"]), 99))
+    var pb: int = int(_LABEL_SORT_PRIORITY.get(int(b["cat"]), 99))
+    if pa != pb:
+        return pa < pb
+    match int(a["cat"]):
+        Category.NAME:
+            return str(star_names[int(a["star"])]) > str(star_names[int(b["star"])])
+        Category.SEQUENCE:
+            return _order_value(Category.SEQUENCE, int(a["star"])) < _order_value(Category.SEQUENCE, int(b["star"]))
+        Category.COLOR:
+            return str(COLOR_NAMES[star_colors[int(a["star"])]]) < str(COLOR_NAMES[star_colors[int(b["star"])]])
+        Category.PITCH:
+            return _order_value(Category.PITCH, int(a["star"])) > _order_value(Category.PITCH, int(b["star"]))
+    return false
+
+
+## Sorts {cat:int, star:int, label:String} items for display in a joined
+## clue list, per category: Name descending alphabetical, Sequence
+## ascending (earliest star first), Color ascending alphabetical, Pitch
+## descending by frequency (highest first) — deterministic instead of
+## whatever order participants happened to get sampled in. Returns plain
+## label strings, ready for _join_names_and().
+func _sort_labels_for_join(items: Array) -> Array:
+    var sorted_items: Array = items.duplicate()
+    sorted_items.sort_custom(_label_sort_less_than)
+    var out: Array = []
+    for it in sorted_items:
+        out.append(str(it["label"]))
+    return out
+
+
 func _join_names_and(labels: Array) -> String:
     if labels.size() == 1:
         return str(labels[0])
@@ -2519,20 +2642,20 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
         return {}
 
     var chars: Array = []
-    var labels: Array = []
+    var label_items: Array = []
     var grid_updates: Array = []
     var solver_facts: Array = []
     for p in participants:
         var id_ch: Dictionary = {"cat": int(p["id_cat"]), "star": int(p["star"])}
         chars.append(id_ch)
         chars.append({"cat": axis, "star": int(p["star"])})
-        labels.append(_characteristic_label(id_ch))
+        label_items.append({"cat": int(p["id_cat"]), "star": int(p["star"]), "label": _characteristic_label(id_ch)})
         grid_updates.append({"cat_a": int(p["id_cat"]), "val_a": int(p["id_val"]), "cat_b": axis, "val_b": int(p["axis_val"]), "is_true": true})
         # axis is always Color/Pitch here (no Sequence relational content),
         # but each participant's id_cat only excludes axis, never Sequence.
         solver_facts.append_array(_seq_fact_for_label(id_ch))
     var noun: String = "colors" if axis == Category.COLOR else "pitches"
-    var text: String = "%s all have different %s." % [_join_names_and(labels), noun]
+    var text: String = "%s all have different %s." % [_join_names_and(_sort_labels_for_join(label_items)), noun]
     return {"chars": chars, "text": text, "grid_updates": grid_updates, "solver_facts": solver_facts}
 
 
@@ -2586,7 +2709,7 @@ func _build_form_group_comparison(chain: Dictionary) -> Dictionary:
     var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
     var subject_axis_ch: Dictionary = {"cat": axis, "star": subject_star}
     var chars: Array = [subject_id, subject_axis_ch]
-    var labels: Array = []
+    var label_items: Array = []
     var grid_updates: Array = [
         {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
     ]
@@ -2596,14 +2719,14 @@ func _build_form_group_comparison(chain: Dictionary) -> Dictionary:
         var gaxis: Dictionary = {"cat": axis, "star": int(g["star"])}
         chars.append(gid)
         chars.append(gaxis)
-        labels.append(_characteristic_label(gid))
+        label_items.append({"cat": int(g["id_cat"]), "star": int(g["star"]), "label": _characteristic_label(gid)})
         grid_updates.append({"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": axis, "val_b": int(g["axis_val"]), "is_true": true})
         solver_facts.append_array(_seq_fact_for_label(gid))
         if axis == Category.SEQUENCE:
             solver_facts.append({"kind": "ordinal_cmp", "a": subject_star, "b": int(g["star"]), "a_gt_b": s_more})
     var noun: String = _group_comparison_noun(axis)
     var word: String = "higher" if s_more else "lower"
-    var text: String = "%s has a %s %s than %s." % [_characteristic_label(subject_id), word, noun, _join_names_and(labels)]
+    var text: String = "%s has a %s %s than %s." % [_characteristic_label(subject_id), word, noun, _join_names_and(_sort_labels_for_join(label_items))]
     return {"chars": chars, "text": text, "grid_updates": grid_updates, "solver_facts": solver_facts}
 
 
@@ -3396,6 +3519,15 @@ func _generate_clues_forms_attempt() -> Dictionary:
                     "form_name": str(FORM_NAMES.get(form_id, "")),
                     "text": text,
                     "characteristics": _clue_characteristics(chars),
+                    # Raw node list (see CACHE_VERSION 3's comment) — each
+                    # entry {cat:int, star:int[, ref:int]}, already
+                    # plain/JSON-safe, no transformation needed before
+                    # caching. Duplicated defensively since `chars` is a
+                    # shared local several Forms mutate further up.
+                    "chars": chars.duplicate(true),
+                    # What the clue actually ASSERTS, not merely mentions —
+                    # see CACHE_VERSION 4's comment and _cells_for_cache().
+                    "cells": _cells_for_cache(_coerce_array(result.get("grid_updates"), [])),
                 })
                 if result.has("solver_facts"):
                     for f in result["solver_facts"]:

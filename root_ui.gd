@@ -90,6 +90,15 @@ var _archon_volition_constellation_triggered: bool = false
 var _no_archon_volition_constellation_triggered: bool = false
 
 var _spark_movement_triggered:      bool = false
+# Msec timestamp (Time.get_ticks_msec() — monotonic engine process time,
+# immune to frame-rate variance and to the player's system clock changing;
+# not a per-frame delta accumulator, so it can't drift from missed/hitched
+# frames) recording when sparks_since_first_prestige first crossed the
+# Spark Movement threshold. -1 until then. Not save-persisted deliberately
+# — this only paces a cosmetic dialogue delay, not real game state, so a
+# reload mid-wait resetting the count is an acceptable, minor edge case
+# rather than something worth a save-file field for.
+var _spark_movement_threshold_reached_msec: int = -1
 var _star_in_view_triggered:        bool  = false
 var _tier1_archon_complete_triggered:   bool = false
 var _star_in_view_time:             float = 0.0
@@ -305,6 +314,8 @@ func _ready() -> void:
     _name_picker_next    = get_node_or_null(DIALOGUE_PANEL_BASE_PATH + "NamePickerVBox/NamePickerHBox/NamePickerNextButton")
     _name_picker_confirm = get_node_or_null(DIALOGUE_PANEL_BASE_PATH + "NamePickerVBox/NamePickerConfirmButton")
     _study_overlay       = get_node_or_null("/root/Node2D/CanvasLayer/ConstellationStudyOverlay")
+    if _study_overlay and _study_overlay.has_signal("reset_requested"):
+        _study_overlay.reset_requested.connect(reset_constellation_puzzle)
     if _name_picker_next:
         _name_picker_next.pressed.connect(_on_name_picker_next)
     if _name_picker_confirm:
@@ -944,6 +955,56 @@ func _dev_recompute_puzzle(constellation_id: int) -> void:
                 _study_overlay.show_for_constellation(cid))
 
 
+## Player-facing full reshuffle for one constellation's puzzle — unlike
+## _dev_recompute_puzzle (dev-only; note assignment untouched, so the
+## melody/Sequence/Pitch ground truth never actually varied), this also
+## reshuffles which star plays which note via
+## ConstellationData.reset_note_assignment(), and resyncs the live
+## click-sequence puzzle engine so it and the Study Overlay's regenerated
+## clues agree on the new mapping. Triggered by the Study Overlay's RESET
+## button after its confirmation dialog — see constellation_study_overlay.gd's
+## reset_requested signal and this file's connection to it in _ready().
+func reset_constellation_puzzle(constellation_id: int) -> void:
+    var cd = get_node_or_null("/root/ConstellationData")
+    if not cd or not game_context:
+        return
+
+    cd.reset_note_assignment(constellation_id)
+    # Wipes the puzzle cache AND the player's own deduction notes for this
+    # constellation in one call — player_puzzle_notes lives nested inside
+    # the same per-constellation cache entry (see constellation_data.gd's
+    # get_player_puzzle_notes()/set_player_puzzle_notes()), so there's
+    # nothing extra to clear here: notes describing the OLD star-to-name/
+    # pitch mapping would be actively wrong once the mapping changes, not
+    # just stale.
+    cd.clear_puzzle_cache(constellation_id)
+    var solve_key: String = "constellation_%d_solve_count" % constellation_id
+    var hw_key: String = "constellation_%d_high_water" % constellation_id
+    game_context.assignments.erase(solve_key)
+    game_context.assignments.erase(hw_key)
+
+    # Resync the LIVE click-sequence puzzle before regenerating clues —
+    # click_sequence_puzzle_engine.gd caches note_assignment/correct_
+    # sequence the first time it's needed and never re-fetches on its own;
+    # without this it would keep validating star clicks against the OLD
+    # melody while the Study Overlay's freshly-generated clues describe the
+    # NEW one. constellation_fork_puzzle.gd's own engine gets the same
+    # resync for free below, via show_for_constellation()'s existing
+    # _fork.set_constellation() call.
+    var overlay := get_parent().find_child("ConstellationOverlay", true, false)
+    if overlay and overlay.has_method("_reset_puzzle"):
+        overlay._reset_puzzle()
+
+    var def: Dictionary = cd.get_constellation_def(constellation_id)
+    var new_seed: int = randi()
+    _generate_puzzle(constellation_id, cd, def, new_seed,
+        "puzzle reset",
+        func(cid: int, puzzle: ConstellationLogicPuzzle):
+            cd.set_puzzle_cache(cid, puzzle.to_cache_dict())
+            if _study_overlay and _study_overlay.visible and _study_overlay.has_method("show_for_constellation"):
+                _study_overlay.show_for_constellation(cid))
+
+
 # ==================================================
 # SHARED — validates a constellation def, builds a ConstellationLogicPuzzle,
 # and kicks off async generation. Extracted 2026-07-27 from
@@ -1470,26 +1531,49 @@ func _build_simple_triggers() -> void:
         },
         {
             "guard": "_spark_movement_triggered",
-            "condition": func(): return game_context.expansions > 0 and game_context.sparks_since_first_prestige >= 1000.0,
+            # Raised 1000 -> 2000, plus a ~30s real-time hold once the
+            # threshold is reached — playtesting found this dialogue firing
+            # almost immediately after the long post-prestige dialogue that
+            # precedes it, giving the player no breathing room between the
+            # two. Resets the timestamp (not just skips) whenever the
+            # threshold condition goes false again, so a prestige-reset
+            # mid-count doesn't leave a stale timestamp that would let a
+            # future crossing fire instantly.
+            "condition": func():
+                if game_context.expansions <= 0 or game_context.sparks_since_first_prestige < 2000.0:
+                    _spark_movement_threshold_reached_msec = -1
+                    return false
+                if _spark_movement_threshold_reached_msec < 0:
+                    _spark_movement_threshold_reached_msec = Time.get_ticks_msec()
+                    return false
+                return Time.get_ticks_msec() - _spark_movement_threshold_reached_msec >= 30000,
             "effect": func(): archon_dialogue_manager.enqueue_spark_movement(),
         },
         {
             "guard": "_tier1_archon_complete_triggered",
             "condition": func():
                 var cd := get_node_or_null("/root/ConstellationData")
-                return cd != null and cd.get_spark_fraction(0) >= cd.THRESHOLD_STARS,
+                return cd != null and cd.get_sparks_invested(0) >= cd.SPARKS_TIER_STARS,
             "effect": func(): archon_dialogue_manager.enqueue_tier1_archon_complete(),
         },
         {
             "guard": "_first_constellation_triggered",
-            "condition": func(): return archon_dialogue_manager.spark_movement_done and game_context.expansions > 0 and game_context.sparks.is_greater_or_equal(BigNum.from_int(3000)),
+            # Stored-spark requirement lowered 3000 -> 2000 to match the
+            # lowered Constellation Endowment tiers (constellation_data.gd's
+            # SPARKS_TIER_*) — the old 3000 was sized for the old,
+            # much-larger fraction-of-cap system.
+            "condition": func(): return archon_dialogue_manager.spark_movement_done and game_context.expansions > 0 and game_context.sparks.is_greater_or_equal(BigNum.from_int(2000)),
             "effect": func():
                 _reveal_panel("constellation")
                 var cd := get_node_or_null("/root/ConstellationData")
                 if cd:
                     cd._unlock_constellation(0)
                     cd.set_active_constellation(0, 0)
-                    game_context.constellation_spark_totals["0"] = 150.0
+                    # Seed lowered 150.0 -> 100.0 alongside the tier
+                    # rebalance — see constellation_data.gd's SPARKS_TIER_*
+                    # constants for the current absolute-spark tier system
+                    # this seeds into.
+                    game_context.constellation_spark_totals["0"] = 100.0
                 archon_dialogue_manager.enqueue_first_constellation()
                 # StudyButton lives INSIDE ConstellationPanel (see RootUI.tscn)
                 # and both start at modulate.a=0 — but they're revealed by two
@@ -1805,7 +1889,7 @@ func _input(event: InputEvent) -> void:
                     else:
                         cd._unlock_constellation(0)
                         cd.set_active_constellation(0, 0)
-                        game_context.constellation_spark_totals["0"] = cd.get_spark_cap(0) * 0.15
+                        game_context.constellation_spark_totals["0"] = cd.SPARKS_TIER_STARS
                     cd.active_constellation_changed.emit(0, cd.active_per_octant[0])
         if event.keycode == KEY_Z:
             # DEV: unlock all 5 designed constellations at once (Archon,
@@ -1824,7 +1908,7 @@ func _input(event: InputEvent) -> void:
                         var octant2: int = int(def2.get("octant", cid))
                         cd2._unlock_constellation(cid)
                         cd2.set_active_constellation(octant2, cid)
-                        game_context.constellation_spark_totals[str(cid)] = cd2.get_spark_cap(cid) * 0.15
+                        game_context.constellation_spark_totals[str(cid)] = cd2.SPARKS_TIER_STARS
                         cd2.active_constellation_changed.emit(octant2, cid)
                     print("[DEV] Unlocked constellations 0-4 for testing.")
             get_viewport().set_input_as_handled()

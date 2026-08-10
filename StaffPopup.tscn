@@ -30,7 +30,7 @@ theme_override_constants/separation = 4
 [node name="TitleLabel" type="Label" parent="VBox"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 17
 theme_override_colors/font_color = Color(0.82, 0.78, 0.92, 1)
 horizontal_alignment = 1
 text = "Note 1"
@@ -41,7 +41,7 @@ layout_mode = 2
 [node name="PitchHeader" type="Label" parent="VBox"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
 text = "PITCH"
 
@@ -55,7 +55,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo selects"
 
 [node name="PitchBtnUndoBlocks" type="Button" parent="VBox/PitchUndoRow"]
@@ -64,7 +64,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo blocks"
 
 [node name="PitchBtnUndoAll" type="Button" parent="VBox/PitchUndoRow"]
@@ -73,7 +73,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo all"
 
 [node name="PitchColumns" type="HBoxContainer" parent="VBox"]
@@ -87,7 +87,7 @@ layout_mode = 2
 [node name="ColorHeader" type="Label" parent="VBox"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
 text = "COLOR"
 
@@ -101,7 +101,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo selects"
 
 [node name="ColorBtnUndoBlocks" type="Button" parent="VBox/ColorUndoRow"]
@@ -110,7 +110,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo blocks"
 
 [node name="ColorBtnUndoAll" type="Button" parent="VBox/ColorUndoRow"]
@@ -119,7 +119,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo all"
 
 [node name="ColorColumns" type="HBoxContainer" parent="VBox"]
@@ -133,7 +133,7 @@ layout_mode = 2
 [node name="NameHeader" type="Label" parent="VBox"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
 text = "NAME"
 
@@ -147,7 +147,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo selects"
 
 [node name="NameBtnUndoBlocks" type="Button" parent="VBox/NameUndoRow"]
@@ -156,7 +156,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo blocks"
 
 [node name="NameBtnUndoAll" type="Button" parent="VBox/NameUndoRow"]
@@ -165,7 +165,7 @@ custom_minimum_size = Vector2(0, 26)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
-theme_override_font_sizes/font_size = 10
+theme_override_font_sizes/font_size = 13
 text = "Undo all"
 
 [node name="NameColumns" type="HBoxContainer" parent="VBox"]

@@ -124,8 +124,8 @@ const BUILT_IN = [
         "bonus_value": 1.0,
         "mechanic_key": "unlock_archon_titles",
         "bonus_levels": {"stars": 1, "lines": 2, "art": 3},
-        "spark_cap":      75025,
-        "line_threshold": 0.3819,   # 28,657 / 75,025
+        "spark_cap":      28657,
+        # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
         "snap_horiz_stars": [0, 1],
         # Leveling snap_horiz_stars alone only fixes rotation mod 180° —
         # star 2 (the outer-triangle apex, "outer bottom apex" below) must
@@ -217,8 +217,8 @@ const BUILT_IN = [
         "mechanic_key": "",
         "snap_horiz_stars": [0, 8],
         "bonus_levels": {"stars": 1.5, "lines": 2.0, "art": 3.0},
-        "spark_cap":      75025,
-        "line_threshold": 0.3819,   # 28,657 / 75,025
+        "spark_cap":      28657,
+        # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
 
         # Hallelujah Chorus (Handel's Messiah) — orchestral introduction,
         # 16 note-events over 16 stars (one star per note). Violin 1 melodic line,
@@ -296,8 +296,8 @@ const BUILT_IN = [
             "particle_compress", "iota_assemble", "mote_compress",
             "grain_assemble", "uonite_create"
         ],
-        "spark_cap":      75025,
-        "line_threshold": 0.3819,   # 28,657 / 75,025
+        "spark_cap":      28657,
+        # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
         "puzzle_sequence": [0, 1, 2, 4, 6, 2, 6, 5, 1, 4, 3, 7, 4],
         "fixed_star_positions": [
             [-0.0056,  0.0042,  1.0000],  # 0:  center
@@ -362,8 +362,8 @@ const BUILT_IN = [
         # matching comment and get_canonical_display_basis().
         "snap_orient_check": {"star": 16, "axis": "x", "sign": 1},
         "bonus_levels": {"stars": 2.0, "lines": 3.0, "art": 3.0},
-        "spark_cap":      75025,
-        "line_threshold": 0.3819,   # 28,657 / 75,025
+        "spark_cap":      28657,
+        # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
 
         # Debussy, Clair de Lune — opening 17 notes (events 0-16), the
         # phrase that ends right as it begins echoing itself (F4-G#4
@@ -441,8 +441,8 @@ const BUILT_IN = [
         # comment and get_canonical_display_basis().
         "snap_orient_check": {"star": 4, "axis": "x", "sign": 1},
         "bonus_levels": {"stars": 1.5, "lines": 2.0, "art": 3.0},
-        "spark_cap":      75025,
-        "line_threshold": 0.3819,   # 28,657 / 75,025
+        "spark_cap":      28657,
+        # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
 
         # Marriage of Figaro Overture (Mozart) — Clarinet in Bb part, first 18 notes.
         # Bb clarinet transposition applied (written pitch - 2 semitones = sounding pitch).
@@ -566,8 +566,8 @@ const BUILT_IN = [
         "mechanic_key": "",
         "snap_horiz_stars": [1, 2],
         "bonus_levels": {"stars": 1.5, "lines": 2.0, "art": 3.0},
-        "spark_cap":      75025,
-        "line_threshold": 0.3819,   # 28,657 / 75,025
+        "spark_cap":      28657,
+        # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
 
         # 15 of 17 note-events (see TODO above).
         # C4 G4 C5 E4 G4 C5 C4 E5 G3 G4 C5 D#5 C4 D#4 G3
@@ -605,22 +605,40 @@ const PATRON_DATA_PATH = "res://data/patron_constellations.json"
  
  
 # ==================================================
-# SPARK FRACTION THRESHOLDS
+# SPARK TIER THRESHOLDS
 # ==================================================
-# stars:  fraction >= THRESHOLD_STARS  → stars visible
-# lines:  fraction >= line_threshold   → connecting lines (per constellation)
-# art:    fraction >= THRESHOLD_ART    → figure art visible
-const THRESHOLD_STARS: float = 0.1457   # 10,946 / 75,025
-const THRESHOLD_ART:   float = 0.85     # ~63,771 / 75,025
+# DEV: 2026-08-05 — Endowment cost too much after playtesting (same
+# balancing pass that swapped Grains → Motes for Uonite assembly). The
+# tiers below are now HARDCODED absolute spark amounts, not fractions of
+# the cap:
+#   stars:  invested >= SPARKS_TIER_STARS  → stars visible
+#   lines:  invested >= SPARKS_TIER_LINES  → connecting lines
+#   art:    invested >= SPARKS_TIER_ART    → figure art visible
+const SPARKS_TIER_STARS: float = 4181.0
+const SPARKS_TIER_LINES: float = 10946.0
+const SPARKS_TIER_ART:   float = 28657.0
+
+# ── OLD PERCENTAGE-BASED STRUCTURE (inactive, kept for later
+# ── reconsideration) — thresholds were fractions of the cap, which made
+# ── them scale with whatever SPARK_CAP_BASE was set to. To restore,
+# ── uncomment and re-point consumers at THRESHOLD_STARS / THRESHOLD_ART /
+# ── per-def line_threshold (the 0.3819 values were 28,657 / 75,025):
+# const THRESHOLD_STARS: float = 0.1457   # 10,946 / 75,025
+# const THRESHOLD_ART:   float = 0.85     # ~63,771 / 75,025
  
 # DEV: SPARK_CAP_BASE is the TOTAL spark investment cap for a complete
 # Early-game constellation — NOT a per-star figure. The Archon (10 stars)
-# and a 5-star constellation share the same 75025 cap; star_count governs
+# and a 5-star constellation share the same cap; star_count governs
 # geometry only, not capacity. get_spark_cap() multiplies by star_count for
 # later or custom constellations that are explicitly designed to scale — do
 # NOT rely on that return value for Early-game built-in ids 0-15 unless
 # their definition carries a custom "spark_cap" field that overrides it.
-const SPARK_CAP_BASE:  float = 75025.0
+#
+# DEV: 2026-08-05 — cap lowered 75,025 → 28,657 to match the new art tier
+# (SPARKS_TIER_ART). All built-in defs carry an explicit spark_cap of
+# 28657, so this base is only the fallback for future/custom constellations.
+# Old value (75,025) kept in git history if the cap is ever raised again.
+const SPARK_CAP_BASE:  float = 28657.0
  
  
 # ==================================================
@@ -677,6 +695,15 @@ const PUZZLE_RESPONSE_FREQS: Array = [
 # RUNTIME STATE
 # ==================================================
 var player_seed:            int        = 0
+# Per-constellation override for get_note_assignment()'s RNG seed, keyed by
+# str(constellation_id). Empty/missing means "use player_seed" (today's
+# behavior, unchanged) — star POSITIONS/octant placement/roll stay tied to
+# player_seed unconditionally (a whole-save fact of this player's sky that
+# shouldn't shift), but note assignment (which star plays which pitch) can
+# be reshuffled per-constellation via reset_note_assignment() without
+# touching anything else. See reset_note_assignment()'s own comment for why
+# this needed to be its own seed rather than just regenerating player_seed.
+var note_assignment_seed_overrides: Dictionary = {}
 var active_per_octant:      Array      = [-1, -1, -1, -1, -1, -1, -1, -1]
 var unlocked:               Array      = []
 var player_constellations:  Array      = []
@@ -1017,7 +1044,7 @@ func get_spark_cap(constellation_id: int) -> float:
     if def.has("spark_cap"):
         # DEV: Returns the explicit cap directly — NO star_count multiplication.
         # Every Early-game built-in constellation (ids 0–15) carries this field.
-        # For The Archon: spark_cap = 75025, full stop. Not 75025 × 10.
+        # For The Archon: spark_cap = 28657, full stop. Not 28657 × 10.
         # star_count in the definition is a GEOMETRY-ONLY field (controls
         # procedural star placement). It has zero effect on spark capacity
         # for any constellation that defines spark_cap explicitly.
@@ -1029,11 +1056,15 @@ func get_spark_cap(constellation_id: int) -> float:
     return SPARK_CAP_BASE * float(star_count)
  
  
-func get_spark_fraction(constellation_id: int) -> float:
+func get_sparks_invested(constellation_id: int) -> float:
     if not _game_context:
         return 0.0
+    return _game_context.constellation_spark_totals.get(str(constellation_id), 0.0)
+
+
+func get_spark_fraction(constellation_id: int) -> float:
     var cap:   float = get_spark_cap(constellation_id)
-    var total: float = _game_context.constellation_spark_totals.get(str(constellation_id), 0.0)
+    var total: float = get_sparks_invested(constellation_id)
     # cap can be 0.0 (a corrupted def with star_count coerced to 0 and no
     # explicit spark_cap), and total can independently be 0.0 too (no
     # investment yet) — 0.0/0.0 is NaN, which clamp() passes straight
@@ -1044,31 +1075,33 @@ func get_spark_fraction(constellation_id: int) -> float:
         return 0.0
     var result: float = clamp(raw, 0.0, 1.0)
     return result
- 
- 
+
+
 func get_visual_state(constellation_id: int) -> String:
     if not unlocked.has(constellation_id):
         return "dark"
-    var fraction: float = get_spark_fraction(constellation_id)
-    if fraction < THRESHOLD_STARS:
+    # Tier progression compares absolute sparks invested against the
+    # hardcoded tier amounts (SPARKS_TIER_STARS/LINES/ART) — the old
+    # fraction-of-cap THRESHOLD_STARS / line_threshold structure is kept
+    # dev-commented at the constants block for later reconsideration.
+    var invested: float = get_sparks_invested(constellation_id)
+    if invested < SPARKS_TIER_STARS:
         return "dark"
-    var def: Dictionary       = get_constellation_def(constellation_id)
-    var line_threshold: float = _coerce_float(def.get("line_threshold"), 0.3)
-    if fraction >= THRESHOLD_ART:
+    if invested >= SPARKS_TIER_ART:
         return "art"
-    if fraction >= line_threshold:
+    if invested >= SPARKS_TIER_LINES:
         return "lines"
     return "stars"
- 
- 
+
+
 func get_star_brightness(constellation_id: int) -> float:
-    var fraction: float = get_spark_fraction(constellation_id)
-    if fraction < THRESHOLD_STARS:
+    # Ramps from 0.0 at the stars tier up to 1.0 at the lines tier, using
+    # the hardcoded absolute spark tiers (see constants block).
+    var invested: float = get_sparks_invested(constellation_id)
+    if invested < SPARKS_TIER_STARS:
         return 0.0
-    var def: Dictionary       = get_constellation_def(constellation_id)
-    var line_threshold: float = _coerce_float(def.get("line_threshold"), 0.3)
     return clamp(
-        (fraction - THRESHOLD_STARS) / (line_threshold - THRESHOLD_STARS),
+        (invested - SPARKS_TIER_STARS) / (SPARKS_TIER_LINES - SPARKS_TIER_STARS),
         0.0, 1.0)
  
  
@@ -1281,16 +1314,38 @@ func get_note_assignment(constellation_id: int) -> Array:
         for i in star_count:
             assignment[i] = i % freq_count if freq_count > 0 else 0
 
+    # Uses the per-constellation override if reset_note_assignment() has
+    # ever been called for this id, else falls back to player_seed —
+    # matches every OTHER caller of this function (click_sequence_puzzle_
+    # engine.gd's live puzzle, constellation_study_overlay.gd's clue
+    # cross-referencing, root_ui.gd's clue generation) automatically, since
+    # they all just call get_note_assignment(constellation_id) with no
+    # seed of their own — there was no other way to keep them in sync.
+    var base_seed: int = _coerce_int(
+        note_assignment_seed_overrides.get(str(constellation_id)), player_seed)
     var rng := RandomNumberGenerator.new()
-    rng.seed = player_seed ^ (constellation_id * 0x9E3779B9)
+    rng.seed = base_seed ^ (constellation_id * 0x9E3779B9)
     for i in range(assignment.size() - 1, 0, -1):
         var j: int = rng.randi_range(0, i)
         var tmp    = assignment[i]
         assignment[i] = assignment[j]
         assignment[j] = tmp
     return assignment
- 
- 
+
+
+## Reshuffles which star plays which note for one constellation, without
+## touching player_seed (which also drives star positions/octant placement/
+## roll for EVERY constellation — regenerating it here would relocate the
+## whole sky, not just reshuffle one constellation's melody). Only affects
+## the NEXT call to get_note_assignment(constellation_id) — callers that
+## already cached a note_assignment array (click_sequence_puzzle_engine.gd)
+## need to be told to re-fetch; this function only owns the seed, not
+## resyncing every live consumer. See root_ui.gd's reset_constellation_
+## puzzle() for the full reset flow this is one piece of.
+func reset_note_assignment(constellation_id: int) -> void:
+    note_assignment_seed_overrides[str(constellation_id)] = randi()
+
+
 # ==================================================
 # PATRON CONSTELLATION LOADING
 # ==================================================
@@ -1317,6 +1372,7 @@ func _load_patron_constellations() -> void:
 func get_save_data() -> Dictionary:
     return {
         "player_seed":           player_seed,
+        "note_assignment_seed_overrides": note_assignment_seed_overrides,
         "active_per_octant":     active_per_octant,
         "last_selected_id":      _last_selected_id,
         "unlocked":              unlocked,
@@ -1370,6 +1426,12 @@ func _coerce_array(val, default: Array) -> Array:
 
 func load_save_data(data: Dictionary) -> void:
     player_seed = _coerce_int(data.get("player_seed"), randi())
+
+    note_assignment_seed_overrides = {}
+    var _raw_overrides = data.get("note_assignment_seed_overrides")
+    if _raw_overrides is Dictionary:
+        for k in _raw_overrides:
+            note_assignment_seed_overrides[str(k)] = _coerce_int(_raw_overrides[k], 0)
 
     var _raw_apo = data.get("active_per_octant")
     active_per_octant = []
