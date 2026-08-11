@@ -374,6 +374,18 @@ func _detect_contradictions() -> void:
         var idxs: Array = name_claims[nm]
         if idxs.size() < 2:
             continue
+        # Skip when the merge pass already reported this exact pair. Since
+        # a name confirm now produces an identity token, most duplicate
+        # claims either merge away or come back as a refusal — saying the
+        # same thing twice in the banner just makes it look like two
+        # separate mistakes.
+        var already: bool = false
+        for ref2 in _merge_refusals:
+            if idxs.has(int(ref2["a"])) and idxs.has(int(ref2["b"])):
+                already = true
+                break
+        if already:
+            continue
         var wheres: Array[String] = []
         for idx in idxs:
             var q: String = _record_qualifier(int(idx))
@@ -2585,6 +2597,31 @@ func _identity_signature(record_idx: int) -> Dictionary:
     if star >= 0:
         sig["X:%d" % star] = true
     var nm: String = str(r.get("name", ""))
+    if nm == "":
+        # A name confirmed on a slot row is every bit as much an identity
+        # claim as one promoted into r["name"], and it must produce the
+        # same token — otherwise the two records are never seen as the same
+        # entity and never merge.
+        #
+        # That gap was self-reinforcing. Promotion into r["name"] is
+        # deliberately REFUSED when another record already holds the name
+        # (it would mint a duplicate identity), so the claim stays in
+        # name_states — precisely the situation where recognising the two
+        # as one entity matters most. The result was a name assigned from a
+        # Sort:Pitch or Sort:Sequence slot doing nothing at all: no token,
+        # no merge, and _find_match_record_by_name returning the OTHER
+        # record, which is what the star map reads through.
+        #
+        # Raw name_states, never _effective_name_state: a DERIVED name
+        # confirm must not drive a merge, because merging is destructive
+        # and cannot be undone when the derived layer is wiped (Phase 3).
+        # Names need no singleton guard the way Colour and Pitch do below —
+        # they are alldiff, so a confirmed name always identifies exactly
+        # one star.
+        for k in (r.get("name_states", {}) as Dictionary):
+            if int((r["name_states"] as Dictionary)[k]) == 1:
+                nm = str(k)
+                break
     if nm != "":
         sig["N:" + nm] = true
     var lo: int = int(r.get("seq_lo", 0))
