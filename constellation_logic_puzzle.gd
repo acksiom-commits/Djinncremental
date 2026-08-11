@@ -1422,6 +1422,40 @@ func _category_uniquely_labels(cat: int, star: int) -> bool:
     return _group_size(cat, star) <= 1
 
 
+## Names the set of stars sharing `star`'s raw Colour/Pitch value.
+##
+## The article is not cosmetic here. "a star that plays B4" tells the
+## player there may be others; "the star that plays B4" tells them there is
+## exactly one, which is a different and usually decisive fact. "every star
+## that plays B4" implies a group the same way. When the value is a
+## singleton, both readings actively mislead — the clue describes a
+## one-star set as though the player still had to work out which member is
+## meant.
+##
+## Nothing is leaked by saying "the": the pitch checklist already shows an
+## incidence count per note (staff_popup.add_pitch_row -> show_count), so
+## how many stars carry each note is public from the start. The indefinite
+## article was contradicting the UI, not protecting anything.
+##
+## _characteristic_label and the DISTANCE branch already choose their
+## article from _group_size; these Forms hardcoded theirs, which is the bug
+## this exists to remove.
+##
+## `universal` picks the plural-set phrasing ("every ...") over the
+## existential one ("a ..."); singletons collapse to "the ..." either way.
+func _group_noun_phrase(cat: int, star: int, universal: bool) -> String:
+    var singleton: bool = _group_size(cat, star) <= 1
+    if cat == Category.COLOR:
+        var cname: String = COLOR_NAMES[star_colors[star]].to_lower()
+        if singleton:
+            return "the %s star" % cname
+        return ("every %s star" % cname) if universal else ("a %s star" % cname)
+    var pname: String = note_name_for_freq(_freq_for_star(star))
+    if singleton:
+        return "the star that plays %s" % pname
+    return ("every star that plays %s" % pname) if universal else ("a star that plays %s" % pname)
+
+
 # A Characteristic is {"cat": Category, "star": int} for NAME/SEQUENCE/
 # COLOR/PITCH — "star" fully resolves the value via the bijections above.
 # DISTANCE is {"cat": Category.DISTANCE, "star": int, "ref": int}: "star" is
@@ -2896,7 +2930,12 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
     var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
     var group_def_ch: Dictionary = {"cat": group_cat, "star": def_star}
     _note_group_value_term(group_cat, def_star)
-    var group_phrase: String = ("every %s star" % COLOR_NAMES[star_colors[def_star]].to_lower()) if group_cat == Category.COLOR else ("every star that plays %s" % note_name_for_freq(_freq_for_star(def_star)))
+    # As above: "every star that plays X" implies a set, so a singleton
+    # value collapses to "the star that plays X". Unlike Cross-Domain
+    # Bridge, this Form has no group_stars.size() < 2 guard — it is
+    # perfectly happy to build a one-member group — so the phrasing has to
+    # handle it.
+    var group_phrase: String = _group_noun_phrase(group_cat, def_star, true)
     var verb_word: String = "precedes" if precedes else "follows"
     var text: String = "%s %s %s." % [_characteristic_label(subject_id), verb_word, group_phrase]
     # Group members are never individually labeled (group_phrase is a raw
@@ -3013,7 +3052,10 @@ func _build_form_distance_existential(chain: Dictionary) -> Dictionary:
     var target: int = int(candidates[_rng.randi_range(0, candidates.size() - 1)])
     var hop: int = _distances[subject_star][target]
     _note_group_value_term(prop_cat, target)
-    var prop_noun: String = ("a %s star" % COLOR_NAMES[star_colors[target]].to_lower()) if prop_cat == Category.COLOR else ("a star that plays %s" % note_name_for_freq(_freq_for_star(target)))
+    # Article chosen from the group size, not hardcoded — "a star that
+    # plays B4" when exactly one star plays B4 told the player to keep
+    # looking for alternatives that do not exist.
+    var prop_noun: String = _group_noun_phrase(prop_cat, target, false)
     var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
     var dist_ch: Dictionary = {"cat": Category.DISTANCE, "star": target, "ref": subject_star}
     _note_rendered_term("H", hop)
