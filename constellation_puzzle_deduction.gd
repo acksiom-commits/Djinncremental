@@ -164,6 +164,154 @@ func _sync_derived_size() -> void:
         _derived.remove_at(_derived.size() - 1)
 
 
+# ── CONTRADICTION DETECTION ──────────────────────────────────────────────
+# A record with every option ruled out on some axis is not a hard position,
+# it is an IMPOSSIBLE one: some mark behind it must be wrong. The engine
+# could always compute this — _candidate_stars_for_record returning [] says
+# it outright — but nothing ever asked, so the board just sat there quietly
+# unsolvable.
+#
+# Found the hard way (2026-08-10): a G4 elimination on a record whose star
+# genuinely plays G4 emptied that record's candidate set completely. The
+# save had been in that state for a whole session. Nothing flagged it, and
+# the wrongness surfaced as a clue that "must be contradictory" — the clue
+# was fine.
+#
+# Rebuilt every refresh off the derived layer and never persisted: a
+# contradiction is a conclusion, so it must not outlive the marks that
+# caused it. Fixing the offending mark makes it disappear on the next
+# refresh with no extra bookkeeping.
+#
+# Deliberately NOT phrased as "this mark is wrong" — the engine knows the
+# set is empty, not which of the marks is the mistake, and pointing at the
+# wrong one would be worse than pointing at none. It also must never leak
+# ground truth: it says "every star is ruled out", never which star was
+# right.
+#
+# KNOWN GAP — contradictions that get absorbed before this runs. If a
+# record's marks identify a star UNIQUELY, _settle_identical_records merges
+# it into that star's record, and every axis then reads ground truth, which
+# overrides the offending mark. The impossible state disappears instead of
+# being reported, and the player's wrong mark silently vanishes with it.
+# Found while testing this: a fixture whose confirmed colour had exactly
+# one star merged and reported nothing, and only stopped doing so once the
+# colour covered two. The save that prompted all this escaped absorption
+# purely because its confirmed colour had several stars.
+#
+# Not fixed here. Detecting it means comparing player marks against the
+# ground truth a merge just imported, which is a different question from
+# "is this set empty" and belongs with the identity work in Phase 3.
+var _contradictions: Array[Dictionary] = []
+
+
+func _detect_contradictions() -> void:
+    _contradictions.clear()
+    var all_notes: Array = _host._widgets._distinct_note_names()
+
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        var who: String = _record_display_name(i)
+
+        # Candidate stars is the strongest single check — it already
+        # intersects colour, degree and listened pitch, so it catches
+        # combinations no per-axis check would.
+        if _candidate_stars_for_record(i).is_empty():
+            _contradictions.append({
+                "record": i, "axis": "star",
+                "text": "%s can't be any star — every star is ruled out." % who,
+            })
+            continue   # the per-axis findings below would all be the same fault
+
+        # A pinned record reads its axes off ground truth, so an
+        # all-eliminated axis there is not reachable from player marks.
+        if int(r.get("star_idx", -1)) >= 0:
+            continue
+
+        if str(r.get("name", "")) == "" and _all_eliminated(i, "name", _host._star_names):
+            _contradictions.append({
+                "record": i, "axis": "name",
+                "text": "%s has every name ruled out." % who,
+            })
+        if _all_eliminated(i, "pitch", all_notes):
+            _contradictions.append({
+                "record": i, "axis": "pitch",
+                "text": "%s has every pitch ruled out." % who,
+            })
+        var colour_vals: Array = []
+        for ci in _host.COLOR_NAME_LABELS.size():
+            colour_vals.append(int(ci))
+        if _all_eliminated(i, "colour", colour_vals):
+            _contradictions.append({
+                "record": i, "axis": "colour",
+                "text": "%s has every colour ruled out." % who,
+            })
+
+    # Two records on the same star is a different shape of impossible: each
+    # is individually fine, and only the pair is wrong.
+    var by_star: Dictionary = {}
+    for i in _match_records.size():
+        var si: int = int(_match_records[i].get("star_idx", -1))
+        if si < 0:
+            continue
+        if by_star.has(si):
+            _contradictions.append({
+                "record": i, "axis": "identity",
+                "text": "%s and %s are both set to the same star." % [
+                    _record_display_name(int(by_star[si])), _record_display_name(i)],
+            })
+        by_star[si] = i
+
+
+## True when every value on `axis` reads eliminated. An empty value list
+## means "nothing to rule out" and is never a contradiction.
+func _all_eliminated(record_idx: int, axis: String, values: Array) -> bool:
+    if values.is_empty():
+        return false
+    for v in values:
+        var st: int = 0
+        match axis:
+            "name":   st = _effective_name_state(record_idx, str(v))
+            "pitch":  st = _effective_pitch_state(record_idx, str(v))
+            "colour": st = _effective_color_state(record_idx, int(v))
+        if st != 2:
+            return false
+    return true
+
+
+## How a record should be referred to in a warning: its name if it has one,
+## otherwise whichever slot it belongs to, so the player can find the thing
+## being complained about.
+func _record_display_name(record_idx: int) -> String:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return "A record"
+    var r: Dictionary = _match_records[record_idx]
+    var nm: String = str(r.get("name", ""))
+    if nm != "":
+        return nm
+    for key in ["color_slot_label", "pitch_slot_label", "degree_slot_label"]:
+        var lbl: String = str(r.get(key, ""))
+        if lbl != "":
+            return "Slot %s" % lbl
+    var lo: int = int(r.get("seq_lo", 0))
+    var hi: int = int(r.get("seq_hi", 0))
+    if lo > 0 and lo == hi:
+        return "The star that fires %s" % _ordinal(lo)
+    var si: int = int(r.get("star_idx", -1))
+    if si >= 0 and si < _host._star_names.size():
+        return str(_host._star_names[si])
+    return "An unnamed entry"
+
+
+func _ordinal(n: int) -> String:
+    var suffix: String = "th"
+    if n % 100 < 11 or n % 100 > 13:
+        match n % 10:
+            1: suffix = "st"
+            2: suffix = "nd"
+            3: suffix = "rd"
+    return "%d%s" % [n, suffix]
+
+
 ## Total derived facts across every record. The fixpoint loop compares this
 ## before and after a round: unchanged means nothing new was concluded and
 ## the frame has settled. Cheap enough to call per round (a handful of
@@ -3476,6 +3624,8 @@ func _full_propagation_refresh() -> void:
         _clear_deduction_caches()
         if _derived_fact_count() == before:
             break
+    _detect_contradictions()
+    _host._refresh_contradiction_banner()
     _host._widgets._build_star_widgets()
     _host._widgets._build_star_tags()
     _host._melody_staff_panel.queue_redraw()

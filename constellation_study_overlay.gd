@@ -167,6 +167,7 @@ var _sb_tab_inactive: StyleBox = null
 var _sb_clue_normal:  StyleBox = null
 var _selected_clue_text: String = ""   # raw (non-BBCode) text of the pinned clue, "" = none
 var _selected_clue_tab:  int    = -1   # which marker tab it was pinned from, -1 = none
+var _contradiction_banner: RichTextLabel = null   # built in code, see _build_contradiction_banner
 
 
 # ==================================================
@@ -241,6 +242,7 @@ func _ready() -> void:
     _selected_clue_display.mouse_filter = Control.MOUSE_FILTER_STOP
     _selected_clue_display.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
     _selected_clue_display.gui_input.connect(_on_selected_clue_display_gui_input)
+    _build_contradiction_banner()
     _fork = ConstellationForkPuzzle.new()
     _fork.setup(_synth, _star_map_control, _fork_btn)
     _fork_btn.pressed.connect(_on_fork_toggle_pressed)
@@ -733,6 +735,49 @@ func _update_header() -> void:
     _selected_clue_text = ""
     _selected_clue_tab = -1
     _selected_clue_display.text = SELECTED_CLUE_PLACEHOLDER
+
+
+## Warning strip under the header, shown only when the board holds an
+## impossible state. Built in code rather than added to the .tscn so the
+## scene stays untouched — it is a diagnostic, not part of the layout, and
+## it occupies no space at all while hidden.
+func _build_contradiction_banner() -> void:
+    var vbox := get_node_or_null(PANEL_ROOT_PATH + "/OuterMargin/OuterVBox")
+    if vbox == null:
+        return
+    _contradiction_banner = RichTextLabel.new()
+    _contradiction_banner.bbcode_enabled = true
+    _contradiction_banner.fit_content = true
+    _contradiction_banner.scroll_active = false
+    _contradiction_banner.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _contradiction_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    _contradiction_banner.visible = false
+    vbox.add_child(_contradiction_banner)
+    # Directly under the header, above the carousel — the one place it is
+    # visible from every tab, since a contradiction is not tab-specific.
+    vbox.move_child(_contradiction_banner, 1)
+
+
+## Called at the end of every propagation refresh. Takes its text straight
+## from the engine's freshly-rebuilt list, so a fixed mark clears the
+## warning on the same frame with no separate teardown path.
+func _refresh_contradiction_banner() -> void:
+    if _contradiction_banner == null:
+        return
+    var found: Array = _deduction._contradictions
+    if found.is_empty():
+        _contradiction_banner.visible = false
+        _contradiction_banner.text = ""
+        return
+    var lines: Array[String] = []
+    for c in found:
+        lines.append("• " + str((c as Dictionary).get("text", "")))
+    # Named as a conflict between the player's own marks, not as a puzzle
+    # error and not as a hint: the engine knows the set is empty, not which
+    # mark is the mistake.
+    var head: String = "[b]Impossible state — one of your marks must be wrong:[/b]"
+    _contradiction_banner.text = "[color=#ff8a66]%s\n%s[/color]" % [head, "\n".join(lines)]
+    _contradiction_banner.visible = true
 
 
 func _select_clue(bbcode_text: String) -> void:
