@@ -615,9 +615,9 @@ func _make_name_checklist_trigger_button(record_idx: int) -> Button:
     # two sources _make_pitch_checklist_trigger_button already checks for
     # pitch_states; "name" alone left this button stuck on "Select Name"
     # even after the checklist had a confirmed row.
-    var current_name: String = str(_deduction._match_records[record_idx].get("name", ""))
+    var current_name: String = str(_deduction.record_at(record_idx).get("name", ""))
     if current_name == "":
-        var name_states: Dictionary = _deduction._match_records[record_idx].get("name_states", {})
+        var name_states: Dictionary = _deduction.record_at(record_idx).get("name_states", {})
         for n in _host._star_names:
             var name_str: String = str(n)
             if int(name_states.get(name_str, 0)) == 1:
@@ -660,9 +660,9 @@ func _open_name_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
 
 
 func _on_slot_name_check(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var name_states: Dictionary = r.get("name_states", {})
     var cur: int = int(name_states.get(star_name, 0))
     if cur == 1:
@@ -703,9 +703,9 @@ func _on_slot_name_undo_all(record_idx: int) -> void:
 
 
 func _on_slot_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var name_states: Dictionary = r.get("name_states", {})
     var cur: int = int(name_states.get(star_name, 0))
     name_states[star_name] = 0 if cur == 2 else 2
@@ -724,9 +724,9 @@ func _on_slot_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) ->
 
 
 func _on_slot_name_protect(record_idx: int, star_name: String) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var states: Dictionary = r.get("name_states", {})
     if int(states.get(star_name, 0)) != 0:
         return   # already hard-confirmed or hard-eliminated; right-click no-ops
@@ -750,7 +750,7 @@ func _make_pitch_checklist_trigger_button(record_idx: int) -> Button:
     btn.add_theme_font_size_override("font_size", 16)
     btn.focus_mode = Control.FOCUS_NONE
     var confirmed_note: String = ""
-    var pitch_states: Dictionary = _deduction._match_records[record_idx].get("pitch_states", {})
+    var pitch_states: Dictionary = _deduction.record_at(record_idx).get("pitch_states", {})
     for f in _host._pitch_freqs:
         var n: String = ConstellationLogicPuzzle.note_name_for_freq(f)
         if int(pitch_states.get(n, 0)) == 1:
@@ -786,17 +786,17 @@ func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
 
 
 func _on_pitch_checklist_check(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
-    var pitch_states: Dictionary = _deduction._match_records[record_idx].get("pitch_states", {})
+    var pitch_states: Dictionary = _deduction.record_at(record_idx).get("pitch_states", {})
     var cur: int = int(pitch_states.get(note_name, 0))
     if cur == 1:
         # Toggling back off — see _on_staff_name_check for why siblings
         # aren't restored here.
         pitch_states[note_name] = 0
-        _deduction._match_records[record_idx]["pitch_states"] = pitch_states
+        _deduction.record_at(record_idx)["pitch_states"] = pitch_states
     else:
         _deduction._propagate_pitch_confirmed_same_record(record_idx, note_name)
     _deduction._save_puzzle_notes()
@@ -805,11 +805,11 @@ func _on_pitch_checklist_check(record_idx: int, note_name: String, _row: StaffPo
 
 
 func _on_pitch_checklist_x(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var pitch_states: Dictionary = r.get("pitch_states", {})
     var cur: int = int(pitch_states.get(note_name, 0))
     pitch_states[note_name] = 0 if cur == 2 else 2
@@ -828,11 +828,11 @@ func _on_pitch_checklist_x(record_idx: int, note_name: String, _row: StaffPopupR
 
 
 func _on_pitch_checklist_protect(record_idx: int, note_name: String) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var states: Dictionary = r.get("pitch_states", {})
     if int(states.get(note_name, 0)) != 0:
         return   # already hard-confirmed or hard-eliminated; right-click no-ops
@@ -848,14 +848,14 @@ func _on_pitch_checklist_protect(record_idx: int, note_name: String) -> void:
 
 
 func _on_pitch_checklist_undo_selects(record_idx: int) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
     _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
     # The confirmed note (if any) no longer exists once selects are undone —
     # same staleness fix _propagate_pitch_confirmed_same_record applies.
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     if str(r.get("pitch_slot_label", "")) != "":
         r["pitch_slot_label"] = ""
     _deduction._save_puzzle_notes()
@@ -864,9 +864,9 @@ func _on_pitch_checklist_undo_selects(record_idx: int) -> void:
 
 
 func _on_pitch_checklist_undo_blocks(record_idx: int) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
     _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
     _deduction._save_puzzle_notes()
@@ -875,13 +875,13 @@ func _on_pitch_checklist_undo_blocks(record_idx: int) -> void:
 
 
 func _on_pitch_checklist_undo_all(record_idx: int) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
     _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
     _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     if str(r.get("pitch_slot_label", "")) != "":
         r["pitch_slot_label"] = ""
     _deduction._save_puzzle_notes()
@@ -923,9 +923,9 @@ func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
 
 
 func _on_record_color_toggle(record_idx: int, color_idx: int, btn: Button) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     # Click-again-to-deselect: clicking an already-confirmed color resets
     # just this one button back to neutral — same toggle shape as the Staff
     # popup's _on_staff_color_check, matched here for consistency.
@@ -960,9 +960,9 @@ func _on_record_color_toggle(record_idx: int, color_idx: int, btn: Button) -> vo
 
 
 func _on_record_color_eliminate(record_idx: int, color_idx: int, btn: Button) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     # Click-again-to-deselect (right-click an already-eliminated color) —
     # same shape as _on_staff_color_x.
     var cur: int = int(r["color_states"].get(color_idx, 0))
@@ -1043,7 +1043,7 @@ func _style_degree_toggle_btn(btn: Button, _degree: int, state: int) -> void:
 
 
 func _on_record_degree_toggle(record_idx: int, degree: int, btn: Button) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     _deduction._propagate_degree_confirmed_same_record(record_idx, degree)
     _style_degree_toggle_btn(btn, degree, 1)
@@ -1052,9 +1052,9 @@ func _on_record_degree_toggle(record_idx: int, degree: int, btn: Button) -> void
 
 
 func _on_record_degree_eliminate(record_idx: int, degree: int, btn: Button) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     r["degree_states"][degree] = 2
     _style_degree_toggle_btn(btn, degree, 2)
     _deduction._save_puzzle_notes()
@@ -1141,7 +1141,7 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
 ## there looking accepted. Single source for the display formatting, which
 ## the commit path and the conflict-cancel path each used to spell out.
 func _refresh_range_edits(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         lo_edit.text = ""
         hi_edit.text = ""
         return
@@ -1168,7 +1168,7 @@ func _refresh_range_edits(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdit)
 
 
 func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     var raw_lo: String = lo_edit.text.strip_edges()
     var raw_hi: String = hi_edit.text.strip_edges()
@@ -1201,7 +1201,7 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdi
     var lo: int = int(converted[0])
     var hi: int = int(converted[1])
 
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
 
     # NO-OP EARLY-OUT. This handler is bound to text_submitted AND
     # focus_exited on both boxes, so a single Enter press used to run the
@@ -1275,11 +1275,11 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdi
 
 
 func _commit_sequence_candidates(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     var raw: String = mid_edit.text.strip_edges()
     if raw == "":
-        _deduction._match_records[record_idx]["seq_candidates"] = []
+        _deduction.record_at(record_idx)["seq_candidates"] = []
         mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
         return
 
@@ -1299,17 +1299,17 @@ func _commit_sequence_candidates(record_idx: int, lo_edit: LineEdit, mid_edit: L
         _commit_sequence_range(record_idx, lo_edit, hi_edit)
         return
 
-    _deduction._match_records[record_idx]["seq_candidates"] = valid
-    _deduction._match_records[record_idx]["seq_lo"] = 0
-    _deduction._match_records[record_idx]["seq_hi"] = 0
+    _deduction.record_at(record_idx)["seq_candidates"] = valid
+    _deduction.record_at(record_idx)["seq_lo"] = 0
+    _deduction.record_at(record_idx)["seq_hi"] = 0
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
 
 
 func _on_record_name_selected(record_idx: int, selected_name: String) -> void:
-    if record_idx < 0 or record_idx >= _deduction._match_records.size():
+    if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var old_name: String = str(r.get("name", ""))
     if old_name == selected_name:
         return
@@ -1848,25 +1848,25 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
 
 
 func _on_staff_pitch_check(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
-    var pitch_states: Dictionary = _deduction._match_records[record_idx].get("pitch_states", {})
+    var pitch_states: Dictionary = _deduction.record_at(record_idx).get("pitch_states", {})
     var cur: int = int(pitch_states.get(note_name, 0))
     var new_state: int = 0 if cur == 1 else 1
     if new_state == 1:
         _deduction._propagate_pitch_confirmed_same_record(record_idx, note_name)
     else:
         pitch_states[note_name] = new_state
-        _deduction._match_records[record_idx]["pitch_states"] = pitch_states
+        _deduction.record_at(record_idx)["pitch_states"] = pitch_states
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
 
 
 func _on_staff_pitch_x(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var pitch_states: Dictionary = r.get("pitch_states", {})
     var cur: int = int(pitch_states.get(note_name, 0))
     pitch_states[note_name] = 0 if cur == 2 else 2
@@ -1885,12 +1885,12 @@ func _on_staff_pitch_x(record_idx: int, note_name: String, _row: StaffPopupRow) 
 
 
 func _on_staff_pitch_protect(record_idx: int, note_name: String) -> void:
-    if not bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if not bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         _on_record_value_protect_toggle(record_idx, "pitch_states", "protected_pitch_notes", note_name)
 
 
 func _on_staff_color_check(record_idx: int, color_idx: int, _row: StaffPopupRow) -> void:
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var cur: int = int(r["color_states"].get(color_idx, 0))
     var new_state: int = 0 if cur == 1 else 1
     if new_state == 1 and not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, true):
@@ -1914,7 +1914,7 @@ func _on_staff_color_check(record_idx: int, color_idx: int, _row: StaffPopupRow)
 
 
 func _on_staff_color_x(record_idx: int, color_idx: int, _row: StaffPopupRow) -> void:
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var cur: int = int(r["color_states"].get(color_idx, 0))
     var new_state: int = 0 if cur == 2 else 2
     if new_state == 2 and not await _deduction._confirm_color_against_ground_truth(record_idx, color_idx, false):
@@ -1939,7 +1939,7 @@ func _on_staff_color_protect(record_idx: int, color_idx: int) -> void:
 
 
 func _on_staff_name_check(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var name_states: Dictionary = r.get("name_states", {})
     var cur: int = int(name_states.get(star_name, 0))
     if cur == 1:
@@ -1963,7 +1963,7 @@ func _on_staff_name_check(record_idx: int, star_name: String, _row: StaffPopupRo
 
 
 func _on_staff_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var name_states: Dictionary = r.get("name_states", {})
     var cur: int = int(name_states.get(star_name, 0))
     name_states[star_name] = 0 if cur == 2 else 2
@@ -1996,10 +1996,10 @@ func _all_star_names_padded() -> Array:
 
 
 func _on_staff_pitch_undo_selects(record_idx: int) -> void:
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
     _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     if str(r.get("pitch_slot_label", "")) != "":
         r["pitch_slot_label"] = ""
     _deduction._save_puzzle_notes()
@@ -2008,7 +2008,7 @@ func _on_staff_pitch_undo_selects(record_idx: int) -> void:
 
 
 func _on_staff_pitch_undo_blocks(record_idx: int) -> void:
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
     _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
     _deduction._save_puzzle_notes()
@@ -2017,11 +2017,11 @@ func _on_staff_pitch_undo_blocks(record_idx: int) -> void:
 
 
 func _on_staff_pitch_undo_all(record_idx: int) -> void:
-    if bool(_deduction._match_records[record_idx].get("pitch_revealed", false)):
+    if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         return
     _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
     _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     if str(r.get("pitch_slot_label", "")) != "":
         r["pitch_slot_label"] = ""
     _deduction._save_puzzle_notes()
@@ -2034,7 +2034,7 @@ func _on_staff_color_undo_selects(record_idx: int) -> void:
     for ci in _host.COLOR_NAME_LABELS.size():
         color_values.append(ci)
     _deduction._undo_category_selects(record_idx, "color_states", "manual_color_blocks", "protected_color_idxs", color_values)
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     if str(r.get("color_slot_label", "")) != "":
         r["color_slot_label"] = ""
     # FIXED 2026-07-27 — this Undo used to reset color_states without ever
@@ -2062,7 +2062,7 @@ func _on_staff_color_undo_all(record_idx: int) -> void:
     _deduction._undo_category_selects(record_idx, "color_states", "manual_color_blocks", "protected_color_idxs", color_values)
     _deduction._undo_category_blocks(record_idx, "color_states", "manual_color_blocks")
     _deduction._recompute_color_star_elim(record_idx)
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     if str(r.get("color_slot_label", "")) != "":
         r["color_slot_label"] = ""
     _deduction._save_puzzle_notes()
@@ -2093,7 +2093,7 @@ func _on_staff_name_undo_all(record_idx: int) -> void:
 
 
 func _on_record_value_protect_toggle(record_idx: int, states_key: String, protect_key: String, value_key, reopen_staff_popup: bool = true) -> void:
-    var r: Dictionary = _deduction._match_records[record_idx]
+    var r: Dictionary = _deduction.record_at(record_idx)
     var states: Dictionary = r.get(states_key, {})
     var base: int = int(states.get(value_key, 0))
     if base != 0:
@@ -2244,7 +2244,7 @@ func _build_star_widgets_impl() -> void:
         var pitch_lbl := Label.new()
         pitch_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         pitch_lbl.add_theme_font_size_override("font_size", 16)
-        if bool(_deduction._match_records[existing_record].get("pitch_revealed", false)):
+        if bool(_deduction.record_at(existing_record).get("pitch_revealed", false)):
             pitch_lbl.text = _confirmed_pitch_str_for_star(i)
             pitch_lbl.add_theme_color_override("font_color", star_color)
         else:
@@ -2542,7 +2542,7 @@ func _confirmed_name_for_star(star_idx: int) -> String:
     var idx: int = _deduction._find_match_record_by_star_idx(star_idx)
     if idx < 0:
         return ""
-    return str(_deduction._match_records[idx].get("name", ""))
+    return str(_deduction.record_at(idx).get("name", ""))
 
 
 func _reposition_star_widgets() -> void:
@@ -2757,7 +2757,7 @@ func _on_name_check(star_idx: int, star_name: String,
     if new_state == 1:
         var name_record: int = _deduction._find_match_record_by_name(star_name)
         if name_record >= 0:
-            var existing_star: int = int(_deduction._match_records[name_record].get("star_idx", -1))
+            var existing_star: int = int(_deduction.record_at(name_record).get("star_idx", -1))
             if existing_star >= 0 and existing_star != star_idx:
                 _apply_name_row_visual(2, name_lbl, btn_check, btn_x, star_color)
                 return
@@ -2766,16 +2766,16 @@ func _on_name_check(star_idx: int, star_name: String,
         if record_idx < 0:
             _apply_name_row_visual(_deduction._star_elim_state(star_idx, star_name), name_lbl, btn_check, btn_x, star_color)
             return
-        var resolved_name: String = str(_deduction._match_records[record_idx]["name"])
+        var resolved_name: String = str(_deduction.record_at(record_idx)["name"])
         _deduction._propagate_name_confirmed(star_idx, resolved_name)
         _deduction._save_puzzle_notes()
         _deduction._full_propagation_refresh()
         return
 
     var record_idx2: int = _deduction._get_or_create_match_record_for_name(star_name)
-    var elim2: Dictionary = _deduction._match_records[record_idx2].get("star_elim", {})
+    var elim2: Dictionary = _deduction.record_at(record_idx2).get("star_elim", {})
     elim2[star_idx] = new_state
-    _deduction._match_records[record_idx2]["star_elim"] = elim2
+    _deduction.record_at(record_idx2)["star_elim"] = elim2
     _apply_name_row_visual(new_state, name_lbl, btn_check, btn_x, star_color)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
@@ -2790,9 +2790,9 @@ func _on_name_x(star_idx: int, star_name: String,
     var new_state: int = 0 if cur == 2 else 2
 
     var record_idx: int = _deduction._get_or_create_match_record_for_name(star_name)
-    var elim: Dictionary = _deduction._match_records[record_idx].get("star_elim", {})
+    var elim: Dictionary = _deduction.record_at(record_idx).get("star_elim", {})
     elim[star_idx] = new_state
-    _deduction._match_records[record_idx]["star_elim"] = elim
+    _deduction.record_at(record_idx)["star_elim"] = elim
     _apply_name_row_visual(new_state, name_lbl, btn_check, btn_x, star_color)
 
     _deduction._set_star_name_user_blocked(star_idx, star_name, new_state == 2)
@@ -2807,7 +2807,7 @@ func _on_name_x(star_idx: int, star_name: String,
 func _on_undo_name_selects(star_idx: int) -> void:
     var own_record: int = _deduction._find_match_record_by_star_idx(star_idx)
     if own_record >= 0:
-        var r: Dictionary = _deduction._match_records[own_record]
+        var r: Dictionary = _deduction.record_at(own_record)
         r["star_idx"] = -1
         # color_states was fully overwritten by _sync_color_states_from_star_idx
         # when this identity was confirmed — with the binding now undone,
@@ -2818,10 +2818,10 @@ func _on_undo_name_selects(star_idx: int) -> void:
         if own_elim.has(star_idx):
             own_elim.erase(star_idx)
             r["star_elim"] = own_elim
-    for i in _deduction._match_records.size():
+    for i in _deduction.record_count():
         if i == own_record:
             continue
-        var other: Dictionary = _deduction._match_records[i]
+        var other: Dictionary = _deduction.record_at(i)
         var other_star: int = int(other.get("star_idx", -1))
         if other_star >= 0 and other_star != star_idx:
             continue
@@ -2841,10 +2841,10 @@ func _on_undo_name_blocks(star_idx: int) -> void:
     for name_str in _deduction._user_blocked_names_for_star(star_idx):
         var rec: int = _deduction._find_match_record_by_name(name_str)
         if rec >= 0:
-            var elim: Dictionary = _deduction._match_records[rec].get("star_elim", {})
+            var elim: Dictionary = _deduction.record_at(rec).get("star_elim", {})
             if elim.has(star_idx):
                 elim.erase(star_idx)
-                _deduction._match_records[rec]["star_elim"] = elim
+                _deduction.record_at(rec)["star_elim"] = elim
     _deduction._clear_star_name_user_blocks(star_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
@@ -2853,7 +2853,7 @@ func _on_undo_name_blocks(star_idx: int) -> void:
 func _on_undo_name_all(star_idx: int) -> void:
     var own_record: int = _deduction._find_match_record_by_star_idx(star_idx)
     if own_record >= 0:
-        var r: Dictionary = _deduction._match_records[own_record]
+        var r: Dictionary = _deduction.record_at(own_record)
         r["star_idx"] = -1
         # color_states was fully overwritten by _sync_color_states_from_star_idx
         # when this identity was confirmed — with the binding now undone,
@@ -2868,10 +2868,10 @@ func _on_undo_name_all(star_idx: int) -> void:
     # Union of "Undo selects" + "Undo blocks", scoped to this star's row only.
     # Names confirmed at a DIFFERENT star are left alone — that elimination
     # is structural (the name belongs elsewhere), not part of this star's row.
-    for i in _deduction._match_records.size():
+    for i in _deduction.record_count():
         if i == own_record:
             continue
-        var other: Dictionary = _deduction._match_records[i]
+        var other: Dictionary = _deduction.record_at(i)
         var other_star: int = int(other.get("star_idx", -1))
         if other_star >= 0 and other_star != star_idx:
             continue

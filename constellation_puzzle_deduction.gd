@@ -67,6 +67,42 @@ var _conflict_dialog_fn: Callable = Callable()
 # }
 var _match_records: Array[Dictionary] = []
 
+
+# ── THE RECORD BOUNDARY (Phase 0) ────────────────────────────────────────
+# Nothing outside this file indexes _match_records. Widgets and the overlay
+# go through record_count() and record_at() instead — 79 direct reaches
+# replaced, and test_record_boundary fails the build if a new one appears,
+# since GDScript has no way to actually enforce privacy.
+#
+# The point is NOT encapsulation for its own sake. Phase 3 needs derived
+# identity, which needs records to ALIAS each other (record 13 resolving to
+# record 11) instead of being destructively merged — and an alias is only
+# possible if every "record at index i" question goes through one function
+# that can redirect it. Today record_at() is a plain lookup; that is the
+# whole point of doing this as its own phase, with no behaviour change to
+# hide a mistake in.
+#
+# What this deliberately does NOT do: record_at() hands back the live
+# Dictionary, so callers can still mutate through it. Sealing MUTATION too
+# would mean defensive copies on a path that runs per-widget per-refresh,
+# and it is not what Phase 3 is blocked on. Index resolution is.
+#
+# Bounds behaviour is also left exactly as it was — record_at() indexes
+# directly and will still fault on a bad index rather than quietly
+# returning an empty Dictionary, because a silent no-op write is a worse
+# failure than a loud one, and changing it here would break the "pure
+# refactor" contract that lets this land without a playtest.
+
+## How many records exist. Replaces external `_match_records.size()`.
+func record_count() -> int:
+    return _match_records.size()
+
+
+## The record at `idx` — the single place an index becomes a record, and
+## the hook Phase 3's aliasing will need. Returns the live Dictionary.
+func record_at(idx: int) -> Dictionary:
+    return _match_records[idx]
+
 ## Bumped every time _match_records is cleared/rebuilt (see
 ## _load_match_records()). _merge_match_records() and
 ## _confirm_match_record_identity() both hold indices/Dictionary
