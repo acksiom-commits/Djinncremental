@@ -308,6 +308,34 @@ func _detect_contradictions() -> void:
                 "text": "%s has every colour ruled out." % who,
             })
 
+    # Pairs the merge pass refused because their marks clash. Provably the
+    # same entity, yet one confirms what the other rules out — so it is the
+    # pair that is impossible, not either record alone, and neither would
+    # be caught by any of the per-record checks above.
+    for ref in _merge_refusals:
+        var ra: int = int(ref["a"])
+        var rb: int = int(ref["b"])
+        if ra >= _match_records.size() or rb >= _match_records.size():
+            continue
+        # The two records usually share a name — that is often WHY they are
+        # provably the same — so naming both would read "Pyrios and Pyrios",
+        # which tells the player nothing about where to look. Fall back to
+        # whatever actually distinguishes them.
+        var na: String = _record_display_name(ra)
+        var nb: String = _record_display_name(rb)
+        var subject: String = "%s and %s" % [na, nb]
+        if na == nb:
+            var qa: String = _record_qualifier(ra)
+            var qb: String = _record_qualifier(rb)
+            subject = "Two entries for %s (%s and %s)" % [na, qa, qb] \
+                if qa != "" and qb != "" and qa != qb \
+                else "Two entries for %s" % na
+        _contradictions.append({
+            "record": ra, "axis": "merge",
+            "text": "%s must be the same star, but disagree about %s." % [
+                subject, " and ".join(ref["clashes"])],
+        })
+
     # Two records on the same star is a different shape of impossible: each
     # is individually fine, and only the pair is wrong. Effective identity,
     # so a derived binding colliding with a confirmed one is caught too —
@@ -404,6 +432,26 @@ func _record_display_name(record_idx: int) -> String:
     if si >= 0 and si < _host._star_names.size():
         return str(_host._star_names[si])
     return "An unnamed entry"
+
+
+## What distinguishes a record from another of the same name — the slot it
+## belongs to, or its sequence position. "" when nothing does, in which
+## case the caller should not pretend otherwise.
+func _record_qualifier(record_idx: int) -> String:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return ""
+    var r: Dictionary = _match_records[record_idx]
+    for key in ["color_slot_label", "pitch_slot_label", "degree_slot_label"]:
+        var lbl: String = str(r.get(key, ""))
+        if lbl != "":
+            return "slot %s" % lbl
+    var lo: int = int(r.get("seq_lo", 0))
+    if lo > 0 and lo == int(r.get("seq_hi", 0)):
+        return "position %d" % lo
+    var si: int = int(r.get("star_idx", -1))
+    if si >= 0:
+        return "the star map"
+    return ""
 
 
 func _ordinal(n: int) -> String:
@@ -1232,6 +1280,16 @@ func _merge_match_records(target_idx: int, source_idx: int, allow_await: bool = 
             or source_idx < 0 or source_idx >= _match_records.size():
         return target_idx
     if not allow_await and not _merge_conflict_kinds(target_idx, source_idx).is_empty():
+        return target_idx
+    # A confirm/eliminate clash refuses the merge on BOTH paths, unlike the
+    # confirm-vs-confirm kinds above, which have conflict dialogs and are
+    # only gated on the non-await path. There is nothing to ask the player
+    # here: the two marks cannot both be right, the union would resolve it
+    # by destroying one, and a destroyed mark cannot be reported later
+    # because the evidence is what got destroyed. Refusing keeps both
+    # records and both marks alive, and _detect_contradictions surfaces the
+    # pair on this very refresh.
+    if not _merge_value_clashes(target_idx, source_idx).is_empty():
         return target_idx
     var entry_generation: int = _match_records_generation
     var target: Dictionary = _match_records[target_idx]
@@ -2373,6 +2431,77 @@ func _merge_conflict_kinds(idx_a: int, idx_b: int) -> Array[String]:
     return kinds
 
 
+## Values one record CONFIRMS while the other ELIMINATES the same value.
+##
+## _merge_conflict_kinds above only compares confirm against confirm — two
+## different confirmed colours, two different exact positions. It never saw
+## this shape, and the union in _merge_match_records resolves it silently:
+##
+##     if sv == 1 or tv == 1: target[k] = 1
+##
+## Confirm beats eliminate, so merging a record that says "this is G4" with
+## one that says "this is NOT G4" produces a record saying "this is G4" and
+## the player's elimination simply ceases to exist. The board then looks
+## perfectly consistent, which is the worst possible outcome: the mistake is
+## not corrected, it is concealed, and the player never learns their
+## reasoning was wrong.
+##
+## That is the merge half of the absorption hole. The other half — a mark
+## contradicting ground truth after identity settles — is handled in
+## _detect_contradictions.
+##
+## Returns human-readable descriptions, empty when the two records can be
+## merged without destroying anything.
+func _merge_value_clashes(idx_a: int, idx_b: int) -> Array[String]:
+    var out: Array[String] = []
+    if idx_a < 0 or idx_a >= _match_records.size() \
+            or idx_b < 0 or idx_b >= _match_records.size():
+        return out
+    var a: Dictionary = _match_records[idx_a]
+    var b: Dictionary = _match_records[idx_b]
+
+    for axis in [
+        {"key": "color_states",  "label": "colour"},
+        {"key": "degree_states", "label": "degree"},
+        {"key": "pitch_states",  "label": "pitch"},
+        {"key": "name_states",   "label": "name"},
+    ]:
+        var states_key: String = str(axis["key"])
+        var av: Dictionary = a.get(states_key, {})
+        var bv: Dictionary = b.get(states_key, {})
+        for k in av:
+            var a_state: int = int(av[k])
+            var b_state: int = int(bv.get(k, 0))
+            if (a_state == 1 and b_state == 2) or (a_state == 2 and b_state == 1):
+                out.append("%s %s" % [str(axis["label"]), _value_label(states_key, k)])
+
+    # star_elim is the same question asked about a star rather than a value.
+    var ae: Dictionary = a.get("star_elim", {})
+    var be: Dictionary = b.get("star_elim", {})
+    for k in ae:
+        var a_state: int = int(ae[k])
+        var b_state: int = int(be.get(k, 0))
+        if (a_state == 1 and b_state == 2) or (a_state == 2 and b_state == 1):
+            var si: int = int(k)
+            var nm: String = str(_host._star_names[si]) if si >= 0 and si < _host._star_names.size() else "?"
+            out.append("star %s" % nm)
+
+    return out
+
+
+## Readable name for a state-dict key, for warning text.
+func _value_label(states_key: String, key) -> String:
+    match states_key:
+        "color_states":
+            var ci: int = int(key)
+            if ci >= 0 and ci < _host.COLOR_NAME_LABELS.size():
+                return str(_host.COLOR_NAME_LABELS[ci])
+            return str(key)
+        "degree_states":
+            return str(key)
+    return str(key)
+
+
 func _records_have_merge_conflict(idx_a: int, idx_b: int) -> bool:
     return not _merge_conflict_kinds(idx_a, idx_b).is_empty()
 
@@ -2472,12 +2601,29 @@ func _records_provably_identical(idx_a: int, idx_b: int) -> bool:
 ## entire sequence-entry stall. Walking j from high to low means a removal
 ## only ever shifts indices we have already passed, so the scan stays
 ## valid and the pass is O(n^2) once instead of O(merges x n^2).
+## Pairs this refresh refused to merge because their marks clash, as
+## {a, b, clashes}. Rebuilt by _settle_identical_records every refresh and
+## read by _detect_contradictions later in the same one, so a standing
+## conflict is RE-DERIVED each frame from records that both still exist —
+## no persistence, and it clears the moment either mark is fixed.
+##
+## Refusals from player-driven merges surface the same way: the refresh
+## that follows the click finds the same still-identical pair again.
+var _merge_refusals: Array[Dictionary] = []
+
+
 func _settle_identical_records() -> void:
+    _merge_refusals.clear()
     var i: int = 0
     while i < _match_records.size():
         var j: int = _match_records.size() - 1
         while j > i:
             if _records_provably_identical(i, j):
+                var clashes: Array[String] = _merge_value_clashes(i, j)
+                if not clashes.is_empty():
+                    _merge_refusals.append({"a": i, "b": j, "clashes": clashes})
+                    j -= 1
+                    continue
                 _merge_match_records(i, j, false)
                 # Record indices just shifted, and _identity_sig_cache /
                 # _distinct_pair_cache / _candidate_star_cache /
