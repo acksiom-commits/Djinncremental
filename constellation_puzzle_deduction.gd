@@ -336,6 +336,62 @@ func _detect_contradictions() -> void:
                 subject, " and ".join(ref["clashes"])],
         })
 
+    # Two records claiming the same NAME.
+    #
+    # Reported because the second claim is otherwise completely inert.
+    # _propagate_name_states_confirmed_same_record refuses to promote a
+    # confirmed name into r["name"] when another record already holds it —
+    # correctly, since that would mint a duplicate identity — so the claim
+    # stays in name_states and nothing downstream sees it.
+    # _find_match_record_by_name returns the FIRST holder, which is what
+    # the star map reads through, so the newer assertion never reaches the
+    # map at all. The old comment said it "surfaces on the next explicit
+    # Sort:Name-tab interaction"; in practice the player has no reason to
+    # go there and just sees their input do nothing.
+    #
+    # Deliberately says nothing about which claim is right. Unlike colour,
+    # degree and listened pitch, a star's NAME is the hidden thing the
+    # puzzle is about — comparing it against ground truth here would hand
+    # over the answer. This is purely a conflict between two of the
+    # player's own entries, which is why it can be reported at all. For the
+    # same reason _marks_contradicting_star does not check the name axis.
+    var name_claims: Dictionary = {}
+    for i in _match_records.size():
+        var r2: Dictionary = _match_records[i]
+        var claimed: String = str(r2.get("name", ""))
+        if claimed == "":
+            for k in (r2.get("name_states", {}) as Dictionary):
+                if int((r2["name_states"] as Dictionary)[k]) == 1:
+                    claimed = str(k)
+                    break
+        if claimed == "":
+            continue
+        if not name_claims.has(claimed):
+            name_claims[claimed] = []
+        (name_claims[claimed] as Array).append(i)
+
+    for nm in name_claims:
+        var idxs: Array = name_claims[nm]
+        if idxs.size() < 2:
+            continue
+        var wheres: Array[String] = []
+        for idx in idxs:
+            var q: String = _record_qualifier(int(idx))
+            wheres.append(q if q != "" else "an unplaced entry")
+        # Where the two claimants also disagree about a VALUE, say so —
+        # that is the actionable part, and it is the reason they can never
+        # reconcile into one entry. Still only compares the player's marks
+        # against each other, never against the answer.
+        var why: Array[String] = _merge_value_clashes(int(idxs[0]), int(idxs[1]))
+        var tail: String = ""
+        if not why.is_empty():
+            tail = ", and they disagree about %s" % " and ".join(why)
+        _contradictions.append({
+            "record": int(idxs[0]), "axis": "name-claim",
+            "text": "%s is claimed by %d entries (%s)%s — only one can be right." % [
+                str(nm), idxs.size(), ", ".join(wheres), tail],
+        })
+
     # Two records on the same star is a different shape of impossible: each
     # is individually fine, and only the pair is wrong. Effective identity,
     # so a derived binding colliding with a confirmed one is caught too —
