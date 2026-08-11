@@ -176,6 +176,10 @@ func _blank_derived_entry() -> Dictionary:
         "name_states":   {},
         "star_elim":     {},
         "seq_candidates": [],
+        # Phase 3. A record the engine has concluded IS some star, without
+        # writing that into the record's own star_idx. See
+        # _effective_star_idx for why the two must stay separate.
+        "star_idx":      -1,
     }
 
 
@@ -258,9 +262,31 @@ func _detect_contradictions() -> void:
             })
             continue   # the per-axis findings below would all be the same fault
 
-        # A pinned record reads its axes off ground truth, so an
-        # all-eliminated axis there is not reachable from player marks.
-        if int(r.get("star_idx", -1)) >= 0:
+        # A record whose identity is settled reads its axes off ground
+        # truth, so an all-eliminated axis is unreachable there — but a
+        # player mark that CONTRADICTS that ground truth is reachable, and
+        # it is exactly what the detector used to miss.
+        #
+        # In practice this only ever fires for a CONFIRMED identity. A mark
+        # that rules a star out also removes it from the candidate set, so
+        # the engine could never have DERIVED that binding — the reachable
+        # case is the player pinning a star on the map while an older mark
+        # of their own says it cannot be that star. Before this, ground
+        # truth just overruled the mark in silence.
+        #
+        # That is the confirmed half of the merge-absorption hole from
+        # d4bebd5. The merge half is still open: _merge_match_records
+        # unions two records' state, and a mark the union drops is gone
+        # before anything here can compare it.
+        var eff_star: int = _effective_star_idx(i)
+        if eff_star >= 0:
+            var clash: Array = _marks_contradicting_star(i, eff_star)
+            if not clash.is_empty():
+                _contradictions.append({
+                    "record": i, "axis": "ground-truth",
+                    "text": "%s is settled as a star that its own %s rules out." % [
+                        who, " and ".join(clash)],
+                })
             continue
 
         if str(r.get("name", "")) == "" and _all_eliminated(i, "name", _host._star_names):
@@ -283,10 +309,14 @@ func _detect_contradictions() -> void:
             })
 
     # Two records on the same star is a different shape of impossible: each
-    # is individually fine, and only the pair is wrong.
+    # is individually fine, and only the pair is wrong. Effective identity,
+    # so a derived binding colliding with a confirmed one is caught too —
+    # _settle_star_identity_from_candidates refuses to create that case,
+    # but a player confirm landing on a star some record already derived
+    # can still produce it.
     var by_star: Dictionary = {}
     for i in _match_records.size():
-        var si: int = int(_match_records[i].get("star_idx", -1))
+        var si: int = _effective_star_idx(i)
         if si < 0:
             continue
         if by_star.has(si):
@@ -296,6 +326,44 @@ func _detect_contradictions() -> void:
                     _record_display_name(int(by_star[si])), _record_display_name(i)],
             })
         by_star[si] = i
+
+
+## Which of the player's OWN marks on this record rule out being `star`.
+## Reads the raw state dicts, never the _effective_* readers — those
+## consult the ground-truth tier, which is the very thing being checked,
+## and would report agreement with itself every time.
+##
+## Only hard eliminations count (state 2). A confirm on some other value is
+## not listed separately: it is the sibling-clearing eliminations it
+## produced that actually do the ruling out, and naming both would blame
+## one mistake twice.
+func _marks_contradicting_star(record_idx: int, star: int) -> Array:
+    var out: Array = []
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return out
+    if star < 0 or star >= _host._star_count:
+        return out
+    var r: Dictionary = _match_records[record_idx]
+
+    var sc: int = int(_host._star_colors[star]) if star < _host._star_colors.size() else -1
+    if sc >= 0 and int((r.get("color_states", {}) as Dictionary).get(sc, 0)) == 2:
+        out.append("%s colour mark" % str(_host.COLOR_NAME_LABELS[sc]))
+
+    var sd: int = int(_host._star_degrees[star]) if star < _host._star_degrees.size() else -1
+    if sd >= 0 and int((r.get("degree_states", {}) as Dictionary).get(sd, 0)) == 2:
+        out.append("degree-%d mark" % sd)
+
+    # Pitch only where the player could legitimately know it — an unheard
+    # star's note must not be implied by a warning either.
+    if _player_knows_star_pitch(star):
+        var nn: String = _host._widgets._note_name_for_star(star)
+        if nn != "?" and int((r.get("pitch_states", {}) as Dictionary).get(nn, 0)) == 2:
+            out.append("%s pitch mark" % nn)
+
+    if int((r.get("star_elim", {}) as Dictionary).get(star, 0)) == 2:
+        out.append("X on that star")
+
+    return out
 
 
 ## True when every value on `axis` reads eliminated. An empty value list
@@ -332,7 +400,7 @@ func _record_display_name(record_idx: int) -> String:
     var hi: int = int(r.get("seq_hi", 0))
     if lo > 0 and lo == hi:
         return "The star that fires %s" % _ordinal(lo)
-    var si: int = int(r.get("star_idx", -1))
+    var si: int = _effective_star_idx(record_idx)
     if si >= 0 and si < _host._star_names.size():
         return str(_host._star_names[si])
     return "An unnamed entry"
@@ -346,6 +414,45 @@ func _ordinal(n: int) -> String:
             2: suffix = "nd"
             3: suffix = "rd"
     return "%d%s" % [n, suffix]
+
+
+# ── DERIVED IDENTITY (Phase 3) ───────────────────────────────────────────
+# "This record IS star N", concluded rather than asserted.
+#
+# It used to be written straight into r["star_idx"], a player-input field,
+# with no way to take it back — eliminate every colour but one, and the
+# binding stuck even after the eliminations were cleared. That was the last
+# member of the derived-facts-outlive-their-causes family Phase 2 killed
+# everywhere else.
+#
+# The reason it was left behind is that identity is not just another fact.
+# Two records agreeing on a star is what triggers _merge_match_records,
+# which DESTROYS one of them — and a destroyed record cannot come back when
+# the derived layer is wiped on the next refresh. So the split here is
+# sharper than for any other axis:
+#
+#   * STATE RESOLUTION reads the effective identity. A derived binding
+#     resolves colour, degree and (once listened) pitch through the
+#     ground-truth tier, exactly as a confirmed one does, and releases the
+#     moment its cause does.
+#   * IDENTITY AND PERSISTENCE read the OWN field only — merging,
+#     _identity_signature, _records_provably_identical, the conflict
+#     dialog, and save/load. Nothing destructive or durable may rest on a
+#     fact that evaporates every frame.
+#
+# _player_knows_star_pitch also stays on the own field deliberately: you
+# only know a pitch you actually listened to, and listening attaches to a
+# star the player confirmed. Letting a derived binding claim that knowledge
+# would leak unheard pitches into deduction.
+func _effective_star_idx(record_idx: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return -1
+    var own: int = int(_match_records[record_idx].get("star_idx", -1))
+    if own >= 0:
+        return own
+    if record_idx >= _derived.size():
+        return -1
+    return int(_derived[record_idx].get("star_idx", -1))
 
 
 ## Total derived facts across every record. The fixpoint loop compares this
@@ -368,6 +475,8 @@ func _derived_fact_count() -> int:
         var seq: Array = d["seq_candidates"]
         if not seq.is_empty():
             n += maxi(0, _host._star_count - seq.size())
+        if int(d.get("star_idx", -1)) >= 0:
+            n += 1
     return n
 
 
@@ -644,7 +753,7 @@ func _star_elim_state(star_idx: int, name_str: String) -> int:
     if idx < 0:
         return 0
     var r: Dictionary = _match_records[idx]
-    if int(r.get("star_idx", -1)) == star_idx:
+    if _effective_star_idx(idx) == star_idx:
         return 1
     var own: int = int(r.get("star_elim", {}).get(star_idx, 0))
     if own != 0:
@@ -847,7 +956,7 @@ func _recompute_color_star_elim(record_idx: int) -> void:
     var r: Dictionary = _match_records[record_idx]
     if str(r.get("name", "")) == "":
         return   # star_elim means "which stars can't be THIS NAME"
-    if int(r.get("star_idx", -1)) >= 0:
+    if _effective_star_idx(record_idx) >= 0:
         return   # identity already pinned; ground truth governs
     var cands: Array = _candidate_stars_for_record(record_idx)
     if cands.is_empty() or cands.size() >= _host._star_count:
@@ -882,7 +991,7 @@ func _known_color_for_record(record_idx: int) -> int:
     if record_idx < 0 or record_idx >= _match_records.size():
         return -1
     var r: Dictionary = _match_records[record_idx]
-    var star_idx: int = int(r.get("star_idx", -1))
+    var star_idx: int = _effective_star_idx(record_idx)
     if star_idx >= 0:
         # Clamped, not just bounds-checked against array size — _star_colors
         # is int-coerced but not range-clamped on load (constellation_study_
@@ -905,6 +1014,13 @@ func _sync_color_states_from_star_idx(record_idx: int) -> void:
     if record_idx < 0 or record_idx >= _match_records.size():
         return
     var r: Dictionary = _match_records[record_idx]
+    # OWN identity only, never effective. This function WRITES ground truth
+    # into color_states, which is player-input storage — legitimate when the
+    # player confirmed the identity, and a Phase 2 violation if a derived
+    # binding could trigger it. A derived binding needs no write at all: the
+    # ground-truth tier in _effective_color_state reads through
+    # _effective_star_idx and reaches the same answer without touching the
+    # record.
     var star_idx: int = int(r.get("star_idx", -1))
     if star_idx < 0 or star_idx >= _host._star_colors.size():
         return
@@ -1719,7 +1835,7 @@ func _confirm_color_against_ground_truth(record_idx: int, color_idx: int, assert
     # failure class as the star-identity confirm bug fixed elsewhere in
     # this file, just reachable directly instead of through a merge.
     var r: Dictionary = _match_records[record_idx]
-    var star_idx: int = int(r.get("star_idx", -1))
+    var star_idx: int = _effective_star_idx(record_idx)
     if star_idx < 0 or star_idx >= _host._star_colors.size():
         return true
     var true_color: int = clamp(_host._star_colors[star_idx], 0, 3)
@@ -1959,7 +2075,7 @@ func _effective_color_state(record_idx: int, color_idx: int, collapse_soft: bool
     # the staff popup's right-click "still possible" protect set, so a
     # narrowed color set can also prove cross-record distinctness.
     var r: Dictionary = _match_records[record_idx]
-    var star_idx: int = int(r.get("star_idx", -1))
+    var star_idx: int = _effective_star_idx(record_idx)
     if star_idx >= 0:
         var true_color: int = _host._star_colors[star_idx] if star_idx < _host._star_colors.size() else -1
         return 1 if true_color == color_idx else 2
@@ -1993,7 +2109,7 @@ func _effective_pitch_state(record_idx: int, note_name: String, collapse_soft: b
     # player wants to also mark "still possible" the moment the first click
     # would otherwise hard-eliminate everything else.
     var r: Dictionary = _match_records[record_idx]
-    var star_idx: int = int(r.get("star_idx", -1))
+    var star_idx: int = _effective_star_idx(record_idx)
     if star_idx >= 0:
         var true_note: String = _host._widgets._note_name_for_star(star_idx)
         return 1 if true_note == note_name else 2
@@ -2058,7 +2174,7 @@ func _effective_degree_state(record_idx: int, degree: int) -> int:
     # different degree-value groups' "A" slot collide on the same label;
     # ground truth + raw state is both sufficient and safe here.
     var r: Dictionary = _match_records[record_idx]
-    var star_idx: int = int(r.get("star_idx", -1))
+    var star_idx: int = _effective_star_idx(record_idx)
     if star_idx >= 0 and star_idx < _host._star_degrees.size():
         return 1 if int(_host._star_degrees[star_idx]) == degree else 2
     return int(r.get("degree_states", {}).get(degree, 0))
@@ -2075,7 +2191,7 @@ func _effective_star_state(record_idx: int, star_idx: int) -> int:
     # Pitch — this was the primary, actually-used name-elimination path,
     # and it wasn't feeding _records_provably_distinct at all before.
     var r: Dictionary = _match_records[record_idx]
-    var rs: int = int(r.get("star_idx", -1))
+    var rs: int = _effective_star_idx(record_idx)
     if rs >= 0:
         return 1 if rs == star_idx else 2
     return int(r.get("star_elim", {}).get(star_idx, 0))
@@ -2737,7 +2853,7 @@ func _settle_singleton_degrees() -> void:
     var degree_values: Array = degrees_set.keys()
     for i in _match_records.size():
         var r: Dictionary = _match_records[i]
-        if int(r.get("star_idx", -1)) >= 0:
+        if _effective_star_idx(i) >= 0:
             continue   # ground truth already governs this record's degree
         # Effective state in, derived confirm out — see _settle_singleton_names.
         var remaining: int = -1
@@ -3147,7 +3263,7 @@ func _cell_was_stated(cell: Dictionary, terms: Array) -> bool:
 func _records_identifying_star(star: int) -> Array:
     var out: Array = []
     for i in _match_records.size():
-        if int(_match_records[i].get("star_idx", -1)) == star \
+        if _effective_star_idx(i) == star \
                 and not _record_is_unconfirmed_star_widget_stub(i):
             out.append(i)
             continue
@@ -3628,12 +3744,6 @@ func _full_propagation_refresh() -> void:
     # from a star_elim that still held last refresh's derived output. The
     # derived layer removes that whole failure mode at the source.
     #
-    # Candidate-star closure before the per-axis settles: it can resolve a
-    # record's identity outright (star_idx), which every downstream pass
-    # then reads ground truth through. Still writes the record, not the
-    # derived layer — see the Phase 2 note on the derived layer.
-    _settle_star_identity_from_candidates()
-
     # The passes below are a monotone fixpoint: each only ever adds derived
     # facts, and only from premises already present. Iterating means a
     # conclusion that becomes reachable *because* of another pass's output
@@ -3643,6 +3753,13 @@ func _full_propagation_refresh() -> void:
     # that reason.
     for _round in DERIVATION_MAX_ROUNDS:
         var before: int = _derived_fact_count()
+        # Inside the loop as of Phase 3, where it used to run once before
+        # it. Identity is now derived, so it both feeds and is fed by the
+        # other passes: eliminations narrow a candidate set to one star,
+        # that binding resolves the record's other axes through ground
+        # truth, and those resolutions narrow further records. Running it
+        # once could only ever catch the first link of that chain.
+        _settle_star_identity_from_candidates()
         _settle_derived_eliminations()
         # AFTER the eliminations above, so it sees the narrowest candidate
         # sets. Runs for EVERY record rather than only the one whose colour
@@ -3735,7 +3852,7 @@ func _candidate_stars_for_record(record_idx: int) -> Array:
 
     var r: Dictionary = _match_records[record_idx]
     var out: Array = []
-    var pinned: int = int(r.get("star_idx", -1))
+    var pinned: int = _effective_star_idx(record_idx)
     if pinned >= 0 and pinned < _host._star_count:
         out = [pinned]
         _candidate_star_cache[record_idx] = out
@@ -3778,20 +3895,43 @@ func _star_elim_state_for_record(record_idx: int, star_idx: int) -> int:
 ## every _effective_*_state ground-truth tier fire at once, so Colour,
 ## Degree, and (once listened) Pitch all resolve without their own rules.
 func _settle_star_identity_from_candidates() -> void:
+    # Occupied stars are collected once and maintained as we go, rather
+    # than rescanned per record. This pass moved inside the fixpoint in
+    # Phase 3, so a per-record O(n) scan for "does anyone else own this
+    # star" became O(n^2) per round times up to DERIVATION_MAX_ROUNDS —
+    # measured at +70ms on a 52-record board before this was hoisted.
+    var occupied: Dictionary = {}
     for i in _match_records.size():
-        var r: Dictionary = _match_records[i]
-        if int(r.get("star_idx", -1)) >= 0:
+        var si: int = _effective_star_idx(i)
+        if si >= 0:
+            occupied[si] = i
+
+    for i in _match_records.size():
+        if _effective_star_idx(i) >= 0:
             continue
         var cands: Array = _candidate_stars_for_record(i)
         if cands.size() != 1:
             continue
         var s: int = int(cands[0])
-        # Refuse if another record already owns that star — a real conflict
-        # belongs on an explicit path that can await the dialog, not here.
-        if _find_match_record_by_star_idx(s) >= 0:
+        # Refuse if any other record already IS that star — effective
+        # identity, not just the own field, so two records cannot both
+        # derive their way onto the same star with neither noticing. A
+        # genuine conflict belongs on an explicit path that can await the
+        # dialog, not here.
+        if occupied.has(s):
             continue
-        r["star_idx"] = s
-        _sync_color_states_from_star_idx(i)
+        occupied[s] = i
+        # PHASE 3: derived, not written into the record. The old
+        # r["star_idx"] = s here is the binding that could never be
+        # released — clear the colour eliminations that produced it and it
+        # stayed put forever, because nothing marked it as the engine's.
+        _derived[i]["star_idx"] = s
+        # _sync_color_states_from_star_idx(i) is deliberately NOT called
+        # any more. It copied ground truth into the record's own
+        # color_states — a derived conclusion written into player input,
+        # which is the exact thing this phase exists to stop. The
+        # ground-truth tier in _effective_color_state now reads through
+        # _effective_star_idx and gets the same answer without the write.
         # Identity resolution invalidates every derived cache: cliques
         # depend on provable-distinctness, candidate sets on this record's
         # own state, and the listened-stars set on which record owns which
@@ -3813,7 +3953,7 @@ func _settle_derived_eliminations() -> void:
     # to release and derived_value_elim_marks is gone.
     for i in _match_records.size():
         var r: Dictionary = _match_records[i]
-        if int(r.get("star_idx", -1)) >= 0:
+        if _effective_star_idx(i) >= 0:
             continue   # ground truth already governs this record
         var cands: Array = _candidate_stars_for_record(i)
         if cands.is_empty() or cands.size() >= _host._star_count:
@@ -3937,7 +4077,7 @@ func _settle_star_elim_from_candidates() -> void:
 func _settle_group_sequence_bounds() -> void:
     for i in _match_records.size():
         var r: Dictionary = _match_records[i]
-        var s: int = int(r.get("star_idx", -1))
+        var s: int = _effective_star_idx(i)
         if s < 0 or s >= _host._star_count:
             continue   # only a star-bound record has a knowable group
         var lo: int = int(r.get("seq_lo", 0))
