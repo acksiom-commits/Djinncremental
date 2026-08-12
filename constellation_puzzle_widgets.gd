@@ -128,6 +128,10 @@ func _all_final_clues_for_tabs() -> Array[Dictionary]:
         var chars: Array = raw["chars"] if raw.get("chars") is Array else []
         var cells: Array = raw["cells"] if raw.get("cells") is Array else []
         var terms: Array = raw["search_terms"] if raw.get("search_terms") is Array else []
+        # disclosures must ride along or every tab below scores coverage as
+        # if the clue had none — see _load_constellation_data()'s note; it
+        # is already per-field coerced there, same as chars/cells.
+        var discs: Array = raw["disclosures"] if raw.get("disclosures") is Array else []
         result.append({
             "characteristics": characteristics,
             "text": str(raw.get("text", "")),
@@ -135,6 +139,7 @@ func _all_final_clues_for_tabs() -> Array[Dictionary]:
             "chars": chars,
             "cells": cells,
             "search_terms": terms,
+            "disclosures": discs,
         })
     return result
 

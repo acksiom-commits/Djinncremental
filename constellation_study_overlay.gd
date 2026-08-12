@@ -475,6 +475,18 @@ func _load_constellation_data() -> void:
         var terms: Array = []
         for raw_term in _coerce_array(rc.get("search_terms"), []):
             terms.append(str(raw_term))
+        # disclosures (CACHE_VERSION 6) is the FIRST thing _clue_coverage
+        # scores, ahead of cells. It was omitted here until 2026-08-12, so
+        # every Clues tab computed coverage as though no clue had any:
+        # measured on a real save, 19 of 40 clues sat in the wrong tab, and
+        # "Used Up" showed 4 when 15 were actually fully mined. Coerced
+        # per-field like everything else in this function, not merely
+        # duplicated — a float-from-JSON reaching _disclosure_satisfied's
+        # typed int(...) reads HANGS rather than erroring.
+        var discs: Array = []
+        for raw_d in _coerce_array(rc.get("disclosures"), []):
+            if raw_d is Dictionary:
+                discs.append(_coerce_disclosure(raw_d))
         _form_clues_cache.append({
             "form_id":         _coerce_int(rc.get("form_id"), 0),
             "form_name":       str(rc.get("form_name", "")),
@@ -483,10 +495,38 @@ func _load_constellation_data() -> void:
             "chars":           chars,
             "cells":           cells,
             "search_terms":    terms,
+            "disclosures":     discs,
         })
 
     _compute_star_screen_positions()
     _selected_star = -1
+
+
+## Per-field coercion for one disclosure entry, keyed by field name because
+## a disclosure's shape varies by its "kind". Every key listed here is one
+## _disclosure_satisfied() actually reads; anything else is passed through
+## untouched so an unrecognised future kind is preserved rather than eaten.
+func _coerce_disclosure(d: Dictionary) -> Dictionary:
+    var out: Dictionary = {}
+    for k in d:
+        var key: String = str(k)
+        var v = d[k]
+        match key:
+            "kind":
+                out[key] = str(v)
+            "a", "b", "mid", "s", "star_a", "r", "k", "lo", "hi", "offset", \
+            "cat", "cat_a", "cat_b":
+                out[key] = _coerce_int(v, -1)
+            "a_gt_b", "want_lowest":
+                out[key] = _coerce_bool(v, false)
+            "neighbors", "stars":
+                var arr: Array = []
+                for e in _coerce_array(v, []):
+                    arr.append(_coerce_int(e, -1))
+                out[key] = arr
+            _:
+                out[key] = v
+    return out
 
 
 func _compute_star_screen_positions() -> void:
