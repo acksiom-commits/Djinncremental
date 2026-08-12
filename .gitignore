@@ -4,6 +4,11 @@
 export_presets.cfg
 debug.log
 
+# Local verification harnesses (see dev_tests/README.md). Deliberately not
+# tracked: they poke engine internals directly, and they live in-tree only
+# so Godot can reach them via res:// without copying files in and out.
+dev_tests/
+
 # Windows-specific ignores
 Thumbs.db
 desktop.ini

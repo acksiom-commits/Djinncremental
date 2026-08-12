@@ -192,6 +192,7 @@ func _reset_derived() -> void:
     _derived.clear()
     for _i in _match_records.size():
         _derived.append(_blank_derived_entry())
+    _seq_singleton_built = false
 
 
 ## Grows the layer to match _match_records without discarding what is
@@ -202,6 +203,7 @@ func _sync_derived_size() -> void:
         _derived.append(_blank_derived_entry())
     while _derived.size() > _match_records.size():
         _derived.remove_at(_derived.size() - 1)
+    _seq_singleton_built = false
 
 
 # ── CONTRADICTION DETECTION ──────────────────────────────────────────────
@@ -422,6 +424,17 @@ func _detect_contradictions() -> void:
                     _record_display_name(int(by_star[si])), _record_display_name(i)],
             })
         by_star[si] = i
+
+    # NO same-position check here, deliberately — see
+    # _settle_same_position_identity, which is the pass that would need one.
+    # Two provably-different records cannot both END UP on one position:
+    # _compute_excluded_positions_for already removes a position owned by a
+    # provably-distinct record, so nothing can be DERIVED onto a taken one.
+    # The only way to reach the state is for both to be raw-pinned there,
+    # and a raw pin puts an "S:<pos>" token in both identity signatures — so
+    # that pair goes through _settle_identical_records and is already
+    # reported as a merge refusal above. A check here could only ever
+    # duplicate that message.
 
 
 ## Which of the player's OWN marks on this record rule out being `star`.
@@ -1960,7 +1973,6 @@ func _confirm_color_against_ground_truth(record_idx: int, color_idx: int, assert
     # color that's already pinned by a resolved star identity — same
     # failure class as the star-identity confirm bug fixed elsewhere in
     # this file, just reachable directly instead of through a merge.
-    var r: Dictionary = _match_records[record_idx]
     var star_idx: int = _effective_star_idx(record_idx)
     if star_idx < 0 or star_idx >= _host._star_colors.size():
         return true
@@ -2291,19 +2303,33 @@ func _effective_name_state(record_idx: int, name_str: String, collapse_soft: boo
 func _effective_degree_state(record_idx: int, degree: int) -> int:
     if record_idx < 0 or record_idx >= _match_records.size():
         return 0
-    # Only two tiers, unlike Color/Pitch/Name: Degree has no staff-popup
-    # protect/right-click mechanism at all (_on_record_degree_toggle/
-    # _eliminate write degree_states directly, unconditionally, with no
-    # soft-eliminated/protected layer to fold in), so there's no derived
-    # state to consult. Deliberately skips degree_slot_label too — that
-    # label is just "Conn <letter>" with no degree number embedded, so two
-    # different degree-value groups' "A" slot collide on the same label;
-    # ground truth + raw state is both sufficient and safe here.
+    # Three tiers, not two. Degree genuinely has no staff-popup
+    # protect/right-click mechanism (_on_record_degree_toggle/_eliminate
+    # write degree_states directly, unconditionally, with no
+    # soft-eliminated/protected layer to fold in) — that part of the old
+    # comment was correct. But it wrongly concluded from that that there was
+    # "no derived state to consult" at all, and skipped straight from raw
+    # player input to ground truth. The DERIVED layer is a separate thing
+    # from the protect tier: _settle_singleton_degrees has been writing a
+    # derived confirm via _add_derived_state since Degree got its
+    # singleton-promotion pass, and nothing ever read it back — that
+    # promotion has been dead code the whole time this function skipped
+    # straight to ground truth. Found 2026-08-12 while adding
+    # _settle_derived_degree_exclusions: its writes landed in the derived
+    # layer exactly as designed and were just as invisible.
+    #
+    # Deliberately still skips degree_slot_label — that label is just "Conn
+    # <letter>" with no degree number embedded, so two different
+    # degree-value groups' "A" slot collide on the same label; ground truth
+    # + raw + derived is sufficient and safe here.
     var r: Dictionary = _match_records[record_idx]
     var star_idx: int = _effective_star_idx(record_idx)
     if star_idx >= 0 and star_idx < _host._star_degrees.size():
         return 1 if int(_host._star_degrees[star_idx]) == degree else 2
-    return int(r.get("degree_states", {}).get(degree, 0))
+    var raw: int = int(r.get("degree_states", {}).get(degree, 0))
+    if raw != 0:
+        return raw
+    return _derived_state(record_idx, "degree_states", degree)
 
 
 func _effective_star_state(record_idx: int, star_idx: int) -> int:
@@ -2396,6 +2422,10 @@ func _narrow_derived_seq(record_idx: int, positions: Array) -> bool:
         return false
     next.sort()
     _derived[record_idx]["seq_candidates"] = next
+    # This is the only thing that can turn a record into a single-position
+    # owner mid-refresh, so it is the only place the owner list can go
+    # stale. Left stale, an exclusion cascade would slip to the next round.
+    _seq_singleton_built = false
     return true
 
 
@@ -2869,14 +2899,13 @@ func _compute_records_provably_distinct(idx_a: int, idx_b: int) -> bool:
         if cb != null and (pa_prof[axis]["eliminated"] as Dictionary).has(cb):
             return true
 
-    var degrees_set: Dictionary = {}
-    for si2 in _host._star_count:
-        degrees_set[int(_host._star_degrees[si2]) if si2 < _host._star_degrees.size() else 0] = true
-    for deg in degrees_set.keys():
-        var da: int = _effective_degree_state(idx_a, deg)
-        var db: int = _effective_degree_state(idx_b, deg)
-        if (da == 1 and db == 2) or (db == 1 and da == 2):
-            return true
+    # A second, explicit Degree sweep used to follow here, asking exactly
+    # what the "degree" entry of the loop above already asks — one side
+    # confirming a degree the other rules out. It survived the move to
+    # profiles because it was written before them and reads
+    # _effective_degree_state directly, so it cost ~8 uncached effective
+    # reads on EVERY pair verdict, which is the innermost loop of the whole
+    # engine. Removed 2026-08-11; the profile covers the same ground.
 
     return false
 
@@ -2949,15 +2978,30 @@ func _settle_singleton_sequences() -> void:
     # Lives here rather than inline inside _effective_seq_candidates —
     # that function is a read-only query every widget builder calls
     # expecting no side effects, so the write belongs in an explicit
-    # "settle" step instead. Skipped for a record the player already pinned
-    # (never silently restate an explicit commit) or when a DIFFERENT
-    # record already legitimately owns that exact position (a real merge
-    # belongs on the explicit-commit path, which can safely await the
-    # conflict dialog; this loop can't).
+    # "settle" step instead. Skipped only for a record the player already
+    # pinned, so an explicit commit is never silently restated.
     #
-    # Iterated to a fixpoint by _run_derivation_fixpoint(), so a promotion
-    # that only becomes visible after an earlier record's own promotion no
-    # longer has to wait for the next refresh.
+    # The "another record already owns this exact position" guard that used
+    # to sit here is GONE (2026-08-11). It dated from when this pass wrote
+    # into seq_lo/seq_hi, where a second record landing on a taken position
+    # would have minted a duplicate exact-position identity and demanded a
+    # merge this synchronous loop cannot await. Writing to the derived layer
+    # mints nothing and merges nothing. Worse, the guard was self-defeating:
+    # a Sort:Name row narrowed to position 6 was blocked from recording it
+    # precisely BECAUSE the Staff popup for position 6 existed — the one
+    # case where the two records need to see each other. The narrowing
+    # stayed invisible to every other record, so nothing downstream could
+    # rule position 6 out, and _settle_same_position_identity below never
+    # saw a pair to unify.
+    #
+    # Nothing unsound is let through: _effective_seq_candidates has already
+    # removed every position owned by a provably-DISTINCT record, so a
+    # position that survives to be the last one standing is either
+    # genuinely free or held by a record that may well be this same star.
+    #
+    # Iterated to a fixpoint by the loop in _full_propagation_refresh(), so
+    # a promotion that only becomes visible after an earlier record's own
+    # promotion no longer has to wait for the next refresh.
     for i in _match_records.size():
         var r: Dictionary = _match_records[i]
         var already_exact: bool = int(r.get("seq_lo", 0)) > 0 and int(r.get("seq_lo", 0)) == int(r.get("seq_hi", 0))
@@ -2966,9 +3010,183 @@ func _settle_singleton_sequences() -> void:
         var result: Array = _effective_seq_candidates(i)
         if result.size() != 1:
             continue
-        var existing_idx: int = _find_match_record_by_exact_seq(result[0])
-        if existing_idx < 0 or existing_idx == i:
-            _narrow_derived_seq(i, result)
+        _narrow_derived_seq(i, result)
+
+
+## Sequence is alldiff — exactly one star per position — so two records
+## whose surviving position sets are BOTH the same single position describe
+## the same star, whatever route each of them reached it by.
+##
+## They cannot simply be merged. _settle_identical_records deliberately runs
+## against an empty derived layer: a merge destroys a record and there is no
+## way to un-merge when the derived layer is wiped, so a merge must never
+## rest on a fact that can evaporate — and a position narrowed by this
+## refresh's own exclusions is exactly such a fact. The facts are SHARED
+## through the derived layer instead. Both records stay, each gains what the
+## other knows, and the whole lot is released the moment the narrowing that
+## justified it goes away.
+##
+## This is the missing link under a family of "my entry didn't show up"
+## reports (confirmed live 2026-08-11, Chroneeia/6 and Keraides/14). A
+## Sort:Name row narrowed to position 6 and the Staff popup for position 6
+## were two halves of one star, and neither could see the other because the
+## only thing proving them the same was derived. The popup kept offering the
+## magenta "still possible" pair that the name row had already resolved, and
+## the name row never received the popup's own pitch eliminations.
+func _settle_same_position_identity() -> void:
+    var at_position: Dictionary = {}
+    for i in _match_records.size():
+        # _seq_candidate_set_for, not _effective_seq_candidates: the former
+        # is the committed view every other cross-record reader consults
+        # (raw intersected with what this refresh derived), so identity here
+        # can never rest on something the rest of the engine cannot see.
+        var cands: Array = _seq_candidate_set_for(i)
+        if cands.size() != 1:
+            continue
+        var p: int = int(cands[0])
+        if not at_position.has(p):
+            at_position[p] = []
+        (at_position[p] as Array).append(i)
+
+    for p in at_position:
+        var group: Array = at_position[p]
+        if group.size() < 2:
+            continue
+        for a in group:
+            for b in group:
+                if a == b:
+                    continue
+                # Provably distinct records cannot both hold one position,
+                # so if a pair ever gets here the board is already wrong and
+                # sharing would launder it into one that looks consistent —
+                # the same absorption failure the merge path refuses. The
+                # pair is reachable only when BOTH are raw-pinned to the
+                # position, which gives both an "S:<pos>" identity token and
+                # sends them through _settle_identical_records, where the
+                # clash is reported as a merge refusal. So: skip, and leave
+                # the reporting to the pass that can already see it.
+                if _records_provably_distinct(int(a), int(b)):
+                    continue
+                _share_derived_facts(int(a), int(b))
+
+    # Deliberately does NOT invalidate _distinct_pair_cache /
+    # _distinct_profile_cache the way _settle_derived_eliminations does.
+    # Everything downstream of this pass reads the derived layer through
+    # _effective_*_state, which consults it directly and never those caches,
+    # and the fixpoint loop clears them at the end of every round anyway. A
+    # mid-round clear here only costs a full re-warm (measured at ~590 ms
+    # cold on a full board) to buy a conclusion the next round reaches for
+    # free — it made a 57-record refresh 312 ms -> 482 ms on its own.
+
+
+## Copies everything `src` effectively knows into `dst`'s DERIVED layer.
+## Returns true if anything was actually added, which drives the fixpoint.
+##
+## _add_derived_state refuses to overwrite, so nothing dst already holds is
+## touched: a genuine disagreement between the two survives to be reported
+## rather than being silently resolved in the copier's favour.
+##
+## star_idx is deliberately NOT copied. Binding dst to a star flips every
+## axis at once onto the ground-truth tier, which is a far larger claim than
+## "these two records are the same star" — and the per-axis copies below
+## already carry everything src legitimately knows.
+func _share_derived_facts(src: int, dst: int) -> void:
+    # Nothing may be copied OUT of a bare auto-created star-widget record.
+    # _build_star_widgets_impl gives every star one the instant its widget is
+    # drawn, so its star_idx is unearned — and every _effective_*_state below
+    # reads ground truth off star_idx. Copying even the "given" axes out of
+    # one hands dst a value the player never established, and a singleton
+    # colour or degree among them would go on to resolve dst's identity
+    # outright, which is the full leak. Same compound condition
+    # _identity_signature uses: a stub is trustworthy only once Listen has
+    # actually revealed it. Sharing INTO a stub stays fine — the caller runs
+    # both directions and only this one is dangerous.
+    if _record_is_unconfirmed_star_widget_stub(src) \
+            and not bool(_match_records[src].get("pitch_revealed", false)):
+        return
+
+    for n in _host._star_names:
+        var name_str: String = str(n)
+        var sn: int = _effective_name_state(src, name_str)
+        if sn != 0 and _effective_name_state(dst, name_str) == 0:
+            _add_derived_state(dst, "name_states", name_str, sn)
+
+    # Colour and Degree are the "given" axes — painted on the map and
+    # traceable by eye — so src's ground-truth tier is public information
+    # either way and needs no earned-knowledge guard.
+    for ci in _host.COLOR_NAME_LABELS.size():
+        var sc: int = _effective_color_state(src, int(ci))
+        if sc != 0 and _effective_color_state(dst, int(ci)) == 0:
+            _add_derived_state(dst, "color_states", int(ci), sc)
+
+    var degrees_set: Dictionary = {}
+    for si in _host._star_count:
+        degrees_set[int(_host._star_degrees[si]) if si < _host._star_degrees.size() else 0] = true
+    for deg in degrees_set.keys():
+        var sd: int = _effective_degree_state(src, int(deg))
+        if sd != 0 and _effective_degree_state(dst, int(deg)) == 0:
+            _add_derived_state(dst, "degree_states", int(deg), sd)
+
+    # Pitch is NOT public. _effective_pitch_state reads ground truth off
+    # star_idx, and a bare auto-created star-widget record holds a star_idx
+    # it never earned — copying from one would hand over an unlistened note.
+    # Same compound guard _identity_signature uses: a stub contributes only
+    # once Listen has actually revealed it.
+    if not (_record_is_unconfirmed_star_widget_stub(src) \
+            and not bool(_match_records[src].get("pitch_revealed", false))):
+        for note in _host._widgets._distinct_note_names():
+            var nn: String = str(note)
+            var sp: int = _effective_pitch_state(src, nn)
+            if sp != 0 and _effective_pitch_state(dst, nn) == 0:
+                _add_derived_state(dst, "pitch_states", nn, sp)
+
+
+## Writes the cross-record NAME exclusions into the derived layer, so the
+## rest of the engine sees what the display sites have always shown.
+##
+## _compute_excluded_names_for was applied ONLY where a checklist is drawn.
+## Every deduction pass read _effective_name_state instead, which knows
+## nothing about it — so a Staff popup with thirteen names X'd and a
+## fourteenth already claimed by another record showed the player exactly one
+## name left, and _settle_singleton_names still counted two and confirmed
+## nothing. Name is alldiff with one canonical record per name, so the
+## exclusion is unconditional and needs no incidence guard; putting it in the
+## derived layer makes the engine agree with the screen instead of trailing
+## it, and it is released with its causes like every other derived fact.
+## Same reasoning as _settle_same_position_identity for why no cache is
+## invalidated here: _settle_singleton_names, the pass this exists to feed,
+## reads the derived layer straight through _effective_name_state.
+func _settle_derived_name_exclusions() -> void:
+    # Deliberately does NOT call _compute_excluded_names_for per record,
+    # even though that is the function whose result this mirrors. WHICH
+    # records confirm a name does not depend on who is asking, and that
+    # function rediscovers it on every call — running it once per record
+    # made this n^2 dictionary walks (~115 ms of a 57-record refresh).
+    # Hoisted, it is records x confirmers, and confirmers is at most the
+    # number of star names.
+    var confirmers: Array = []
+    for j in _match_records.size():
+        if _record_is_unconfirmed_star_widget_stub(j):
+            continue
+        var nm: String = _confirmed_name_for_record(j)
+        if nm != "":
+            confirmers.append([j, nm])
+    if confirmers.is_empty():
+        return
+    for i in _match_records.size():
+        if _confirmed_name_for_record(i) != "":
+            continue   # already named — no name exclusion can tell it more
+        for entry in confirmers:
+            var j2: int = int((entry as Array)[0])
+            if j2 == i:
+                continue
+            var nm2: String = str((entry as Array)[1])
+            # Cheap test first: most names are already settled, and
+            # distinctness is the expensive half of the pair.
+            if _effective_name_state(i, nm2) != 0:
+                continue
+            if _records_provably_distinct(i, j2):
+                _add_derived_state(i, "name_states", nm2, 2)
 
 
 func _settle_singleton_names() -> void:
@@ -3021,6 +3239,36 @@ func _settle_singleton_names() -> void:
             _propagate_name_states_confirmed_same_record(i, confirmed_name)
 
 
+## Same display-only asymmetry _settle_derived_name_exclusions closed for
+## Name (2026-08-11), now closed for Pitch: _compute_excluded_pitches_for
+## was applied ONLY at the Staff-popup/Sort:Pitch display sites in
+## constellation_puzzle_widgets.gd, so a note the popup showed struck out
+## was invisible to every deduction pass — _settle_singleton_pitches reads
+## _effective_pitch_state, which knows nothing about it. Confirmed live
+## 2026-08-12: 42 records on one real save had a note excluded for display
+## the engine's own state still counted as open.
+##
+## Unlike Name, Pitch is NOT alldiff — the exclusion rule is the general
+## incidence-count one (_confirmer_clique / _value_fully_accounted_for), not
+## the single-confirmer shortcut Name's alldiff-ness allows. So this reuses
+## _compute_excluded_pitches_for directly rather than reimplementing its
+## rule, unlike the name pass, which special-cases for the simpler alldiff
+## question. The clique per note is cached (_confirmer_clique_cache) for the
+## rest of the refresh, so calling this once per record costs one cold clique
+## build per note total, not per (record, note) pair.
+##
+## AFTER the eliminations/candidate-set passes above, so it sees the
+## narrowest distinctness graph; BEFORE _settle_singleton_pitches, which is
+## the pass that could not see these exclusions at all.
+func _settle_derived_pitch_exclusions() -> void:
+    for i in _match_records.size():
+        if _effective_star_idx(i) >= 0:
+            continue   # ground truth already governs; nothing left to derive
+        for note in _compute_excluded_pitches_for(i):
+            if _effective_pitch_state(i, str(note)) == 0:
+                _add_derived_state(i, "pitch_states", str(note), 2)
+
+
 func _settle_singleton_pitches() -> void:
     # Same promotion as _settle_singleton_names, for pitch_states. Pitch
     # is NOT alldiff (see _pitch_star_count/_compute_excluded_pitches_for
@@ -3049,6 +3297,38 @@ func _settle_singleton_pitches() -> void:
             _add_derived_state(i, "pitch_states", remaining, 1)
 
 
+## Same display-only asymmetry closed for Name and Pitch (2026-08-11/12),
+## now closed for Color. Confirmed live on the real save: 0 gaps at the time
+## of writing (unlike Pitch's 42), because Color's ground truth is "given"
+## and leaks in via _effective_color_state the moment a record's star_idx
+## resolves by any OTHER route — so most records never reach this exclusion
+## before something else already tells them their colour. The code path is
+## nonetheless byte-for-byte the same shape as the Pitch gap that WAS live,
+## and reachable by construction (a record narrowed to exactly one
+## remaining colour by cross-record incidence accounting, with no other
+## route to the answer yet) — closed pre-emptively rather than waiting for
+## a live report, same reasoning as fixing Name and Pitch together would
+## have saved a repeat trip.
+##
+## Mirrors _settle_derived_pitch_exclusions exactly: Color is not alldiff,
+## so this reuses _compute_excluded_colors_for's own incidence-count rule
+## (_confirmer_clique / _value_fully_accounted_for) rather than
+## reimplementing it, guarded by the same "ground truth already governs"
+## skip.
+func _settle_derived_color_exclusions() -> void:
+    for i in _match_records.size():
+        if _effective_star_idx(i) >= 0:
+            continue   # ground truth already governs; nothing left to derive
+        for ci in _compute_excluded_colors_for(i):
+            if _effective_color_state(i, int(ci)) == 0:
+                if _add_derived_state(i, "color_states", int(ci), 2):
+                    # A colour going from "open" to "eliminated" can itself
+                    # narrow this record's candidate-star set — same
+                    # aftermath _settle_singleton_colors's own confirm
+                    # branch already triggers below.
+                    _recompute_color_star_elim(i)
+
+
 func _settle_singleton_colors() -> void:
     # Same promotion as _settle_singleton_pitches, for color_states. Color
     # is also not alldiff (see _color_star_count) — same reasoning as
@@ -3075,6 +3355,23 @@ func _settle_singleton_colors() -> void:
                 # A newly confirmed colour narrows the candidate set, which
                 # is what the star checklists read.
                 _recompute_color_star_elim(i)
+
+
+## Same display-only asymmetry as the Color pass above, for Degree — see
+## that function's comment for why this is closed pre-emptively rather than
+## waiting for a live-save gap count (Degree is a "given" axis with the
+## exact same early ground-truth leak that kept Color's count at 0).
+func _settle_derived_degree_exclusions() -> void:
+    var degrees_set: Dictionary = {}
+    for s in _host._star_count:
+        degrees_set[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
+    var degree_values: Array = degrees_set.keys()
+    for i in _match_records.size():
+        if _effective_star_idx(i) >= 0:
+            continue   # ground truth already governs; nothing left to derive
+        for dg in _compute_excluded_degrees_for(i):
+            if _effective_degree_state(i, int(dg)) == 0:
+                _add_derived_state(i, "degree_states", int(dg), 2)
 
 
 func _settle_singleton_degrees() -> void:
@@ -3110,25 +3407,47 @@ func _settle_singleton_degrees() -> void:
             _add_derived_state(i, "degree_states", remaining, 1)
 
 
-func _compute_excluded_positions_for(record_idx: int) -> Array:
-    # Scans the CURRENT full set of records live, every call. Nothing is
-    # stored or pushed, so a record created AFTER some other record's
-    # position was confirmed still sees the exclusion correctly — proven
-    # necessary by the Sort:Color test: color-slot records created after
-    # the Blue/15 confirmation never received a one-time push, because a
-    # push cannot reach something that doesn't exist yet.
-    var excluded: Array = []
+## Every record already down to exactly one position, as [record_idx, pos].
+##
+## A position is taken when a provably-different record is down to exactly
+## one candidate — whether the player typed it or this refresh derived it.
+## (Reading seq_lo == seq_hi alone stopped seeing derived pins the moment
+## they moved into the derived layer, which silently dropped every exclusion
+## cascade.) Which records those are does not depend on WHO is asking, so it
+## is answered once per refresh rather than rebuilt inside every
+## _compute_excluded_positions_for call — that function is itself called
+## once per record per fixpoint round, so the scan was running n^2 times.
+var _seq_singleton_cache: Array = []
+var _seq_singleton_built: bool = false
+
+
+func _seq_singleton_owners() -> Array:
+    if _seq_singleton_built:
+        return _seq_singleton_cache
+    _seq_singleton_cache = []
     for i in _match_records.size():
+        var s: Array = _seq_candidate_set_for(i)
+        if s.size() == 1:
+            _seq_singleton_cache.append([i, int(s[0])])
+    _seq_singleton_built = true
+    return _seq_singleton_cache
+
+
+func _compute_excluded_positions_for(record_idx: int) -> Array:
+    # Reads the CURRENT set of records live (through the cache above, which
+    # is invalidated by every narrowing). Nothing is stored or pushed, so a
+    # record created AFTER some other record's position was confirmed still
+    # sees the exclusion correctly — proven necessary by the Sort:Color
+    # test: color-slot records created after the Blue/15 confirmation never
+    # received a one-time push, because a push cannot reach something that
+    # doesn't exist yet.
+    var excluded: Array = []
+    for entry in _seq_singleton_owners():
+        var i: int = int((entry as Array)[0])
         if i == record_idx:
             continue
-        # A position is taken when a provably-different record is down to
-        # exactly one candidate — whether the player typed it or this
-        # refresh derived it. Reading seq_lo == seq_hi alone stopped seeing
-        # derived pins the moment they moved into the derived layer, which
-        # would have silently dropped every exclusion cascade.
-        var other: Array = _seq_candidate_set_for(i)
-        if other.size() == 1 and _records_provably_distinct(record_idx, i):
-            excluded.append(int(other[0]))
+        if _records_provably_distinct(record_idx, i):
+            excluded.append(int((entry as Array)[1]))
     return excluded
 
 
@@ -3838,6 +4157,8 @@ func _clear_deduction_caches() -> void:
     _distinct_profile_cache.clear()
     _listened_stars_cache.clear()
     _listened_stars_built = false
+    _seq_singleton_cache.clear()
+    _seq_singleton_built = false
 
 
 ## Convenience wrapper — 0.0 (nothing recorded yet) to 1.0 (every assertion
@@ -3958,6 +4279,7 @@ func _effective_seq_bounds(record_idx: int) -> Array:
 const DERIVATION_MAX_ROUNDS: int = 8
 
 
+
 func _full_propagation_refresh() -> void:
     _clear_deduction_caches()
     # Everything the engine concluded last time is thrown away here, before
@@ -4009,9 +4331,23 @@ func _full_propagation_refresh() -> void:
         _settle_star_elim_from_candidates()
         _settle_group_sequence_bounds()
         _settle_singleton_sequences()
+        # AFTER the sequence narrowing above, so a record that only just
+        # resolved to a single position is already visible as occupying it.
+        _settle_same_position_identity()
+        # AFTER the sharing, and BEFORE _settle_singleton_names, which is
+        # the pass that could not see these exclusions at all.
+        _settle_derived_name_exclusions()
         _settle_singleton_names()
+        # AFTER the passes above (so it sees the narrowest distinctness
+        # graph) and BEFORE _settle_singleton_pitches for the same reason
+        # _settle_derived_name_exclusions precedes _settle_singleton_names.
+        _settle_derived_pitch_exclusions()
         _settle_singleton_pitches()
+        # Same ordering rule as the two passes above, applied to the two
+        # remaining axes.
+        _settle_derived_color_exclusions()
         _settle_singleton_colors()
+        _settle_derived_degree_exclusions()
         _settle_singleton_degrees()
         _clear_deduction_caches()
         if _derived_fact_count() == before:
@@ -4372,5 +4708,3 @@ func _settle_group_sequence_bounds() -> void:
         # a group narrowing into the player's own fields overwrote what they
         # had typed and could never be taken back once the group changed.
         _narrow_derived_seq(i, narrowed)
-
-
