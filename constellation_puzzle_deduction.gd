@@ -2952,10 +2952,16 @@ func _effective_seq_candidates(record_idx: int) -> Array:
         for p in range(lo, hi + 1):
             base.append(p)
 
-    var excluded: Array = _compute_excluded_positions_for(record_idx)
+    # Dictionary, not the returned Array: this filter runs once per record
+    # per fixpoint round, and `Array.has()` is a linear scan, so the pairing
+    # was O(positions x excluded) — ~200 comparisons a record on a 15-star
+    # board, for no reason. Membership is the only thing asked of it.
+    var excluded: Dictionary = {}
+    for e in _compute_excluded_positions_for(record_idx):
+        excluded[int(e)] = true
     var result: Array = []
     for p in base:
-        if not excluded.has(p):
+        if not excluded.has(int(p)):
             result.append(p)
     return result
 
@@ -3006,6 +3012,15 @@ func _settle_singleton_sequences() -> void:
         var r: Dictionary = _match_records[i]
         var already_exact: bool = int(r.get("seq_lo", 0)) > 0 and int(r.get("seq_lo", 0)) == int(r.get("seq_hi", 0))
         if already_exact:
+            continue
+        # Already narrowed to one by an EARLIER round — there is nothing
+        # left to conclude, and _narrow_derived_seq would refuse the write
+        # anyway. Skipping here avoids the _effective_seq_candidates call,
+        # which is this pass's whole cost (it sweeps every single-position
+        # owner asking _records_provably_distinct). Sound because narrowing
+        # is monotone within a refresh: the derived set only shrinks, and
+        # an empty intersection is refused, so a set at 1 stays at 1.
+        if i < _derived.size() and (_derived[i]["seq_candidates"] as Array).size() == 1:
             continue
         var result: Array = _effective_seq_candidates(i)
         if result.size() != 1:
@@ -3250,23 +3265,52 @@ func _settle_singleton_names() -> void:
 ##
 ## Unlike Name, Pitch is NOT alldiff — the exclusion rule is the general
 ## incidence-count one (_confirmer_clique / _value_fully_accounted_for), not
-## the single-confirmer shortcut Name's alldiff-ness allows. So this reuses
-## _compute_excluded_pitches_for directly rather than reimplementing its
-## rule, unlike the name pass, which special-cases for the simpler alldiff
-## question. The clique per note is cached (_confirmer_clique_cache) for the
-## rest of the refresh, so calling this once per record costs one cold clique
-## build per note total, not per (record, note) pair.
+## the single-confirmer shortcut Name's alldiff-ness allows.
+##
+## Deliberately does NOT call _compute_excluded_pitches_for per record, even
+## though that is the function whose result this mirrors. Its clique is
+## cached, but the CALLABLE it passes to _confirmer_clique is rebuilt at the
+## call site every time — so asking it once per record allocated one lambda
+## per (record x note), ~570 a round here, and that allocation (not the
+## distinctness work) was the pass's real cost: 164 ms against only 341 cold
+## pair verdicts. Which records confirm a note does not depend on who is
+## asking, so the cliques are built ONCE per pass and the per-record loop
+## reduces to dictionary work.
+##
+## The `clique.size() < incidence` skip is the same early-out
+## _value_fully_accounted_for makes, hoisted a level: a note nobody can
+## account for is dropped before the record loop rather than once per record.
 ##
 ## AFTER the eliminations/candidate-set passes above, so it sees the
 ## narrowest distinctness graph; BEFORE _settle_singleton_pitches, which is
 ## the pass that could not see these exclusions at all.
 func _settle_derived_pitch_exclusions() -> void:
+    var ready: Array = []   # [note, clique, incidence], only viable notes
+    for note in _host._widgets._distinct_note_names():
+        var nn: String = str(note)
+        var inc: int = _pitch_star_count(nn)
+        if inc <= 0:
+            continue
+        var clique: Array = _confirmer_clique("P:" + nn, func(i: int) -> bool:
+            # Same unearned-pitch guard _compute_excluded_pitches_for uses.
+            if _record_is_unconfirmed_star_widget_stub(i) \
+                    and not bool(_match_records[i].get("pitch_revealed", false)):
+                return false
+            return _effective_pitch_state(i, nn) == 1)
+        if clique.size() >= inc:
+            ready.append([nn, clique, inc])
+    if ready.is_empty():
+        return
+
     for i in _match_records.size():
         if _effective_star_idx(i) >= 0:
             continue   # ground truth already governs; nothing left to derive
-        for note in _compute_excluded_pitches_for(i):
-            if _effective_pitch_state(i, str(note)) == 0:
-                _add_derived_state(i, "pitch_states", str(note), 2)
+        for e in ready:
+            var nn2: String = str((e as Array)[0])
+            if _effective_pitch_state(i, nn2) != 0:
+                continue
+            if _value_fully_accounted_for(i, (e as Array)[1], int((e as Array)[2])):
+                _add_derived_state(i, "pitch_states", nn2, 2)
 
 
 func _settle_singleton_pitches() -> void:
@@ -3316,12 +3360,31 @@ func _settle_singleton_pitches() -> void:
 ## reimplementing it, guarded by the same "ground truth already governs"
 ## skip.
 func _settle_derived_color_exclusions() -> void:
+    # Cliques hoisted out of the record loop — see
+    # _settle_derived_pitch_exclusions for why (one Callable per value per
+    # pass instead of one per record x value).
+    var ready: Array = []   # [color_idx, clique, incidence]
+    for ci in _host.COLOR_NAME_LABELS.size():
+        var color_idx: int = int(ci)
+        var inc: int = _color_star_count(color_idx)
+        if inc <= 0:
+            continue
+        var clique: Array = _confirmer_clique("C:%d" % color_idx, func(i: int) -> bool:
+            return _effective_color_state(i, color_idx) == 1)
+        if clique.size() >= inc:
+            ready.append([color_idx, clique, inc])
+    if ready.is_empty():
+        return
+
     for i in _match_records.size():
         if _effective_star_idx(i) >= 0:
             continue   # ground truth already governs; nothing left to derive
-        for ci in _compute_excluded_colors_for(i):
-            if _effective_color_state(i, int(ci)) == 0:
-                if _add_derived_state(i, "color_states", int(ci), 2):
+        for e in ready:
+            var c2: int = int((e as Array)[0])
+            if _effective_color_state(i, c2) != 0:
+                continue
+            if _value_fully_accounted_for(i, (e as Array)[1], int((e as Array)[2])):
+                if _add_derived_state(i, "color_states", c2, 2):
                     # A colour going from "open" to "eliminated" can itself
                     # narrow this record's candidate-star set — same
                     # aftermath _settle_singleton_colors's own confirm
@@ -3365,13 +3428,31 @@ func _settle_derived_degree_exclusions() -> void:
     var degrees_set: Dictionary = {}
     for s in _host._star_count:
         degrees_set[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
-    var degree_values: Array = degrees_set.keys()
+
+    # Cliques hoisted out of the record loop — see
+    # _settle_derived_pitch_exclusions for why.
+    var ready: Array = []   # [degree, clique, incidence]
+    for dg in degrees_set.keys():
+        var degree: int = int(dg)
+        var inc: int = _degree_star_count(degree)
+        if inc <= 0:
+            continue
+        var clique: Array = _confirmer_clique("D:%d" % degree, func(i: int) -> bool:
+            return _effective_degree_state(i, degree) == 1)
+        if clique.size() >= inc:
+            ready.append([degree, clique, inc])
+    if ready.is_empty():
+        return
+
     for i in _match_records.size():
         if _effective_star_idx(i) >= 0:
             continue   # ground truth already governs; nothing left to derive
-        for dg in _compute_excluded_degrees_for(i):
-            if _effective_degree_state(i, int(dg)) == 0:
-                _add_derived_state(i, "degree_states", int(dg), 2)
+        for e in ready:
+            var d2: int = int((e as Array)[0])
+            if _effective_degree_state(i, d2) != 0:
+                continue
+            if _value_fully_accounted_for(i, (e as Array)[1], int((e as Array)[2])):
+                _add_derived_state(i, "degree_states", d2, 2)
 
 
 func _settle_singleton_degrees() -> void:
@@ -3550,6 +3631,19 @@ func _confirmer_clique(cache_key: String, confirms: Callable) -> Array:
 ## than record_idx? See this section's header comment for the rule.
 func _value_fully_accounted_for(record_idx: int, clique: Array, incidence: int) -> bool:
     if incidence <= 0:
+        return false
+    # The loop below counts AT MOST clique.size(), so a clique smaller than
+    # the incidence can never reach it — the answer is already known without
+    # asking about distinctness at all. That matters far more than it looks:
+    # _records_provably_distinct is the innermost primitive of the engine,
+    # and this function is called once per (record x value) by all three
+    # non-alldiff exclusion passes, every fixpoint round. Most values have
+    # nobody (or one lone record) confirming them, so most of those calls
+    # were walking a clique that could not possibly qualify. Adding this
+    # line took cold pair verdicts on a 57-record board from ~5300 per
+    # refresh to a fraction of that — see the profiling note in
+    # [[deduction_refresh_perf_budget]].
+    if clique.size() < incidence:
         return false
     var n: int = 0
     for i in clique:
@@ -4146,7 +4240,40 @@ var _candidate_star_cache: Dictionary = {}
 ## _full_propagation_refresh() (which precedes every full UI rebuild) and
 ## from _save_puzzle_notes() (which every mutation path already calls), so
 ## a popup opened without an intervening refresh can't read stale data.
-func _clear_deduction_caches() -> void:
+##
+## `keep_proven_distinct` is for the FIXPOINT ONLY, and is unsafe anywhere
+## else. Inside one refresh the derived layer only ever grows — every pass
+## adds facts and `_add_derived_state` refuses to overwrite — so pairwise
+## distinctness is MONOTONE there: every route to a `true` verdict (raw
+## star_idx/name mismatch, disjoint sequence sets, one side's confirmed
+## value in the other's eliminated set) is reached by facts being ADDED,
+## and none can be un-reached by adding more. A `true` therefore cannot
+## decay into a `false` before the next `_reset_derived()`, so re-deriving
+## it once per round is pure waste. A `false` still has to be recomputed —
+## that is exactly the verdict more facts can flip.
+##
+## It must stay false on every other caller, because PLAYER input can be
+## WITHDRAWN (un-X a colour, clear a name), and that is not monotone at all
+## — a pair proven distinct by a mark that no longer exists must be
+## forgotten. That is why this is an opt-in argument rather than the
+## default.
+##
+## Measured on the 57-record save: cold pair verdicts fell from ~5300 per
+## refresh to well under half, with `_settle_singleton_sequences` (which
+## alone accounted for 2839 of them) the biggest beneficiary.
+func _clear_deduction_caches(keep_proven_distinct: bool = false) -> void:
+    if keep_proven_distinct:
+        var proven: Dictionary = {}
+        for k in _distinct_pair_cache:
+            if bool(_distinct_pair_cache[k]):
+                proven[k] = true
+        _clear_deduction_caches_all()
+        _distinct_pair_cache = proven
+        return
+    _clear_deduction_caches_all()
+
+
+func _clear_deduction_caches_all() -> void:
     _coverage_cache.clear()
     _star_positions_cache.clear()
     _star_values_cache.clear()
@@ -4280,6 +4407,7 @@ const DERIVATION_MAX_ROUNDS: int = 8
 
 
 
+
 func _full_propagation_refresh() -> void:
     _clear_deduction_caches()
     # Everything the engine concluded last time is thrown away here, before
@@ -4349,7 +4477,9 @@ func _full_propagation_refresh() -> void:
         _settle_singleton_colors()
         _settle_derived_degree_exclusions()
         _settle_singleton_degrees()
-        _clear_deduction_caches()
+        # Monotone: inside the fixpoint a proven-distinct pair stays proven,
+        # so only the unproven verdicts are worth re-deriving next round.
+        _clear_deduction_caches(true)
         if _derived_fact_count() == before:
             break
     _detect_contradictions()
@@ -4481,6 +4611,7 @@ func _settle_star_identity_from_candidates() -> void:
         if si >= 0:
             occupied[si] = i
 
+    var bound_any: bool = false
     for i in _match_records.size():
         if _effective_star_idx(i) >= 0:
             continue
@@ -4501,18 +4632,31 @@ func _settle_star_identity_from_candidates() -> void:
         # released — clear the colour eliminations that produced it and it
         # stayed put forever, because nothing marked it as the engine's.
         _derived[i]["star_idx"] = s
+        bound_any = true
         # _sync_color_states_from_star_idx(i) is deliberately NOT called
         # any more. It copied ground truth into the record's own
         # color_states — a derived conclusion written into player input,
         # which is the exact thing this phase exists to stop. The
         # ground-truth tier in _effective_color_state now reads through
         # _effective_star_idx and gets the same answer without the write.
-        # Identity resolution invalidates every derived cache: cliques
-        # depend on provable-distinctness, candidate sets on this record's
-        # own state, and the listened-stars set on which record owns which
-        # star_idx — which is exactly what just changed. Routed through the
-        # shared helper so a cache added later can't be missed here.
-        _clear_deduction_caches()
+
+    # Identity resolution invalidates every derived cache: cliques depend on
+    # provable-distinctness, candidate sets on this record's own state, and
+    # the listened-stars set on which record owns which star_idx — which is
+    # exactly what just changed. Routed through the shared helper so a cache
+    # added later can't be missed.
+    #
+    # ONCE, at the end of the pass — not inside the loop per binding, where
+    # it used to sit. k bindings meant k full cache wipes mid-pass, each
+    # forcing a cold re-warm of the pairwise-distinctness and profile caches
+    # that the very next record then paid for again. Deferring is safe: the
+    # only thing a later record in THIS pass needs from an earlier binding is
+    # "is that star taken", and that comes from the `occupied` dict, which is
+    # maintained by hand right here and never went through a cache. Anything
+    # subtler that a stale candidate set would miss is picked up by the next
+    # fixpoint round, which is exactly what the loop is for.
+    if bound_any:
+        _clear_deduction_caches(true)   # monotone — see that function
 
 
 ## Eliminates every given-axis value that NO candidate star carries. This
@@ -4575,8 +4719,16 @@ func _settle_derived_eliminations() -> void:
     # sets AND pairwise distinctness are derived FROM, so both caches are
     # now potentially stale. Relying on the call order not to re-read one
     # is exactly the fragility these caches were split out to avoid.
+    #
+    # Only the UNPROVEN half of the pair cache is dropped: this pass adds
+    # eliminations and never removes any, so a pair already proven distinct
+    # stays proven — see _clear_deduction_caches's monotonicity note.
     _candidate_star_cache.clear()
-    _distinct_pair_cache.clear()
+    var proven_pairs: Dictionary = {}
+    for k in _distinct_pair_cache:
+        if bool(_distinct_pair_cache[k]):
+            proven_pairs[k] = true
+    _distinct_pair_cache = proven_pairs
 
 
 # ==================================================
