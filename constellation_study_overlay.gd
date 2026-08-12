@@ -429,6 +429,25 @@ func _load_constellation_data() -> void:
     # previous puzzle's note names. See _widgets.clear_pitch_caches().
     _widgets.clear_pitch_caches()
 
+    # Per-constellation UI state on a REUSED node. This overlay is a single
+    # instance re-pointed by show_for_constellation(), so anything keyed by
+    # star index or holding a value from the previous puzzle survives a
+    # switch unless it is dropped here.
+    #
+    # _widget_closed is star_idx -> bool: close star 3's floating widget in
+    # one constellation and, without this, star 3 starts hidden in the next
+    # one with nothing on screen to explain why. Worse across differing star
+    # counts — closing star 12 of a 15-star puzzle then opening a 7-star one
+    # leaves an entry for an index that does not exist there. Harmless while
+    # it is only read through .get() with a default, but it is exactly the
+    # stale index that breaks the day something iterates the dictionary.
+    #
+    # Latent today because switching is rare; routine once multiple
+    # Constellations are active in the Early game (see the Kaleb/age-
+    # structure plan), which is why it is fixed now rather than then.
+    _widget_closed.clear()
+    _widgets.clear_per_puzzle_ui_state()
+
     # Same manual per-field coercion as every other cache-derived array in
     # this function — this bypasses ConstellationLogicPuzzle.from_cache_dict()
     # entirely (always has; see that function's own coercion for the OTHER

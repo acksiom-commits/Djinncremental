@@ -2505,6 +2505,21 @@ func clear_pitch_caches() -> void:
     _note_name_cache.clear()
 
 
+## Widget-side state that belongs to ONE puzzle and must not survive a
+## constellation switch. Kept separate from clear_pitch_caches() on purpose:
+## that one drops memoised lookups (a correctness-of-derivation concern),
+## this one drops player-facing selections. Called from
+## _load_constellation_data() alongside it — see the note there for why a
+## reused overlay node makes this necessary.
+##
+## _search_term is a term picked from the PREVIOUS puzzle's vocabulary.
+## Carried over, the SEARCH tab headers itself "Clues mentioning <term>" and
+## lists nothing — or, when the two constellations happen to share a name,
+## lists results that look legitimate and are not.
+func clear_per_puzzle_ui_state() -> void:
+    _search_term = ""
+
+
 func _distinct_note_names() -> Array[String]:
     if not _distinct_notes_cache.is_empty():
         return _distinct_notes_cache
