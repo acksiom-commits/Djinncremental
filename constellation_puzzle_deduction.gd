@@ -3157,6 +3157,253 @@ func _share_derived_facts(src: int, dst: int) -> void:
 
 
 ## Writes the cross-record NAME exclusions into the derived layer, so the
+# ==================================================
+# SHARED-VALUE AXIS TABLE
+#
+# Pitch, Colour and Degree obey the same three rules, and Name obeys one of
+# them. Those rules used to be written out once per axis — ten near-identical
+# functions — and that duplication has a measured cost, not a theoretical
+# one. Every one of these was a separate bug, found across 2026-08-11/12,
+# and each fix touched exactly one axis while the others kept the defect:
+#
+#   * the cross-record exclusion reached only the DISPLAY, not the engine —
+#     fixed for Name, then found again in Pitch (42 wrong clues on a real
+#     save), then again in Colour, then again in Degree
+#   * _effective_degree_state never read the derived layer its three
+#     siblings did, so _settle_singleton_degrees had been DEAD CODE since
+#     the derived layer landed — invisible precisely because Degree's copy
+#     of the rule looked correct in isolation
+#
+# Writing a rule once is the fix for that class. An axis is described by
+# data + small dispatchers below; the rules themselves live in exactly one
+# function each.
+#
+# What deliberately does NOT join:
+#   * SEQUENCE — its rules narrow a candidate SET, not a value->state dict,
+#     and its exclusion runs off _seq_singleton_owners rather than cliques.
+#     Genuinely a different shape; forcing it in would be worse.
+#   * Name's EXCLUSION — Name is alldiff, so one confirmer is proof and the
+#     incidence/clique machinery does not apply. Name joins the singleton
+#     rule only.
+#
+# Dispatch is a `match` on an int rather than stored Callables on purpose:
+# the last perf pass showed Callable construction, not the deduction, was
+# the dominant cost in these passes (~570 allocations a round).
+# ==================================================
+
+enum Axis { NAME, PITCH, COLOR, DEGREE }
+
+## Axes carrying a shared (non-alldiff) value, in the order the fixpoint
+## has always run them. Name is excluded: it is alldiff and takes the
+## single-confirmer path instead.
+const CLIQUE_AXES: Array = [Axis.PITCH, Axis.COLOR, Axis.DEGREE]
+
+
+func _axis_states_key(axis: int) -> String:
+    match axis:
+        Axis.NAME:   return "name_states"
+        Axis.PITCH:  return "pitch_states"
+        Axis.COLOR:  return "color_states"
+        Axis.DEGREE: return "degree_states"
+    return ""
+
+
+## Every value the axis can take on this puzzle. Cached for the refresh:
+## _compute_excluded_for_axis is called once per RECORD from the widget
+## display paths, so rebuilding (and re-allocating) the domain array there
+## was per-record work for a value that only changes when the puzzle does.
+var _axis_domain_cache: Dictionary = {}
+
+
+func _axis_domain(axis: int) -> Array:
+    if _axis_domain_cache.has(axis):
+        return _axis_domain_cache[axis]
+    var built: Array = _build_axis_domain(axis)
+    _axis_domain_cache[axis] = built
+    return built
+
+
+func _build_axis_domain(axis: int) -> Array:
+    var out: Array = []
+    match axis:
+        Axis.NAME:
+            for n in _host._star_names:
+                out.append(str(n))
+        Axis.PITCH:
+            for n in _host._widgets._distinct_note_names():
+                out.append(str(n))
+        Axis.COLOR:
+            for ci in _host.COLOR_NAME_LABELS.size():
+                out.append(int(ci))
+        Axis.DEGREE:
+            var seen: Dictionary = {}
+            for s in _host._star_count:
+                seen[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
+            out = seen.keys()
+    return out
+
+
+func _axis_state(axis: int, record_idx: int, value) -> int:
+    match axis:
+        Axis.NAME:   return _effective_name_state(record_idx, str(value))
+        Axis.PITCH:  return _effective_pitch_state(record_idx, str(value))
+        Axis.COLOR:  return _effective_color_state(record_idx, int(value))
+        Axis.DEGREE: return _effective_degree_state(record_idx, int(value))
+    return 0
+
+
+## How many stars actually carry this value — the incidence the clique must
+## reach before the value can be ruled out anywhere else.
+func _axis_incidence(axis: int, value) -> int:
+    match axis:
+        Axis.PITCH:  return _pitch_star_count(str(value))
+        Axis.COLOR:  return _color_star_count(int(value))
+        Axis.DEGREE: return _degree_star_count(int(value))
+    return 0
+
+
+func _axis_clique_key(axis: int, value) -> String:
+    match axis:
+        Axis.PITCH:  return "P:" + str(value)
+        Axis.COLOR:  return "C:%d" % int(value)
+        Axis.DEGREE: return "D:%d" % int(value)
+    return ""
+
+
+## Does this record count as a confirmer of `value`? Pitch alone needs a
+## guard: an auto-created star-widget record holds a star_idx it never
+## earned, so its ground-truth note must not count until Listen has
+## actually revealed it. Colour and Degree are "given" axes — painted on
+## the map — so their ground-truth tier is no leak.
+func _axis_confirms(axis: int, record_idx: int, value) -> bool:
+    if axis == Axis.PITCH \
+            and _record_is_unconfirmed_star_widget_stub(record_idx) \
+            and not bool(_match_records[record_idx].get("pitch_revealed", false)):
+        return false
+    return _axis_state(axis, record_idx, value) == 1
+
+
+## Records this axis has nothing left to say about. Each of these was an
+## optimisation in the per-axis original, not a semantic guard — once the
+## skip condition holds, the state reads already return a confirm and the
+## rule writes nothing. Preserved per-axis rather than unified so this
+## refactor stays behaviour-neutral.
+func _axis_skip_record(axis: int, record_idx: int) -> bool:
+    if axis == Axis.PITCH:
+        return bool(_match_records[record_idx].get("pitch_revealed", false))
+    # NAME is deliberately NOT skipped on a resolved star_idx. Colour,
+    # Pitch and Degree all read ground truth through _effective_star_idx, so
+    # once a record is bound there is nothing left for the rule to conclude
+    # — but _effective_name_state refuses to consult star_idx at all (its
+    # own comment: a star_idx set by mere widget auto-creation is not a
+    # player-confirmed identity). A bound record's NAME can still be
+    # deduced by elimination, so skipping it would silently suppress real
+    # deductions. Caught while chasing the perf of this very refactor —
+    # the first draft applied the skip to every axis.
+    if axis == Axis.NAME:
+        return false
+    return _effective_star_idx(record_idx) >= 0
+
+
+## Colour is the only axis whose writes feed something outside the state
+## dicts: a narrowed colour changes the candidate-star set that the star-map
+## name checklists read through star_elim.
+func _axis_after_write(axis: int, record_idx: int) -> void:
+    if axis == Axis.COLOR:
+        _recompute_color_star_elim(record_idx)
+
+
+# ── RULE 1: cross-record exclusion (incidence / pigeonhole) ──────────────
+## Values ruled out for `record_idx` because every star carrying them is
+## already accounted for by other, provably-distinct records. Replaces the
+## three identical _compute_excluded_{pitches,colors,degrees}_for bodies;
+## those names survive as wrappers because widgets calls them directly.
+func _compute_excluded_for_axis(axis: int, record_idx: int) -> Array:
+    var excluded: Array = []
+    for value in _axis_domain(axis):
+        var inc: int = _axis_incidence(axis, value)
+        if inc <= 0:
+            continue
+        var clique: Array = _confirmer_clique(_axis_clique_key(axis, value),
+            func(i: int) -> bool: return _axis_confirms(axis, i, value))
+        if _value_fully_accounted_for(record_idx, clique, inc):
+            excluded.append(value)
+    return excluded
+
+
+# ── RULE 2: push those exclusions into the derived layer ─────────────────
+## Without this the exclusion reaches only the display and no deduction pass
+## can see it — the exact defect found four times over, once per axis.
+##
+## Cliques are built ONCE per pass, not once per (record x value): the
+## Callable handed to _confirmer_clique is rebuilt at each call site even
+## when the clique itself is cached, and that allocation was the dominant
+## cost of these passes (164ms -> 52ms on Pitch when hoisted).
+func _settle_derived_exclusions_for_axis(axis: int) -> void:
+    var ready: Array = []   # [value, clique, incidence] for viable values only
+    for value in _axis_domain(axis):
+        var inc: int = _axis_incidence(axis, value)
+        if inc <= 0:
+            continue
+        var clique: Array = _confirmer_clique(_axis_clique_key(axis, value),
+            func(i: int) -> bool: return _axis_confirms(axis, i, value))
+        # A clique smaller than the incidence can never account for every
+        # carrier, so the value is dropped before the record loop rather
+        # than re-tested once per record.
+        if clique.size() >= inc:
+            ready.append([value, clique, inc])
+    if ready.is_empty():
+        return
+
+    var states_key: String = _axis_states_key(axis)
+    for i in _match_records.size():
+        if _effective_star_idx(i) >= 0:
+            continue   # ground truth already governs; nothing left to derive
+        for e in ready:
+            var value = (e as Array)[0]
+            if _axis_state(axis, i, value) != 0:
+                continue
+            if _value_fully_accounted_for(i, (e as Array)[1], int((e as Array)[2])):
+                if _add_derived_state(i, states_key, value, 2):
+                    _axis_after_write(axis, i)
+
+
+# ── RULE 3: narrowed-to-one is a confirm ─────────────────────────────────
+## One remaining candidate IS a confirm on THIS record, regardless of
+## whether the axis is alldiff — alldiff-ness only governs whether the value
+## can also be ruled out for OTHER records, which is Rule 1's job.
+func _settle_singleton_for_axis(axis: int) -> void:
+    var states_key: String = _axis_states_key(axis)
+    var domain: Array = _axis_domain(axis)
+    for i in _match_records.size():
+        if _axis_skip_record(axis, i):
+            continue
+        var confirmed_value = null
+        var remaining = null
+        var remaining_count: int = 0
+        for value in domain:
+            var state: int = _axis_state(axis, i, value)
+            if state == 1:
+                confirmed_value = value
+                break
+            if state != 2:
+                remaining_count += 1
+                remaining = value
+        if confirmed_value == null and remaining_count == 1:
+            if _add_derived_state(i, states_key, remaining, 1):
+                _axis_after_write(axis, i)
+        elif confirmed_value != null and axis == Axis.NAME:
+            # Name alone has an identity consequence: promote a PLAYER'S
+            # confirm into r["name"], never a merely derived one, since
+            # r["name"] is what can feed a destructive merge. Re-run every
+            # refresh so a promotion skipped earlier (another record held
+            # the name at the time) keeps retrying. Idempotent.
+            var nm: String = str(confirmed_value)
+            if str(_match_records[i].get("name", "")) == "" \
+                    and int((_match_records[i].get("name_states", {}) as Dictionary).get(nm, 0)) == 1:
+                _propagate_name_states_confirmed_same_record(i, nm)
+
+
 ## rest of the engine sees what the display sites have always shown.
 ##
 ## _compute_excluded_names_for was applied ONLY where a checklist is drawn.
@@ -3203,289 +3450,6 @@ func _settle_derived_name_exclusions() -> void:
             if _records_provably_distinct(i, j2):
                 _add_derived_state(i, "name_states", nm2, 2)
 
-
-func _settle_singleton_names() -> void:
-    # Same "narrowed-to-one IS a confirm" promotion as
-    # _settle_singleton_sequences above, applied to the Sort:tab/Staff-
-    # popup name_states dict instead of seq_lo/seq_hi. Name (this
-    # record-level mechanism, distinct from the star widget's star_elim)
-    # is alldiff — one name per star — exactly like Sequence, so the same
-    # reasoning holds unconditionally.
-    #
-    # PHASE 2: counts through _effective_name_state rather than the raw
-    # name_states dict. Eliminations that used to be written back into that
-    # dict now live in the derived layer, so a raw read would no longer see
-    # them and every derived-driven singleton would be missed. The confirm
-    # it produces goes to the derived layer too — the sibling-clearing the
-    # input-side propagator does is this rule's own premise and so is
-    # already true, and naming the record would be a derived IDENTITY
-    # write, which Phase 2 leaves alone because identity drives merges and
-    # merges are destructive.
-    for i in _match_records.size():
-        var r: Dictionary = _match_records[i]
-        var confirmed_name: String = ""
-        var remaining: String = ""
-        var remaining_count: int = 0
-        var already_confirmed: bool = false
-        for n in _host._star_names:
-            var name_str: String = str(n)
-            var state: int = _effective_name_state(i, name_str)
-            if state == 1:
-                already_confirmed = true
-                confirmed_name = name_str
-                break
-            if state != 2:
-                remaining_count += 1
-                remaining = name_str
-        if not already_confirmed and remaining_count == 1:
-            _add_derived_state(i, "name_states", remaining, 1)
-        elif already_confirmed and str(r.get("name", "")) == "" \
-                and int((r.get("name_states", {}) as Dictionary).get(confirmed_name, 0)) == 1:
-            # Only promote to r["name"] — an identity write, and the one
-            # thing here that can feed a merge — when the confirm is the
-            # PLAYER'S, never when this refresh merely derived it.
-            # Re-run on every refresh (not just once) so a record confirmed
-            # before the r["name"] promotion existed — or one whose
-            # promotion was skipped earlier because another record still
-            # held this name at the time — keeps retrying as state changes,
-            # same self-healing shape _settle_singleton_sequences already
-            # has for Sequence. Idempotent: sibling-clearing/manual-block
-            # erase are no-ops when already applied.
-            _propagate_name_states_confirmed_same_record(i, confirmed_name)
-
-
-## Same display-only asymmetry _settle_derived_name_exclusions closed for
-## Name (2026-08-11), now closed for Pitch: _compute_excluded_pitches_for
-## was applied ONLY at the Staff-popup/Sort:Pitch display sites in
-## constellation_puzzle_widgets.gd, so a note the popup showed struck out
-## was invisible to every deduction pass — _settle_singleton_pitches reads
-## _effective_pitch_state, which knows nothing about it. Confirmed live
-## 2026-08-12: 42 records on one real save had a note excluded for display
-## the engine's own state still counted as open.
-##
-## Unlike Name, Pitch is NOT alldiff — the exclusion rule is the general
-## incidence-count one (_confirmer_clique / _value_fully_accounted_for), not
-## the single-confirmer shortcut Name's alldiff-ness allows.
-##
-## Deliberately does NOT call _compute_excluded_pitches_for per record, even
-## though that is the function whose result this mirrors. Its clique is
-## cached, but the CALLABLE it passes to _confirmer_clique is rebuilt at the
-## call site every time — so asking it once per record allocated one lambda
-## per (record x note), ~570 a round here, and that allocation (not the
-## distinctness work) was the pass's real cost: 164 ms against only 341 cold
-## pair verdicts. Which records confirm a note does not depend on who is
-## asking, so the cliques are built ONCE per pass and the per-record loop
-## reduces to dictionary work.
-##
-## The `clique.size() < incidence` skip is the same early-out
-## _value_fully_accounted_for makes, hoisted a level: a note nobody can
-## account for is dropped before the record loop rather than once per record.
-##
-## AFTER the eliminations/candidate-set passes above, so it sees the
-## narrowest distinctness graph; BEFORE _settle_singleton_pitches, which is
-## the pass that could not see these exclusions at all.
-func _settle_derived_pitch_exclusions() -> void:
-    var ready: Array = []   # [note, clique, incidence], only viable notes
-    for note in _host._widgets._distinct_note_names():
-        var nn: String = str(note)
-        var inc: int = _pitch_star_count(nn)
-        if inc <= 0:
-            continue
-        var clique: Array = _confirmer_clique("P:" + nn, func(i: int) -> bool:
-            # Same unearned-pitch guard _compute_excluded_pitches_for uses.
-            if _record_is_unconfirmed_star_widget_stub(i) \
-                    and not bool(_match_records[i].get("pitch_revealed", false)):
-                return false
-            return _effective_pitch_state(i, nn) == 1)
-        if clique.size() >= inc:
-            ready.append([nn, clique, inc])
-    if ready.is_empty():
-        return
-
-    for i in _match_records.size():
-        if _effective_star_idx(i) >= 0:
-            continue   # ground truth already governs; nothing left to derive
-        for e in ready:
-            var nn2: String = str((e as Array)[0])
-            if _effective_pitch_state(i, nn2) != 0:
-                continue
-            if _value_fully_accounted_for(i, (e as Array)[1], int((e as Array)[2])):
-                _add_derived_state(i, "pitch_states", nn2, 2)
-
-
-func _settle_singleton_pitches() -> void:
-    # Same promotion as _settle_singleton_names, for pitch_states. Pitch
-    # is NOT alldiff (see _pitch_star_count/_compute_excluded_pitches_for
-    # below) but a single record narrowed to one remaining candidate is
-    # still exactly as much a confirm on THAT record as it always was for
-    # Sequence/Name — the alldiff question only matters for whether it's
-    # also safe to exclude the value from OTHER records, handled
-    # separately by _compute_excluded_pitches_for.
-    for i in _match_records.size():
-        var r: Dictionary = _match_records[i]
-        if bool(r.get("pitch_revealed", false)):
-            continue   # listen mechanic already owns this record's pitch state
-        # Effective state in, derived confirm out — see _settle_singleton_names.
-        var remaining: String = ""
-        var remaining_count: int = 0
-        var already_confirmed: bool = false
-        for note_name in _host._widgets._distinct_note_names():
-            var state: int = _effective_pitch_state(i, str(note_name))
-            if state == 1:
-                already_confirmed = true
-                break
-            if state != 2:
-                remaining_count += 1
-                remaining = note_name
-        if not already_confirmed and remaining_count == 1:
-            _add_derived_state(i, "pitch_states", remaining, 1)
-
-
-## Same display-only asymmetry closed for Name and Pitch (2026-08-11/12),
-## now closed for Color. Confirmed live on the real save: 0 gaps at the time
-## of writing (unlike Pitch's 42), because Color's ground truth is "given"
-## and leaks in via _effective_color_state the moment a record's star_idx
-## resolves by any OTHER route — so most records never reach this exclusion
-## before something else already tells them their colour. The code path is
-## nonetheless byte-for-byte the same shape as the Pitch gap that WAS live,
-## and reachable by construction (a record narrowed to exactly one
-## remaining colour by cross-record incidence accounting, with no other
-## route to the answer yet) — closed pre-emptively rather than waiting for
-## a live report, same reasoning as fixing Name and Pitch together would
-## have saved a repeat trip.
-##
-## Mirrors _settle_derived_pitch_exclusions exactly: Color is not alldiff,
-## so this reuses _compute_excluded_colors_for's own incidence-count rule
-## (_confirmer_clique / _value_fully_accounted_for) rather than
-## reimplementing it, guarded by the same "ground truth already governs"
-## skip.
-func _settle_derived_color_exclusions() -> void:
-    # Cliques hoisted out of the record loop — see
-    # _settle_derived_pitch_exclusions for why (one Callable per value per
-    # pass instead of one per record x value).
-    var ready: Array = []   # [color_idx, clique, incidence]
-    for ci in _host.COLOR_NAME_LABELS.size():
-        var color_idx: int = int(ci)
-        var inc: int = _color_star_count(color_idx)
-        if inc <= 0:
-            continue
-        var clique: Array = _confirmer_clique("C:%d" % color_idx, func(i: int) -> bool:
-            return _effective_color_state(i, color_idx) == 1)
-        if clique.size() >= inc:
-            ready.append([color_idx, clique, inc])
-    if ready.is_empty():
-        return
-
-    for i in _match_records.size():
-        if _effective_star_idx(i) >= 0:
-            continue   # ground truth already governs; nothing left to derive
-        for e in ready:
-            var c2: int = int((e as Array)[0])
-            if _effective_color_state(i, c2) != 0:
-                continue
-            if _value_fully_accounted_for(i, (e as Array)[1], int((e as Array)[2])):
-                if _add_derived_state(i, "color_states", c2, 2):
-                    # A colour going from "open" to "eliminated" can itself
-                    # narrow this record's candidate-star set — same
-                    # aftermath _settle_singleton_colors's own confirm
-                    # branch already triggers below.
-                    _recompute_color_star_elim(i)
-
-
-func _settle_singleton_colors() -> void:
-    # Same promotion as _settle_singleton_pitches, for color_states. Color
-    # is also not alldiff (see _color_star_count) — same reasoning as
-    # Pitch applies: narrowing to one remaining candidate is still a
-    # confirm on THIS record regardless of alldiff-ness; the incidence
-    # guard only matters for whether _compute_excluded_colors_for can
-    # also exclude the value from OTHER records.
-    for i in _match_records.size():
-        var r: Dictionary = _match_records[i]
-        # Effective state in, derived confirm out — see _settle_singleton_names.
-        var remaining: int = -1
-        var remaining_count: int = 0
-        var already_confirmed: bool = false
-        for ci in _host.COLOR_NAME_LABELS.size():
-            var state: int = _effective_color_state(i, int(ci))
-            if state == 1:
-                already_confirmed = true
-                break
-            if state != 2:
-                remaining_count += 1
-                remaining = ci
-        if not already_confirmed and remaining_count == 1:
-            if _add_derived_state(i, "color_states", remaining, 1):
-                # A newly confirmed colour narrows the candidate set, which
-                # is what the star checklists read.
-                _recompute_color_star_elim(i)
-
-
-## Same display-only asymmetry as the Color pass above, for Degree — see
-## that function's comment for why this is closed pre-emptively rather than
-## waiting for a live-save gap count (Degree is a "given" axis with the
-## exact same early ground-truth leak that kept Color's count at 0).
-func _settle_derived_degree_exclusions() -> void:
-    var degrees_set: Dictionary = {}
-    for s in _host._star_count:
-        degrees_set[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
-
-    # Cliques hoisted out of the record loop — see
-    # _settle_derived_pitch_exclusions for why.
-    var ready: Array = []   # [degree, clique, incidence]
-    for dg in degrees_set.keys():
-        var degree: int = int(dg)
-        var inc: int = _degree_star_count(degree)
-        if inc <= 0:
-            continue
-        var clique: Array = _confirmer_clique("D:%d" % degree, func(i: int) -> bool:
-            return _effective_degree_state(i, degree) == 1)
-        if clique.size() >= inc:
-            ready.append([degree, clique, inc])
-    if ready.is_empty():
-        return
-
-    for i in _match_records.size():
-        if _effective_star_idx(i) >= 0:
-            continue   # ground truth already governs; nothing left to derive
-        for e in ready:
-            var d2: int = int((e as Array)[0])
-            if _effective_degree_state(i, d2) != 0:
-                continue
-            if _value_fully_accounted_for(i, (e as Array)[1], int((e as Array)[2])):
-                _add_derived_state(i, "degree_states", d2, 2)
-
-
-func _settle_singleton_degrees() -> void:
-    # The fourth axis's version of the same "narrowed to one remaining
-    # candidate IS a confirm" promotion that Sequence, Name, Pitch and
-    # Colour each already had. Degree simply never got one — the same
-    # systematic under-featuring that left it with no cross-record
-    # exclusion until _compute_excluded_degrees_for was added. Degree's
-    # value set is the distinct degrees actually present among this
-    # constellation's stars, not a fixed table, so it's enumerated the same
-    # way _propagate_degree_confirmed_same_record enumerates it.
-    var degrees_set: Dictionary = {}
-    for s in _host._star_count:
-        degrees_set[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
-    var degree_values: Array = degrees_set.keys()
-    for i in _match_records.size():
-        var r: Dictionary = _match_records[i]
-        if _effective_star_idx(i) >= 0:
-            continue   # ground truth already governs this record's degree
-        # Effective state in, derived confirm out — see _settle_singleton_names.
-        var remaining: int = -1
-        var remaining_count: int = 0
-        var already_confirmed: bool = false
-        for dv in degree_values:
-            var state: int = _effective_degree_state(i, int(dv))
-            if state == 1:
-                already_confirmed = true
-                break
-            if state != 2:
-                remaining_count += 1
-                remaining = int(dv)
-        if not already_confirmed and remaining_count == 1:
-            _add_derived_state(i, "degree_states", remaining, 1)
 
 
 ## Every record already down to exactly one position, as [record_idx, pos].
@@ -3655,55 +3619,33 @@ func _value_fully_accounted_for(record_idx: int, clique: Array, incidence: int) 
     return n >= incidence
 
 
+# The three wrappers below exist because constellation_puzzle_widgets.gd
+# calls them by name to strike values out of the Staff popup / Sort:tab
+# checklists. The rule itself lives once, in _compute_excluded_for_axis;
+# these only re-impose the typed return the widget call sites expect.
+# Per-axis quirks that used to be re-explained here — Pitch's unearned-
+# ground-truth stub guard, Colour and Degree being "given" axes that need
+# no such guard — now live in _axis_confirms, stated once.
+
 func _compute_excluded_pitches_for(record_idx: int) -> Array[String]:
-    var excluded: Array[String] = []
-    for note_name in _host._widgets._distinct_note_names():
-        var note: String = str(note_name)
-        var clique: Array = _confirmer_clique("P:" + note, func(i: int) -> bool:
-            # The stub-skip stops an UNEARNED pitch leaking (a record's
-            # star_idx is set the instant its floating widget is built, with
-            # nothing actually confirmed) — but once pitch_revealed is true
-            # the Listen mechanic has legitimately earned that ground truth,
-            # exactly the way Color's is earned for free.
-            if _record_is_unconfirmed_star_widget_stub(i) \
-                    and not bool(_match_records[i].get("pitch_revealed", false)):
-                return false
-            return _effective_pitch_state(i, note) == 1)
-        if _value_fully_accounted_for(record_idx, clique, _pitch_star_count(note)):
-            excluded.append(note)
-    return excluded
+    var out: Array[String] = []
+    for v in _compute_excluded_for_axis(Axis.PITCH, record_idx):
+        out.append(str(v))
+    return out
 
 
 func _compute_excluded_colors_for(record_idx: int) -> Array[int]:
-    # Deliberately does NOT skip unconfirmed star-widget stubs the way the
-    # Name/Pitch exclusions do: Color is a "given" axis (see
-    # constellation_puzzle_category_facts memory) — painted on the map, zero
-    # effort, true for every star whether or not its identity is confirmed —
-    # so _effective_color_state's ground-truth tier isn't a leak here.
-    var excluded: Array[int] = []
-    for ci in _host.COLOR_NAME_LABELS.size():
-        var color_idx: int = int(ci)
-        var clique: Array = _confirmer_clique("C:%d" % color_idx, func(i: int) -> bool:
-            return _effective_color_state(i, color_idx) == 1)
-        if _value_fully_accounted_for(record_idx, clique, _color_star_count(color_idx)):
-            excluded.append(color_idx)
-    return excluded
+    var out: Array[int] = []
+    for v in _compute_excluded_for_axis(Axis.COLOR, record_idx):
+        out.append(int(v))
+    return out
 
 
 func _compute_excluded_degrees_for(record_idx: int) -> Array[int]:
-    # Same "given axis" reasoning as Color — Degree is structural, visible
-    # on the map by tracing connections.
-    var excluded: Array[int] = []
-    var degrees_set: Dictionary = {}
-    for s in _host._star_count:
-        degrees_set[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
-    for deg in degrees_set.keys():
-        var degree: int = int(deg)
-        var clique: Array = _confirmer_clique("D:%d" % degree, func(i: int) -> bool:
-            return _effective_degree_state(i, degree) == 1)
-        if _value_fully_accounted_for(record_idx, clique, _degree_star_count(degree)):
-            excluded.append(degree)
-    return excluded
+    var out: Array[int] = []
+    for v in _compute_excluded_for_axis(Axis.DEGREE, record_idx):
+        out.append(int(v))
+    return out
 
 
 # ==================================================
@@ -4284,6 +4226,10 @@ func _clear_deduction_caches_all() -> void:
     _distinct_profile_cache.clear()
     _listened_stars_cache.clear()
     _listened_stars_built = false
+    # Axis domains depend only on the loaded puzzle, but clearing them here
+    # keeps every derived cache on one lifetime — a domain surviving a
+    # constellation switch would be a silent wrong answer.
+    _axis_domain_cache.clear()
     _seq_singleton_cache.clear()
     _seq_singleton_built = false
 
@@ -4464,19 +4410,18 @@ func _full_propagation_refresh() -> void:
         _settle_same_position_identity()
         # AFTER the sharing, and BEFORE _settle_singleton_names, which is
         # the pass that could not see these exclusions at all.
+        # Name is alldiff, so its exclusion is the single-confirmer kind and
+        # keeps its own pass; only the singleton rule is shared.
         _settle_derived_name_exclusions()
-        _settle_singleton_names()
-        # AFTER the passes above (so it sees the narrowest distinctness
-        # graph) and BEFORE _settle_singleton_pitches for the same reason
-        # _settle_derived_name_exclusions precedes _settle_singleton_names.
-        _settle_derived_pitch_exclusions()
-        _settle_singleton_pitches()
-        # Same ordering rule as the two passes above, applied to the two
-        # remaining axes.
-        _settle_derived_color_exclusions()
-        _settle_singleton_colors()
-        _settle_derived_degree_exclusions()
-        _settle_singleton_degrees()
+        _settle_singleton_for_axis(Axis.NAME)
+        # Pitch, Colour and Degree in that order — unchanged from when each
+        # had its own hand-written pair. Exclusion before singleton on every
+        # axis: the singleton rule counts remaining values, so it has to run
+        # after the pass that rules values out, or it counts values the
+        # display has already struck through.
+        for axis in CLIQUE_AXES:
+            _settle_derived_exclusions_for_axis(int(axis))
+            _settle_singleton_for_axis(int(axis))
         # Monotone: inside the fixpoint a proven-distinct pair stays proven,
         # so only the unproven verdicts are worth re-deriving next round.
         _clear_deduction_caches(true)
