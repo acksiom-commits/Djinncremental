@@ -3854,6 +3854,26 @@ func _cell_was_stated(cell: Dictionary, terms: Array) -> bool:
 ## here. star_idx counts too, but only past the auto-stub guard — every
 ## star gets a star_idx-bound record the moment its widget is built,
 ## regardless of anything the player has done.
+## Has the player worked out WHERE this star sits on the map — i.e. bound
+## some record to this specific map position?
+##
+## Strictly stronger than _records_identifying_star(), and the two must not
+## be confused. That one asks "does a record provably DENOTE this star",
+## which a bare Sort:Name row satisfies for free (the row IS that name).
+## This one asks "can the player point at it on the map", which is what any
+## topology/adjacency reasoning needs and what a name alone never gives.
+##
+## The stub guard is load-bearing: every star gets a star_idx-bound record
+## the moment its floating widget renders, independent of player action.
+func _star_located_by_player(star: int) -> bool:
+    for i in _match_records.size():
+        if _record_is_unconfirmed_star_widget_stub(i):
+            continue
+        if _effective_star_idx(i) == star:
+            return true
+    return false
+
+
 func _records_identifying_star(star: int) -> Array:
     var out: Array = []
     for i in _match_records.size():
@@ -4110,25 +4130,39 @@ func _disclosure_satisfied(f: Dictionary) -> bool:
             # negated=true, is NOT N hops from it (Form 19's "not
             # connected" is exactly negated hops=1).
             #
-            # Entailed once the player has provably identified BOTH
-            # endpoints as specific map stars: hop distance is structural
-            # and visible (a player can trace connections by eye, same tier
-            # as Colour), so the moment both ends are pinned the relation is
-            # readable straight off the map and the clue has nothing left to
-            # give. Conservative in the same way every other kind here is —
-            # either end unidentified is false, never vacuously true.
+            # Entailed only once the player has pinned BOTH endpoints to an
+            # actual MAP STAR. Hop distance is structural and visible — a
+            # player can trace connections by eye — so once both ends are
+            # located on the map the relation is readable directly and the
+            # clue has nothing left to give. Until then it is a live
+            # constraint on WHERE those endpoints can be.
+            #
+            # Deliberately NOT _records_identifying_star(): that answers
+            # "does some record provably denote this star", which is the
+            # right notion for resolving a cell and the WRONG one here. A
+            # bare Sort:Name row for "Heleai" denotes Heleai by definition —
+            # the row's whole identity is that name — while telling the
+            # player nothing about WHICH map star Heleai is, and you cannot
+            # count hops to a star you cannot locate. Using it made every
+            # hop clue on a barely-started board score Used Up (reported
+            # 2026-08-12, bug introduced by this very disclosure kind hours
+            # earlier).
+            #
+            # _effective_star_idx is the map-position signal, and the
+            # unconfirmed-stub guard matters: _build_star_widgets_impl gives
+            # EVERY star a star_idx-bound record the instant its widget
+            # renders, which is not the player knowing anything.
             #
             # Reads _host._star_distances, the player-side minimum-distance
             # matrix built by BFS over line_pairs. The generator's own
-            # `_distances` is never persisted, so before that matrix existed
-            # this kind had nothing to evaluate against at all.
+            # `_distances` is never persisted.
             var dref: int = int(f.get("ref", -1))
             var dtgt: int = int(f.get("target", -1))
             if dref < 0 or dtgt < 0:
                 return false
-            if _records_identifying_star(dref).is_empty():
+            if not _star_located_by_player(dref):
                 return false
-            if _records_identifying_star(dtgt).is_empty():
+            if not _star_located_by_player(dtgt):
                 return false
             var actual: int = _host.star_distance(dref, dtgt)
             if actual < 0:
