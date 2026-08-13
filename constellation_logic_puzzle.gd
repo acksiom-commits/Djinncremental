@@ -1701,6 +1701,8 @@ func _sample_grid_cell_from_chain(chain_cat: int, chain_star: int, other_cat: in
     var candidates: Array = []
     for v in star_count:
         if not bool(_matrix_cell(chain_cat, chain_val, other_cat, v)["used"]) and _category_uniquely_labels(other_cat, int(_cat_value_to_star[other_cat][v])):
+            if _prefer_true_cells and not bool(_matrix_cell(chain_cat, chain_val, other_cat, v)["is_true"]):
+                continue
             candidates.append(v)
     if candidates.is_empty():
         return {}
@@ -1750,6 +1752,8 @@ func _sample_grid_cell(cat_a: int, cat_b: int) -> Dictionary:
             if not bool(_matrix_cell(cat_a, v1, cat_b, v2)["used"]) \
             and _category_uniquely_labels(cat_a, int(_cat_value_to_star[cat_a][v1])) \
             and _category_uniquely_labels(cat_b, int(_cat_value_to_star[cat_b][v2])):
+                if _prefer_true_cells and not bool(_matrix_cell(cat_a, v1, cat_b, v2)["is_true"]):
+                    continue
                 candidates.append([v1, v2])
     if candidates.is_empty():
         return {}
@@ -3224,6 +3228,16 @@ func _build_form_distance_existential(chain: Dictionary) -> Dictionary:
             {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": subject_cat, "val_b": int(a["axis_val"]), "is_true": true},
         ],
         "solver_facts": solver_facts,
+        # The clue's ACTUAL claim. Without this its only scoreable content
+        # was _seq_fact_for_label's ordinal_exact — a fact derived from the
+        # clue merely MENTIONING a Sequence descriptor, not from anything it
+        # asserts. Distance is ternary so it fits no cell, and value_facts
+        # (not solver_facts) is the right home: the Sequence uniqueness CSP
+        # has no use for hops.
+        "value_facts": [{
+            "kind": "distance_hop",
+            "ref": subject_star, "target": target, "hops": hop,
+        }],
     }
 
 
@@ -3360,6 +3374,17 @@ func _build_form_non_adjacency(chain: Dictionary) -> Dictionary:
             {"cat_a": id_cat2, "val_a": int(_cat_star_to_value[id_cat2][value_star]), "cat_b": value_cat, "val_b": int(_cat_star_to_value[value_cat][value_star]), "is_true": true},
         ],
         "solver_facts": solver_facts,
+        # "Not connected" IS a distance claim: not 1 hop. Same disclosure
+        # kind as Form 15, negated — see this file's Form 15 note for why
+        # the clue otherwise had no scoreable content of its own. Form 16
+        # (Distance Extreme) deliberately gets NO distance_hop: its claim is
+        # an extremum over a whole distance row ("the closest star to X is
+        # Y"), not a fixed hop count, so it needs its own kind rather than
+        # a misleading exact-hop stand-in.
+        "value_facts": [{
+            "kind": "distance_hop",
+            "ref": subject_star, "target": value_star, "hops": 1, "negated": true,
+        }],
     }
 
 
@@ -3669,6 +3694,95 @@ const FORM_TIER := {
 # measured result; easy to retune once real generation output is visible).
 const TIER_TARGET_RATIO := {1: 0.25, 2: 0.45, 3: 0.30}
 const TIER_OPPORTUNISTIC_ATTEMPTS := 4
+
+
+# ==================================================
+# DIFFICULTY PROFILES
+# ==================================================
+# MEASURED BASELINE (2026-08-12, 6 seeds, constellation 0) — what today's
+# settings actually produce, which is NOT what the constants suggest:
+#   ~44.5 clues/puzzle
+#   tier mix 17% / 68% / 15%  (against a 25/45/30 target it never reaches)
+#   two Forms are 55% of every puzzle: Equality Pair (12.7/puzzle) and
+#     Distance Existential (11.7/puzzle)
+#   92% of asserted cells are TRUE — the grid is not negation-heavy
+#   Exact Identity, the most direct clue in the game, appears 0.2/puzzle
+#
+# So the current difficulty does NOT come from clue scarcity (there is no
+# trim pass; generation runs until the matrix pool is exhausted) nor from
+# negation. It comes from having almost no direct footholds, buried in a
+# 44-clue wall dominated by two repetitive relational Forms.
+#
+# That diagnosis sets the Easy levers. In rough order of expected impact:
+#   opening_anchors — build the most direct Forms FIRST, before the cascade
+#     consumes the True cells they need. This is why Exact Identity is
+#     currently near-absent: it needs an unused True cell, and True cells
+#     are scarce (one per row/column) and get marked used early by every
+#     other Form's own cascade. Nothing else on this list matters as much.
+#   form_caps — break the Equality Pair / Distance Existential duopoly so
+#     the clueset reads as varied rather than as two sentences repeated.
+#   excluded_forms — drop the Forms that need the most cross-referencing
+#     to act on at all.
+#   tier_ratio — steer the scheduler's preference. Listed last on purpose:
+#     the scheduler already misses its target by a wide margin, so this is
+#     the weakest of the four until that is understood.
+#
+# "hard" is EXACTLY today's behaviour — empty overrides, same constants —
+# so this mechanism is inert until a profile is selected. Difficulty is
+# not yet wired to anything player-facing; `difficulty` is set directly by
+# tests for now, and where it should ultimately come from (per
+# constellation? per Age? a player setting?) is an open design question.
+const DIFFICULTY_PROFILES := {
+    "hard": {
+        "tier_ratio": TIER_TARGET_RATIO,
+        "excluded_forms": [],
+        "form_caps": {},
+        "opening_anchors": [],
+    },
+    "easy": {
+        # Heavily weighted to Entry Anchors. Tier 3 is not banned outright
+        # (a Systemic clue is a nice occasional payoff) but is rare.
+        "tier_ratio": {1: 0.55, 2: 0.38, 3: 0.07},
+        # Dual Negation (3): two exclusions at once, nothing positive.
+        # Group Order (9) / Group Comparison (14): require holding a whole
+        #   group's membership in mind before the clue says anything.
+        # Cross-Domain Bridge (20): two categories away from any anchor.
+        # Pseudo-True Pairs (21/22): deliberately near-miss phrasing whose
+        #   whole point is to be misread — actively hostile at Easy.
+        "excluded_forms": [3, 9, 14, 20, 21, 22],
+        # Measured at 12.7 and 11.7 per puzzle respectively; capped to a
+        # presence rather than a dominance.
+        "form_caps": {12: 4, 15: 4},
+        # Built before the main loop, in this order, while True cells are
+        # still unconsumed. Exact Identity ("X is Y") is the strongest
+        # foothold in the game; Extreme and Range are the next most direct.
+        "opening_anchors": [1, 1, 1, 11, 8, 1],
+    },
+}
+
+## Which profile generation uses. Defaults to today's exact behaviour.
+var difficulty: String = "hard"
+
+## Restricts cell sampling to TRUE cells. Set ONLY for the duration of the
+## opening-anchor pass, and false everywhere else — the main loop's
+## unbiased landing is deliberate (grammar says "is"/"is not" as a
+## CONSEQUENCE of where it landed, never as an input the sampler aimed
+## for), and biasing it globally would distort every Form.
+##
+## Needed because ordering alone could not fix Exact Identity. Measured
+## 2026-08-12: running it first barely moved it (0.2 -> 0.3 per puzzle),
+## because it samples a random cell and bails unless that cell is True —
+## and only star_count of star_count^2 cells are True, so it is ~7% per
+## attempt no matter WHEN it runs. Range and Extreme jumped (0.2 -> 2.8,
+## 0.7 -> 2.3) on ordering alone precisely because they don't need a True
+## cell. The fix is to read the True cells off the matrix directly rather
+## than hope to land on one — the same matrix-native-over-guess-and-reject
+## correction applied to Form 13 earlier.
+var _prefer_true_cells: bool = false
+
+
+func _profile() -> Dictionary:
+    return DIFFICULTY_PROFILES.get(difficulty, DIFFICULTY_PROFILES["hard"])
 # Per-tier attempts before falling through to the next-most-underrepresented
 # tier, rather than exhausting the whole stall budget hammering one tier
 # that's currently out of constructible cells.
@@ -3678,21 +3792,34 @@ func _tiers_by_underrepresentation(tier_counts: Dictionary) -> Array:
     var total: int = 0
     for t in tier_counts.values():
         total += int(t)
+    var ratio: Dictionary = _profile()["tier_ratio"]
     var tiers: Array = [1, 2, 3]
     tiers.sort_custom(func(a, b):
         var actual_a: float = (float(tier_counts[a]) / float(total)) if total > 0 else 0.0
         var actual_b: float = (float(tier_counts[b]) / float(total)) if total > 0 else 0.0
-        var gap_a: float = float(TIER_TARGET_RATIO[a]) - actual_a
-        var gap_b: float = float(TIER_TARGET_RATIO[b]) - actual_b
+        var gap_a: float = float(ratio[a]) - actual_a
+        var gap_b: float = float(ratio[b]) - actual_b
         return gap_a > gap_b)
     return tiers
 
 
-func _forms_in_tier(tier: int) -> Array:
+## Forms in `tier` that this difficulty permits AND that have not already
+## hit their per-Form cap this attempt. Caps exist because two Forms
+## (Equality Pair, Distance Existential) otherwise supply 55% of every
+## clueset — see DIFFICULTY_PROFILES.
+func _forms_in_tier(tier: int, form_counts: Dictionary = {}) -> Array:
+    var profile: Dictionary = _profile()
+    var excluded: Array = profile["excluded_forms"]
+    var caps: Dictionary = profile["form_caps"]
     var out: Array = []
     for form_id in AUTOMATED_FORM_IDS:
-        if int(FORM_TIER.get(int(form_id), 2)) == tier:
-            out.append(form_id)
+        if int(FORM_TIER.get(int(form_id), 2)) != tier:
+            continue
+        if excluded.has(int(form_id)):
+            continue
+        if caps.has(int(form_id)) and int(form_counts.get(int(form_id), 0)) >= int(caps[int(form_id)]):
+            continue
+        out.append(form_id)
     return out
 
 
@@ -3731,6 +3858,130 @@ func generate_clues_forms() -> void:
     _generation_complete = true
 
 
+## Builds `form_id` once and, if it produced a non-duplicate clue, commits
+## it — matrix cells, characteristics, solver facts, name-reveal tracking,
+## tier/form tallies, chain node. Returns whether it committed.
+##
+## Extracted from the main generation loop 2026-08-12 so the difficulty
+## system's opening-anchor pass can commit clues through the SAME path
+## rather than carrying a second copy of ~55 lines of commit bookkeeping —
+## the duplication shape that has repeatedly cost this project bugs when
+## one copy got a fix the other didn't. The accumulator arguments are
+## Arrays/Dictionaries, which GDScript passes by reference, so they mutate
+## in the caller exactly as the inline version did.
+func _try_build_and_commit(form_id: int, sequence_solver_facts: Array,
+        name_revealed: Array, tier_counts: Dictionary, form_counts: Dictionary) -> bool:
+    var chain: Dictionary = _pick_chain_characteristic()
+    # Cleared per ATTEMPT, not per committed clue: a Form that renders
+    # labels and then bails still dirtied the accumulator, and those terms
+    # belong to no clue.
+    _rendered_terms = {}
+    var result: Dictionary = _build_form(form_id, chain)
+    if result.is_empty():
+        return false
+    # Most Forms' templates start with a rendered star label ("the white
+    # star...", "a star that plays..."), which is correct mid-sentence but
+    # needs sentence-initial capitalization here — a handful of Forms
+    # (3, 10, 20) already start with a literal capitalized word
+    # ("Neither", "Exactly", "Among"), for which this is a harmless no-op.
+    var text: String = _capitalize_first(str(result.get("text", "")))
+    for c in chosen_form_clues:
+        if str(c.get("text", "")) == text:
+            return false
+    var chars: Array = result["chars"]
+    _commit_characteristics(chars)
+    chosen_form_clues.append({
+        "form_id": form_id,
+        "form_name": str(FORM_NAMES.get(form_id, "")),
+        "text": text,
+        "characteristics": _clue_characteristics(chars),
+        # Raw node list (see CACHE_VERSION 3's comment) — each entry
+        # {cat:int, star:int[, ref:int]}, already plain/JSON-safe, no
+        # transformation needed before caching. Duplicated defensively
+        # since `chars` is a shared local several Forms mutate further up.
+        "chars": chars.duplicate(true),
+        # What the clue actually ASSERTS, not merely mentions — see
+        # CACHE_VERSION 4's comment and _cells_for_cache().
+        "cells": _cells_for_cache(_coerce_array(result.get("grid_updates"), [])),
+        # What the clue's text VISIBLY states — see CACHE_VERSION 5 and
+        # _characteristic_label().
+        "search_terms": _rendered_terms.keys(),
+        # What the clue DISCLOSES, as evaluable constraints — see
+        # CACHE_VERSION 6. solver_facts is the CSP's own input, so the
+        # Sequence half can never drift from what the puzzle was proven
+        # unique against; value_facts carries the Colour/Pitch content the
+        # CSP has no use for.
+        "disclosures": (_coerce_array(result.get("solver_facts"), []) + _coerce_array(result.get("value_facts"), [])).duplicate(true),
+    })
+    if result.has("solver_facts"):
+        for f in result["solver_facts"]:
+            sequence_solver_facts.append(f)
+    # A Name node only reveals its star if THIS SAME clue also has a
+    # different-category node describing the SAME star — not merely "some
+    # other node exists somewhere in chars" (the old check), which wrongly
+    # credited a reveal even when the other node described a DIFFERENT
+    # star entirely (e.g. Dual Negation with id_cat1==id_cat2==Name: id1
+    # names s1, id2 names s2, and neither co-occurs with any other
+    # characteristic of ITS OWN star in that clue).
+    var stars_with_name: Dictionary = {}
+    var stars_with_other: Dictionary = {}
+    for ch2 in chars:
+        var ch2_star: int = int(ch2["star"])
+        if int(ch2["cat"]) == Category.NAME:
+            stars_with_name[ch2_star] = true
+        else:
+            stars_with_other[ch2_star] = true
+    for named_star in stars_with_name.keys():
+        if stars_with_other.has(named_star):
+            name_revealed[int(named_star)] = true
+    if result.has("grid_updates"):
+        var touched_pairs: Dictionary = {}
+        for gu in result["grid_updates"]:
+            var g: Dictionary = gu
+            _apply_grid_cell_result(int(g["cat_a"]), int(g["val_a"]), int(g["cat_b"]), int(g["val_b"]), bool(g["is_true"]))
+            touched_pairs[_pair_key(int(g["cat_a"]), int(g["cat_b"]))] = [int(g["cat_a"]), int(g["cat_b"])]
+        for key in touched_pairs.keys():
+            var pair: Array = touched_pairs[key]
+            _grid_zebratutor_pass(int(pair[0]), int(pair[1]))
+    _last_clue_nodes = chars
+    var tier: int = int(FORM_TIER.get(form_id, 2))
+    tier_counts[tier] = int(tier_counts.get(tier, 0)) + 1
+    form_counts[form_id] = int(form_counts.get(form_id, 0)) + 1
+    return true
+
+
+## Difficulty's opening-anchor pass: build the most DIRECT Forms first,
+## before the main loop's cascade consumes the True cells they depend on.
+##
+## This is the single highest-impact Easy lever, and the reason is
+## measured, not assumed: Exact Identity ("X is Y") appears only ~0.2
+## times per puzzle today, because it needs an UNUSED True cell, True
+## cells are scarce (exactly one per row and per column of each grid), and
+## every committed clue's cascade marks a whole row and column used. Run
+## first, the same Form succeeds readily. Each entry is attempted a few
+## times and simply skipped if the matrix cannot supply it — no retry
+## storm, and an Easy puzzle on an awkward constellation degrades to the
+## normal loop rather than failing.
+func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> void:
+    var anchors: Array = _profile()["opening_anchors"]
+    if anchors.is_empty():
+        return
+    # Anchors are direct, positive footholds by definition, so the sampler
+    # is pointed at True cells for this pass only. A negation Form listed
+    # here would be self-defeating — it needs a False cell and would find
+    # none. Always restored, including on the empty-list early return above.
+    _prefer_true_cells = true
+    for form_id in anchors:
+        var tries: int = 0
+        while tries < 3:
+            tries += 1
+            if _try_build_and_commit(int(form_id), sequence_solver_facts,
+                    name_revealed, tier_counts, form_counts):
+                break
+    _prefer_true_cells = false
+
+
 func _generate_clues_forms_attempt() -> Dictionary:
     _build_record_array()
     _build_matrix()
@@ -3754,6 +4005,10 @@ func _generate_clues_forms_attempt() -> Dictionary:
     for _s in star_count:
         name_revealed.append(false)
     var tier_counts: Dictionary = {1: 0, 2: 0, 3: 0}
+    # Per-Form tally, for DIFFICULTY_PROFILES' form_caps. Counted here
+    # rather than derived from chosen_form_clues on each lookup — this is
+    # read once per tier per outer-loop pass.
+    var form_counts: Dictionary = {}
     var stall_count: int = 0
     # Step 13's termination target grew a lot (every real matrix cell, not
     # the old coarse per-Characteristic count) — the old flat stall budget
@@ -3779,11 +4034,16 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # total frames for a smaller per-frame chunk costs nothing.
     const YIELD_INTERVAL: int = 3
     var _since_yield: int = 0
+
+    # BEFORE the main loop — see _build_opening_anchors for why ordering is
+    # the whole point. No-op on "hard" (empty anchor list).
+    _build_opening_anchors(sequence_solver_facts, name_revealed, tier_counts, form_counts)
+
     while _unused_pool_size() > 0 and stall_count < max_stall:
         var tier_order: Array = _tiers_by_underrepresentation(tier_counts)
         var committed: bool = false
         for tier in tier_order:
-            var tier_forms: Array = _forms_in_tier(int(tier))
+            var tier_forms: Array = _forms_in_tier(int(tier), form_counts)
             if tier_forms.is_empty():
                 continue
             _shuffle_array(tier_forms)
@@ -3792,88 +4052,8 @@ func _generate_clues_forms_attempt() -> Dictionary:
             while tier_attempts < TIER_OPPORTUNISTIC_ATTEMPTS and not succeeded:
                 tier_attempts += 1
                 var form_id: int = int(tier_forms[tier_attempts % tier_forms.size()])
-                var chain: Dictionary = _pick_chain_characteristic()
-                # Cleared per ATTEMPT, not per committed clue: a Form that
-                # renders labels and then bails still dirtied the
-                # accumulator, and those terms belong to no clue.
-                _rendered_terms = {}
-                var result: Dictionary = _build_form(form_id, chain)
-                if result.is_empty():
-                    continue
-                # Most Forms' templates start with a rendered star label
-                # ("the white star...", "a star that plays..."), which is
-                # correct mid-sentence but needs sentence-initial
-                # capitalization here — a handful of Forms (3, 10, 20)
-                # already start with a literal capitalized word ("Neither",
-                # "Exactly", "Among"), for which this is a harmless no-op.
-                var text: String = _capitalize_first(str(result.get("text", "")))
-                var dupe: bool = false
-                for c in chosen_form_clues:
-                    if str(c.get("text", "")) == text:
-                        dupe = true
-                        break
-                if dupe:
-                    continue
-                var chars: Array = result["chars"]
-                _commit_characteristics(chars)
-                chosen_form_clues.append({
-                    "form_id": form_id,
-                    "form_name": str(FORM_NAMES.get(form_id, "")),
-                    "text": text,
-                    "characteristics": _clue_characteristics(chars),
-                    # Raw node list (see CACHE_VERSION 3's comment) — each
-                    # entry {cat:int, star:int[, ref:int]}, already
-                    # plain/JSON-safe, no transformation needed before
-                    # caching. Duplicated defensively since `chars` is a
-                    # shared local several Forms mutate further up.
-                    "chars": chars.duplicate(true),
-                    # What the clue actually ASSERTS, not merely mentions —
-                    # see CACHE_VERSION 4's comment and _cells_for_cache().
-                    "cells": _cells_for_cache(_coerce_array(result.get("grid_updates"), [])),
-                    # What the clue's text VISIBLY states — see
-                    # CACHE_VERSION 5 and _characteristic_label().
-                    "search_terms": _rendered_terms.keys(),
-                    # What the clue DISCLOSES, as evaluable constraints — see
-                    # CACHE_VERSION 6. solver_facts is the CSP.s own input, so
-                    # the Sequence half can never drift from what the puzzle
-                    # was proven unique against; value_facts carries the
-                    # Colour/Pitch content the CSP has no use for.
-                    "disclosures": (_coerce_array(result.get("solver_facts"), []) + _coerce_array(result.get("value_facts"), [])).duplicate(true),
-                })
-                if result.has("solver_facts"):
-                    for f in result["solver_facts"]:
-                        sequence_solver_facts.append(f)
-                # A Name node only reveals its star if THIS SAME clue also
-                # has a different-category node describing the SAME star —
-                # not merely "some other node exists somewhere in chars"
-                # (the old check), which wrongly credited a reveal even
-                # when the other node described a DIFFERENT star entirely
-                # (e.g. Dual Negation with id_cat1==id_cat2==Name: id1
-                # names s1, id2 names s2, and neither co-occurs with any
-                # other characteristic of ITS OWN star in that clue).
-                var stars_with_name: Dictionary = {}
-                var stars_with_other: Dictionary = {}
-                for ch2 in chars:
-                    var ch2_star: int = int(ch2["star"])
-                    if int(ch2["cat"]) == Category.NAME:
-                        stars_with_name[ch2_star] = true
-                    else:
-                        stars_with_other[ch2_star] = true
-                for named_star in stars_with_name.keys():
-                    if stars_with_other.has(named_star):
-                        name_revealed[int(named_star)] = true
-                if result.has("grid_updates"):
-                    var touched_pairs: Dictionary = {}
-                    for gu in result["grid_updates"]:
-                        var g: Dictionary = gu
-                        _apply_grid_cell_result(int(g["cat_a"]), int(g["val_a"]), int(g["cat_b"]), int(g["val_b"]), bool(g["is_true"]))
-                        touched_pairs[_pair_key(int(g["cat_a"]), int(g["cat_b"]))] = [int(g["cat_a"]), int(g["cat_b"])]
-                    for key in touched_pairs.keys():
-                        var pair: Array = touched_pairs[key]
-                        _grid_zebratutor_pass(int(pair[0]), int(pair[1]))
-                _last_clue_nodes = chars
-                tier_counts[int(tier)] = int(tier_counts[int(tier)]) + 1
-                succeeded = true
+                succeeded = _try_build_and_commit(form_id, sequence_solver_facts,
+                    name_revealed, tier_counts, form_counts)
             if succeeded:
                 committed = true
                 break

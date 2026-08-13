@@ -145,6 +145,27 @@ var _star_widgets: Array = []
 var _star_tags: Array = []
 var _star_count: int = 0
 var _star_degrees: Array = []
+
+## Player-side MINIMUM hop-distance matrix: _star_distances[a][b] = fewest
+## map connections between star a and star b, -1 when unreachable (some
+## constellations have fully disconnected stars — The Bellows has four).
+##
+## Added 2026-08-12. The generator has had this all along as its own
+## `_distances`, but that is generator-internal and NEVER persisted, so the
+## deduction engine had no distance data whatsoever and could not evaluate
+## any distance-based clue content. Rebuilt here by BFS over `line_pairs`
+## instead of being cached: line_pairs is authored constant data in
+## constellation_data.gd (the same array _draw_star_map already reads to
+## draw the connections), so this needs no save-format change and no
+## CACHE_VERSION bump.
+##
+## Legitimately player-visible, same tier as Colour — a player can trace
+## hops by eye. Distances are MINIMUM by deliberate design decision, which
+## is what makes this single-valued per pair and therefore a well-formed
+## matrix. It is NOT an axis of the generator's `_matrix` (that pairs
+## category VALUES bijectively); it is its own separate structure. See the
+## proximity_hop_clue_framework_design memory.
+var _star_distances: Array = []
 var _gc: Node = null
 
 # Fork minigame state/logic lives in ConstellationForkPuzzle
@@ -393,6 +414,7 @@ func _load_constellation_data() -> void:
         _star_degrees.append(_coerce_int(d, 0))
 
     _star_count = _star_names.size()
+    _rebuild_star_distances()
 
     # Name assignments (legacy positive-assignment slot).
     var raw_assign: Array = _coerce_array(cache.get("player_name_assignments"), [])
@@ -546,6 +568,67 @@ func _coerce_disclosure(d: Dictionary) -> Dictionary:
             _:
                 out[key] = v
     return out
+
+
+## Rebuilds _star_distances by BFS over this constellation's line_pairs.
+## Called from _load_constellation_data(), so it re-derives on every
+## constellation switch alongside every other per-puzzle array — a stale
+## distance matrix from the previous constellation would be a silent wrong
+## answer, the same hazard the pitch caches carry.
+##
+## line_pairs is FLAT: [a0, b0, a1, b1, ...]. Coerced per element like every
+## other cache/def-derived array in this file — an untyped value reaching
+## the typed int reads below would hang rather than error.
+func _rebuild_star_distances() -> void:
+    _star_distances = []
+    if _star_count <= 0:
+        return
+    var def: Dictionary = _cd.get_constellation_def(_constellation_id) if _cd else {}
+    var line_pairs: Array = _coerce_array(def.get("line_pairs"), [])
+
+    var adj: Array = []
+    for i in _star_count:
+        adj.append([])
+    var k: int = 0
+    while k < line_pairs.size() - 1:
+        var a: int = _coerce_int(line_pairs[k], -1)
+        var b: int = _coerce_int(line_pairs[k + 1], -1)
+        k += 2
+        if a < 0 or b < 0 or a >= _star_count or b >= _star_count or a == b:
+            continue
+        if not (adj[a] as Array).has(b):
+            (adj[a] as Array).append(b)
+        if not (adj[b] as Array).has(a):
+            (adj[b] as Array).append(a)
+
+    for src in _star_count:
+        var dist: Array = []
+        dist.resize(_star_count)
+        for j in _star_count:
+            dist[j] = -1
+        dist[src] = 0
+        var queue: Array = [src]
+        var qi: int = 0
+        while qi < queue.size():
+            var cur: int = int(queue[qi])
+            qi += 1
+            for n in (adj[cur] as Array):
+                var ni: int = int(n)
+                if int(dist[ni]) == -1:
+                    dist[ni] = int(dist[cur]) + 1
+                    queue.append(ni)
+        _star_distances.append(dist)
+
+
+## Minimum hops between two stars, or -1 when unreachable / out of range.
+## The single read point for distance on the player side.
+func star_distance(a: int, b: int) -> int:
+    if a < 0 or b < 0 or a >= _star_distances.size():
+        return -1
+    var row: Array = _star_distances[a]
+    if b >= row.size():
+        return -1
+    return int(row[b])
 
 
 func _compute_star_screen_positions() -> void:

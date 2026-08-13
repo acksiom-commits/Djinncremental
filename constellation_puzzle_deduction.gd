@@ -4104,6 +4104,39 @@ func _disclosure_satisfied(f: Dictionary) -> bool:
                 if all_others_out:
                     return true
             return false
+        "distance_hop":
+            # "The star identified by <ref's descriptor> is N hops from the
+            # star identified by <target's descriptor>" — or, with
+            # negated=true, is NOT N hops from it (Form 19's "not
+            # connected" is exactly negated hops=1).
+            #
+            # Entailed once the player has provably identified BOTH
+            # endpoints as specific map stars: hop distance is structural
+            # and visible (a player can trace connections by eye, same tier
+            # as Colour), so the moment both ends are pinned the relation is
+            # readable straight off the map and the clue has nothing left to
+            # give. Conservative in the same way every other kind here is —
+            # either end unidentified is false, never vacuously true.
+            #
+            # Reads _host._star_distances, the player-side minimum-distance
+            # matrix built by BFS over line_pairs. The generator's own
+            # `_distances` is never persisted, so before that matrix existed
+            # this kind had nothing to evaluate against at all.
+            var dref: int = int(f.get("ref", -1))
+            var dtgt: int = int(f.get("target", -1))
+            if dref < 0 or dtgt < 0:
+                return false
+            if _records_identifying_star(dref).is_empty():
+                return false
+            if _records_identifying_star(dtgt).is_empty():
+                return false
+            var actual: int = _host.star_distance(dref, dtgt)
+            if actual < 0:
+                return false   # unreachable pair — nothing to entail
+            var claimed: int = int(f.get("hops", -1))
+            if bool(f.get("negated", false)):
+                return actual != claimed
+            return actual == claimed
         "values_same":
             var vcat: int = int(f.get("cat", -1))
             var va: Array = _possible_values_for_star(int(f.get("a", -1)), vcat)
@@ -4121,6 +4154,10 @@ const SCOREABLE_DISCLOSURE_KINDS: Array = [
     "ordinal_adjacent", "ordinal_offset", "ordinal_range",
     "ordinal_either_or", "ordinal_extreme", "ordinal_count_before",
     "values_all_different", "values_same", "descriptor_either_or",
+    # CACHE_VERSION 6 content, added 2026-08-12. Only present on clues
+    # generated after that date — older saves' distance clues carry no
+    # distance disclosure and score exactly as they did before.
+    "distance_hop",
 ]
 
 
