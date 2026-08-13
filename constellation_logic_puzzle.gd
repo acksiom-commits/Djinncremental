@@ -2687,73 +2687,202 @@ func _join_names_and(labels: Array) -> String:
     return "%s, and %s" % [", ".join(head), labels[labels.size() - 1]]
 
 
-# ── Form 13: Mutual Exclusion — comparison axis derived from the FIRST
-# participant, every subsequent one identified via any category but forced
-# to share the same axis-side and be pairwise distinct on it. The full
-# multi-axis abstraction, not the same-axis-only special case. ──────────
+# ── Form 13: Mutual Exclusion — N (3-5) stars, each independently
+# identified via some category, pairwise proven to be DIFFERENT STARS.
+# When the shared axis is Colour or Pitch the clue ALSO asserts N pairwise-
+# different raw values on that axis — real information beyond "different
+# stars," expressible only as a disclosure, since a cell can only ever say
+# same-star/different-star, never same-value/different-value on a shared
+# axis. When the axis is Name or Sequence — both alldiff over every star —
+# "N different [axis]" IS EXACTLY "N different stars," nothing more and
+# nothing less, so it reduces fully to cell facts with no disclosure at all.
+#
+# REWRITTEN 2026-08-12 to be matrix-native. The old version picked a random
+# star, THEN a random identifying category, THEN checked whether that
+# combination happened to be legal — discovery by rejection, up to 60
+# times. This version computes, per star, exactly which categories are
+# legal for it (Name/Sequence: always; Colour/Pitch: only when that star's
+# value is one-of-a-kind here) and draws only from that known-legal set —
+# nothing is ever picked and then thrown away. An unsatisfiable puzzle
+# (not enough distinct-value stars on the chosen axis) is detected by
+# COUNTING up front, once, rather than discovered through failed guesses;
+# the Form simply returns {} for this axis and this attempt, and the
+# existing outer tier-retry loop (shared by every Form, unchanged) tries
+# again with a fresh draw. Full design discussion in project memory:
+# [[constellation_puzzle_five_way_clue_design_resolved]].
+#
+# Cross-participant distinctness cells are new: the old Form never
+# recorded "these two are different stars" as its own fact, only the
+# per-participant identity-pinning cell. Adding it is sound for every
+# axis (participants are always different stars, axis or no) and is what
+# lets Name/Sequence work as an axis at all. Skipped only when two
+# participants share the very same identifying category — Name(A) vs
+# Name(B) already, trivially proves A != B the instant both are read, so
+# there is nothing left to disclose there; this is also precisely how
+# deliberate category-doubling costs a clue one pairwise fact out of many,
+# never the clue itself.
+## Colour's share is deliberately small. Verified 2026-08-12 across every
+## defined constellation (13-18 stars, colour assigned via i%4): with only
+## 4 colours and every star count well above 4, no colour can ever be a
+## SINGLETON — pigeonhole guarantees at least ceil(star_count/4) >= 4 stars
+## per colour, so _mutex_axis_groups(COLOR) returns 0 groups on every one
+## of them today. Not a bug — Colour axis is genuinely, structurally
+## unsatisfiable on the current roster, and a wasted draw just falls
+## through to the outer tier-retry loop at no real cost. Kept nonzero
+## rather than dropped entirely in case a future, smaller constellation
+## (or a later Age) ever has few enough stars for a colour to go singleton.
+const MUTEX_AXIS_WEIGHTS := {
+    Category.COLOR: 0.05, Category.PITCH: 0.45,
+    Category.NAME:  0.25, Category.SEQUENCE: 0.25,
+}
+# How strongly a participant's identifying-category draw favours a
+# category ALREADY used earlier in this same clue, vs a fresh one — the
+# deliberate-doubling control the 2026-07-21 TODO asked for (now resolved,
+# see the design memory above). 1.0 would mean no bias at all; higher
+# values make doubling more common. A real weighted RANDOM draw, not a
+# best-first ranking, so a lower-weight option still sometimes wins, just
+# less often.
+#
+# MEASURED 2026-08-12: this constant is NOT the main lever on how often
+# tripling happens, and moving it (tried 3.0 and 1.6) barely changed the
+# outcome — 81% -> 87% of generated clues had 3+ participants sharing a
+# category either way. The real cause is the LEGAL id_cat POOL SIZE, which
+# is small by construction: Colour can never be a legal identifier on any
+# constellation currently in the game (same pigeonhole fact as
+# MUTEX_AXIS_WEIGHTS's Colour note — every colour has >=4 stars, so none
+# is ever singleton), so whenever axis=Pitch the only legal identifiers
+# are {Name, Sequence} — exactly two buckets. Five participants into two
+# buckets guarantees a bucket of >=3 by pigeonhole ALONE, before this
+# weight does anything at all. Retune this if the pool ever grows (a
+# smaller constellation, or Colour becoming reachable), not to chase the
+# current tripling rate — it will not move much.
+const MUTEX_REPEAT_CATEGORY_WEIGHT := 2.0
+
+
+func _mutex_pick_axis() -> int:
+    var roll: float = _rng.randf()
+    var acc: float = 0.0
+    for cat in MUTEX_AXIS_WEIGHTS:
+        acc += float(MUTEX_AXIS_WEIGHTS[cat])
+        if roll < acc:
+            return int(cat)
+    return Category.PITCH   # float-rounding fallback, should not be reachable
+
+
+## Stars grouped by raw value on `axis`, shuffled — a direct pick surface
+## for distinct-value participant selection, never a discover-by-rejection
+## loop. Name/Sequence: every star is its own singleton group, always (both
+## are alldiff over every star in the puzzle). Colour/Pitch: only stars
+## whose value is one-of-a-kind here get a group at all — the same
+## unverifiable-label guard every other Form already respects
+## (_category_uniquely_labels).
+func _mutex_axis_groups(axis: int) -> Array:
+    var groups: Dictionary = {}
+    for s in star_count:
+        if axis == Category.NAME or axis == Category.SEQUENCE:
+            groups[s] = [s]
+            continue
+        if not _category_uniquely_labels(axis, s):
+            continue
+        var raw = star_colors[s] if axis == Category.COLOR else star_pitch_index[s]
+        if not groups.has(raw):
+            groups[raw] = []
+        (groups[raw] as Array).append(s)
+    var out: Array = groups.values()
+    _shuffle_array(out)
+    return out
+
+
+## Categories legal to identify `star` with — excludes `axis` itself (a
+## cell can't pair a category against itself) and, for Colour/Pitch, any
+## category whose value isn't one-of-a-kind for this specific star.
+func _mutex_legal_id_cats(star: int, axis: int) -> Array:
+    var out: Array = []
+    for cat in [Category.NAME, Category.SEQUENCE, Category.COLOR, Category.PITCH]:
+        if cat == axis:
+            continue
+        if (cat == Category.COLOR or cat == Category.PITCH) and not _category_uniquely_labels(cat, star):
+            continue
+        out.append(cat)
+    return out
+
+
+## Weighted-random pick from `pool` (removed and returned), given a
+## parallel `weights` array of the same size. A genuine random draw, not a
+## best-first ranking — see MUTEX_REPEAT_CATEGORY_WEIGHT's own comment for
+## why that distinction matters here.
+func _mutex_weighted_pick_remove(pool: Array, weights: Array):
+    var total: float = 0.0
+    for w in weights:
+        total += float(w)
+    var roll: float = _rng.randf() * total if total > 0.0 else 0.0
+    var acc: float = 0.0
+    for i in pool.size():
+        acc += float(weights[i])
+        if roll < acc:
+            var picked = pool[i]
+            pool.remove_at(i)
+            weights.remove_at(i)
+            return picked
+    var last: int = pool.size() - 1
+    var picked_last = pool[last]
+    pool.remove_at(last)
+    weights.remove_at(last)
+    return picked_last
+
 
 func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
-    # Each participant needs its own TRUE identity-establishing cell on the
-    # shared axis, exactly like Forms 5-12's single-star case, just N times
-    # over with an added pairwise-distinct-raw-value constraint. Matrix-
-    # checking each candidate here (via _matrix_cell(...)["used"]) is also
-    # a real correctness fix, not just a mechanical port: the old code
-    # never checked participants against the global Used state at all —
-    # only against this-clue-local used_stars/used_raw — so it could have
-    # silently reused an already-committed characteristic as a "new"
-    # participant. Also guards id_cat != axis for the chain participant,
-    # which the old code never checked either — with real cells, pairing
-    # a category against itself isn't just redundant, it's not a grid that
-    # exists at all.
-    var axis: int = Category.COLOR if _rng.randf() < 0.6 else Category.PITCH
-    var raw_of: Callable = func(s): return star_colors[s] if axis == Category.COLOR else star_pitch_index[s]
-    var max_n: int = 4 if axis == Category.COLOR else mini(5, pitch_count)
+    var axis: int = _mutex_pick_axis()
+    var groups: Array = _mutex_axis_groups(axis)
+    if groups.size() < 3:
+        return {}   # this puzzle's matrix doesn't support this axis right now — skip, nothing to negotiate
+    var max_n: int = mini(5, groups.size())
     var n: int = maxi(3, mini(max_n, 3 + _rng.randi_range(0, 2)))
-    var participants: Array = []   # each: {id_cat, id_val, axis_val, star}
-    var used_raw: Dictionary = {}
-    var used_stars: Dictionary = {}
 
-    if not chain.is_empty() and int(chain["cat"]) != Category.DISTANCE and int(chain["cat"]) != axis and _category_uniquely_labels(int(chain["cat"]), int(chain["star"])):
+    var participants: Array = []   # each: {id_cat, id_val, axis_val, star}
+    var id_cat_usage: Dictionary = {}   # id_cat(int) -> times used so far, for the repeat bias
+
+    # Chain participant first, same priority every other Form gives it —
+    # honours the shared "reuse the previous clue's own node" pacing.
+    if not chain.is_empty() and int(chain["cat"]) != Category.DISTANCE and int(chain["cat"]) != axis \
+            and _category_uniquely_labels(int(chain["cat"]), int(chain["star"])):
         var cs: int = int(chain["star"])
         var cc: int = int(chain["cat"])
+        for gi in groups.size():
+            if (groups[gi] as Array).has(cs):
+                groups.remove_at(gi)
+                break
         var cv: int = int(_cat_star_to_value[cc][cs])
         var av: int = int(_cat_star_to_value[axis][cs])
         if not bool(_matrix_cell(cc, cv, axis, av)["used"]):
             participants.append({"id_cat": cc, "id_val": cv, "axis_val": av, "star": cs})
-            used_raw[raw_of.call(cs)] = true
-            used_stars[cs] = true
+            id_cat_usage[cc] = 1
 
-    # TODO (deferred, out of scope for now — flagged 2026-07-21): id_cat
-    # below is drawn independently per participant, so two participants
-    # CAN already end up sharing the same identity category purely by
-    # chance (e.g. both identified via Name). What's still missing is a
-    # DELIBERATE double-category mode — a weighted randomizer controlling
-    # how OFTEN two participants are intentionally forced to share an
-    # identity category, for clue variability in service of player
-    # enjoyment — rather than leaving it to uncontrolled per-participant
-    # chance the way it works today. Revisit once the Forms/matrix
-    # architecture itself is fully locked in; not a priority before then.
-    var attempts: int = 0
-    while participants.size() < n and attempts < 60:
-        attempts += 1
-        var s: int = _rng.randi_range(0, star_count - 1)
-        if used_stars.has(s):
-            continue
-        var raw2 = raw_of.call(s)
-        if used_raw.has(raw2):
-            continue
-        var id_cat: int = _non_distance_category()
-        while id_cat == axis:
-            id_cat = _non_distance_category()
-        if not _category_uniquely_labels(id_cat, s):
-            continue
-        var id_val: int = int(_cat_star_to_value[id_cat][s])
+    while participants.size() < n and not groups.is_empty():
+        var group: Array = groups.pop_back()
+        var s: int = int(group[_rng.randi_range(0, group.size() - 1)])
+        var legal: Array = _mutex_legal_id_cats(s, axis)
+        if legal.is_empty():
+            continue   # cannot happen — Name/Sequence are always legal unless one of them IS axis, and axis is only ever one category — guarded anyway
+        var weights: Array = []
+        for cat in legal:
+            weights.append(MUTEX_REPEAT_CATEGORY_WEIGHT if id_cat_usage.has(cat) else 1.0)
+        var pool: Array = legal.duplicate()
+        var chosen: int = -1
+        while not pool.is_empty():
+            var candidate: int = int(_mutex_weighted_pick_remove(pool, weights))
+            var val2: int = int(_cat_star_to_value[candidate][s])
+            var axis_val2: int = int(_cat_star_to_value[axis][s])
+            if bool(_matrix_cell(candidate, val2, axis, axis_val2)["used"]):
+                continue   # this specific cell is already claimed by an earlier clue this attempt — try this star's next-best legal category
+            chosen = candidate
+            break
+        if chosen < 0:
+            continue   # every legal identifier for this star is already claimed elsewhere this attempt — move to the next star
+        var id_val: int = int(_cat_star_to_value[chosen][s])
         var axis_val: int = int(_cat_star_to_value[axis][s])
-        if bool(_matrix_cell(id_cat, id_val, axis, axis_val)["used"]):
-            continue
-        participants.append({"id_cat": id_cat, "id_val": id_val, "axis_val": axis_val, "star": s})
-        used_raw[raw2] = true
-        used_stars[s] = true
+        participants.append({"id_cat": chosen, "id_val": id_val, "axis_val": axis_val, "star": s})
+        id_cat_usage[chosen] = int(id_cat_usage.get(chosen, 0)) + 1
 
     if participants.size() < 3:
         return {}
@@ -2768,20 +2897,44 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
         chars.append({"cat": axis, "star": int(p["star"])})
         label_items.append({"cat": int(p["id_cat"]), "star": int(p["star"]), "label": _characteristic_label(id_ch)})
         grid_updates.append({"cat_a": int(p["id_cat"]), "val_a": int(p["id_val"]), "cat_b": axis, "val_b": int(p["axis_val"]), "is_true": true})
-        # axis is always Color/Pitch here (no Sequence relational content),
-        # but each participant's id_cat only excludes axis, never Sequence.
         solver_facts.append_array(_seq_fact_for_label(id_ch))
-    var noun: String = "colors" if axis == Category.COLOR else "pitches"
-    var text: String = "%s all have different %s." % [_join_names_and(_sort_labels_for_join(label_items)), noun]
-    # The clue.s ACTUAL content is pairwise distinctness on `axis` — which no
-    # cell can express (a cell only says same-star/different-star) and which
-    # solver_facts cannot carry either, being Sequence-only. Kept in a
-    # separate array rather than appended to solver_facts so the uniqueness
-    # CSP's input is untouched; the persist site merges the two into "disclosures".
-    var mx_stars: Array = []
-    for p2 in participants:
-        mx_stars.append(int(p2["star"]))
-    var value_facts: Array = [{"kind": "values_all_different", "cat": axis, "stars": mx_stars}]
+
+    # Cross-participant distinctness — see the header comment above for why
+    # this is sound for every axis and why same-id_cat pairs are skipped.
+    for i in participants.size():
+        for j in range(i + 1, participants.size()):
+            var pi: Dictionary = participants[i]
+            var pj: Dictionary = participants[j]
+            var cat_i: int = int(pi["id_cat"])
+            var cat_j: int = int(pj["id_cat"])
+            if cat_i == cat_j:
+                continue
+            grid_updates.append({
+                "cat_a": cat_i, "val_a": int(pi["id_val"]),
+                "cat_b": cat_j, "val_b": int(pj["id_val"]),
+                "is_true": false,
+            })
+
+    var value_facts: Array = []
+    var text: String
+    if axis == Category.COLOR or axis == Category.PITCH:
+        var noun: String = "colors" if axis == Category.COLOR else "pitches"
+        text = "%s all have different %s." % [_join_names_and(_sort_labels_for_join(label_items)), noun]
+        # The clue's ACTUAL extra content here is pairwise distinctness on
+        # `axis` — which no cell can express — so it still needs a
+        # disclosure, same as the pre-rewrite Form always required for
+        # Colour/Pitch. Kept separate from solver_facts so the Sequence
+        # uniqueness CSP's input stays untouched; the persist site merges
+        # the two into "disclosures".
+        var mx_stars: Array = []
+        for p2 in participants:
+            mx_stars.append(int(p2["star"]))
+        value_facts.append({"kind": "values_all_different", "cat": axis, "stars": mx_stars})
+    else:
+        # Name/Sequence: nothing beyond "different stars" to disclose — the
+        # cross-participant False cells above already carry it all.
+        text = "%s are all different stars." % _join_names_and(_sort_labels_for_join(label_items))
+
     return {"chars": chars, "text": text, "grid_updates": grid_updates, "solver_facts": solver_facts, "value_facts": value_facts}
 
 
