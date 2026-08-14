@@ -4476,6 +4476,9 @@ func _full_propagation_refresh() -> void:
         # for the next round.
         _settle_distance_constraints()
         _settle_star_identity_from_candidates()
+        # The column half, immediately after the row half — the same pair a
+        # grid player scans after every mark, and neither implies the other.
+        _settle_identity_from_value_columns()
         _settle_derived_eliminations()
         # AFTER the eliminations above, so it sees the narrowest candidate
         # sets. Runs for EVERY record rather than only the one whose colour
@@ -4625,17 +4628,45 @@ func _star_elim_state_for_record(record_idx: int, star_idx: int) -> int:
 ## |candidates| == 1 means the record IS that star. Setting star_idx makes
 ## every _effective_*_state ground-truth tier fire at once, so Colour,
 ## Degree, and (once listened) Pitch all resolve without their own rules.
+## Map positions already claimed by a record, for the two identity passes'
+## "somebody else is already that star" refusal.
+##
+## SKIPS unconfirmed star-widget stubs, and that exclusion is the whole
+## point. _build_star_widgets_impl creates a star_idx-bound record for
+## EVERY star the instant its floating widget renders, so counting stubs as
+## occupants marks all fifteen positions taken before the player has done
+## anything — and both identity passes then refuse every binding they would
+## ever make. Measured 2026-08-13: with stubs present, collapsing a record's
+## row to a single position bound nothing at all; without them, the same
+## collapse bound immediately. The row pass had carried that inline and
+## unfiltered since Phase 3.
+##
+## A stub is not a competing claim to a position. It IS the position,
+## waiting to learn what sits there — `name` empty is exactly what marks it
+## as carrying no player knowledge (see
+## _record_is_unconfirmed_star_widget_stub). Once a real record binds there,
+## the two become provably identical and the merge machinery folds them.
+## A record carrying a name still blocks, which is the case the refusal was
+## actually written for: two records must not derive their way onto one star
+## with neither noticing.
+func _occupied_positions() -> Dictionary:
+    var occupied: Dictionary = {}
+    for i in _match_records.size():
+        if _record_is_unconfirmed_star_widget_stub(i):
+            continue
+        var si: int = _effective_star_idx(i)
+        if si >= 0:
+            occupied[si] = i
+    return occupied
+
+
 func _settle_star_identity_from_candidates() -> void:
     # Occupied stars are collected once and maintained as we go, rather
     # than rescanned per record. This pass moved inside the fixpoint in
     # Phase 3, so a per-record O(n) scan for "does anyone else own this
     # star" became O(n^2) per round times up to DERIVATION_MAX_ROUNDS —
     # measured at +70ms on a 52-record board before this was hoisted.
-    var occupied: Dictionary = {}
-    for i in _match_records.size():
-        var si: int = _effective_star_idx(i)
-        if si >= 0:
-            occupied[si] = i
+    var occupied: Dictionary = _occupied_positions()
 
     var bound_any: bool = false
     for i in _match_records.size():
@@ -4683,6 +4714,99 @@ func _settle_star_identity_from_candidates() -> void:
     # fixpoint round, which is exactly what the loop is for.
     if bound_any:
         _clear_deduction_caches(true)   # monotone — see that function
+
+
+## The COLUMN half of the identity rule. _settle_star_identity_from_
+## candidates above is the ROW half: "this record has only one position
+## left, so it is that one". This is the transpose: "this position has only
+## one value left, so that value is here". A grid player scans both after
+## every mark; the engine only ever scanned rows, so a column the player
+## collapsed by elimination went unnoticed until they placed it by hand.
+##
+## Counted over VALUES, never over records — and that is the whole reason
+## this pass needs no preconditions. The record-based version of the same
+## rule ("among the Name ROWS, if one is left...") is unsound without two
+## guards, because a name whose row has not been created yet is simply
+## absent from the tally, so the count reads too LOW and can hit 1 while
+## the real answer is 5. Over values there is no such thing as an absent
+## name: an unconstrained one comes back from
+## _stars_possible_for_descriptor as "could be anywhere", so it appears in
+## every column and the count reads too HIGH instead. Same missing
+## knowledge, opposite failure direction — one unsound by default, the
+## other conservative by default.
+##
+## Soundness, in full:
+##   * some value of an alldiff category genuinely occupies position S;
+##   * _stars_possible_for_descriptor is a SUPERSET of the truth, so that
+##     value's row contains S, so the column count is always >= 1;
+##   * a count that is an overcount and still reads exactly 1 means the
+##     true count is exactly 1.
+## No family-completeness check, no distinctness check, no interaction with
+## record merging.
+##
+## Restricted to the alldiff axes by the maths, not by a special case:
+## Colour and Pitch are shared across stars, so "only one colour value can
+## be here" is not a conclusion — several stars carry the same colour and
+## the premise never holds in the first place.
+func _settle_identity_from_value_columns() -> void:
+    var occupied: Dictionary = _occupied_positions()
+
+    var bound_any: bool = false
+    for cat in [ConstellationLogicPuzzle.Category.NAME,
+            ConstellationLogicPuzzle.Category.SEQUENCE]:
+        # The alldiff premise is checked, not assumed: the argument above
+        # needs exactly one value per position. A short name table (a
+        # half-loaded puzzle) would make "some value occupies S" false and
+        # every conclusion below unsound.
+        if int(cat) == ConstellationLogicPuzzle.Category.NAME \
+                and _host._star_names.size() != _host._star_count:
+            continue
+        if int(cat) == ConstellationLogicPuzzle.Category.SEQUENCE \
+                and _host._pitch_rank_solution.size() != _host._star_count:
+            continue
+
+        # Value handles. Every descriptor in this engine is addressed as
+        # (cat, star) where the star index selects the VALUE — see
+        # _descriptor_term. Both categories are permutations of the star
+        # set, so ranging over star indices visits each value exactly once.
+        var rows: Array = []
+        for v in _host._star_count:
+            rows.append(_stars_possible_for_descriptor(int(cat), int(v)))
+
+        for s in _host._star_count:
+            if occupied.has(int(s)):
+                continue   # already settled by the row half or by the player
+            var owner: int = -1
+            var count: int = 0
+            for v in _host._star_count:
+                if (rows[int(v)] as Array).has(int(s)):
+                    count += 1
+                    owner = int(v)
+                    if count > 1:
+                        break
+            if count != 1:
+                continue
+
+            # Write it onto whichever record already holds that descriptor.
+            # A value with no record at all cannot reach here — with nothing
+            # constraining it, its row is every star, so it would be an
+            # owner of every column and never the unique owner of one. The
+            # only way past that is a puzzle of one star, which the loop
+            # above handles anyway. So no record is created here: doing that
+            # mid-fixpoint would resize _match_records underneath the pass
+            # that is iterating it.
+            for i in _records_holding_descriptor(int(cat), owner):
+                if _effective_star_idx(int(i)) >= 0:
+                    continue
+                _derived[int(i)]["star_idx"] = int(s)
+                occupied[int(s)] = int(i)
+                bound_any = true
+                break
+
+    if bound_any:
+        # Same invalidation as the row half: identity resolution changes
+        # candidate sets, cliques and the listened-stars map at once.
+        _clear_deduction_caches(true)
 
 
 ## Eliminates every given-axis value that NO candidate star carries. This
@@ -4859,6 +4983,23 @@ func _stars_possible_for_descriptor(cat: int, star: int) -> Array:
     return out
 
 
+## Records that carry descriptor (cat, value) as CONFIRMED — the write side
+## of the matrix. Deriving happens over values; landing a conclusion where
+## the UI can show it needs the records holding that value, and that lookup
+## was being open-coded everywhere it was needed.
+##
+## Deliberately narrow: this is plumbing at the output edge, and must not
+## grow into a reasoning primitive. To ask what a descriptor could BE, use
+## _stars_possible_for_descriptor — which needs no records at all, and is
+## sound precisely because it does not depend on one existing.
+func _records_holding_descriptor(cat: int, value: int) -> Array:
+    var out: Array = []
+    for i in _match_records.size():
+        if _record_descriptor_state(i, cat, value) == 1:
+            out.append(i)
+    return out
+
+
 ## Of `mine`, the positions that still have a partner in `theirs` consistent
 ## with the claim. Everything dropped is provably impossible.
 ##
@@ -4981,16 +5122,14 @@ func _apply_distance_side(cat: int, star: int, mine: Array, theirs: Array,
         allow[int(a)] = true
 
     var wrote: bool = false
-    for i in _match_records.size():
-        if _record_descriptor_state(i, cat, star) != 1:
-            continue
+    for i in _records_holding_descriptor(cat, star):
         for m in mine:
             var si: int = int(m)
             if allow.has(si):
                 continue
-            if _star_elim_state_for_record(i, si) != 0:
+            if _star_elim_state_for_record(int(i), si) != 0:
                 continue   # already ruled out; _add_derived_state would no-op
-            if _add_derived_state(i, "star_elim", si, 2):
+            if _add_derived_state(int(i), "star_elim", si, 2):
                 wrote = true
     return wrote
 
