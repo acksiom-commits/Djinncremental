@@ -4,10 +4,9 @@
 export_presets.cfg
 debug.log
 
-# Local verification harnesses (see dev_tests/README.md). Deliberately not
-# tracked: they poke engine internals directly, and they live in-tree only
-# so Godot can reach them via res:// without copying files in and out.
-dev_tests/
+# dev_tests/ is TRACKED (see dev_tests/README.md) — it includes
+# test_matrix_up_lint.gd, a standing guard against a recurring class of
+# bug, and it has to survive a fresh clone to do that job.
 
 # Windows-specific ignores
 Thumbs.db
