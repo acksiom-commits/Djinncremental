@@ -1070,6 +1070,32 @@ func _undo_category_selects(record_idx: int, states_key: String, manual_key: Str
     # same reasoning as _clear_protected_names_for_star.
     r[protect_key] = {}
 
+    # Undo has to be the INVERSE of the confirm, and the confirm does two
+    # things: it writes name_states, and it PROMOTES the name into r["name"]
+    # (see _propagate_name_states_confirmed_same_record). Clearing only the
+    # states left the promoted field standing, and _effective_name_state
+    # reads that field — so the name still came back confirmed and the
+    # button looked dead. Reported 2026-08-14 on a Sort:Pitch slot's name
+    # checklist: select "Heleai", press UNDO SELECTS, nothing happens.
+    #
+    # _on_slot_name_check's toggle-off path already cleared r["name"] for
+    # exactly this reason; the undo path was simply never updated when the
+    # promotion was added, so the two ways of retracting a name disagreed.
+    #
+    # Only for a record whose identity rests on something ELSE. A Sort:Name
+    # row's r["name"] is its DEFINING field, not a promotion — clearing that
+    # would delete the row itself, turning an undo of some marks into the
+    # destruction of the thing being marked.
+    if states_key == "name_states":
+        var promoted: String = str(r.get("name", ""))
+        var defined_elsewhere: bool = str(r.get("pitch_slot_label", "")) != "" \
+            or str(r.get("color_slot_label", "")) != "" \
+            or str(r.get("degree_slot_label", "")) != "" \
+            or int(r.get("star_idx", -1)) >= 0 \
+            or (int(r.get("seq_lo", 0)) > 0 and int(r.get("seq_lo", 0)) == int(r.get("seq_hi", 0)))
+        if promoted != "" and defined_elsewhere and int(states.get(promoted, 0)) != 1:
+            r["name"] = ""
+
 
 func _undo_category_blocks(record_idx: int, states_key: String, manual_key: String) -> void:
     if record_idx < 0 or record_idx >= _match_records.size():
