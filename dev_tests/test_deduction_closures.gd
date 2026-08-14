@@ -84,10 +84,30 @@ func run() -> void:
     ok(d._records_provably_identical(by_name, by_star),
         "name-record and Listen-revealed star-record recognised as the same star")
 
+    # CHANGED 2026-08-14. This used to assert the two records FUSED into one
+    # (_match_records.size() == 1). That mechanism is gone on this path:
+    # _settle_identical_records no longer folds anything into an
+    # auto-created star-widget stub, because a merge is destructive and
+    # permanent while this pass is the engine INFERRING identity — so an
+    # inference the player can retract produced a consequence they could
+    # not. (Reported 2026-08-14: naming a Sort:Pitch slot permanently
+    # identified its star on the map, and UNDO could not take it back.)
+    #
+    # The CAPABILITY this section protects is unchanged and is what is
+    # asserted now: the engine still recognises the two as one star, and
+    # the name record still resolves to that star. Only the destructive
+    # fusion is gone — the identity rides in the derived layer, where it
+    # releases when its premise does.
+    #
+    # The player's own confirm path still merges, deliberately:
+    # _confirm_match_record_identity calls _merge_match_records directly.
     d._settle_identical_records()
-    ok(d._match_records.size() == 1, "the two records merged into one")
-    ok(str(d._match_records[0]["name"]) == "Alpha" and int(d._match_records[0]["star_idx"]) == 0,
-        "merged record carries BOTH the name and the star identity")
+    ok(d._match_records.size() == 2, "the inferring pass does NOT destroy either record")
+    d._full_propagation_refresh()
+    ok(d._effective_star_idx(by_name) == 0,
+        "the name record still resolves to star 0 (eff_star=%d)" % d._effective_star_idx(by_name))
+    ok(str(d._match_records[by_name]["name"]) == "Alpha",
+        "and it still carries its name")
 
     # Shared note must NOT prove identity.
     d._load_match_records([])

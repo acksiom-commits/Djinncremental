@@ -2847,6 +2847,50 @@ func _settle_identical_records() -> void:
     while i < _match_records.size():
         var j: int = _match_records.size() - 1
         while j > i:
+            # Never fold anything into an auto-created star-widget stub on
+            # THIS path. A merge is destructive and permanent, and this pass
+            # is the engine INFERRING identity — so an inference the player
+            # can retract was producing a consequence they could not.
+            #
+            # Reported 2026-08-14: naming a Sort:Pitch slot whose note only
+            # one star plays merged the slot into that star's stub, which
+            # put the name on the star map; UNDO SELECTS then cleared the
+            # name but the star stayed identified, because the records had
+            # already been fused and there is no un-merge.
+            #
+            # The player's own confirm path is deliberately NOT affected:
+            # _confirm_match_record_identity calls _merge_match_records
+            # directly for exactly this stub case, and should — there the
+            # player asserted the identity outright, and the star widget
+            # that owns the assertion can take it back. What is removed here
+            # is only the engine doing it behind them.
+            #
+            # Declining outright WOULD lose information, which is why the
+            # conclusion is written down instead of dropped. Measured: with
+            # a bare `continue` here, a name record carrying a player-
+            # assigned singleton pitch stopped resolving to its star
+            # entirely (test_deduction_closures §2 went to eff_star=-1) —
+            # that identity came from the merge, not from candidate
+            # narrowing, so refusing silently deleted a real deduction.
+            #
+            # So: same conclusion, non-destructive form. The real record
+            # gets the stub's star as a DERIVED star_idx, which every
+            # _effective_* reader already honours, and which is rebuilt each
+            # refresh and releases the moment its premise does. The stub
+            # keeps its own star_idx and gains nothing — in particular not a
+            # name, which is what _confirmed_name_for_star prints on the
+            # star map, and what made the report visible.
+            var i_stub: bool = _record_is_unconfirmed_star_widget_stub(i)
+            var j_stub: bool = _record_is_unconfirmed_star_widget_stub(j)
+            if i_stub or j_stub:
+                if i_stub != j_stub and _records_provably_identical(i, j):
+                    var stub_idx: int = i if i_stub else j
+                    var real_idx: int = j if i_stub else i
+                    var s: int = int(_match_records[stub_idx].get("star_idx", -1))
+                    if s >= 0 and _effective_star_idx(real_idx) < 0:
+                        _derived[real_idx]["star_idx"] = s
+                j -= 1
+                continue
             if _records_provably_identical(i, j):
                 var clashes: Array[String] = _merge_value_clashes(i, j)
                 if not clashes.is_empty():
