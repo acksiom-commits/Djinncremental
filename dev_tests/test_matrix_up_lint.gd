@@ -31,6 +31,14 @@ extends "res://dev_tests/test_base.gd"
 #     those placeholders as player knowledge. This exact blindness caused
 #     three separate shipped bugs.
 #
+#  TRIAGE AT THE USE SITE, NOT THE FUNCTION. This lint reports FUNCTION
+#  names because that is what it can see; the bugs live at individual USE
+#  SITES. On 2026-08-13 _detect_contradictions was flagged, one of its two
+#  _effective_star_idx sites was examined, and the whole function was
+#  cleared as sound — while the actual bug sat in the second site forty
+#  lines further down, and shipped. When clearing a function, check EVERY
+#  site inside it and say which ones you looked at.
+#
 #  HOW TO RESPOND WHEN IT FAILS — read this before touching the allowlist:
 #
 #    1. FIRST assume the new function is the mistake, not the lint. That has
@@ -89,9 +97,13 @@ const ALLOW_STUB_BLIND := {
 
 	# ── Triaged 2026-08-13, all three measured rather than reasoned. ──────
 	"_detect_contradictions":
-		"a widget record's POSITION is not a claim needing proof — the widget "
-		+ "IS that map star. Stub-ness withholds Name/Pitch, never position, "
-		+ "so checking marks against it is correct",
+		"BOTH sites checked (2026-08-14, after clearing it on one site alone "
+		+ "let a bug ship). Site 1, marks-vs-own-star: a widget record's "
+		+ "POSITION is not a claim needing proof, the widget IS that map star, "
+		+ "and stub-ness withholds Name/Pitch but never position. Site 2, "
+		+ "records-sharing-a-star: now gated on _same_star_value_clash, which "
+		+ "reads only each record's OWN fields, so stubs and ground truth "
+		+ "cannot mask or fake a clash",
 	"_settle_derived_exclusions_for_axis":
 		"FIXED: now unskips stubs, whose Name axis is genuinely unknown "
 		+ "(measured: 15/15 names open on a star-7 stub)",
