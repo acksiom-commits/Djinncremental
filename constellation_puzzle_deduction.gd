@@ -843,29 +843,23 @@ func _propagate_name_confirmed(confirmed_star: int, star_name: String) -> void:
         this_elim[j] = 1 if j == confirmed_star else 2
     _match_records[this_record]["star_elim"] = this_elim
 
-    for i in _match_records.size():
-        # Only other records that themselves represent a candidate NAME —
-        # star_elim's meaning is "which stars are ruled out for THIS
-        # record's name," so it's only sound to write into it when there
-        # is a name. A Color/Pitch/Sequence/Degree-slot record with no
-        # name yet (e.g. an anonymous "Red A" placeholder for one of
-        # several same-color stars) isn't a candidate for star_name at
-        # all — writing confirmed_star's exclusion onto it anyway falsely
-        # asserts "this slot isn't confirmed_star," contaminating
-        # _records_provably_distinct's star category with a claim the
-        # player never made and this slot has no actual basis for. Found
-        # via a Color-tab exclusion query surfacing that exact
-        # contamination: confirming a name onto a star wrongly excluded
-        # that name from every same-color slot's Name selector.
-        if i == this_record or str(_match_records[i].get("name", "")) == "":
-            continue
-        var r: Dictionary = _match_records[i]
-        var elim: Dictionary = r.get("star_elim", {})
-        var cur: int = int(elim.get(confirmed_star, 0))
-        if cur != 1:
-            elim[confirmed_star] = 2
-        r["star_elim"] = elim
-
+    # The cross-record broadcast that used to live here is GONE (2026-08-13).
+    # It wrote star_elim=2 into every OTHER name record's own dict, which is
+    # the player-input layer — so "no other name is this star", an inference,
+    # became indistinguishable from an X the player drew by hand. Measured:
+    # undo the binding and those marks survived, released by nothing. That is
+    # the non-releasable-state failure the derived layer was built to end,
+    # and it had simply been reintroduced on this one path.
+    #
+    # _settle_alldiff_position_exclusions now derives the identical
+    # conclusion every refresh, from the position's own collapsed row rather
+    # than from this event, so it releases when its premise does and also
+    # fires for positions the player never explicitly confirmed. Deleting
+    # the broadcast without that pass would have LOST the deduction — it was
+    # verified to be load-bearing, not merely redundant.
+    #
+    # The writes above, onto the confirming record itself, stay: those are a
+    # faithful record of what the player actually asserted.
     _save_puzzle_notes()
 
 
@@ -4493,6 +4487,9 @@ func _full_propagation_refresh() -> void:
         # The column half, immediately after the row half — the same pair a
         # grid player scans after every mark, and neither implies the other.
         _settle_identity_from_value_columns()
+        # After both identity halves, so a position bound THIS round is
+        # already claimed and can rule itself out for every other name.
+        _settle_alldiff_position_exclusions()
         _settle_derived_eliminations()
         # AFTER the eliminations above, so it sees the narrowest candidate
         # sets. Runs for EVERY record rather than only the one whose colour
@@ -4728,6 +4725,66 @@ func _settle_star_identity_from_candidates() -> void:
     # fixpoint round, which is exactly what the loop is for.
     if bound_any:
         _clear_deduction_caches(true)   # monotone — see that function
+
+
+## Name is alldiff with map positions: a position one name occupies is a
+## position no OTHER name can occupy. Sounds trivial, and the engine did not
+## have it — verified 2026-08-13 by binding a name record to star 7 and
+## finding star_elim[7] still 0 on every other name record.
+##
+## That gap is why _propagate_name_confirmed used to broadcast the same
+## conclusion by hand, writing star_elim=2 straight into every other name
+## record's OWN dict on confirmation. Those writes were indistinguishable
+## from the player's own X marks and nothing released them: undo the
+## binding and they stayed forever. Deriving it here instead means it is
+## rebuilt from scratch each refresh and evaporates the moment its premise
+## does — the whole reason the derived layer exists.
+##
+## Stated over VALUES, not records, so it needs no notion of "the Name
+## family" and no completeness check. A name value's row is a superset of
+## the truth and the truth is non-empty (every name is somewhere), so a row
+## that has collapsed to ONE position means the name really is there — and
+## alldiff then rules that position out for every other name. Cascades
+## through the fixpoint as those rows collapse in turn.
+##
+## Restricted to records that actually carry a name, matching the broadcast
+## it replaces. An anonymous slot ("Red A", one of several same-colour
+## stars) is not a candidate for any particular name, so asserting "this
+## slot is not star 7" on its behalf would contaminate
+## _records_provably_distinct with a claim nothing supports — the exact
+## regression the old broadcast's own comment records.
+func _settle_alldiff_position_exclusions() -> void:
+    if _host._star_names.size() != _host._star_count:
+        return   # alldiff premise unmet; a short table proves nothing
+
+    # position -> the name value handle that has collapsed onto it
+    var claimed: Dictionary = {}
+    for v in _host._star_count:
+        var poss: Array = _stars_possible_for_descriptor(
+            ConstellationLogicPuzzle.Category.NAME, int(v))
+        if poss.size() == 1:
+            claimed[int(poss[0])] = int(v)
+    if claimed.is_empty():
+        return
+
+    var wrote: bool = false
+    for s in claimed:
+        var pos: int = int(s)
+        var owners: Dictionary = {}
+        for oi in _records_holding_descriptor(
+                ConstellationLogicPuzzle.Category.NAME, int(claimed[s])):
+            owners[int(oi)] = true
+        for i in _match_records.size():
+            if owners.has(i):
+                continue   # this record IS the name that owns the position
+            if str(_match_records[i].get("name", "")) == "":
+                continue   # anonymous slot — see the note above
+            if _star_elim_state_for_record(i, pos) != 0:
+                continue   # already ruled out, or the player marked it
+            if _add_derived_state(i, "star_elim", pos, 2):
+                wrote = true
+    if wrote:
+        _clear_deduction_caches(true)
 
 
 ## The COLUMN half of the identity rule. _settle_star_identity_from_
