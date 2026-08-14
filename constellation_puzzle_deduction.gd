@@ -193,6 +193,11 @@ func _reset_derived() -> void:
     for _i in _match_records.size():
         _derived.append(_blank_derived_entry())
     _seq_singleton_built = false
+    # Once per refresh, not once per fixpoint round — see the note in
+    # _clear_deduction_caches_all(). A constellation switch reaches this too,
+    # so a previous puzzle's constraints cannot survive one.
+    _distance_constraints_built = false
+    _distance_constraints_cache = []
 
 
 ## Grows the layer to match _match_records without discarding what is
@@ -3847,39 +3852,37 @@ func _cell_was_stated(cell: Dictionary, terms: Array) -> bool:
 # while it still has something to give.
 # ==================================================
 
-## Records the player has provably pinned to `star`. Only Name and
-## Sequence can do that: they are the alldiff axes, so confirming one
-## names exactly one star. Colour and Pitch are shared across stars, so a
-## confirmed colour identifies nothing on its own and is not consulted
-## here. star_idx counts too, but only past the auto-stub guard — every
-## star gets a star_idx-bound record the moment its widget is built,
-## regardless of anything the player has done.
-## Has the player worked out WHERE this star sits on the map — i.e. bound
-## some record to this specific map position?
+## LOCATED tier: records bound to `star` as a map POSITION, whether the
+## player placed them there or the engine derived it.
 ##
-## Strictly stronger than _records_identifying_star(), and the two must not
-## be confused. That one asks "does a record provably DENOTE this star",
-## which a bare Sort:Name row satisfies for free (the row IS that name).
-## This one asks "can the player point at it on the map", which is what any
-## topology/adjacency reasoning needs and what a name alone never gives.
+## The auto-stub guard is load-bearing — _build_star_widgets_impl gives
+## every star a star_idx-bound record the instant its floating widget
+## renders, which is not the player knowing anything.
 ##
-## The stub guard is load-bearing: every star gets a star_idx-bound record
-## the moment its floating widget renders, independent of player action.
-func _star_located_by_player(star: int) -> bool:
-    for i in _match_records.size():
-        if _record_is_unconfirmed_star_widget_stub(i):
-            continue
-        if _effective_star_idx(i) == star:
-            return true
-    return false
-
-
-func _records_identifying_star(star: int) -> Array:
+## Split out from _records_identifying_star() because conflating the two
+## shipped a bug (2026-08-12): a bare Sort:Name row DENOTES its star by
+## definition — the row's whole identity is that name — while saying
+## nothing about WHERE on the map that star is. Anything reasoning about
+## topology needs this tier; anything resolving a cell wants the union
+## below.
+func _records_bound_to_star(star: int) -> Array:
     var out: Array = []
     for i in _match_records.size():
         if _effective_star_idx(i) == star \
                 and not _record_is_unconfirmed_star_widget_stub(i):
             out.append(i)
+    return out
+
+
+## DENOTES tier: records that provably stand for `star` by either route —
+## bound to its map position as above, or carrying a confirmed Name or
+## Sequence descriptor for it. Only those two axes can denote: they are the
+## alldiff axes, so confirming one names exactly one star, while Colour and
+## Pitch are shared and identify nothing on their own.
+func _records_identifying_star(star: int) -> Array:
+    var out: Array = _records_bound_to_star(star)
+    for i in _match_records.size():
+        if out.has(i):
             continue
         if _record_descriptor_state(i, ConstellationLogicPuzzle.Category.NAME, star) == 1 \
                 or _record_descriptor_state(i, ConstellationLogicPuzzle.Category.SEQUENCE, star) == 1:
@@ -4130,47 +4133,29 @@ func _disclosure_satisfied(f: Dictionary) -> bool:
             # negated=true, is NOT N hops from it (Form 19's "not
             # connected" is exactly negated hops=1).
             #
-            # Entailed only once the player has pinned BOTH endpoints to an
-            # actual MAP STAR. Hop distance is structural and visible — a
-            # player can trace connections by eye — so once both ends are
-            # located on the map the relation is readable directly and the
-            # clue has nothing left to give. Until then it is a live
-            # constraint on WHERE those endpoints can be.
+            # Exhausted when NEITHER side can narrow any further — see
+            # _distance_side_exhausted for what that means per category and
+            # why it is not "did this pass change anything".
             #
-            # Deliberately NOT _records_identifying_star(): that answers
-            # "does some record provably denote this star", which is the
-            # right notion for resolving a cell and the WRONG one here. A
-            # bare Sort:Name row for "Heleai" denotes Heleai by definition —
-            # the row's whole identity is that name — while telling the
-            # player nothing about WHICH map star Heleai is, and you cannot
-            # count hops to a star you cannot locate. Using it made every
-            # hop clue on a barely-started board score Used Up (reported
-            # 2026-08-12, bug introduced by this very disclosure kind hours
-            # earlier).
-            #
-            # _effective_star_idx is the map-position signal, and the
-            # unconfirmed-stub guard matters: _build_star_widgets_impl gives
-            # EVERY star a star_idx-bound record the instant its widget
-            # renders, which is not the player knowing anything.
-            #
-            # Reads _host._star_distances, the player-side minimum-distance
-            # matrix built by BFS over line_pairs. The generator's own
-            # `_distances` is never persisted.
+            # This kind no longer evaluates the claim against the solution
+            # at all. It used to: it looked up the real distance between the
+            # disclosure's two star indices and asked whether it matched.
+            # That was measuring the ANSWER, not the player's grid, and it
+            # needed a gate ("has the player located both ends") bolted on
+            # to stop it entailing on a blank board. The gate was the part
+            # that broke — twice, in both directions. The clue's content is
+            # a constraint on two descriptors, so its exhaustion is a
+            # property of those descriptors' remaining freedom and nothing
+            # else. What the claim actually rules out is applied by
+            # _settle_distance_constraints, where it can propagate.
+            var drc: int = int(f.get("ref_cat", -1))
+            var dtc: int = int(f.get("target_cat", -1))
             var dref: int = int(f.get("ref", -1))
             var dtgt: int = int(f.get("target", -1))
-            if dref < 0 or dtgt < 0:
-                return false
-            if not _star_located_by_player(dref):
-                return false
-            if not _star_located_by_player(dtgt):
-                return false
-            var actual: int = _host.star_distance(dref, dtgt)
-            if actual < 0:
-                return false   # unreachable pair — nothing to entail
-            var claimed: int = int(f.get("hops", -1))
-            if bool(f.get("negated", false)):
-                return actual != claimed
-            return actual == claimed
+            if dref < 0 or dtgt < 0 or drc < 0 or dtc < 0:
+                return false   # version-6 clue: no descriptor framing to score
+            return _distance_side_exhausted(drc, dref) \
+                and _distance_side_exhausted(dtc, dtgt)
         "values_same":
             var vcat: int = int(f.get("cat", -1))
             var va: Array = _possible_values_for_star(int(f.get("a", -1)), vcat)
@@ -4248,6 +4233,18 @@ var _confirmer_clique_cache: Dictionary = {}
 ## order, but that was luck, not design.
 var _candidate_star_cache: Dictionary = {}
 
+## "<cat>:<star>" -> Array of map stars that descriptor could denote. Same
+## lifetime as _candidate_star_cache, which it is built from. One distance
+## clue asks for the same two rows on every fixpoint round and again from
+## every coverage tab.
+var _descriptor_star_cache: Dictionary = {}
+
+## The puzzle's distance_hop disclosures, parsed once per refresh. Depends
+## only on the loaded clues, so unlike every cache above it survives
+## _clear_deduction_caches() and is dropped by _reset_derived() instead.
+var _distance_constraints_cache: Array = []
+var _distance_constraints_built: bool = false
+
 
 ## Invalidated by any change to _match_records. Called at the start of
 ## _full_propagation_refresh() (which precedes every full UI rebuild) and
@@ -4303,6 +4300,12 @@ func _clear_deduction_caches_all() -> void:
     _axis_domain_cache.clear()
     _seq_singleton_cache.clear()
     _seq_singleton_built = false
+    # Descriptor rows are built from candidate sets, which this just
+    # dropped. The parsed constraint LIST is not cleared here — it depends
+    # only on the loaded clues, never on player state, and rebuilding it
+    # every round of the fixpoint would re-walk every clue's disclosures for
+    # nothing. _reset_derived() drops it once per refresh instead.
+    _descriptor_star_cache.clear()
 
 
 ## Convenience wrapper — 0.0 (nothing recorded yet) to 1.0 (every assertion
@@ -4465,6 +4468,13 @@ func _full_propagation_refresh() -> void:
         # that binding resolves the record's other axes through ground
         # truth, and those resolutions narrow further records. Running it
         # once could only ever catch the first link of that chain.
+        # FIRST in the round: distance eliminations are the only ones that
+        # need no player input at all (map topology alone rules positions
+        # out), so they are premises for everything below rather than
+        # consequences of it. Running them here means the colour/pitch
+        # narrowing they imply lands on the same frame instead of waiting
+        # for the next round.
+        _settle_distance_constraints()
         _settle_star_identity_from_candidates()
         _settle_derived_eliminations()
         # AFTER the eliminations above, so it sees the narrowest candidate
@@ -4745,6 +4755,274 @@ func _settle_derived_eliminations() -> void:
         if bool(_distinct_pair_cache[k]):
             proven_pairs[k] = true
     _distinct_pair_cache = proven_pairs
+
+
+# ==================================================
+# DISTANCE CONSTRAINTS (map topology).
+#
+# FOURTH structural rule class, after record-identity unification, the
+# cardinality/pigeonhole exclusions, and group->member narrowing.
+#
+# A distance clue reads "<descriptor A> is (not) N hops from <descriptor B>".
+# Neither side names a map star: A is a hidden label ("Astaeis", "the star
+# that fires 6th") and B is usually a GROUP noun phrase ("a yellow star",
+# "the star that plays E5"). So the claim the player is actually given is
+#
+#     the star A denotes is N hops from SOME star that B denotes
+#
+# which is a constraint on WHERE each side can be, and eliminates every map
+# position that has no possible partner at that distance. That is where the
+# information lives, and until this pass existed none of it was extracted:
+# the disclosure was only ever asked "is this clue used up yet".
+#
+# The two worked examples from the 2026-08-12 report:
+#
+#   "The star that fires 6th is 1 hop from a yellow star."  Yellow is
+#   painted on the map, so the group is exactly known. No two yellow stars
+#   are adjacent in this constellation, so no yellow star has a yellow
+#   neighbour — every yellow position is eliminated for the 6th-firing star,
+#   and _settle_derived_eliminations then turns that candidate-set narrowing
+#   into "6th is not yellow". Pure topology: no player input required, so it
+#   fires on a blank board.
+#
+#   "Astaeis is one hop from the star that plays E5."  Astaeis is confined
+#   to that star's neighbours, and the colours and pitches those neighbours
+#   carry are the only ones left open to it.
+#
+# Deliberately NOT reasoning from the disclosure's raw `ref`/`target` star
+# indices. Those are solution positions; the text discloses only the two
+# descriptors, so using them directly would leak the answer and assert more
+# than the player was told. They survive only as the handle every disclosure
+# uses to name a value (see _descriptor_term).
+# ==================================================
+
+## Every map star the descriptor (cat, star) could still denote, given only
+## what the player knows. This is the (descriptor -> stars) row that the
+## per-characteristic sweeps have always needed and never had; each caller
+## used to hand-roll its own version star by star.
+##
+## Always a SUPERSET of the truth — never narrower than the evidence — so
+## every elimination built on it is sound.
+func _stars_possible_for_descriptor(cat: int, star: int) -> Array:
+    var key: String = "%d:%d" % [cat, star]
+    if _descriptor_star_cache.has(key):
+        return _descriptor_star_cache[key]
+
+    var out: Array = []
+    match cat:
+        ConstellationLogicPuzzle.Category.COLOR:
+            # Painted on the map: the group is exactly known from the start.
+            var want: int = int(_host._star_colors[star]) \
+                if star < _host._star_colors.size() else -1
+            for s in _host._star_count:
+                if s < _host._star_colors.size() and int(_host._star_colors[s]) == want:
+                    out.append(s)
+        ConstellationLogicPuzzle.Category.PITCH:
+            # A star's note is known only once Listen has fired on it. An
+            # unlistened star could be carrying this note, so it stays in —
+            # dropping it would narrow on evidence the player does not have.
+            var wantn: String = _host._widgets._note_name_for_star(star)
+            for s in _host._star_count:
+                if not _player_knows_star_pitch(s) \
+                        or _host._widgets._note_name_for_star(s) == wantn:
+                    out.append(s)
+        _:
+            # NAME and SEQUENCE are hidden and alldiff: the descriptor
+            # denotes exactly one star, but which one is the thing being
+            # solved. Its record's candidate set IS the player's knowledge
+            # of that, so this reads the existing grid rather than
+            # duplicating it. Several records may confirm the same
+            # descriptor (Sort tabs, star widgets, popups) — intersect, as
+            # each is an independent constraint on the same star.
+            var narrowed: bool = false
+            for i in _match_records.size():
+                if _record_descriptor_state(i, cat, star) != 1:
+                    continue
+                var cands: Array = _candidate_stars_for_record(i)
+                if not narrowed:
+                    out = cands.duplicate()
+                    narrowed = true
+                    continue
+                var keep: Dictionary = {}
+                for c in cands:
+                    keep[int(c)] = true
+                var merged: Array = []
+                for o in out:
+                    if keep.has(int(o)):
+                        merged.append(int(o))
+                out = merged
+            if not narrowed:
+                for s in _host._star_count:
+                    out.append(s)
+
+    _descriptor_star_cache[key] = out
+    return out
+
+
+## Of `mine`, the positions that still have a partner in `theirs` consistent
+## with the claim. Everything dropped is provably impossible.
+##
+## The two directions are NOT mirror images, and getting that backwards is
+## the easy way to make this unsound:
+##
+##   positive ("is N hops from one of them") — a position survives if ANY
+##   partner sits at N. One witness is enough, because the claim is
+##   existential.
+##
+##   negated ("is not N hops from it") — a position dies only if EVERY
+##   partner sits at N, since then whichever star the other side really
+##   denotes, the forbidden distance holds. A single partner at some other
+##   distance leaves the position open.
+func _distance_allowed_stars(mine: Array, theirs: Array, hops: int, negated: bool) -> Array:
+    var out: Array = []
+    for m in mine:
+        var si: int = int(m)
+        var considered: int = 0
+        var at_hops: int = 0
+        for t in theirs:
+            var ti: int = int(t)
+            if ti == si:
+                continue   # a star is not its own partner
+            considered += 1
+            # star_distance returns -1 for an unreachable pair (Bellows has
+            # isolated stars); -1 never equals a real hop count, so those
+            # simply fail to witness, which is the right answer both ways.
+            if _host.star_distance(si, ti) == hops:
+                at_hops += 1
+        if negated:
+            if not (considered > 0 and at_hops == considered):
+                out.append(si)
+        elif at_hops > 0:
+            out.append(si)
+    return out
+
+
+## Every distance_hop disclosure across the puzzle's clues, in the matrix
+## framing. Built once per refresh — the fixpoint runs this pass up to
+## DERIVATION_MAX_ROUNDS times and the clue list cannot change mid-refresh.
+func _distance_constraints() -> Array:
+    if _distance_constraints_built:
+        return _distance_constraints_cache
+    _distance_constraints_built = true
+    _distance_constraints_cache = []
+    if _host == null or not (_host._form_clues_cache is Array):
+        return _distance_constraints_cache
+    for raw in _host._form_clues_cache:
+        if not (raw is Dictionary):
+            continue
+        var discs = (raw as Dictionary).get("disclosures", [])
+        if not (discs is Array):
+            continue
+        for d in discs:
+            if not (d is Dictionary):
+                continue
+            var f: Dictionary = d
+            if str(f.get("kind", "")) != "distance_hop":
+                continue
+            # A CACHE_VERSION 6 clue carries no descriptor framing, only two
+            # solution star indices — unusable here, and skipped rather than
+            # guessed at. CACHE_VERSION 7 regenerates those puzzles anyway;
+            # this is the belt to that braces.
+            if int(f.get("ref_cat", -1)) < 0 or int(f.get("target_cat", -1)) < 0:
+                continue
+            if int(f.get("hops", -1)) < 0:
+                continue
+            _distance_constraints_cache.append(f)
+    return _distance_constraints_cache
+
+
+func _settle_distance_constraints() -> void:
+    var wrote: bool = false
+    for f in _distance_constraints():
+        var c: Dictionary = f
+        var hops: int = int(c.get("hops", -1))
+        var neg: bool = bool(c.get("negated", false))
+        var rc: int = int(c.get("ref_cat", -1))
+        var tc: int = int(c.get("target_cat", -1))
+        var rs: int = int(c.get("ref", -1))
+        var ts: int = int(c.get("target", -1))
+        if rs < 0 or ts < 0:
+            continue
+        var ref_poss: Array = _stars_possible_for_descriptor(rc, rs)
+        var tgt_poss: Array = _stars_possible_for_descriptor(tc, ts)
+        if ref_poss.is_empty() or tgt_poss.is_empty():
+            continue   # nothing to constrain against
+        # BOTH directions. The subject side is the one the player usually
+        # cares about, but a Form 19 clue names two hidden descriptors and
+        # each narrows the other.
+        if _apply_distance_side(rc, rs, ref_poss, tgt_poss, hops, neg):
+            wrote = true
+        if _apply_distance_side(tc, ts, tgt_poss, ref_poss, hops, neg):
+            wrote = true
+    if wrote:
+        # This pass writes the star_elim that candidate sets are computed
+        # FROM, so those caches — and the descriptor rows built on top of
+        # them — are now stale. Monotone: eliminations only ever accumulate
+        # within a refresh, so proven-distinct pairs are kept.
+        _clear_deduction_caches(true)
+
+
+## Writes one side's eliminations into the derived layer. Returns whether
+## anything new was recorded, so the fixpoint can tell if it has settled.
+func _apply_distance_side(cat: int, star: int, mine: Array, theirs: Array,
+        hops: int, negated: bool) -> bool:
+    # Only the hidden axes own records to narrow. There is no per-record
+    # slot standing for "the yellow stars" as a group, and Colour/Pitch
+    # membership is read off the map rather than deduced — so the given
+    # side is a source of constraint here, never a target of one.
+    if cat != ConstellationLogicPuzzle.Category.NAME \
+            and cat != ConstellationLogicPuzzle.Category.SEQUENCE:
+        return false
+    var allowed: Array = _distance_allowed_stars(mine, theirs, hops, negated)
+    if allowed.size() >= mine.size():
+        return false   # rules nothing out
+    var allow: Dictionary = {}
+    for a in allowed:
+        allow[int(a)] = true
+
+    var wrote: bool = false
+    for i in _match_records.size():
+        if _record_descriptor_state(i, cat, star) != 1:
+            continue
+        for m in mine:
+            var si: int = int(m)
+            if allow.has(si):
+                continue
+            if _star_elim_state_for_record(i, si) != 0:
+                continue   # already ruled out; _add_derived_state would no-op
+            if _add_derived_state(i, "star_elim", si, 2):
+                wrote = true
+    return wrote
+
+
+## Is this side of a distance claim incapable of yielding anything further?
+##
+## Deliberately NOT "did applying the constraint change anything this
+## round". The engine now applies these itself, so that test would report
+## every distance clue exhausted the instant its own pass ran — the clue
+## justifying its own retirement, which is the failure mode the derived
+## layer exists to prevent.
+func _distance_side_exhausted(cat: int, star: int) -> bool:
+    match cat:
+        ConstellationLogicPuzzle.Category.COLOR:
+            # Visible from the first frame: it never held anything back.
+            return true
+        ConstellationLogicPuzzle.Category.PITCH:
+            # Settled once every star this group could contain has actually
+            # been listened to. Until then an unheard star might join or
+            # leave it, and the clue still has reach.
+            for s in _stars_possible_for_descriptor(cat, star):
+                if not _player_knows_star_pitch(int(s)):
+                    return false
+            return true
+    # Hidden axis: exhausted exactly when the player has pinned it to one
+    # map position. Then the hop relation is readable straight off the map
+    # and nothing is left to give.
+    #
+    # This is where the 2026-08-12 fix was still too weak: it asked whether
+    # a record was BOUND to a star, which misses a position the player
+    # narrowed to by elimination without ever placing anything.
+    return _stars_possible_for_descriptor(cat, star).size() == 1
 
 
 # ==================================================

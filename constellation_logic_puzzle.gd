@@ -1163,7 +1163,15 @@ func check_solution(candidate: Array) -> bool:
 # relational content at all (a cell only says "same star / different star"),
 # so ~78%% of clues had nothing coverage could score. See
 # ConstellationPuzzleDeduction._disclosure_satisfied().
-const CACHE_VERSION: int = 6
+#
+# version 7: distance_hop disclosures also carry ref_cat/target_cat, the
+# categories each end was DESCRIBED under. A version-6 distance clue records
+# only two solution star indices, which the deduction side cannot soundly
+# reason from — see the note on Form 15's value_facts. Bumped rather than
+# defaulted because a half-populated distance clue would silently derive
+# nothing while looking fully wired; _load_cache() rejects the whole cache on
+# a version mismatch, so those puzzles regenerate.
+const CACHE_VERSION: int = 7
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -3234,9 +3242,21 @@ func _build_form_distance_existential(chain: Dictionary) -> Dictionary:
         # asserts. Distance is ternary so it fits no cell, and value_facts
         # (not solver_facts) is the right home: the Sequence uniqueness CSP
         # has no use for hops.
+        #
+        # ref_cat/target_cat (CACHE_VERSION 7) are what make this a claim
+        # about DESCRIPTORS rather than about two solution star indices.
+        # The text names neither star: it says "<hidden label> is N hops
+        # from <group noun phrase>", so what the player is told is "the
+        # star this descriptor denotes is N hops from SOME star in that
+        # group". Recording the categories lets the engine reconstruct both
+        # groups from the player's own knowledge, which is both the only
+        # sound reading and the only one that can eliminate anything.
+        # Without them the deduction side has nothing but ref/target — raw
+        # solution indices it must not reason from directly.
         "value_facts": [{
             "kind": "distance_hop",
             "ref": subject_star, "target": target, "hops": hop,
+            "ref_cat": int(a["id_cat"]), "target_cat": prop_cat,
         }],
     }
 
@@ -3381,9 +3401,15 @@ func _build_form_non_adjacency(chain: Dictionary) -> Dictionary:
         # an extremum over a whole distance row ("the closest star to X is
         # Y"), not a fixed hop count, so it needs its own kind rather than
         # a misleading exact-hop stand-in.
+        # target_cat's group is a SINGLETON here, guaranteed by the
+        # _category_uniquely_labels(value_cat, s) filter on the candidate
+        # search above — so the same existential representation Form 15
+        # uses ("some star in the group") collapses to Form 19's definite
+        # reference without needing a second shape for it.
         "value_facts": [{
             "kind": "distance_hop",
             "ref": subject_star, "target": value_star, "hops": 1, "negated": true,
+            "ref_cat": subject_cat, "target_cat": value_cat,
         }],
     }
 

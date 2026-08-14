@@ -555,10 +555,16 @@ func _coerce_disclosure(d: Dictionary) -> Dictionary:
         match key:
             "kind":
                 out[key] = str(v)
+            # distance_hop's own fields (ref/target/hops/ref_cat/target_cat,
+            # negated) were reaching the catch-all below and arriving as
+            # JSON floats. Every read site wraps them in int()/bool() so
+            # nothing was wrong downstream, but leaving them untyped here
+            # made this list a misleading record of what gets coerced.
             "a", "b", "mid", "s", "star_a", "r", "k", "lo", "hi", "offset", \
-            "cat", "cat_a", "cat_b":
+            "cat", "cat_a", "cat_b", \
+            "ref", "target", "hops", "ref_cat", "target_cat":
                 out[key] = _coerce_int(v, -1)
-            "a_gt_b", "want_lowest":
+            "a_gt_b", "want_lowest", "negated":
                 out[key] = _coerce_bool(v, false)
             "neighbors", "stars":
                 var arr: Array = []
