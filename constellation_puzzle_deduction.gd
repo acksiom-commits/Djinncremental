@@ -3362,8 +3362,22 @@ func _settle_derived_exclusions_for_axis(axis: int) -> void:
 
     var states_key: String = _axis_states_key(axis)
     for i in _match_records.size():
-        if _effective_star_idx(i) >= 0:
-            continue   # ground truth already governs; nothing left to derive
+        # "Ground truth already governs" is TRUE for a record the player has
+        # really identified, and FALSE for an auto-created star-widget stub.
+        # A stub has star_idx >= 0 from the instant its widget renders, but
+        # _effective_name_state and _effective_pitch_state deliberately
+        # withhold ground truth from it (see
+        # _record_is_unconfirmed_star_widget_stub) precisely so its true
+        # name and pitch do not leak. So its Name axis really is unknown —
+        # measured 2026-08-13: all 15 names still open on a star-7 stub —
+        # and skipping it threw away every derivable exclusion for every
+        # star widget's Name checklist.
+        #
+        # Unskipping can only ADD conclusions: this pass writes solely
+        # through _add_derived_state, which never overwrites player input,
+        # and its clique reasoning does not consult star_idx at all.
+        if _effective_star_idx(i) >= 0 and not _record_is_unconfirmed_star_widget_stub(i):
+            continue   # genuinely identified; ground truth governs
         for e in ready:
             var value = (e as Array)[0]
             if _axis_state(axis, i, value) != 0:
