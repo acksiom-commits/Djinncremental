@@ -2521,6 +2521,26 @@ func _build_form_equality_pair(chain: Dictionary) -> Dictionary:
     var b: Dictionary = _identity_cell_for_known_star(star_b, axis)
     if b.is_empty():
         return {}
+    # Both ends must not be labelled off GIVEN axes. The identity picks are
+    # excluded from `axis` but not from the OTHER given axis, so with
+    # axis=Colour both labels could land on Pitch and produce
+    #
+    #     "The star that plays F5 and the star that plays E5 have the
+    #      same color."
+    #
+    # — every part of which the player reads straight off the map once the
+    # stars have been listened to. Reported as the first clue of a live
+    # puzzle, 2026-08-13.
+    #
+    # Forms 5/8/10 may also carry pitch-labelled subjects and are fine,
+    # because what they ASSERT is a Sequence fact. This Form asserts a given
+    # axis too, so given labels leave no hidden content anywhere in it.
+    # Same requirement _is_hidden_category already enforces for the
+    # distance-anchored Forms — its docstring describes this exact failure;
+    # it had simply never been applied here. Reject and let the caller retry
+    # with a fresh draw.
+    if not _is_hidden_category(int(a["id_cat"])) and not _is_hidden_category(int(b["id_cat"])):
+        return {}
     var id_a: Dictionary = {"cat": int(a["id_cat"]), "star": star_a}
     var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
     var axis_a: Dictionary = {"cat": axis, "star": star_a}

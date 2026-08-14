@@ -411,24 +411,52 @@ func _detect_contradictions() -> void:
                 str(nm), idxs.size(), ", ".join(wheres), tail],
         })
 
-    # Two records on the same star is a different shape of impossible: each
-    # is individually fine, and only the pair is wrong. Effective identity,
-    # so a derived binding colliding with a confirmed one is caught too —
-    # _settle_star_identity_from_candidates refuses to create that case,
-    # but a player confirm landing on a star some record already derived
-    # can still produce it.
+    # Two records on one star is impossible ONLY when the two are provably
+    # DIFFERENT stars. On its own it is ordinary and expected: a record is a
+    # view, not a star, and the same star is routinely held by a Sort:Name
+    # row, a Sort:Pitch slot, a Staff position and a map widget at once.
+    # That is the entire reason _records_provably_identical and the merge
+    # path exist.
+    #
+    # Reported from a live game 2026-08-13: "Slot C#5 A and The star that
+    # fires 4th are both set to the same star" on a board where C#5 really
+    # WAS the 4th note. Reproduced with those two records not provably
+    # distinct, i.e. nothing said they were different stars — the engine had
+    # simply worked out, correctly, that they were the same one.
+    #
+    # It became reachable when the identity passes were unblocked (54d71d9):
+    # merging deliberately runs against an EMPTY derived layer, so a
+    # co-identification the engine DERIVES cannot be folded away, and every
+    # such correct conclusion was being reported as a broken board.
+    #
+    # The star-shaped reading — "a star may hold at most one record" — is
+    # what made this look like a conflict. Matrix-up, the constraint is on
+    # the star's identity, and many views of one star agreeing about it is
+    # agreement, not collision. Only two views that CANNOT be the same star
+    # are a contradiction.
     var by_star: Dictionary = {}
     for i in _match_records.size():
         var si: int = _effective_star_idx(i)
         if si < 0:
             continue
-        if by_star.has(si):
-            _contradictions.append({
-                "record": i, "axis": "identity",
-                "text": "%s and %s are both set to the same star." % [
-                    _record_display_name(int(by_star[si])), _record_display_name(i)],
-            })
-        by_star[si] = i
+        if not by_star.has(si):
+            by_star[si] = []
+        (by_star[si] as Array).append(i)
+    for si2 in by_star:
+        var here: Array = by_star[si2]
+        if here.size() < 2:
+            continue
+        for a in here.size():
+            for b in range(a + 1, here.size()):
+                var clash: Array[String] = _same_star_value_clash(int(here[a]), int(here[b]))
+                if clash.is_empty():
+                    continue   # same star, seen twice — agreement, not conflict
+                _contradictions.append({
+                    "record": int(here[b]), "axis": "identity",
+                    "text": "%s and %s are both set to the same star, but disagree about %s." % [
+                        _record_display_name(int(here[a])), _record_display_name(int(here[b])),
+                        " and ".join(clash)],
+                })
 
     # NO same-position check here, deliberately — see
     # _settle_same_position_identity, which is the pass that would need one.
@@ -2549,6 +2577,59 @@ func _merge_conflict_kinds(idx_a: int, idx_b: int) -> Array[String]:
 ##
 ## Returns human-readable descriptions, empty when the two records can be
 ## merged without destroying anything.
+## Why two records that sit on the SAME star cannot both be right — empty
+## when there is no reason, which is the ordinary case.
+##
+## A star has exactly one name, fires at exactly one position, plays exactly
+## one note and has exactly one colour. So the contradiction is never "two
+## records share a star" — records are views, and a star is routinely held
+## by a Sort:Name row, a Sort:Pitch slot and a Staff position at once. It is
+## "two views disagree about a single-valued property of that one star",
+## which is a clash in the CELL, not in the record count.
+##
+## Reads only each record's OWN defining fields and marks. That is not a
+## detail: once both records are pinned to a star, _effective_name_state
+## reads ground truth off star_idx and hands BOTH of them that star's real
+## name, so they stop looking distinct at exactly the moment they are most
+## broken — the corruption masks its own proof. _records_provably_distinct
+## collapses for the same reason and must not be used here (measured
+## 2026-08-13: it reported false for two differently-named records pinned to
+## one star, silencing a real error test_contradictions.gd had been catching
+## since it was written).
+func _same_star_value_clash(idx_a: int, idx_b: int) -> Array[String]:
+    var out: Array[String] = _merge_value_clashes(idx_a, idx_b)
+    if idx_a < 0 or idx_a >= _match_records.size() \
+            or idx_b < 0 or idx_b >= _match_records.size():
+        return out
+    var a: Dictionary = _match_records[idx_a]
+    var b: Dictionary = _match_records[idx_b]
+
+    var an: String = str(a.get("name", ""))
+    var bn: String = str(b.get("name", ""))
+    if an != "" and bn != "" and an != bn:
+        out.append("name (%s vs %s)" % [an, bn])
+
+    # Only an EXACT position is a claim; a range is still open.
+    var alo: int = int(a.get("seq_lo", 0))
+    var blo: int = int(b.get("seq_lo", 0))
+    if alo > 0 and alo == int(a.get("seq_hi", 0)) \
+            and blo > 0 and blo == int(b.get("seq_hi", 0)) and alo != blo:
+        out.append("firing position (%d vs %d)" % [alo, blo])
+
+    # Slot labels carry their value in the first token ("A#4 A", "Red B").
+    for pair in [["pitch_slot_label", "pitch"], ["color_slot_label", "colour"],
+            ["degree_slot_label", "degree"]]:
+        var al: String = str(a.get(pair[0], ""))
+        var bl: String = str(b.get(pair[0], ""))
+        if al == "" or bl == "":
+            continue
+        var av: String = al.get_slice(" ", 0)
+        var bv: String = bl.get_slice(" ", 0)
+        if av != bv:
+            out.append("%s (%s vs %s)" % [pair[1], av, bv])
+    return out
+
+
 func _merge_value_clashes(idx_a: int, idx_b: int) -> Array[String]:
     var out: Array[String] = []
     if idx_a < 0 or idx_a >= _match_records.size() \
