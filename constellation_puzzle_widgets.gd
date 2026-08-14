@@ -262,6 +262,77 @@ func _populate_unused_markers() -> void:
         _host._markers_content.add_child(lbl)
 
 
+# ============================================================================
+# DEV SPEC — PLAYER-CONTROLLED CLUE STATE (decided with the user 2026-08-14).
+# Not yet built. This replaces the utility categorisation below.
+#
+# WHY THE UTILITY MODEL IS BEING RETIRED
+# Unused/Useful/UsedUp are computed from _clue_coverage_fraction — the engine
+# guessing how much of a clue the player has absorbed. It has been wrong in
+# both directions repeatedly, most recently:
+#
+#   "Helios is between Nyxaos and the star that fires 5th note."
+#
+# filed as Used Up while all three of its stars were still wide open. Every
+# fix so far has been a better heuristic, and the next one would be too. A
+# player-driven model cannot be wrong about what the player has absorbed,
+# because it stops guessing.
+#
+# THE MODEL
+#   GREEN    every clue starts here
+#   MAGENTA  the player has entered at least one mark that OVERLAPS what this
+#            clue names
+#   USED UP  the player right-clicked it. Right-click again restores it to the
+#            working list (magenta if touched, green if not). Reversible —
+#            a misclick must not cost a puzzle.
+#
+# ATTRIBUTION — the load-bearing detail.
+# "Entered by the player" means EXACTLY that: a selection or a block the
+# player made. NOT an engine derivation, and NOT the sibling-clearing
+# fallout of a confirm — _propagate_name_states_confirmed_same_record sets
+# name_states for every OTHER name too, so counting raw state != 0 would
+# turn nearly every clue magenta on the first click. The manual_*_blocks
+# dicts already exist to tell player-driven blocks from that fallout (see
+# _on_slot_name_x) and are the right source, together with state == 1
+# confirmations.
+#
+# Overlap is by RENDERED VALUE, so it matches what the clue visibly says:
+# build the set of descriptor terms the player has actually marked
+# ("N:Heleai", "C:Blue", "P:C#5", "S:5") and turn a clue magenta when any of
+# its search_terms is in that set. One mark can turn several clues magenta,
+# which is correct — it IS information about all of them.
+#
+# search_terms is the right encoding here for the same reason the SEARCH tab
+# uses it: it is what the text VISIBLY states. `cells` records assertions the
+# text may never render, and `chars` lists nodes several Forms never show.
+# See [[clue_encodings_four_representations]].
+#
+# TABS, in this order: Clues / Used Up / Guide / Search / Hint
+# "Clues" is one working list holding both green and magenta — colour is the
+# only distinction. "Useful" disappears entirely. "Hint" is a placeholder
+# for now (see the hint note below).
+#
+# SCOPE NOTE: the tab buttons are scene nodes (TabUnused/TabUseful/... in
+# ConstellationStudyOverlay.tscn), so this needs a .tscn edit as well as
+# script changes — the tab set is not defined in code.
+#
+# PERSISTENCE: the retired (right-clicked) set is player state and must
+# round-trip through the save, like notes. "Touched" does NOT need saving —
+# it is derived from the marks, which are already saved.
+#
+# ── HINT SYSTEM (idea 2026-08-14, deliberately NOT part of this change) ──
+# Players can CHARGE a hint system with further Spark endowments after the
+# third tier. Charge costs start matching the Tier amounts, to be tuned down
+# later if needed — the user's note was that Hard-mode solve times may make
+# a reduction unnecessary.
+#
+# What spending a charge DOES, current plan: point at a clue that currently
+# yields new information, WITHOUT saying what it yields. That preserves the
+# deduction and removes only the search. The engine can already identify
+# those clues, which is what makes it cheap to build. To be installed after
+# the current testing cycle, not during it.
+# ============================================================================
+
 func _populate_useful_markers() -> void:
     var shown: bool = false
     var neutral_col := STATE_COLORS.muted
@@ -438,6 +509,35 @@ func _open_search_popup() -> void:
 #
 # ── GUIDE CONTENT NOTES (drafted 2026-08-07, verified against the clue
 # ── builders; write these up as player-facing entries when the tab is built)
+#
+# "BETWEEN" IS NEVER THE MAP (asked by the player 2026-08-14, answered
+# from _build_form_betweenness)
+# Betweenness is ordering along ONE axis, never star-map topology. Which
+# axis is carried by the VERB, and that is the whole tell:
+#
+#   "X fires between A and B."  -> SEQUENCE. Firing order.
+#   "X is between A and B."     -> PITCH. Pitch rank.
+#
+# _order_verb() returns "fires" for Sequence and "is" for everything else,
+# and the Form picks Sequence 70% of the time, Pitch 30%.
+#
+# Map distance is a different family entirely and always says so out loud —
+# "is 1 hop from", "is not connected to". If a clue does not mention hops or
+# connection, it is not about the map.
+#
+# CAVEAT, and probably a text fix rather than a Guide entry: the PITCH
+# variant's verb is the bare "is", which names no axis at all. The reported
+# example —
+#
+#   "Helios is between Nyxaos and the star that fires 5th note."
+#
+# is a claim about PITCH RANK, but nothing in the sentence says so, and one
+# of its three labels is a Sequence descriptor, which actively pulls the
+# reader toward the wrong axis. The identifiers and the compared axis are
+# independent by design (id_cat is chosen separately from axis), so this is
+# not a generator bug — but "is between" should probably render as
+# something explicit like "sits between ... in pitch" before this reaches
+# players.
 #
 # DISTINCT STARS, NOT DISTINCT PITCHES (measured 2026-08-10)
 # Every star a clue names is a different star — a clue never refers to the
