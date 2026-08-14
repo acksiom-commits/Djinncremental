@@ -81,11 +81,11 @@ const UNKNOWN_SEQ_COLOR := Color(0.35, 0.75, 0.45, 1.0)
 
 # Shared puzzle-state color palette — see puzzle_state_colors.gd.
 const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
-@onready var _tab_unused:          Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabUnused")
-@onready var _tab_useful:          Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabUseful")
-@onready var _tab_used_up:         Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabUsedUp")
+@onready var _tab_clues:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabClues")
+@onready var _tab_used_up:         Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabUsedUp")
 @onready var _tab_guide:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabGuide")
 @onready var _tab_search:          Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabSearch")
+@onready var _tab_hint:            Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabHint")
 
 # ── STYLE CACHE ──────────────────────────────────────────────────────
 # Shared with constellation_overlay.gd — see star_color_palette.gd.
@@ -203,15 +203,15 @@ func _ready() -> void:
     _widgets.setup(self, _deduction)
     _build_style_boxes()
 
-    _tab_unused.pressed.connect(func(): _widgets._set_marker_tab(0))
-    _tab_useful.pressed.connect(func(): _widgets._set_marker_tab(1))
-    _tab_used_up.pressed.connect(func(): _widgets._set_marker_tab(2))
-    _tab_guide.pressed.connect(func(): _widgets._set_marker_tab(3))
+    _tab_clues.pressed.connect(func(): _widgets._set_marker_tab(0))
+    _tab_used_up.pressed.connect(func(): _widgets._set_marker_tab(1))
+    _tab_guide.pressed.connect(func(): _widgets._set_marker_tab(2))
     # SEARCH always opens the picker (not just when switching TO the tab),
     # so pressing it again while already on the tab is how you change term.
     _tab_search.pressed.connect(func():
-        _widgets._set_marker_tab(4)
+        _widgets._set_marker_tab(3)
         _widgets._open_search_popup())
+    _tab_hint.pressed.connect(func(): _widgets._set_marker_tab(4))
 
     _star_map_control.draw.connect(_draw_star_map)
     _star_map_control.gui_input.connect(_on_map_input)
@@ -424,6 +424,16 @@ func _load_constellation_data() -> void:
 
     # Puzzle notes.
     var notes: Dictionary = _cd.get_player_puzzle_notes(_constellation_id)
+
+    # Clues the player right-clicked into Used Up. Rebuilt from scratch on
+    # every constellation load, so one puzzle's retirements can never leak
+    # into another — the same per-puzzle-state hazard
+    # test_constellation_switch_isolation.gd exists to catch.
+    _deduction._retired_clues.clear()
+    for t in _coerce_array(notes.get("retired_clues", []), []):
+        var txt: String = str(t)
+        if txt != "":
+            _deduction._retired_clues[txt] = true
 
     # The old "protected_names" / "user_blocks" note fields are gone: the
     # star widget's protect and manual-block flags moved onto each star's

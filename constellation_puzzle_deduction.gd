@@ -831,6 +831,69 @@ func _propagate_pitch_confirmed_same_record(record_idx: int, confirmed_note: Str
         r["pitch_slot_label"] = ""
 
 
+## Clue texts the player has right-clicked into Used Up. Player state, so it
+## round-trips through the save; reversible, so a misclick costs nothing.
+##
+## Deliberately NOT computed from coverage. The utility categorisation this
+## replaced was the engine GUESSING how much of a clue the player had
+## absorbed, and it was wrong in both directions repeatedly — see the DEV
+## SPEC above _populate_clue_markers() in constellation_puzzle_widgets.gd.
+var _retired_clues: Dictionary = {}
+
+
+func is_clue_retired(text: String) -> bool:
+    return _retired_clues.has(text)
+
+
+## Returns the new state, so the caller can rebuild without re-querying.
+func toggle_clue_retired(text: String) -> bool:
+    if text == "":
+        return false
+    if _retired_clues.has(text):
+        _retired_clues.erase(text)
+    else:
+        _retired_clues[text] = true
+    _save_puzzle_notes()
+    return _retired_clues.has(text)
+
+
+## Every descriptor value the PLAYER has personally marked, as rendered
+## terms ("N:Heleai", "C:Blue", "P:C#5", "S:5") — the same vocabulary the
+## SEARCH tab and each clue's search_terms use, so a clue can be matched
+## against it by what its text visibly says.
+##
+## "Personally marked" is the load-bearing part, and it is narrower than
+## "has a non-zero state". Confirming one name calls
+## _propagate_name_states_confirmed_same_record, which sets name_states to 2
+## for every OTHER name on that record — counting those would turn nearly
+## every clue magenta on the player's first click. Only a confirmation
+## (state == 1) or a mark the player made by hand (the manual_*_blocks
+## dicts, which exist precisely to tell those apart) counts here.
+func player_marked_terms() -> Dictionary:
+    var out: Dictionary = {}
+    for r in _match_records:
+        var rec: Dictionary = r
+        for n in (rec.get("name_states", {}) as Dictionary):
+            if int((rec.get("name_states", {}) as Dictionary)[n]) == 1 \
+                    or (rec.get("manual_name_blocks", {}) as Dictionary).has(n):
+                out["N:" + str(n)] = true
+        for ci in (rec.get("color_states", {}) as Dictionary):
+            if int((rec.get("color_states", {}) as Dictionary)[ci]) == 1 \
+                    or (rec.get("manual_color_blocks", {}) as Dictionary).has(ci):
+                var idx: int = int(ci)
+                if idx >= 0 and idx < _host.COLOR_NAME_LABELS.size():
+                    out["C:" + str(_host.COLOR_NAME_LABELS[idx])] = true
+        for note in (rec.get("pitch_states", {}) as Dictionary):
+            if int((rec.get("pitch_states", {}) as Dictionary)[note]) == 1 \
+                    or (rec.get("manual_pitch_blocks", {}) as Dictionary).has(note):
+                out["P:" + str(note)] = true
+        # Sequence has no per-value state dict; an exact pin IS the mark.
+        var lo: int = int(rec.get("seq_lo", 0))
+        if lo > 0 and lo == int(rec.get("seq_hi", 0)):
+            out["S:%d" % lo] = true
+    return out
+
+
 func _save_puzzle_notes() -> void:
     # Every mutation path calls this, so it's the reliable choke point for
     # invalidating the derived caches — see _clear_deduction_caches().
@@ -839,6 +902,10 @@ func _save_puzzle_notes() -> void:
         return
     var notes: Dictionary = {}
     notes["match_records"] = _save_match_records()
+    # Player state, not derived: which clues they right-clicked into Used Up.
+    # Keyed by clue TEXT rather than index, because clue order is not a
+    # stable identifier across a cache regeneration.
+    notes["retired_clues"] = _retired_clues.keys()
     # protected_names / user_blocks are gone as separate note fields — the
     # star widget's protect and manual-block flags now live on each star's
     # own record, so they round-trip inside match_records above.

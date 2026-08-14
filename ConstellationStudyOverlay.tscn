@@ -169,19 +169,19 @@ horizontal_alignment = 1
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="TabUnused" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=295307069]
+[node name="TabClues" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=295307069]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_font_sizes/font_size = 19
-text = "Unused"
+text = "Clues"
 
-[node name="TabUseful" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=2024991309]
+[node name="TabUsedUp" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=394915045]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_font_sizes/font_size = 19
-text = "Useful"
+text = "Used Up"
 
 [node name="TabGuide" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=1922528263]
 layout_mode = 2
@@ -193,19 +193,19 @@ text = "GUIDE"
 [node name="MarkerTabBar2" type="HBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=808034110]
 layout_mode = 2
 
-[node name="TabUsedUp" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=394915045]
-layout_mode = 2
-size_flags_horizontal = 3
-focus_mode = 0
-theme_override_font_sizes/font_size = 19
-text = "Used Up"
-
 [node name="TabSearch" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=1600000004]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_font_sizes/font_size = 19
 text = "SEARCH"
+
+[node name="TabHint" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=1600000006]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 19
+text = "HINT"
 
 [node name="ResetButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar2" unique_id=1600000002]
 layout_mode = 2

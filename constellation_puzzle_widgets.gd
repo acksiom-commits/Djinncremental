@@ -61,17 +61,22 @@ func _max_candidate_list_length() -> int:
 # ==================================================
 # MARKERS PANEL
 # ==================================================
+## Tab indices, in the order the buttons read: 0 Clues, 1 Used Up, 2 Guide,
+## 3 Search, 4 Hint. -1 is the default Matches panel.
+##
+## Renumbered 2026-08-14 when "Useful" was removed — the old order was
+## 0 Unused, 1 Useful, 2 UsedUp, 3 Guide, 4 Search.
 func _set_marker_tab(tab_idx: int) -> void:
     _host._active_marker_tab = tab_idx
-    _host._tab_unused.add_theme_stylebox_override("normal",
+    _host._tab_clues.add_theme_stylebox_override("normal",
         _host._sb_tab_active if tab_idx == 0 else _host._sb_tab_inactive)
-    _host._tab_useful.add_theme_stylebox_override("normal",
-        _host._sb_tab_active if tab_idx == 1 else _host._sb_tab_inactive)
     _host._tab_used_up.add_theme_stylebox_override("normal",
-        _host._sb_tab_active if tab_idx == 2 else _host._sb_tab_inactive)
+        _host._sb_tab_active if tab_idx == 1 else _host._sb_tab_inactive)
     _host._tab_guide.add_theme_stylebox_override("normal",
-        _host._sb_tab_active if tab_idx == 3 else _host._sb_tab_inactive)
+        _host._sb_tab_active if tab_idx == 2 else _host._sb_tab_inactive)
     _host._tab_search.add_theme_stylebox_override("normal",
+        _host._sb_tab_active if tab_idx == 3 else _host._sb_tab_inactive)
+    _host._tab_hint.add_theme_stylebox_override("normal",
         _host._sb_tab_active if tab_idx == 4 else _host._sb_tab_inactive)
     _populate_markers_panel()
 
@@ -93,11 +98,11 @@ func _populate_markers_panel() -> void:
         child.queue_free()
 
     match _host._active_marker_tab:
-        0: _populate_unused_markers()
-        1: _populate_useful_markers()
-        2: _populate_used_up_markers()
-        3: _populate_guide_markers()
-        4: _populate_search_markers()
+        0: _populate_clue_markers()
+        1: _populate_used_up_markers()
+        2: _populate_guide_markers()
+        3: _populate_search_markers()
+        4: _populate_hint_markers()
         _: _populate_name_markers()
 
 
@@ -238,28 +243,48 @@ func _jump_to_selected_clue() -> void:
 # dependency reasoning that per-clue coverage doesn't carry, so it's
 # deliberately not one of these three — see memory
 # (planned_clues_tab_utility_rework) for that gap.
-func _populate_unused_markers() -> void:
+## THE working clue list: everything the player has not retired.
+##
+## GREEN  = untouched. MAGENTA = the player has entered at least one mark
+## overlapping what this clue names. Colour is the only distinction; there
+## is no second tab, because the split was never worth a click.
+func _populate_clue_markers() -> void:
     var shown: bool = false
-    var neutral_col := STATE_COLORS.muted
+    var marked: Dictionary = _deduction.player_marked_terms()
     for clue in _all_final_clues_for_tabs():
         var text: String = str(clue.get("text", ""))
-        if text == "":
+        if text == "" or _deduction.is_clue_retired(text):
             continue
-        # Unmeasurable clues are NOT unused — see COVERAGE_UNMEASURABLE.
-        var f_un: float = _deduction._clue_coverage_fraction(clue.get("cells", []), clue.get("search_terms", []), clue.get("disclosures", []))
-        if f_un != 0.0:
-            continue
-        var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
-        _host._markers_content.add_child(_make_clue_label(text, col))
+        _host._markers_content.add_child(
+            _make_clue_label(text, _clue_state_color(clue, marked)))
         shown = true
 
     if not shown:
         var lbl := Label.new()
-        lbl.text = "No unused clues right now — every generated clue has at least one fact already in your notes."
+        lbl.text = "Every clue is in Used Up. Right-click one there to bring it back."
         lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
         lbl.add_theme_font_size_override("font_size", 16)
         lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _host._markers_content.add_child(lbl)
+
+
+## Green until the player has personally marked something the clue NAMES,
+## magenta after.
+##
+## Matched on search_terms — the encoding that records what the text
+## VISIBLY states — so the colour tracks what the player can actually read
+## in the sentence. `cells` records assertions several Forms never render,
+## and `chars` lists nodes that are never shown at all; either would turn
+## clues magenta for words that are not on screen. See
+## [[clue_encodings_four_representations]].
+##
+## One mark can turn several clues magenta. That is correct, not a bug: it
+## genuinely IS information bearing on all of them.
+func _clue_state_color(clue: Dictionary, marked: Dictionary) -> Color:
+    for t in (clue.get("search_terms", []) as Array):
+        if marked.has(str(t)):
+            return STATE_COLORS.protected      # magenta — worked on
+    return STATE_COLORS.confirmed              # green — untouched
 
 
 # ============================================================================
@@ -312,9 +337,9 @@ func _populate_unused_markers() -> void:
 # only distinction. "Useful" disappears entirely. "Hint" is a placeholder
 # for now (see the hint note below).
 #
-# SCOPE NOTE: the tab buttons are scene nodes (TabUnused/TabUseful/... in
-# ConstellationStudyOverlay.tscn), so this needs a .tscn edit as well as
-# script changes — the tab set is not defined in code.
+# BUILT 2026-08-14. The tab buttons are scene nodes, so this needed a .tscn
+# edit as well: TabUnused became TabClues, TabUseful was deleted, TabUsedUp
+# moved up into the first row, and TabHint was added to the second.
 #
 # PERSISTENCE: the retired (right-clicked) set is player state and must
 # round-trip through the save, like notes. "Touched" does NOT need saving —
@@ -333,54 +358,40 @@ func _populate_unused_markers() -> void:
 # the current testing cycle, not during it.
 # ============================================================================
 
-func _populate_useful_markers() -> void:
-    var shown: bool = false
-    var neutral_col := STATE_COLORS.muted
-    for clue in _all_final_clues_for_tabs():
-        var text: String = str(clue.get("text", ""))
-        if text == "":
-            continue
-        var frac: float = _deduction._clue_coverage_fraction(clue.get("cells", []), clue.get("search_terms", []), clue.get("disclosures", []))
-        # Partially worked, OR not scoreable at all — an unmeasurable clue
-        # still has something to give, so it belongs here rather than being
-        # buried in Unused (see COVERAGE_UNMEASURABLE).
-        var unmeasurable: bool = frac == _deduction.COVERAGE_UNMEASURABLE
-        if not unmeasurable and (frac <= 0.0 or frac >= 1.0):
-            continue
-        var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
-        _host._markers_content.add_child(_make_clue_label(text, col))
-        shown = true
-
-    if not shown:
-        var lbl := Label.new()
-        lbl.text = "No partially-worked clues right now."
-        lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
-        lbl.add_theme_font_size_override("font_size", 16)
-        lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-        _host._markers_content.add_child(lbl)
-
-
+## Clues the PLAYER retired by right-clicking. No coverage anywhere in here:
+## the engine no longer has an opinion about whether a clue is spent.
 func _populate_used_up_markers() -> void:
     var shown: bool = false
-    var neutral_col := STATE_COLORS.muted
+    var marked: Dictionary = _deduction.player_marked_terms()
     for clue in _all_final_clues_for_tabs():
         var text: String = str(clue.get("text", ""))
-        if text == "":
+        if text == "" or not _deduction.is_clue_retired(text):
             continue
-        # Never claim "used up" for a clue we cannot score.
-        if _deduction._clue_coverage_fraction(clue.get("cells", []), clue.get("search_terms", []), clue.get("disclosures", [])) < 1.0:
-            continue
-        var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
-        _host._markers_content.add_child(_make_clue_label(text, col))
+        _host._markers_content.add_child(
+            _make_clue_label(text, _clue_state_color(clue, marked)))
         shown = true
 
     if not shown:
         var lbl := Label.new()
-        lbl.text = "No fully-captured clues yet — everything generated still has unconfirmed facts."
+        lbl.text = "Nothing retired yet. Right-click a clue to move it here when you are done with it — right-click again here to put it back."
         lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
         lbl.add_theme_font_size_override("font_size", 16)
         lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _host._markers_content.add_child(lbl)
+
+
+## Placeholder. The mechanic: charge with further Spark endowments after the
+## third tier, costs starting at the Tier amounts, and a charge points at a
+## clue that currently yields new information WITHOUT saying what it yields —
+## preserving the deduction and removing only the search. Deliberately not
+## built during the current testing cycle.
+func _populate_hint_markers() -> void:
+    var lbl := Label.new()
+    lbl.text = "Hints are not available yet.\n\nLater: spend Spark endowments to charge a hint, and a charge will point out a clue that still has something to give — without telling you what."
+    lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
+    lbl.add_theme_font_size_override("font_size", 16)
+    lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _host._markers_content.add_child(lbl)
 
 
 func _populate_search_markers() -> void:
@@ -1483,7 +1494,10 @@ func _bbcode_for_clue_text(text: String) -> String:
     return bb
 
 
-func _make_clue_label(text: String, _color: Color) -> PanelContainer:
+## `color` is the clue's player-driven state: green untouched, magenta
+## worked on (see _clue_state_color). It used to be ignored entirely — the
+## parameter was `_color` — because the tab itself carried the state.
+func _make_clue_label(text: String, color: Color) -> PanelContainer:
     var pc := PanelContainer.new()
     pc.add_theme_stylebox_override("panel", _host._sb_selected if text == _host._selected_clue_text else _host._sb_clue_normal)
     pc.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -1495,7 +1509,7 @@ func _make_clue_label(text: String, _color: Color) -> PanelContainer:
     rtl.scroll_active = false
     rtl.mouse_filter = Control.MOUSE_FILTER_PASS
     rtl.text = _bbcode_for_clue_text(text)
-    rtl.add_theme_color_override("default_color", STATE_COLORS.unresolved_fallback)
+    rtl.add_theme_color_override("default_color", color)
     rtl.add_theme_font_size_override("normal_font_size", 18)
     rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     rtl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1503,8 +1517,22 @@ func _make_clue_label(text: String, _color: Color) -> PanelContainer:
 
     var captured_text := text
     pc.gui_input.connect(func(event: InputEvent):
-        if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+        if not (event is InputEventMouseButton and event.pressed):
+            return
+        if event.button_index == MOUSE_BUTTON_LEFT:
             _on_clue_row_clicked(captured_text)
+            pc.get_viewport().set_input_as_handled()
+        elif event.button_index == MOUSE_BUTTON_RIGHT:
+            # Retire to Used Up, or bring it back from there. Symmetric on
+            # purpose: this is the player's own filing, so a misclick must
+            # cost one more click and nothing else.
+            _deduction.toggle_clue_retired(captured_text)
+            # The row is about to be freed by the rebuild, so drop any
+            # pin pointing at it first.
+            if _host._selected_clue_text == captured_text:
+                _host._selected_clue_text = ""
+                _host._selected_clue_tab = -1
+            request_markers_rebuild()
             pc.get_viewport().set_input_as_handled())
     return pc
 
