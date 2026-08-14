@@ -9,10 +9,10 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# Last investigation (2026-08-14) chased the Sort:Pitch slot report:
-# UNDO SELECTS not undoing, and naming a slot identifying its star on the
-# map. Both fixed; the findings are now permanent in
-# test_stub_merge_refusal.gd rather than living here.
+# Last investigation (2026-08-14) checked whether the anonymous-slot rule
+# survived eceea49. It did — dropping a name into "Blue B" left all four
+# blue stars open and pinned nothing. Promoted to
+# test_anonymous_slot_invariant.gd rather than left here.
 
 var fails: int = 0
 
