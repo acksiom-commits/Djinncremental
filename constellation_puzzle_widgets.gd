@@ -61,23 +61,32 @@ func _max_candidate_list_length() -> int:
 # ==================================================
 # MARKERS PANEL
 # ==================================================
-## Tab indices, in the order the buttons read: 0 Clues, 1 Used Up, 2 Guide,
-## 3 Search, 4 Hint. -1 is the default Matches panel.
+## Tab indices, in the order the buttons read. -1 is the default Matches
+## panel.
 ##
-## Renumbered 2026-08-14 when "Useful" was removed — the old order was
-## 0 Unused, 1 Useful, 2 UsedUp, 3 Guide, 4 Search.
+## NAMED, because the raw numbers already drifted once: removing "Useful"
+## renumbered everything, and a hardcoded 4 left over from the old order
+## (where it meant SEARCH) sent the search-term picker to HINT instead
+## (reported 2026-08-14). Use these, never a literal.
+const TAB_CLUES: int = 0
+const TAB_USED_UP: int = 1
+const TAB_GUIDE: int = 2
+const TAB_SEARCH: int = 3
+const TAB_HINT: int = 4
+
+
 func _set_marker_tab(tab_idx: int) -> void:
     _host._active_marker_tab = tab_idx
     _host._tab_clues.add_theme_stylebox_override("normal",
-        _host._sb_tab_active if tab_idx == 0 else _host._sb_tab_inactive)
+        _host._sb_tab_active if tab_idx == TAB_CLUES else _host._sb_tab_inactive)
     _host._tab_used_up.add_theme_stylebox_override("normal",
-        _host._sb_tab_active if tab_idx == 1 else _host._sb_tab_inactive)
+        _host._sb_tab_active if tab_idx == TAB_USED_UP else _host._sb_tab_inactive)
     _host._tab_guide.add_theme_stylebox_override("normal",
-        _host._sb_tab_active if tab_idx == 2 else _host._sb_tab_inactive)
+        _host._sb_tab_active if tab_idx == TAB_GUIDE else _host._sb_tab_inactive)
     _host._tab_search.add_theme_stylebox_override("normal",
-        _host._sb_tab_active if tab_idx == 3 else _host._sb_tab_inactive)
+        _host._sb_tab_active if tab_idx == TAB_SEARCH else _host._sb_tab_inactive)
     _host._tab_hint.add_theme_stylebox_override("normal",
-        _host._sb_tab_active if tab_idx == 4 else _host._sb_tab_inactive)
+        _host._sb_tab_active if tab_idx == TAB_HINT else _host._sb_tab_inactive)
     _populate_markers_panel()
 
 
@@ -98,12 +107,12 @@ func _populate_markers_panel() -> void:
         child.queue_free()
 
     match _host._active_marker_tab:
-        0: _populate_clue_markers()
-        1: _populate_used_up_markers()
-        2: _populate_guide_markers()
-        3: _populate_search_markers()
-        4: _populate_hint_markers()
-        _: _populate_name_markers()
+        TAB_CLUES:   _populate_clue_markers()
+        TAB_USED_UP: _populate_used_up_markers()
+        TAB_GUIDE:   _populate_guide_markers()
+        TAB_SEARCH:  _populate_search_markers()
+        TAB_HINT:    _populate_hint_markers()
+        _:           _populate_name_markers()
 
 
 func _coerce_int(val, default: int) -> int:
@@ -494,7 +503,10 @@ func _open_search_popup() -> void:
                 _search_term = chosen
                 popup.hide()
                 popup.queue_free()
-                _set_marker_tab(4))
+                # 3 = SEARCH. Was 4 before "Useful" was removed and the tabs
+                # were renumbered; 4 is now HINT, so picking a search term
+                # jumped to the wrong tab (reported 2026-08-14).
+                _set_marker_tab(TAB_SEARCH))
             col.add_child(btn)
 
     if not any_terms:

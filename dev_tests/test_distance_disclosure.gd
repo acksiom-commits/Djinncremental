@@ -283,6 +283,70 @@ func run() -> void:
 	host2.queue_free()
 	await process_frame
 
+	# ── Part 2b: a descriptor needs no RECORD to be narrowed ─────────────
+	#
+	# Reported 2026-08-14: "the star that fires 11th note is 3 hops from a
+	# red star" only identified its star after an unrelated clue was worked,
+	# and the player correctly objected that it needed no input at all —
+	# Sequence is alldiff, so that descriptor denotes exactly one star by
+	# definition, and hop distance plus colour are both readable from the
+	# map at load.
+	#
+	# The cause was that the narrowing was written only onto records holding
+	# the descriptor, so with no UI row for that position the conclusion was
+	# DISCARDED, then reappeared when some interaction created the row. The
+	# check is therefore made with ZERO records: whatever a constraint can
+	# prove must be provable before any row exists.
+	print("\n=== Part 2b: narrowing survives with no records at all ===")
+	var h3 = OverlayScene.instantiate()
+	root.add_child(h3)
+	await process_frame
+	h3._cd = cd
+	h3._constellation_id = 0
+	h3._star_count = sc0
+	h3._star_names = lp0.star_names
+	h3._star_colors = lp0.star_colors
+	h3._star_degrees = []
+	for _s3 in sc0:
+		h3._star_degrees.append(0)
+	h3._pitch_rank_solution = lp0.pitch_rank_solution
+	h3._pitch_freqs = cd.get_note_freqs(0)
+	h3._star_pitch_index = cd.get_note_assignment(0)
+	h3._form_clues_cache = lp0.chosen_form_clues
+	h3._rebuild_star_distances()
+	h3._widgets.clear_pitch_caches()
+	var e3 = h3._deduction
+	e3._load_match_records([])          # deliberately EMPTY
+	e3._full_propagation_refresh()
+	print("  records: %d" % e3.record_count())
+
+	var narrowed_no_records: int = 0
+	var checked_c: int = 0
+	for c4 in e3._distance_constraints():
+		var cc4: Dictionary = c4
+		var rc4: int = int(cc4.get("ref_cat", -1))
+		var rs4: int = int(cc4.get("ref", -1))
+		# Only the hidden side can be narrowed; Colour/Pitch groups are read
+		# off the map and are not a target.
+		if rc4 != ConstellationLogicPuzzle.Category.NAME \
+				and rc4 != ConstellationLogicPuzzle.Category.SEQUENCE:
+			continue
+		checked_c += 1
+		var poss4: Array = e3._stars_possible_for_descriptor(rc4, rs4)
+		if poss4.size() < sc0:
+			narrowed_no_records += 1
+		if not poss4.has(rs4):
+			ok(false, "UNSOUND with no records: descriptor lost its own star")
+	print("  hidden-side constraints: %d, narrowed with zero records: %d"
+		% [checked_c, narrowed_no_records])
+	ok(checked_c > 0, "the puzzle has hidden-side distance constraints to check")
+	ok(narrowed_no_records > 0,
+		"a distance constraint narrows its descriptor with NO records present "
+			+ "(%d of %d) — the conclusion is a fact about the value, not about a UI row"
+			% [narrowed_no_records, checked_c])
+	h3.queue_free()
+	await process_frame
+
 	# ── Part 3: soundness sweep ──────────────────────────────────────────
 	#
 	# The worst failure mode for a distance rule is not "derives nothing" —

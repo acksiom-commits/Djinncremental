@@ -198,6 +198,12 @@ func _reset_derived() -> void:
     # so a previous puzzle's constraints cannot survive one.
     _distance_constraints_built = false
     _distance_constraints_cache = []
+    # Derived facts about VALUES rather than records — same lifetime as the
+    # derived layer itself, so they are rebuilt each refresh and release
+    # when their premise does. Deliberately NOT cleared by
+    # _clear_deduction_caches: that drops caches mid-fixpoint, and these are
+    # conclusions, not a cache.
+    _derived_descriptor_stars.clear()
 
 
 ## Grows the layer to match _match_records without discarding what is
@@ -3330,6 +3336,99 @@ func _settle_same_position_identity() -> void:
     # free — it made a 57-record refresh 312 ms -> 482 ms on its own.
 
 
+## Records that denote the SAME STAR must agree about that star.
+##
+## _settle_same_position_identity is the same rule for a shared sequence
+## POSITION, and was the only place _share_derived_facts was ever called —
+## so two records known to be one star still knew different things about it,
+## as long as they had not both been pinned to a position.
+##
+## Reported 2026-08-14: once "the star that fires 11th" resolved to a
+## specific star, its Staff popup showed that star's pitch and colour, but
+## the Sort:Pitch and Sort:Colour rows for those same values showed nothing,
+## and the star map popup never learned the name exclusion the player had
+## entered against the 11th. Three surfaces, one cause — those rows are
+## different records for the same star, and nothing carried anything
+## between them.
+##
+## Only newly safe to do at all. Two records sharing a star used to be
+## reported as an impossible state; now it is ordinary (see
+## _same_star_value_clash), so co-located records can be treated as what
+## they are — views of one thing.
+##
+## A genuine disagreement is skipped rather than laundered: sharing across
+## it would let one side's value quietly overwrite the other's, destroying
+## the evidence _detect_contradictions needs to report the clash on this
+## very refresh. Same reasoning as the merge path's refusal.
+func _settle_same_star_identity() -> void:
+    var by_star: Dictionary = {}
+    for i in _match_records.size():
+        var s: int = _effective_star_idx(i)
+        if s < 0:
+            continue
+        if not by_star.has(s):
+            by_star[s] = []
+        (by_star[s] as Array).append(i)
+
+    for s2 in by_star:
+        var group: Array = by_star[s2]
+        if group.size() < 2:
+            continue
+        for a in group:
+            for b in group:
+                if int(a) == int(b):
+                    continue
+                if not _same_star_value_clash(int(a), int(b)).is_empty():
+                    continue
+                # Deliberately NOT _share_derived_facts. That reads through
+                # _effective_*_state, which returns GROUND TRUTH for any
+                # star-bound record, so it needs an anti-leak guard — and
+                # that guard is _record_is_unconfirmed_star_widget_stub,
+                # which means "star-bound and unnamed" and therefore
+                # misclassifies a Sequence row that has resolved to a star.
+                # Measured: it refused every share in the reported scenario.
+                #
+                # Only the player's OWN marks move here. They contain no
+                # ground truth by construction, so there is nothing to leak
+                # and no guard to get wrong — and they are exactly what the
+                # report was missing: an exclusion the player entered
+                # against one view of a star, invisible from its others.
+                _share_player_marks(int(a), int(b))
+
+
+## Copies the marks the PLAYER made on `src` into `dst`'s derived layer.
+##
+## Strictly narrower than _share_derived_facts, and safe where that is not:
+## it reads each record's OWN state dicts rather than the _effective_*
+## readers, so no ground-truth tier is ever consulted and a star-bound
+## source cannot leak its star's real name or pitch. That means it needs no
+## trustworthiness guard, which matters because the available one
+## (_record_is_unconfirmed_star_widget_stub, i.e. "star-bound and unnamed")
+## misclassifies any Sort row that has resolved to a star.
+##
+## Writes go to the derived layer, so they release with their premise, and
+## _add_derived_state never overwrites what dst already holds — a real
+## disagreement survives to be reported rather than being papered over.
+func _share_player_marks(src: int, dst: int) -> void:
+    if src < 0 or src >= _match_records.size() or dst < 0 or dst >= _match_records.size():
+        return
+    var s: Dictionary = _match_records[src]
+    for pair in [["name_states", "name_states"], ["color_states", "color_states"],
+            ["pitch_states", "pitch_states"], ["degree_states", "degree_states"]]:
+        var key: String = str(pair[0])
+        for v in (s.get(key, {}) as Dictionary):
+            var st: int = int((s.get(key, {}) as Dictionary)[v])
+            # 1 and 2 only: 3/4 are the staff popup's soft/protected states,
+            # which are relative to the record they were drawn on.
+            if st == 1 or st == 2:
+                _add_derived_state(dst, key, v, st)
+    # star_elim is the same question asked about a star rather than a value.
+    for k in (s.get("star_elim", {}) as Dictionary):
+        var se: int = int((s.get("star_elim", {}) as Dictionary)[k])
+        if se == 1 or se == 2:
+            _add_derived_state(dst, "star_elim", k, se)
+
+
 ## Copies everything `src` effectively knows into `dst`'s DERIVED layer.
 ## Returns true if anything was actually added, which drives the fixpoint.
 ##
@@ -4490,6 +4589,13 @@ var _descriptor_star_cache: Dictionary = {}
 var _distance_constraints_cache: Array = []
 var _distance_constraints_built: bool = false
 
+## "<cat>:<star>" -> the stars that descriptor can still denote, as proved
+## by a settle pass rather than inferred from any record. This is the
+## derived layer for VALUES, and it exists because a conclusion about "the
+## star that fires 11th" must not depend on whether a UI row for the 11th
+## position happens to have been created. Wiped by _reset_derived().
+var _derived_descriptor_stars: Dictionary = {}
+
 
 ## Invalidated by any change to _match_records. Called at the start of
 ## _full_propagation_refresh() (which precedes every full UI rebuild) and
@@ -4740,6 +4846,10 @@ func _full_propagation_refresh() -> void:
         # AFTER the sequence narrowing above, so a record that only just
         # resolved to a single position is already visible as occupying it.
         _settle_same_position_identity()
+        # The same rule keyed on STAR rather than position. After the
+        # position version, so a record that only just resolved is already
+        # visible as occupying its star.
+        _settle_same_star_identity()
         # AFTER the sharing, and BEFORE _settle_singleton_names, which is
         # the pass that could not see these exclusions at all.
         # Name is alldiff, so its exclusion is the single-confirmer kind and
@@ -5287,6 +5397,22 @@ func _stars_possible_for_descriptor(cat: int, star: int) -> Array:
                 for s in _host._star_count:
                     out.append(s)
 
+    # Intersect with anything a settle pass has proved about this DESCRIPTOR
+    # directly, independent of whether any record holds it. Without this a
+    # distance narrowing existed only as star_elim on records, so a
+    # descriptor with no UI row of its own kept reading as "could be any
+    # star" no matter what the clues had already settled.
+    var pinned: Array = _derived_descriptor_stars.get("%d:%d" % [cat, star], [])
+    if not pinned.is_empty():
+        var keep_p: Dictionary = {}
+        for p in pinned:
+            keep_p[int(p)] = true
+        var narrowed_out: Array = []
+        for o in out:
+            if keep_p.has(int(o)):
+                narrowed_out.append(int(o))
+        out = narrowed_out
+
     _descriptor_star_cache[key] = out
     return out
 
@@ -5429,7 +5555,29 @@ func _apply_distance_side(cat: int, star: int, mine: Array, theirs: Array,
     for a in allowed:
         allow[int(a)] = true
 
+    # FIRST, and unconditionally: narrow the DESCRIPTOR itself.
+    #
+    # This used to write only into records holding the descriptor, which
+    # made the deduction depend on whether a UI row happened to exist. It
+    # does not: "the star that fires 11th" denotes exactly one star by
+    # definition, and "the 11th is 3 hops from a red star" is decidable from
+    # topology and colour alone, so that identification is available at
+    # puzzle load. With no record for the 11th position, the loop below ran
+    # zero times and the conclusion was DISCARDED — then appeared later, out
+    # of nowhere, the moment some unrelated interaction created the record.
+    # Reported 2026-08-14, and the earlier "0 records -> 15/15, 30 records ->
+    # 7/15" probe readings were the same effect, misread at the time.
+    #
+    # The narrowing is a fact about the VALUE. Records are where it gets
+    # DISPLAYED, and that is all the loop below is for.
     var wrote: bool = false
+    var key: String = "%d:%d" % [cat, star]
+    var prev: Array = _derived_descriptor_stars.get(key, [])
+    if prev.is_empty() or allowed.size() < prev.size():
+        _derived_descriptor_stars[key] = allowed.duplicate()
+        if prev.is_empty() or allowed.size() < prev.size():
+            wrote = true
+
     for i in _records_holding_descriptor(cat, star):
         for m in mine:
             var si: int = int(m)

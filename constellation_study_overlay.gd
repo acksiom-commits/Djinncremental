@@ -203,15 +203,17 @@ func _ready() -> void:
     _widgets.setup(self, _deduction)
     _build_style_boxes()
 
-    _tab_clues.pressed.connect(func(): _widgets._set_marker_tab(0))
-    _tab_used_up.pressed.connect(func(): _widgets._set_marker_tab(1))
-    _tab_guide.pressed.connect(func(): _widgets._set_marker_tab(2))
+    # Named constants, never literals — see ConstellationPuzzleWidgets'
+    # TAB_* block for the renumbering that made that a rule.
+    _tab_clues.pressed.connect(func(): _widgets._set_marker_tab(_widgets.TAB_CLUES))
+    _tab_used_up.pressed.connect(func(): _widgets._set_marker_tab(_widgets.TAB_USED_UP))
+    _tab_guide.pressed.connect(func(): _widgets._set_marker_tab(_widgets.TAB_GUIDE))
     # SEARCH always opens the picker (not just when switching TO the tab),
     # so pressing it again while already on the tab is how you change term.
     _tab_search.pressed.connect(func():
-        _widgets._set_marker_tab(3)
+        _widgets._set_marker_tab(_widgets.TAB_SEARCH)
         _widgets._open_search_popup())
-    _tab_hint.pressed.connect(func(): _widgets._set_marker_tab(4))
+    _tab_hint.pressed.connect(func(): _widgets._set_marker_tab(_widgets.TAB_HINT))
 
     _star_map_control.draw.connect(_draw_star_map)
     _star_map_control.gui_input.connect(_on_map_input)
