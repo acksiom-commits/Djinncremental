@@ -45,6 +45,9 @@ func run() -> void:
 	var cd = load("res://constellation_data.gd").new()
 	var total: int = 0
 	var offenders: Array = []
+	# Kept so the tautology check below can re-scan the same sample rather
+	# than regenerate it — a puzzle costs ~18s.
+	var all_clues: Array = []
 	var by_form: Dictionary = {}
 
 	for cid in CONSTELLATIONS:
@@ -64,6 +67,7 @@ func run() -> void:
 
 			for clue in g.chosen_form_clues:
 				var c: Dictionary = clue
+				all_clues.append(c)
 				total += 1
 				var terms: Array = c.get("search_terms", [])
 				var has_hidden: bool = false
@@ -112,6 +116,60 @@ func run() -> void:
 			print("    %s" % str(o))
 
 	ok(total > 100, "generated a meaningful sample (%d clues)" % total)
+
+	# ── SECOND VACUITY CLASS: tautology, not map-readability ─────────────
+	#
+	# Reported 2026-08-14:
+	#
+	#     "Theraion, Oryides, and Keriion are all different stars."
+	#
+	# The check above cannot see this — the clue DOES name hidden values, so
+	# it passes the "is any of this off the map" test. It is empty for a
+	# different reason: Name is alldiff, so three distinct name values are
+	# three distinct stars BY CONSTRUCTION.
+	#
+	# The Form's real content is CROSS-AXIS distinctness ("the star that
+	# fires 3rd is not Oryides"), which it records as False cells — and it
+	# already skips same-axis pairs precisely because they carry nothing. So
+	# a "different stars" clue with zero False cells is a clue that says
+	# nothing at all, and that is exactly what is asserted here.
+	print("\n  --- tautology check: 'all different stars' with no content ---")
+	var empty_distinct: int = 0
+	var distinct_clues: int = 0
+	var total_false_cells: int = 0
+	var shown: int = 0
+	for clue in all_clues:
+		var c2: Dictionary = clue
+		if not str(c2.get("text", "")).contains("are all different stars"):
+			continue
+		distinct_clues += 1
+		var false_cells: int = 0
+		for cell in (c2.get("cells", []) as Array):
+			if cell is Dictionary and not bool((cell as Dictionary).get("is_true", true)):
+				false_cells += 1
+		total_false_cells += false_cells
+		if false_cells > 0:
+			continue
+		empty_distinct += 1
+		if shown < 5:
+			print("    TAUTOLOGY: %s" % str(c2.get("text", "")))
+			shown += 1
+	print("    'all different stars' clues in sample: %d, cross-axis cells among them: %d"
+		% [distinct_clues, total_false_cells])
+	# The check states its own denominator, because "0 tautologies" is also
+	# what a check that inspected NOTHING would report — either because the
+	# sample had no such clues, or because `cells` is unpopulated on
+	# in-memory clue dicts (the generator writes grid_updates; `cells`
+	# appears at the persist boundary). Both would pass silently.
+	ok(distinct_clues > 0,
+		"the sample actually contains 'all different stars' clues (%d) — "
+			% distinct_clues + "otherwise the check below proves nothing")
+	ok(total_false_cells > 0,
+		"and their cross-axis cells are readable here (%d) — a 0 would mean "
+			% total_false_cells + "this is reading an encoding that does not exist yet")
+	ok(empty_distinct == 0,
+		"no 'all different stars' clue is a tautology — each records at least "
+			+ "one cross-axis distinctness cell (%d empty)" % empty_distinct)
 	ok(bad == 0,
 		"every clue names at least one Name or Sequence value — nothing is "
 			+ "purely readable off the map (%d non-clues)" % bad)

@@ -2933,6 +2933,7 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
 
     # Cross-participant distinctness — see the header comment above for why
     # this is sound for every axis and why same-id_cat pairs are skipped.
+    var cross_cells: int = 0
     for i in participants.size():
         for j in range(i + 1, participants.size()):
             var pi: Dictionary = participants[i]
@@ -2946,6 +2947,7 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
                 "cat_b": cat_j, "val_b": int(pj["id_val"]),
                 "is_true": false,
             })
+            cross_cells += 1
 
     var value_facts: Array = []
     var text: String
@@ -2965,6 +2967,25 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
     else:
         # Name/Sequence: nothing beyond "different stars" to disclose — the
         # cross-participant False cells above already carry it all.
+        #
+        # Which is exactly why zero of them means the clue says NOTHING.
+        # Same-id_cat pairs are skipped above because two different Name
+        # values are different stars BY CONSTRUCTION — Name is alldiff — so
+        # when every participant is identified on the same axis, that loop
+        # emits nothing and this branch adds no value_facts either:
+        #
+        #     "Theraion, Oryides, and Keriion are all different stars."
+        #
+        # A tautology, reported from a live puzzle 2026-08-14. The content
+        # of this Form is CROSS-AXIS distinctness ("the star that fires 3rd
+        # is not Oryides"), which is real information; within one alldiff
+        # axis there is none to have. Reject and let the caller redraw.
+        #
+        # Deliberately counted rather than inferred from the id_cats: the
+        # cells are the clue's actual content, so asking whether any exist
+        # is asking the question directly instead of re-deriving the answer.
+        if cross_cells == 0:
+            return {}
         text = "%s are all different stars." % _join_names_and(_sort_labels_for_join(label_items))
 
     return {"chars": chars, "text": text, "grid_updates": grid_updates, "solver_facts": solver_facts, "value_facts": value_facts}
