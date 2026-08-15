@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "grep -qE 'constellation_(puzzle_deduction|logic_puzzle|puzzle_widgets|study_overlay)\\.gd' || exit 0\nprintf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"MATRIX-UP CHECKPOINT for the constellation puzzle. Answer all five BEFORE this edit. Each is a bug that already shipped.\\n1. UNIT — am I reasoning over a CELL/VALUE, or over a STAR and its characteristics? If a star, stop and restate it over values.\\n2. STORAGE — where does the conclusion get written? A fact about a VALUE must not be written ONLY onto records: a record is a UI row that may not exist, and the conclusion is then silently DISCARDED rather than merely undisplayed.\\n3. TIER — am I reading through _effective_* (ground truth / derived)? A check that detects a broken state must read each record OWN fields, or the corruption masks its own proof.\\n4. PRECONDITIONS — if this needs guards to be safe, suspect the UNIT before writing the guards. Guards are usually the symptom of counting records instead of values.\\n5. ABSENCE — is the right fix a MISSING rule rather than a wrong one? No lint can see a pass that was never written.\\nRun the full suite before committing: it is the only check that is not my own judgement.\"}}'",
+            "timeout": 10,
+            "statusMessage": "matrix-up checkpoint"
+          }
+        ]
+      }
+    ]
+  }
+}

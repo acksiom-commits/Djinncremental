@@ -94,6 +94,14 @@ const ALLOW_STUB_BLIND := {
 		"exact-field lookup used BY the stub machinery",
 	"_debug_dump_records":
 		"diagnostic output, asserts nothing",
+	"_settle_same_star_identity":
+		"includes stubs ON PURPOSE — the star map's record IS a stub, and it "
+		+ "was the surface that never learned anything. Grouping by star is "
+		+ "sound because a stub's star_idx is its widget's POSITION, which is "
+		+ "definitional rather than a claim. Safe because it shares via "
+		+ "_share_player_marks, which reads only each record's OWN dicts and "
+		+ "never an _effective_* reader, so no ground-truth tier can leak "
+		+ "out of a stub regardless of what it is grouped with",
 
 	# ── Triaged 2026-08-13, all three measured rather than reasoned. ──────
 	"_detect_contradictions":
@@ -164,6 +172,26 @@ func _functions_of(src: String) -> Array:
 	return out
 
 
+## Everything to the right of a `#` is prose, and prose must not be able to
+## satisfy — or silence — a rule.
+##
+## Found 2026-08-14 by the user asking whether this lint was actually
+## working: _settle_same_star_identity sweeps _match_records and reads
+## _effective_star_idx with no stub check, exactly what rule B exists to
+## flag, and the lint was GREEN on it — because a comment two lines away
+## happened to mention _record_is_unconfirmed_star_widget_stub. Writing
+## about the guard was silencing the check for the guard.
+func _code_only(body: String) -> String:
+	var out: PackedStringArray = PackedStringArray()
+	for raw in body.split("\n"):
+		var line: String = raw
+		var hash_at: int = line.find("#")
+		if hash_at >= 0:
+			line = line.substr(0, hash_at)
+		out.append(line)
+	return "\n".join(out)
+
+
 func _iterates_records(body: String) -> bool:
 	return body.contains("in _match_records")
 
@@ -185,7 +213,7 @@ func run() -> void:
 	for f in funcs:
 		var fn: Dictionary = f
 		var name: String = str(fn["name"])
-		var body: String = str(fn["body"])
+		var body: String = _code_only(str(fn["body"]))
 		if ALLOW_COLUMN_SCAN.has(name) or KNOWN_UNTRIAGED_COLUMN.has(name):
 			continue
 		if not _iterates_records(body):
@@ -212,7 +240,7 @@ func run() -> void:
 	for f2 in funcs:
 		var fn2: Dictionary = f2
 		var name2: String = str(fn2["name"])
-		var body2: String = str(fn2["body"])
+		var body2: String = _code_only(str(fn2["body"]))
 		if ALLOW_STUB_BLIND.has(name2) or KNOWN_UNTRIAGED_STUB.has(name2):
 			continue
 		if not _iterates_records(body2):

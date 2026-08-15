@@ -1,6 +1,19 @@
 class_name ConstellationPuzzleDeduction
 extends RefCounted
 
+# ── BEFORE EDITING THIS FILE ────────────────────────────────────────────
+# A PreToolUse hook (.claude/settings.json) injects the MATRIX-UP CHECKPOINT
+# into context on every edit to this file. It is there because reasoning
+# DOWN from stars instead of UP from the cell matrix has produced a bug
+# every single time, across weeks, and memory notes / comments / a lint all
+# failed to stop it — each of them required the author to remember to look.
+# The hook does not.
+#
+# The five questions, in short: what UNIT is this reasoning over; where does
+# the conclusion get STORED; which TIER am I reading through; do I need
+# guards (if so, suspect the unit); and is the fix a MISSING rule.
+# See dev_tests/test_matrix_up_lint.gd for the mechanical half.
+
 # Deduction-engine half of the Constellation Study Overlay split (see
 # docs/early_game_architecture_overview.md, §4, and the refactor plan this
 # executes). Owns _match_records and everything that reads/mutates it —
