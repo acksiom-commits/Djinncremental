@@ -192,6 +192,56 @@ func _code_only(body: String) -> String:
 	return "\n".join(out)
 
 
+## Does this body loop over VALUES without a RECORD loop enclosing it?
+##
+## That is the discriminator rule C needs, and two cheaper guesses at it were
+## both wrong before this one — worth recording, because each looked obviously
+## right:
+##
+##   "a top-level (depth-1) value loop"  — the loops in
+##      _settle_identity_from_value_columns sit at depth 2, inside the
+##      CATEGORY loop. Not record-driven, but not depth 1 either.
+##   "a line starting with one tab"      — the scanned game files indent with
+##      FOUR SPACES; only these dev_tests files use tabs, so it matched
+##      nothing at all.
+##
+## What actually matters is enclosure: a value loop inside a record loop is
+## record-driven (it can only reach records that already exist), while one
+## that is not can conclude something about a descriptor with NO record.
+## So track the open `for` stack by indent width and ask whether any still-open
+## enclosing loop iterates _match_records.
+func _has_unenclosed_value_loop(body: String) -> bool:
+	var stack: Array = []          # [indent_width, is_record_loop]
+	for raw in body.split("\n"):
+		var stripped: String = raw.strip_edges()
+		if stripped == "":
+			continue
+		# Tabs count as one level; the scanned files use 4 spaces per level.
+		var ind: int = 0
+		for i in raw.length():
+			var ch: String = raw[i]
+			if ch == "\t":
+				ind += 4
+			elif ch == " ":
+				ind += 1
+			else:
+				break
+		while not stack.is_empty() and int((stack[stack.size() - 1] as Array)[0]) >= ind:
+			stack.remove_at(stack.size() - 1)
+		if not stripped.begins_with("for "):
+			continue
+		if stripped.contains("_host._star_count"):
+			var enclosed: bool = false
+			for fr in stack:
+				if bool((fr as Array)[1]):
+					enclosed = true
+					break
+			if not enclosed:
+				return true
+		stack.append([ind, stripped.contains("_match_records")])
+	return false
+
+
 func _iterates_records(body: String) -> bool:
 	return body.contains("in _match_records")
 
@@ -259,6 +309,52 @@ func run() -> void:
 		print("    Treating those as player knowledge has shipped three separate bugs.")
 	ok(stub_hits.is_empty(),
 		"no NEW record sweep is blind to auto-created star stubs (%d)" % stub_hits.size())
+
+	# ── C: value-iterating passes must store on VALUES ────────────────────
+	#
+	# Added 2026-08-14 after a full sweep found THREE bugs of one shape that
+	# rules A and B structurally cannot see — they look for record SWEEPS,
+	# and every one of these was about where a conclusion is STORED.
+	#
+	# The distinction that makes it checkable: a pass that iterates RECORDS
+	# can only ever conclude something about a record it already has, and
+	# _stars_possible_for_descriptor derives a descriptor's row FROM records,
+	# so a record write reaches the row for free. A pass that iterates VALUES
+	# can conclude something about a descriptor with NO record at all — and
+	# then a record-only write has nowhere to land and the fact is DISCARDED.
+	#
+	# So: a top-level `for … in _host._star_count` (indent depth 1 — a nested
+	# one is inside a record loop and is record-driven) plus a conclusion
+	# write means the pass MUST also go through _narrow_descriptor_row.
+	#
+	# This rule would have caught all three: _apply_distance_side (shipped,
+	# reported from a live game), _settle_alldiff_position_exclusions, and
+	# _settle_identity_from_value_columns.
+	var store_hits: Array = []
+	for f3 in funcs:
+		var fn3: Dictionary = f3
+		var name3: String = str(fn3["name"])
+		var body3: String = _code_only(str(fn3["body"]))
+		if not (name3.begins_with("_settle_") or name3.begins_with("_apply_")):
+			continue
+		if not _has_unenclosed_value_loop(body3):
+			continue
+		if not (body3.contains("_add_derived_state") or body3.contains("_derived[")):
+			continue   # iterates values but concludes nothing
+		if body3.contains("_narrow_descriptor_row"):
+			continue   # stores on the value, as it must
+		store_hits.append(name3)
+
+	if not store_hits.is_empty():
+		print("\n  --- C: value-iterating passes that store only on records ---")
+		for n3 in store_hits:
+			print("    %s  concludes about VALUES but writes only to records" % str(n3))
+		print("    A descriptor with no record has nowhere for that write to land,")
+		print("    so the conclusion is DISCARDED, not merely undisplayed.")
+		print("    Route it through _narrow_descriptor_row.")
+	ok(store_hits.is_empty(),
+		"every value-iterating pass stores its conclusion on the VALUE (%d do not)"
+			% store_hits.size())
 
 	# The allowlists are the load-bearing part of this file. If one grows
 	# without its reason, the lint has been defeated rather than satisfied.
