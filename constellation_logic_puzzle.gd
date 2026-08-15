@@ -1882,21 +1882,69 @@ func _order_word(cat: int, a_gt_b: bool) -> String:
     return "greater" if a_gt_b else "lesser"
 
 
+## The verb carries the AXIS. That is the whole job it does, and Pitch used
+## to shirk it: the bare "is" names nothing.
+##
+## It went unnoticed because every other Form pairs the verb with an
+## axis-bearing comparative — "is higher than", "is exactly 2 pitch ranks
+## higher than" — which disambiguates on its own. Betweenness does not:
+##
+##     "Helios is between Nyxaos and the star that fires 5th note."
+##
+## is a claim about PITCH RANK with nothing in the sentence saying so, and
+## one of its three labels is a Sequence descriptor actively pulling the
+## reader the wrong way. Reported 2026-08-14.
+##
+## "is pitched" fixes it in the verb rather than by bolting a qualifier onto
+## one Form, and gives Pitch the exact parallel Sequence already had:
+##
+##     Chroneeia fires between A and B.      Helios is pitched between A and B.
+##     Chroneeia fires later than X.         Helios is pitched higher than X.
+##
+## Only Sequence and Pitch are orderable (see _orderable_categories — Colour
+## is deliberately excluded), so the fallthrough IS the Pitch case.
+## Connector for Betweenness's two CHAIN phrasings ("X … A, which … B").
+##
+## These hardcoded "before"/"after" for every axis, so a Pitch clue read
+## "Helios is before Keriion" — a temporal word for a frequency ordering,
+## wrong since the Form was written. It stayed invisible while the Pitch verb
+## was the bare "is"; changing that to "is pitched" turned it into the
+## audibly wrong "is pitched before", which is how it was finally noticed —
+## by reading the rendered sentences instead of reasoning about them.
+##
+## Sequence keeps before/after (genuinely temporal). Pitch takes the same
+## comparatives _order_word already uses everywhere else, so the whole clue
+## set speaks one vocabulary: lower/higher.
+func _order_chain_word(cat: int, descending: bool) -> String:
+    match cat:
+        Category.SEQUENCE:
+            return "after" if descending else "before"
+    return "higher than" if descending else "lower than"
+
+
 func _order_verb(cat: int) -> String:
     match cat:
         Category.SEQUENCE:
             return "fires"
-    return "is"
+    return "is pitched"
 
 
 func _order_unit(cat: int, count: int) -> String:
-    # Exact Offset's "exactly N ___ later/higher than" needs an axis-aware
-    # unit noun — "steps" reads naturally for Sequence (discrete melody
-    # positions), but on its own says nothing about what's being counted
-    # for Pitch, which has no equivalent everyday word for "positions in
-    # the frequency ranking." count is always abs(offset), which the 0
-    # guard in _build_form_exact_offset already keeps >= 1.
-    var singular: String = "step" if cat == Category.SEQUENCE else "pitch rank"
+    # Exact Offset's "exactly N ___ later/higher than" needs a unit noun.
+    # count is always abs(offset), which the 0 guard in
+    # _build_form_exact_offset already keeps >= 1.
+    #
+    # "step" for BOTH axes as of 2026-08-14. It used to be "pitch rank" for
+    # Pitch, because — as the old comment here said — "steps" on its own
+    # said nothing about what was being counted on that axis. _order_verb
+    # now says it: "is pitched exactly 2 steps higher than" carries the axis
+    # in the verb, and "is pitched exactly 2 pitch ranks higher" says it
+    # twice.
+    #
+    # So this depends on the verb. If _order_verb ever stops naming the axis
+    # for Pitch, this has to go back to "pitch rank" or the sentence loses
+    # it entirely.
+    var singular: String = "step"
     return singular if count == 1 else singular + "s"
 
 
@@ -3511,9 +3559,13 @@ func _build_form_betweenness(chain: Dictionary) -> Dictionary:
         0:
             text = "%s %s between %s and %s." % [_characteristic_label(mid_id), verb, _characteristic_label(lo_id), _characteristic_label(hi_id)]
         1:
-            text = "%s %s before %s, which %s before %s." % [_characteristic_label(lo_id), verb, _characteristic_label(mid_id), verb, _characteristic_label(hi_id)]
+            text = "%s %s %s %s, which %s %s %s." % [
+                _characteristic_label(lo_id), verb, _order_chain_word(axis, false), _characteristic_label(mid_id),
+                verb, _order_chain_word(axis, false), _characteristic_label(hi_id)]
         _:
-            text = "%s %s after %s, which %s after %s." % [_characteristic_label(hi_id), verb, _characteristic_label(mid_id), verb, _characteristic_label(lo_id)]
+            text = "%s %s %s %s, which %s %s %s." % [
+                _characteristic_label(hi_id), verb, _order_chain_word(axis, true), _characteristic_label(mid_id),
+                verb, _order_chain_word(axis, true), _characteristic_label(lo_id)]
     var solver_facts: Array = _seq_fact_for_label(lo_id) + _seq_fact_for_label(mid_id) + _seq_fact_for_label(hi_id)
     if axis == Category.SEQUENCE:
         solver_facts.append({"kind": "ordinal_chain", "a": lo, "mid": mid, "b": hi})

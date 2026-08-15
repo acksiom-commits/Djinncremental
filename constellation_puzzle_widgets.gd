@@ -548,19 +548,31 @@ func _open_search_popup() -> void:
 # "is 1 hop from", "is not connected to". If a clue does not mention hops or
 # connection, it is not about the map.
 #
-# CAVEAT, and probably a text fix rather than a Guide entry: the PITCH
-# variant's verb is the bare "is", which names no axis at all. The reported
-# example —
+# FIXED 2026-08-14 — the verb now names the axis, so the tell above is
+# reliable rather than a trap:
+#
+#   "Chroneeia fires between A and B."     Sequence
+#   "Helios is pitched between A and B."   Pitch
+#
+# It used to be the bare "is", naming no axis at all, and the reported
+# example put a SEQUENCE descriptor among its three labels —
 #
 #   "Helios is between Nyxaos and the star that fires 5th note."
 #
-# is a claim about PITCH RANK, but nothing in the sentence says so, and one
-# of its three labels is a Sequence descriptor, which actively pulls the
-# reader toward the wrong axis. The identifiers and the compared axis are
-# independent by design (id_cat is chosen separately from axis), so this is
-# not a generator bug — but "is between" should probably render as
-# something explicit like "sits between ... in pitch" before this reaches
-# players.
+# — which actively pulled the reader to the wrong axis. Identifiers and the
+# compared axis are independent by design (id_cat is chosen separately from
+# axis), so the labels were not the bug; the verb was.
+#
+# Fixing it in _order_verb rather than in the one Form that noticed improved
+# four sentence shapes at once, and let _order_unit drop "pitch rank" for
+# plain "step" — "is pitched exactly 2 pitch ranks higher" said it twice.
+#
+# It also surfaced a bug older than the Form's own report: two of
+# Betweenness's three phrasings hardcoded before/after for EVERY axis, so
+# Pitch clues read "Helios is before Keriion" — a temporal word for a
+# frequency ordering. Now _order_chain_word: before/after for Sequence,
+# lower/higher for Pitch. Found only by printing the rendered sentences;
+# wording cannot be verified by reading the code.
 #
 # DISTINCT STARS, NOT DISTINCT PITCHES (measured 2026-08-10)
 # Every star a clue names is a different star — a clue never refers to the

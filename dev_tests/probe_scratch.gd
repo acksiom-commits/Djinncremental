@@ -9,10 +9,12 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# Last investigation (2026-08-14) checked whether the anonymous-slot rule
-# survived eceea49. It did — dropping a name into "Blue B" left all four
-# blue stars open and pinned nothing. Promoted to
-# test_anonymous_slot_invariant.gd rather than left here.
+# Last investigation (2026-08-14) printed the rendered PITCH-axis clue
+# sentences after _order_verb became "is pitched". Reading them — rather
+# than reasoning about the code — is what exposed "is pitched before", a
+# temporal word on a frequency axis that had been wrong since the
+# Betweenness Form was written. Wording is one of the few things that
+# cannot be verified by inspection.
 
 var fails: int = 0
 
