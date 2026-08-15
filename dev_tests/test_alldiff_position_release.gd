@@ -143,8 +143,39 @@ func run() -> void:
 		await process_frame
 	print("  puzzles checked: %d" % checked)
 	ok(checked >= 2, "swept enough puzzles (%d)" % checked)
+
+	var sa: Array = await _build(cd, 4242)
+	run_storage_audit(cd, sa[1], sa[2], sa[0], int(sa[3]))
+	(sa[1] as Node).queue_free()
+	await process_frame
 	ok(violations == 0,
 		"no name is ever ruled out of the star it really is (%d violations)" % violations)
 
 	print("\nALL PASS (0 failures)" if fails == 0 else "\nFAILURES (%d failures)" % fails)
 	finish()
+
+
+## Added 2026-08-14 by re-auditing the STORAGE question across every pass
+## written since the lint went in — the lint could not see this class at all.
+##
+## A conclusion about a VALUE must survive when that value has no Sort row.
+## Both of these used to write only onto records, so with no row the loop
+## ran zero times and the fact was DISCARDED rather than undisplayed.
+func run_storage_audit(cd, h, e, g, scn: int) -> void:
+	print("\n=== STORAGE: conclusions survive with no record for the value ===")
+	# Only ONE name has a row. Every other name value is rowless.
+	e._load_match_records([])
+	var owner_v: int = 5
+	var rec: int = e._get_or_create_match_record_for_name(str(g.star_names[owner_v]))
+	e.record_at(rec)["star_idx"] = owner_v          # that name IS that star
+	e._full_propagation_refresh()
+
+	var rowless_v: int = (owner_v + 4) % scn
+	var row: Array = e._stars_possible_for_descriptor(
+		ConstellationLogicPuzzle.Category.NAME, rowless_v)
+	print("  '%s' has NO record; its row is %d/%d stars"
+		% [str(g.star_names[rowless_v]), row.size(), scn])
+	ok(not row.has(owner_v),
+		"a rowless name lost the position another name owns (alldiff reached the VALUE)")
+	ok(row.size() == scn - 1,
+		"and lost exactly that one (%d of %d)" % [row.size(), scn])

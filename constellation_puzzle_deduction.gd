@@ -4610,6 +4610,37 @@ var _distance_constraints_built: bool = false
 var _derived_descriptor_stars: Dictionary = {}
 
 
+## Record that descriptor (cat, value) can only be one of `allowed`.
+## Returns whether that is NEWS, so the fixpoint can tell it has not settled.
+##
+## THE place a conclusion about a VALUE gets stored. Every settle pass that
+## proves something about a descriptor must come through here, because
+## writing only onto records makes the conclusion depend on whether a UI row
+## exists — with no row, the loop writing it runs zero times and the fact is
+## DISCARDED, not merely undisplayed. That shipped once (distance narrowing,
+## 2026-08-14) and was found twice more by auditing for the same shape.
+##
+## Monotone within a refresh: intersects, never widens. The whole map is
+## wiped by _reset_derived(), so nothing outlives its premise.
+func _narrow_descriptor_row(cat: int, value: int, allowed: Array) -> bool:
+    var key: String = "%d:%d" % [cat, value]
+    var prev = _derived_descriptor_stars.get(key, null)
+    if prev == null:
+        _derived_descriptor_stars[key] = allowed.duplicate()
+        return allowed.size() < _host._star_count
+    var keep: Dictionary = {}
+    for a in allowed:
+        keep[int(a)] = true
+    var next: Array = []
+    for p in (prev as Array):
+        if keep.has(int(p)):
+            next.append(int(p))
+    if next.size() == (prev as Array).size():
+        return false
+    _derived_descriptor_stars[key] = next
+    return true
+
+
 ## Invalidated by any change to _match_records. Called at the start of
 ## _full_propagation_refresh() (which precedes every full UI rebuild) and
 ## from _save_puzzle_notes() (which every mutation path already calls), so
@@ -5130,9 +5161,30 @@ func _settle_alldiff_position_exclusions() -> void:
     var wrote: bool = false
     for s in claimed:
         var pos: int = int(s)
+        var owner_v: int = int(claimed[s])
+
+        # The conclusion, stored on the VALUES it is about: every OTHER name
+        # loses this position. Written here rather than only onto records
+        # because a name with no Sort row would otherwise lose the exclusion
+        # entirely — and since distance narrowing can now pin a rowless
+        # descriptor, a rowless name really can reach this loop.
+        for v2 in _host._star_count:
+            if int(v2) == owner_v:
+                continue
+            var row: Array = _stars_possible_for_descriptor(
+                ConstellationLogicPuzzle.Category.NAME, int(v2))
+            if not row.has(pos):
+                continue
+            var kept: Array = []
+            for r2 in row:
+                if int(r2) != pos:
+                    kept.append(int(r2))
+            if _narrow_descriptor_row(ConstellationLogicPuzzle.Category.NAME, int(v2), kept):
+                wrote = true
+
         var owners: Dictionary = {}
         for oi in _records_holding_descriptor(
-                ConstellationLogicPuzzle.Category.NAME, int(claimed[s])):
+                ConstellationLogicPuzzle.Category.NAME, owner_v):
             owners[int(oi)] = true
         for i in _match_records.size():
             if owners.has(i):
@@ -5219,13 +5271,23 @@ func _settle_identity_from_value_columns() -> void:
                 continue
 
             # Write it onto whichever record already holds that descriptor.
-            # A value with no record at all cannot reach here — with nothing
-            # constraining it, its row is every star, so it would be an
-            # owner of every column and never the unique owner of one. The
-            # only way past that is a puzzle of one star, which the loop
-            # above handles anyway. So no record is created here: doing that
-            # mid-fixpoint would resize _match_records underneath the pass
-            # that is iterating it.
+            # The conclusion belongs to the VALUE first: this descriptor is
+            # at this position, full stop.
+            #
+            # This used to write only onto records, justified by "a value
+            # with no record has a row of every star, so it can never be a
+            # unique owner". That was true when it was written and MY OWN
+            # distance fix made it false the same day — _derived_descriptor_
+            # stars can now pin a rowless descriptor, so a rowless value
+            # really can win a column, and the binding was being dropped on
+            # the floor. Caught by re-auditing rather than by the lint,
+            # which cannot see a premise going stale.
+            if _narrow_descriptor_row(int(cat), owner, [int(s)]):
+                bound_any = true
+
+            # Records still get it, for display. No record is CREATED here:
+            # that would resize _match_records underneath the pass iterating
+            # it.
             for i in _records_holding_descriptor(int(cat), owner):
                 if _effective_star_idx(int(i)) >= 0:
                     continue
@@ -5583,13 +5645,7 @@ func _apply_distance_side(cat: int, star: int, mine: Array, theirs: Array,
     #
     # The narrowing is a fact about the VALUE. Records are where it gets
     # DISPLAYED, and that is all the loop below is for.
-    var wrote: bool = false
-    var key: String = "%d:%d" % [cat, star]
-    var prev: Array = _derived_descriptor_stars.get(key, [])
-    if prev.is_empty() or allowed.size() < prev.size():
-        _derived_descriptor_stars[key] = allowed.duplicate()
-        if prev.is_empty() or allowed.size() < prev.size():
-            wrote = true
+    var wrote: bool = _narrow_descriptor_row(cat, star, allowed)
 
     for i in _records_holding_descriptor(cat, star):
         for m in mine:
