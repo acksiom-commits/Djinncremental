@@ -2711,10 +2711,28 @@ func _style_color_toggle_btn(btn: Button, color_idx: int, state: int) -> void:
 func _confirmed_name_for_star(star_idx: int) -> String:
     if star_idx < 0:
         return ""
-    var idx: int = _deduction._find_match_record_by_star_idx(star_idx)
-    if idx < 0:
-        return ""
-    return str(_deduction.record_at(idx).get("name", ""))
+    # EFFECTIVE identity, not the star-widget record's raw `name` field —
+    # the same raw-vs-effective split the Sequence and Colour/Pitch readers
+    # beside this one already make, and which Name never got.
+    #
+    # Reported 2026-08-14: deducing Chroneeia as a specific blue C5 star
+    # showed its Sequence and Pitch on the star tag but left the Name blank,
+    # because those two read through _effective_seq_bounds /
+    # _displayable_pitch_for_record while this read one dictionary field.
+    #
+    # It only became visible when eceea49 stopped folding an inferred
+    # identity into the star-widget stub: before that, the merge wrote the
+    # name into the stub's own field and this reader happened to find it.
+    # The reader was always wrong; the merge was hiding it.
+    #
+    # _records_bound_to_star is the LOCATED tier — records whose effective
+    # star_idx is this star, with auto-created stubs filtered out — so a
+    # bare stub contributes nothing and no un-earned name can leak here.
+    for i in _deduction._records_bound_to_star(star_idx):
+        var nm: String = str(_deduction.record_at(int(i)).get("name", ""))
+        if nm != "":
+            return nm
+    return ""
 
 
 func _reposition_star_widgets() -> void:

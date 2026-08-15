@@ -113,8 +113,16 @@ func run() -> void:
 	var named_b: Array = e._candidate_stars_for_record(found)
 	print("\n  after naming '%s' into slot '%s': candidates %s"
 		% [nm, str(e.record_at(found).get("color_slot_label", "")), str(named_b)])
-	ok(h._widgets._confirmed_name_for_star(int(members[0])) == "",
-		"no star map name was claimed")
+	# The "no star map name was claimed" assertion that stood here is GONE,
+	# not silently — it was the same over-correction corrected in
+	# test_stub_merge_refusal.gd: the map is supposed to show what the engine
+	# knows, and withholding a deduced name left Name as the only star-tag
+	# reader that did not.
+	#
+	# It also did not belong in this file. This test is about SLOT LETTER
+	# NEUTRALITY; what the star map displays is display policy, and it is
+	# tested properly next door — shown when deduced, released on undo, and
+	# never shown for a bare stub.
 
 	# CORRECTED 2026-08-14. This used to assert that naming a slot must leave
 	# it unpinned — which is NOT the invariant, and the assertion was mine.

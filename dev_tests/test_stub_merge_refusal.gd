@@ -117,8 +117,20 @@ func run() -> void:
 		"naming the slot does not merge it into the star's widget record (%d -> %d)"
 			% [count_before, e.record_count()])
 	ok(found >= 0, "the slot record still exists in its own right")
-	ok(h._widgets._confirmed_name_for_star(star) == "",
-		"the star map shows no name — it was never confirmed there (got '%s')"
+	# CORRECTED 2026-08-14, and this is the third assertion of mine changed
+	# today, so: the earlier version demanded the map show NOTHING here.
+	# That was an over-correction. The original complaint had two halves —
+	# the map claimed the star, AND undo could not take it back — and only
+	# the second was the real fault. Removing the merge fixed it; also
+	# suppressing the display went too far, and left Name as the only one of
+	# the three star-tag readers that did not show what the engine knows
+	# (reported the next day: Sequence and Pitch appeared, Name did not).
+	#
+	# So the invariant is NOT "the map stays blank". It is "the map shows
+	# what is currently known, and gives it back when the premise goes" —
+	# which is exactly what the undo checks below assert.
+	ok(h._widgets._confirmed_name_for_star(star) == nm,
+		"the star map shows the deduced name (got '%s')"
 			% h._widgets._confirmed_name_for_star(star))
 
 	# The undo, exactly as _on_slot_name_undo_selects drives it.
@@ -133,6 +145,25 @@ func run() -> void:
 	ok(h._widgets._confirmed_name_for_star(star) == "",
 		"the star map is still clean after the undo")
 
+	run_no_leak_check(h, e, g, scn)
 	h.queue_free()
 	print("\nALL PASS (%d failures)" % fails if fails == 0 else "\nFAILURES (%d failures)" % fails)
 	finish()
+
+
+## The anti-leak that the display change must NOT weaken: a star whose
+## widget record is a bare auto-created stub — nothing named, nothing
+## deduced — must show no name, or the map would be handing over the answer
+## for free on a fresh board.
+func run_no_leak_check(h, e, g, scn: int) -> void:
+	print("\n=== a bare stub still gives nothing away ===")
+	e._load_match_records([])
+	for s in scn:
+		e._get_or_create_match_record_for_star_idx(s)
+	e._full_propagation_refresh()
+	var leaked: int = 0
+	for s in scn:
+		if h._widgets._confirmed_name_for_star(int(s)) != "":
+			leaked += 1
+	print("  %d stars, names shown on a fresh board: %d" % [scn, leaked])
+	ok(leaked == 0, "no star tag shows a name from an unearned stub (%d leaked)" % leaked)
