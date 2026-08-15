@@ -877,15 +877,34 @@ func player_marked_terms() -> Dictionary:
             if int((rec.get("name_states", {}) as Dictionary)[n]) == 1 \
                     or (rec.get("manual_name_blocks", {}) as Dictionary).has(n):
                 out["N:" + str(n)] = true
+
+        # A record already bound to a star had its colour_states WRITTEN
+        # from ground truth by _sync_color_states_from_star_idx, so a
+        # "confirmed" colour there is not a player deduction — and it could
+        # not be one anyway, since that star's colour is painted on the map.
+        # Only a hand-placed block counts.
+        var color_given: bool = int(rec.get("star_idx", -1)) >= 0
         for ci in (rec.get("color_states", {}) as Dictionary):
-            if int((rec.get("color_states", {}) as Dictionary)[ci]) == 1 \
-                    or (rec.get("manual_color_blocks", {}) as Dictionary).has(ci):
+            var c_ok: bool = (rec.get("manual_color_blocks", {}) as Dictionary).has(ci)
+            if not c_ok and not color_given:
+                c_ok = int((rec.get("color_states", {}) as Dictionary)[ci]) == 1
+            if c_ok:
                 var idx: int = int(ci)
                 if idx >= 0 and idx < _host.COLOR_NAME_LABELS.size():
                     out["C:" + str(_host.COLOR_NAME_LABELS[idx])] = true
+
+        # Same for pitch, and this is the reported case: LISTEN calls
+        # _propagate_pitch_confirmed_same_record, which writes
+        # pitch_states[note] = 1 exactly as a player confirm would. Using a
+        # reveal mechanic is not entering information, so listening to a
+        # star must not turn clues magenta. Once the note is revealed, a
+        # confirmation on that axis tells us nothing the reveal did not.
+        var pitch_given: bool = bool(rec.get("pitch_revealed", false))
         for note in (rec.get("pitch_states", {}) as Dictionary):
-            if int((rec.get("pitch_states", {}) as Dictionary)[note]) == 1 \
-                    or (rec.get("manual_pitch_blocks", {}) as Dictionary).has(note):
+            var p_ok: bool = (rec.get("manual_pitch_blocks", {}) as Dictionary).has(note)
+            if not p_ok and not pitch_given:
+                p_ok = int((rec.get("pitch_states", {}) as Dictionary)[note]) == 1
+            if p_ok:
                 out["P:" + str(note)] = true
         # Sequence has no per-value state dict; an exact pin IS the mark.
         var lo: int = int(rec.get("seq_lo", 0))

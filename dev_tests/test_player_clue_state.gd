@@ -79,6 +79,40 @@ func run() -> void:
 	print("  %d clues, %d magenta" % [total, magenta])
 	ok(magenta == 0, "every clue starts green (%d magenta)" % magenta)
 
+	# ── REVEALS ARE NOT ENTRIES (reported 2026-08-14) ───────────────────
+	# LISTEN calls _propagate_pitch_confirmed_same_record, which writes
+	# pitch_states[note] = 1 exactly as a player confirm would. Using a
+	# reveal mechanic is not entering information, so listening to every
+	# star must leave every clue green.
+	print("\n=== LISTEN reveals must not colour anything ===")
+	for s in scn:
+		var sr: int = e._get_or_create_match_record_for_star_idx(s)
+		e._propagate_pitch_confirmed_same_record(sr, h._widgets._note_name_for_star(s))
+		e.record_at(sr)["pitch_revealed"] = true
+	e._full_propagation_refresh()
+	var after_listen: int = 0
+	var lt: Dictionary = e.player_marked_terms()
+	for clue in h._widgets._all_final_clues_for_tabs():
+		if h._widgets._clue_state_color(clue, lt) == h.STATE_COLORS.protected:
+			after_listen += 1
+	print("  listened to all %d stars; player-marked terms=%d, magenta clues=%d"
+		% [scn, lt.size(), after_listen])
+	ok(lt.is_empty(), "listening marks nothing (%d terms)" % lt.size())
+	ok(after_listen == 0, "every clue is still green after LISTEN (%d magenta)" % after_listen)
+
+	# Confirming an identity syncs colour_states from ground truth
+	# (_sync_color_states_from_star_idx). That is not a colour deduction
+	# either — and the colour is painted on the map anyway.
+	print("\n=== an identity confirm does not mark a COLOUR ===")
+	var sr0: int = e._get_or_create_match_record_for_star_idx(0)
+	e._sync_color_states_from_star_idx(sr0)
+	var ct: int = 0
+	for t3 in e.player_marked_terms():
+		if str(t3).begins_with("C:"):
+			ct += 1
+	ok(ct == 0, "no colour term marked by the ground-truth sync (%d)" % ct)
+	e._load_match_records([])
+
 	# ── THE TRAP: a confirm must not turn everything magenta ─────────────
 	print("\n=== confirming one name marks ONE name, not all of them ===")
 	var rec: int = e._get_or_create_match_record_for_name(str(g.star_names[0]))
