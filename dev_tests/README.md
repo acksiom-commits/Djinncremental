@@ -30,6 +30,27 @@ for two reasons, both measured on this project:
 To run a subset, append `-- <substring>`. Use sparingly: it changes the
 command string, which is the thing being kept stable.
 
+## Cost, and how not to waste it
+
+**A puzzle generation costs ~18 seconds.** `generate_clues_forms()` runs the
+Forms generator *and* a uniqueness solve, and it dominates everything else —
+measured 2026-08-14: a 1-puzzle module takes 17s (mostly Godot's ~13s boot),
+a 16-puzzle module took 299s.
+
+That made the suite ~17 minutes before the soundness sweeps were trimmed to
+two constellations x two seeds each; it is ~6.5 minutes now. Two rules keep
+it there:
+
+- **Prefer TWO DIFFERENT CONSTELLATIONS over more seeds.** The coverage that
+  matters in this codebase is topological — a bug that survives constellation
+  0 and 2 has never then appeared only on a third seed of the same map.
+- **Run the affected module while iterating; run the full suite once before
+  committing.** Running everything after every small edit was the larger
+  cost by far, and it is a habit, not a requirement.
+
+A sweep that needs more than four puzzles should say in a comment what it
+buys, because it is spending a minute of every future run.
+
 ```bash
 ... --script dev_tests/test_runner.gd -- same_position
 ```

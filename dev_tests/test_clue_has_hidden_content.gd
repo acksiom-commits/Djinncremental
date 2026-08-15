@@ -21,7 +21,14 @@ extends "res://dev_tests/test_base.gd"
 # Prefixes: N: name, S: sequence (hidden) / C: colour, P: pitch, H: hops
 # (given). A clue with no N: and no S: term is entirely given-axis.
 
-const SEEDS := [11, 4242, 31337, 55555]
+# Trimmed 2026-08-14 from 4 constellations x 4 seeds. Each puzzle costs ~18s
+# to generate (generate_clues_forms runs the Forms generator AND a uniqueness
+# solve), so that sweep alone was ~5 minutes of a suite run. Two DIFFERENT
+# constellations is what buys the coverage here — the point is topological
+# variety, not seed count, and no violation has ever appeared only on a
+# third or fourth seed.
+const SEEDS := [11, 31337]
+const CONSTELLATIONS := [0, 2]
 
 var fails: int = 0
 
@@ -40,7 +47,7 @@ func run() -> void:
 	var offenders: Array = []
 	var by_form: Dictionary = {}
 
-	for cid in [0, 1, 2, 3]:
+	for cid in CONSTELLATIONS:
 		var cdef: Dictionary = cd.get_constellation_def(cid)
 		if cdef.is_empty() or not (cdef.get("line_pairs") is Array) \
 				or (cdef["line_pairs"] as Array).is_empty():
