@@ -176,6 +176,18 @@ var _alph_rank: Array[int] = []   # star_index -> alphabetical rank among star_n
 var pitch_count: int = 0                # distinct pitch classes = _pitch_freqs.size()
 var _pitch_freq_rank: Array[int] = []   # pitch_index -> ascending-frequency rank, ties share a rank
 
+## Colour reshuffles allowed while searching for an assignment that leaves
+## no two positions interchangeable (see _separate_indistinguishable_
+## positions). Measured need is tiny — the largest class pitch and topology
+## leave unseparated is 2, against 4 colours, so a redraw succeeds almost
+## immediately — but the cap keeps a pathological new constellation from
+## spinning instead of reporting.
+const COLOR_SEPARATION_ATTEMPTS: int = 24
+
+## Diagnostics for that search; read by tests, not by generation.
+var _color_reshuffles_used: int = 0
+var _color_separation_failed: bool = false
+
 var _rng := RandomNumberGenerator.new()
 
 # Injected only so generate_clues_forms() can yield a frame between
@@ -207,7 +219,10 @@ func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
     _compute_distances()
     _compute_star_degrees()
     _assign_colors_balanced()
-    _color_sub_rank = _assign_sub_ranks_within_groups(star_colors)
+    # _color_sub_rank is NOT derived here any more: colour may still be
+    # reshuffled by _separate_indistinguishable_positions() once the pitch
+    # data is in (it is assigned below this point), and a sub-rank taken
+    # from a superseded colouring would be silently wrong.
     _set_pitch_ranks_from_sequence(correct_star_sequence)
     star_names = ConstellationStarNamer.generate_names(
         star_count, p_constellation_id, name_theme)
@@ -230,6 +245,14 @@ func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
     # arbitrary table slot — those aren't the same grouping in general.
     pitch_count = _pitch_freqs.size()
     _compute_pitch_freq_rank()
+
+    # HERE, not up beside _assign_colors_balanced(): this needs the pitch
+    # data assigned just above, because a position's observable identity is
+    # colour AND pitch together. Placed earlier it read empty pitch arrays
+    # and separated nothing.
+    _separate_indistinguishable_positions()
+    # Derived AFTER the filter, since it may have recoloured.
+    _color_sub_rank = _assign_sub_ranks_within_groups(star_colors)
     var pitch_freq_rank_per_star: Array = []
     for s in star_count:
         pitch_freq_rank_per_star.append(_pitch_freq_rank[star_pitch_index[s]])
@@ -318,6 +341,97 @@ func _assign_colors_balanced() -> void:
         deck[i] = deck[j]
         deck[j] = tmp
     star_colors = deck
+
+
+## Reshuffles colour until no two POSITIONS are interchangeable.
+##
+## THE BUG THIS PREVENTS. If two map positions look identical in everything
+## the player can observe — visible colour, audible pitch, and hop distances
+## — then every clue predicate over observables gives the same answer for
+## both. Swapping them yields a second, equally consistent solution, the
+## puzzle has no unique answer, and the player correctly cannot finish it.
+## In play that is indistinguishable from a propagation bug.
+##
+## Measured 2026-08-14 across 24 puzzles per constellation, varying both the
+## pitch assignment and the colour assignment: Archon 2, Bellows 1, and zero
+## for the three fully connected constellations. It concentrates where
+## topology is weak — Archon is three isolated triangles plus a 6-cycle
+## (23% of star pairs reachable), Bellows has four isolated single stars.
+##
+## WHY COLOUR IS THE LEVER. Topology is authored art. The pitch LIST and its
+## order are the musical theme and must not change. Colour is the one thing
+## free to move, and it is enough: the largest class that pitch and topology
+## leave unseparated is 2, against 4 colours.
+##
+## WHY REFINEMENT AND NOT PAIRWISE COMPARISON. Comparing pairs of positions
+## by (colour, pitch, distance row) only finds TRANSPOSITIONS. Three
+## positions in an isolated triangle have three different distance rows, so
+## pairwise passes them, while a 3-cycle rotation is still an automorphism
+## and the puzzle still has multiple solutions. Colour refinement — label by
+## observables, then repeatedly refine by the multiset of neighbours'
+## labels — catches cycles of any length. On the measured sample the two
+## agreed, so this is correctness, not a bigger number.
+##
+## Labels deliberately exclude NAME and SEQUENCE: those are what the player
+## is solving for. Including them would prove separability using the answer.
+func _separate_indistinguishable_positions() -> void:
+    if star_count <= 1:
+        return
+    for attempt in COLOR_SEPARATION_ATTEMPTS:
+        if _observables_separate_every_position():
+            if attempt > 0:
+                _color_reshuffles_used = attempt
+            return
+        _assign_colors_balanced()
+    # Unreachable on the authored constellations (largest unseparated class
+    # is 2, and 4 colours are available), so this is a data alarm rather
+    # than a fallback: a new constellation whose pitch and topology leave
+    # 5+ positions identical cannot be made solvable by recolouring, and
+    # needs its art or note data changed.
+    _color_separation_failed = true
+    push_warning(
+        "ConstellationLogicPuzzle [%d]: could not find a colour assignment that "
+        % constellation_id
+        + "separates every position after %d attempts — this constellation's "
+        % COLOR_SEPARATION_ATTEMPTS
+        + "pitch/topology data may make unique solutions impossible.")
+
+
+## True when the player's observable value space distinguishes every
+## position from every other.
+func _observables_separate_every_position() -> bool:
+    var labels: Array = []
+    for s in star_count:
+        # FREQUENCY, not the raw pitch index: two table slots can carry the
+        # same frequency, and two stars the player hears as the same note
+        # are not distinguishable by ear whatever their index says.
+        labels.append("%d/%f" % [int(star_colors[s]), _freq_for_star(s)])
+    # Iterative refinement: a position's label absorbs the multiset of its
+    # neighbours' labels until the partition stops changing.
+    for _round in star_count:
+        var sig: Array = []
+        for s2 in star_count:
+            var neigh: Array = []
+            for n in proximity[s2]:
+                neigh.append(str(labels[int(n)]))
+            neigh.sort()
+            sig.append("%s|%s" % [str(labels[s2]), ",".join(neigh)])
+        var seen: Dictionary = {}
+        var next_labels: Array = []
+        for s3 in star_count:
+            var key: String = str(sig[s3])
+            if not seen.has(key):
+                seen[key] = str(seen.size())
+            next_labels.append(str(seen[key]))
+        if str(next_labels) == str(labels):
+            break
+        labels = next_labels
+    var used: Dictionary = {}
+    for s4 in star_count:
+        if used.has(str(labels[s4])):
+            return false
+        used[str(labels[s4])] = true
+    return true
 
 
 static func _sub_rank_letter(n: int) -> String:
