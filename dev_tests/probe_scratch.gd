@@ -9,11 +9,22 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# Last investigation (2026-08-14): puzzles with two valid solutions. Fixed
-# by _separate_indistinguishable_positions(); the standing check now lives
-# in test_position_separability.gd.
+# Last investigation (2026-08-16): is "which positions are indistinguishable"
+# a CONSTELLATION property (hardcodable per constellation) or a PER-PUZZLE
+# one? ANSWER: per-puzzle. Over 12 pitch seeds, refining on topology + pitch
+# with colour excluded, Archon gave 7 distinct at-risk sets and Bellows 5;
+# the three fully connected constellations gave none at all.
 #
-# Three process notes it produced, each of which cost a wrong conclusion:
+# Two structural facts it produced, both now in test_position_separability's
+# header: the Archon is FOUR components (a 6-cycle plus three triangles,
+# every star degree 2), and a pitch tie inside a triangle is ALWAYS an
+# interchangeable pair while a pitch tie in the 6-cycle almost never is —
+# in a triangle the neighbour multiset is the same set either way, so it can
+# never break the tie. Over 400 seeds the three triangles collided 74/70/60
+# times: statistically even, so a small-sample lopsided reading is noise.
+#
+# Three process notes from the 2026-08-14 run, each of which cost a wrong
+# conclusion:
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true
 #     and the inference from it was wrong — the raw vectors showed 12 of 15
 #     entries were -1 (unreachable), not a symmetry.

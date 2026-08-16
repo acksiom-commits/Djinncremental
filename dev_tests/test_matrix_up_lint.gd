@@ -139,6 +139,22 @@ const KNOWN_UNTRIAGED_COLUMN := {}
 
 const KNOWN_UNTRIAGED_STUB := {}
 
+## What a POSITION may not be turned into, IN PLAYER-SIDE CODE. NAME and the
+## SEQUENCE solution are the two things the player is solving FOR.
+##
+## Only star_colors is absent, and only because colour is drawn on the map:
+## every position's colour is known at first glance, so reading it off a
+## position is observation. PITCH IS NOT IN THAT CATEGORY — it is gated
+## behind LISTEN and tracked per record as "pitch_revealed", so reading a
+## frequency the player has not listened to is as much a leak as reading a
+## name. An earlier draft of this rule wrongly exempted it.
+const IDENTITY_GROUND_TRUTH := ["star_names[", "pitch_rank_solution["]
+
+## name -> reason. A function that legitimately bridges position and
+## identity (there should be very few, and each is a place the puzzle is
+## being ANSWERED rather than posed).
+const ALLOW_POSITION_NAMING := {}
+
 var fails: int = 0
 
 
@@ -356,6 +372,94 @@ func run() -> void:
 		"every value-iterating pass stores its conclusion on the VALUE (%d do not)"
 			% store_hits.size())
 
+	# ── D: a POSITION must not read IDENTITY off ground truth ─────────────
+	#
+	# Added 2026-08-16, ahead of the position-axis migration, because the
+	# hazard it guards is invisible by construction: this codebase says
+	# "star" for BOTH the map location and the named entity, and the new
+	# POSITION axis makes them the SAME INTEGER. So
+	#
+	#     func _something(star: int) -> String:
+	#         return star_names[star]
+	#
+	# reads as obviously correct while silently crossing from a position the
+	# player is still solving to an identity only the generator knows. That
+	# is characteristic-down in its purest form and no existing rule sees it,
+	# because there is no record sweep and no value loop — just a subscript.
+	#
+	# The convention that makes it CHECKABLE is the whole point of the
+	# convention: position-axis variables are named `pos`, never `star`.
+	# Same integers, different word. Two halves, because one without the
+	# other is trivially evaded:
+	#
+	#   D1 safety     — a `pos` parameter must not touch identity ground truth
+	#   D2 convention — a POSITION-axis function must not call it `star`,
+	#                   which is what would make D1 unenforceable
+	#
+	# SCOPE: this file ONLY — the player-side deduction engine. The first
+	# draft also scanned the generator, and that was a TIER error, caught by
+	# the user asking for a matrix-up review of the rule itself. The
+	# generator holds 38 reads of these arrays against the deduction
+	# engine's 8, and it MUST: it constructs the answer. A rule that fired
+	# there would be allowlisted into silence, which this file's own header
+	# calls being defeated rather than satisfied. The invariant is not
+	# "positions must not read names" — it is "PLAYER-SIDE code must not read
+	# ground truth", and that boundary is the FILE boundary.
+	#
+	# Only star_colors is exempt as observable; see IDENTITY_GROUND_TRUTH for
+	# why pitch is NOT (LISTEN-gated), which the first draft also got wrong.
+	#
+	# KNOWN LIMIT, stated rather than hidden: keying on a parameter NAME is a
+	# readability aid promoted to a check. The genuinely matrix-up rule is
+	# about a PLANE — does this write into POSITION x NAME from something
+	# other than clue closure — and that needs the closure to exist first.
+	# Until then D is a tripwire, not a proof; REPLACE it when Phase 2 lands
+	# rather than extending it.
+	#
+	# Both halves are INERT until the migration lands — there is no `pos:`
+	# parameter and no Category.POSITION today. Rule C shipped inert TWICE on
+	# two different wrong discriminators, so both halves here were verified by
+	# planting a violation of each and confirming this file went red.
+	var pos_hits: Array = []
+	var naming_hits: Array = []
+	for f4 in funcs:
+		var fn4: Dictionary = f4
+		var name4: String = str(fn4["name"])
+		if ALLOW_POSITION_NAMING.has(name4):
+			continue
+		var body4: String = _code_only(str(fn4["body"]))
+		var close: int = body4.find(")")
+		var sig4: String = body4.substr(0, close + 1) if close > 0 else body4
+		if sig4.contains("pos: int") or sig4.contains("pos_a: int") \
+				or sig4.contains("pos_b: int"):
+			for g2 in IDENTITY_GROUND_TRUTH:
+				if body4.contains(str(g2)):
+					pos_hits.append("%s  reads %s" % [name4, str(g2)])
+					break
+		if body4.contains("Category.POSITION") \
+				and (sig4.contains("star: int") or sig4.contains("star_idx: int")):
+			naming_hits.append(name4)
+
+	if not pos_hits.is_empty():
+		print("\n  --- D1: a position read an identity off ground truth ---")
+		for n4 in pos_hits:
+			print("    %s" % str(n4))
+		print("    POSITION x NAME is what the PLAYER solves. A function that")
+		print("    subscripts it from a position has answered the puzzle from")
+		print("    the answer key. Colour is fine — it is drawn on the map.")
+		print("    PITCH IS NOT: it is gated behind LISTEN (pitch_revealed).")
+	ok(pos_hits.is_empty(),
+		"no function turns a position into an identity via ground truth (%d)" % pos_hits.size())
+
+	if not naming_hits.is_empty():
+		print("\n  --- D2: POSITION-axis function calls its parameter `star` ---")
+		for n5 in naming_hits:
+			print("    %s" % str(n5))
+		print("    Rename it `pos`. Same integer, different word — it is what")
+		print("    lets D1, and a human reader, see the position/identity line.")
+	ok(naming_hits.is_empty(),
+		"every POSITION-axis function names its parameter `pos` (%d do not)" % naming_hits.size())
+
 	# The allowlists are the load-bearing part of this file. If one grows
 	# without its reason, the lint has been defeated rather than satisfied.
 	var unreasoned: int = 0
@@ -364,6 +468,9 @@ func run() -> void:
 			unreasoned += 1
 	for k2 in ALLOW_STUB_BLIND:
 		if str(ALLOW_STUB_BLIND[k2]).strip_edges() == "":
+			unreasoned += 1
+	for k5 in ALLOW_POSITION_NAMING:
+		if str(ALLOW_POSITION_NAMING[k5]).strip_edges() == "":
 			unreasoned += 1
 	ok(unreasoned == 0, "every allowlist entry carries a reason (%d bare)" % unreasoned)
 

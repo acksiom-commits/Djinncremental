@@ -14,8 +14,16 @@ extends "res://dev_tests/test_base.gd"
 # _separate_indistinguishable_positions() reshuffles colour until the
 # observables separate everything. Colour is the only lever — topology is
 # authored art and the pitch list is the musical theme — and it suffices:
-# the largest class pitch and topology leave unseparated is 2, against 4
-# colours.
+# the largest class pitch and topology leave unseparated is 3 (Bellows,
+# {0,1,2}), against 4 colours.
+#
+# The at-risk set is NOT a constellation constant: it moves with the pitch
+# seed, which reset_note_assignment() rerolls on every new puzzle. Measured
+# over 12 pitch seeds with colour excluded — Archon produced 7 distinct
+# at-risk sets ({10,11}, {9,11}, {9,10}, {7,8}, {3,4}, {6,7}, none) and
+# Bellows 5. So there is no per-constellation table of "the bad pair" to
+# author instead of this check; an earlier reading that suggested otherwise
+# came from holding the pitch seed fixed.
 #
 # The check here is deliberately INDEPENDENT of that implementation: it
 # recomputes refinement from the authored line_pairs and the finished
