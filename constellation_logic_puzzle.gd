@@ -2329,6 +2329,40 @@ func _validate_name_order_vs_group_fact(f: Dictionary) -> String:
     return ""
 
 
+## Equality Pair's claim ("X and Y share the same axis value," axis never
+## named) only tells the NAME closure something when EXACTLY one side is
+## NAME. The other side's star is already a concrete, known index — this
+## is generator-tier code, so a Sequence/Pitch id_cat only hides that
+## star's identity from the PLAYER, never from the code computing this
+## fact — so its raw axis value is directly readable RIGHT NOW, no
+## resolution needed downstream (unlike the Sequence-anchored name_group
+## branch in _solve_name_closure, whose group_key is a RANK and needs
+## rank_to_star at CONSUMPTION time — this one is a concrete star index
+## the whole way through, so it emits a plain "name_group" fact and needs
+## no new closure-side code at all).
+##
+## When BOTH sides are NAME, both positions are genuinely unknown and this
+## degenerates into a MUTUAL "same group" constraint — neither
+## value_in_set nor value_out_set can express "domain(A) narrows domain(B)
+## once A collapses," and _solve()'s existing arc-consistency passes
+## (_propagate/_naked_subset_pass) are order-shaped, not equivalence-
+## class-shaped. Deliberately deferred, not silently dropped — a
+## same-group propagation pass is real, separate work.
+func _name_same_axis_facts(id_a: Dictionary, id_b: Dictionary, axis: int, star_a: int, star_b: int) -> Array:
+    var a_is_name: bool = int(id_a["cat"]) == Category.NAME
+    var b_is_name: bool = int(id_b["cat"]) == Category.NAME
+    if a_is_name == b_is_name:
+        return []
+    var name_star: int = star_a if a_is_name else star_b
+    var known_star: int = star_b if a_is_name else star_a
+    return [{
+        "kind": "name_group",
+        "name_star": name_star,
+        "cat": axis,
+        "group_key": _name_group_key(axis, known_star),
+    }]
+
+
 ## Converts a Form's grid_updates (matrix cells, addressed by each
 ## category's own bijective value index) into the star-space form that gets
 ## cached — see CACHE_VERSION 4's comment for why the conversion happens
@@ -2858,9 +2892,11 @@ func _build_form_equality_pair(chain: Dictionary) -> Dictionary:
     # but id_cat (excluded only from axis, never from Sequence) can still
     # be Sequence, in which case its label directly discloses an exact rank.
     var solver_facts: Array = _seq_fact_for_label(id_a) + _seq_fact_for_label(id_b)
+    var value_facts: Array = [{"kind": "values_same", "cat": axis, "a": star_a, "b": star_b}]
+    value_facts.append_array(_name_same_axis_facts(id_a, id_b, axis, star_a, star_b))
     return {
         # See Form 13 for why value content rides in its own array.
-        "value_facts": [{"kind": "values_same", "cat": axis, "a": star_a, "b": star_b}],
+        "value_facts": value_facts,
         "chars": [id_a, id_b, axis_a, axis_b],
         "text": text,
         "grid_updates": [

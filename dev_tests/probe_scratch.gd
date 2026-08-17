@@ -9,41 +9,46 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── Phase 2, third slice, 2026-08-16: Group Order (form_id 9) ────────────
+# ── Phase 2, fourth slice, 2026-08-16: Equality Pair (form_id 12) ────────
 #
-# Wired via two NEW fact kinds — name_precedes_group / name_follows_group —
-# a rank RANGE restriction, genuinely different from name_group's set-
-# membership shape, so it got its own kind rather than being forced into
-# the existing one. Closure resolves it via the ALREADY-established seq_sol
-# (not pitch_rank_solution directly, even though they're equal whenever
-# seq_unique holds — kept consistent with how the Sequence-anchored branch
-# already resolves positions).
+# Wired via a NEW helper, _name_same_axis_facts, but it emits a PLAIN
+# "name_group" fact — reuses the existing kind and closure-side code
+# unchanged. Key realization that shaped this: Equality Pair's "known"
+# (non-NAME) side is a concrete generator-known star index the WHOLE WAY
+# THROUGH, regardless of whether its id_cat is Sequence or Pitch — unlike
+# the EXISTING Sequence-anchored name_group branch, whose group_key is an
+# abstract RANK needing rank_to_star resolution INSIDE the closure. This
+# one computes its raw axis value at EMISSION time, so no new closure
+# code was needed at all, only a new emission function.
 #
-# Measured, 20 puzzles / 316 names:
-#     exact Sequence pin:                     5 (2%)   — unchanged
-#     colour/pitch group OR order fact only: 126 (40%)  — up from 118 (37%)
-#     NO closure-usable constraint at all:   185 (59%)  — down from 193 (61%)
-# Only 19 Form-9 clues fired across 20 puzzles (vs Form 23's 231) — Group
-# Order is tier 3 (Systemic), generated far less often by design, so a
-# small gain here was expected, not a sign anything's wrong. Still 0/20
-# contradictions (engine sound, third slice running), still 0/20 full
-# closures (well short of the ~59% coverage gap remaining).
+# Deliberately scoped to the ONE-SIDE-NAME case only (~44% of draws,
+# reuses everything). The BOTH-SIDES-NAME case (~11%) needs real mutual
+# arc-consistency propagation ("once domain(A) collapses to one group,
+# narrow domain(B) to the same group") that neither value_in_set nor
+# value_out_set can express, and _solve()'s existing propagation passes
+# are order-shaped, not equivalence-class-shaped — deferred as separate
+# work, not silently dropped.
 #
-# NEXT: 59% of names still get nothing. Two untested levers — raise Form
-# 23/9's selection frequency (FORM_TIER/tier_ratio), or find another
-# colour-capable source among the Forms mapped as "structurally blind"
-# (worth re-checking whether that conclusion still holds given group_
-# noun_phrase-style bypasses weren't considered for all of them).
+# Measured, 20 puzzles / 316 names — the biggest single jump so far:
+#     exact Sequence pin:                     5 (2%)    — unchanged
+#     colour/pitch group OR order fact only: 172 (54%)  — up from 126 (40%)
+#     NO closure-usable constraint at all:   139 (44%)  — down from 185 (59%)
+# 121 Form-12 clues fired across 20 puzzles — Equality Pair is one of the
+# two historically-dominant Forms by clue volume, so the size of this
+# jump was expected once wired. Still 0/20 contradictions across all FOUR
+# slices now (engine remains sound); still 0/20 full closures — 44%
+# untouched is real progress but still short of complete.
 #
-# ── Phase 2, second slice, 2026-08-16 (superseded numbers) — Form 23 wired
-# alone: 118/316 (37%) group-only, 193/316 (61%) untouched, 0/20 closures,
-# 0/20 contradictions. A diagnostic mistake was caught and fixed here: a
-# first pass counted "ordinal_exact" (Sequence-rank bookkeeping, unrelated
-# to NAME, not read by the closure) instead of the actual consumed kinds.
+# NEXT: the both-sides-NAME propagation pass is now the single highest-
+# leverage remaining item (Equality Pair alone leaves ~11% of ITS OWN
+# draws on the table for exactly this reason) — bigger lift than any fact-
+# kind addition so far, genuinely new solver machinery, not a quick add.
 #
-# ── Phase 2, first slice, 2026-08-16 (superseded numbers) — Exact Identity
-# + Single Negation only: name_unique_closure 0/20, under-constrained
-# 20/20, contradictions 0/20.
+# ── Superseded numbers, kept for the process trail (all 0/20 closures,
+# 0/20 contradictions throughout) ─────────────────────────────────────────
+#   third slice  (+ Group Order):     126/316 (40%) covered, 185 (59%) not
+#   second slice (+ Form 23):         118/316 (37%) covered, 193 (61%) not
+#   first slice  (Exact Id + Neg only): 0 group facts reaching the closure
 #
 # ── Earlier process notes, each of which cost a wrong conclusion ─────────
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true
