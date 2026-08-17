@@ -828,6 +828,10 @@ func _apply_exact_clues(possible: Array, clues: Array[Dictionary]) -> bool:
 func _apply_negative_clues(possible: Array, clues: Array[Dictionary]) -> bool:
     for clue in clues:
         match clue["kind"]:
+            "value_out_set":
+                var vos: int = clue["s"]
+                for ex in clue["excluded"]:
+                    possible[vos][int(ex)] = false
             "ordinal_neg":
                 var s: int = clue["s"]
                 var r: int = clue["r"]
@@ -875,6 +879,16 @@ func _apply_negative_clues(possible: Array, clues: Array[Dictionary]) -> bool:
 func _apply_range_clues(possible: Array, clues: Array[Dictionary]) -> bool:
     for clue in clues:
         match str(clue.get("kind", "")):
+            "value_in_set":
+                # Category-agnostic: whatever "s" and "star_count" mean to
+                # the caller (Sequence rank, or a NAME closure's position
+                # candidate — see _solve_name_closure), this just restricts
+                # row s to the given column set. No ordering assumed.
+                var vis: int = clue["s"]
+                var allowed: Array = clue["allowed"]
+                for r0 in star_count:
+                    if not (r0 in allowed):
+                        possible[vis][r0] = false
             "ordinal_range":
                 var s: int = clue["s"]
                 var lo: int = clue["lo"]
@@ -2205,6 +2219,70 @@ func _validate_sequence_fact(f: Dictionary) -> String:
     return ""
 
 
+# ==================================================
+# NAME CLOSURE FACTS — Phase 2 of the position-axis migration
+# ==================================================
+# What a clue's rendered text discloses about the NAME axis, same
+# discipline as _seq_fact_for_label above: only call this on characteristics
+# that were ACTUALLY passed through _characteristic_label() in the clue's
+# own text line, never on grid_updates/chars alone — those include
+# touched-but-unrendered bookkeeping (Pairwise Order's axis_a/axis_b,
+# Equality Pair's axis_a/axis_b) that would silently reintroduce the same
+# ground-truth-leak class this whole migration exists to close, one level
+# more subtle for landing on a bijection-position value instead of a rank.
+#
+# group_key is the OBSERVING star's raw value under cat, never a resolved
+# position list — same choice distance_hop made for ref_cat/target_cat, and
+# for the same reason: it lets any consumer (this generator's own closure
+# below, or a future player-side reader) reconstruct the actual membership
+# from ITS OWN knowledge tier, rather than trusting a pre-resolved list.
+
+func _name_group_key(cat: int, star: int) -> int:
+    match cat:
+        Category.COLOR:
+            return int(star_colors[star])
+        Category.PITCH:
+            return int(star_pitch_index[star])
+        Category.SEQUENCE:
+            return int(pitch_rank_solution[star])
+    return -1
+
+
+func _name_group_facts(ch_a: Dictionary, ch_b: Dictionary, is_true: bool) -> Array:
+    # Exactly one side must be Category.NAME — NAME-vs-NAME and
+    # non-NAME-vs-non-NAME both disclose nothing about which position a
+    # name belongs to. Distance is ternary (no single group_key) and
+    # excluded, same as _seq_fact_for_label excludes non-Sequence cats.
+    var a_is_name: bool = int(ch_a["cat"]) == Category.NAME
+    var b_is_name: bool = int(ch_b["cat"]) == Category.NAME
+    if a_is_name == b_is_name:
+        return []
+    var name_ch: Dictionary = ch_a if a_is_name else ch_b
+    var obs_ch: Dictionary = ch_b if a_is_name else ch_a
+    var obs_cat: int = int(obs_ch["cat"])
+    if obs_cat != Category.COLOR and obs_cat != Category.PITCH and obs_cat != Category.SEQUENCE:
+        return []
+    return [{
+        "kind": "name_group" if is_true else "name_group_neg",
+        "name_star": int(name_ch["star"]),
+        "cat": obs_cat,
+        "group_key": _name_group_key(obs_cat, int(obs_ch["star"])),
+    }]
+
+
+func _validate_name_group_fact(f: Dictionary) -> String:
+    var s: int = int(f["name_star"])
+    var cat: int = int(f["cat"])
+    var key: int = int(f["group_key"])
+    var actual: int = _name_group_key(cat, s)
+    var kind: String = str(f.get("kind", ""))
+    if kind == "name_group" and actual != key:
+        return "name_group name_star=%d cat=%d claims group_key=%d but true=%d" % [s, cat, key, actual]
+    if kind == "name_group_neg" and actual == key:
+        return "name_group_neg name_star=%d cat=%d claims group_key!=%d but true group_key IS %d" % [s, cat, key, actual]
+    return ""
+
+
 ## Converts a Form's grid_updates (matrix cells, addressed by each
 ## category's own bijective value index) into the star-space form that gets
 ## cached — see CACHE_VERSION 4's comment for why the conversion happens
@@ -2335,7 +2413,8 @@ func _build_form_exact_identity(chain: Dictionary) -> Dictionary:
     var ch_b: Dictionary = {"cat": int(cell["cat_b"]), "star": int(cell["star_b"])}
     var text: String = "%s is %s." % [_characteristic_label(ch_a), _characteristic_label(ch_b)]
     var solver_facts: Array = _seq_fact_for_label(ch_a) + _seq_fact_for_label(ch_b)
-    return {"chars": [ch_a, ch_b], "text": text, "grid_updates": [cell], "solver_facts": solver_facts}
+    var value_facts: Array = _name_group_facts(ch_a, ch_b, true)
+    return {"chars": [ch_a, ch_b], "text": text, "grid_updates": [cell], "solver_facts": solver_facts, "value_facts": value_facts}
 
 
 func _build_form_single_negation(chain: Dictionary) -> Dictionary:
@@ -2359,7 +2438,8 @@ func _build_form_single_negation(chain: Dictionary) -> Dictionary:
         solver_facts.append({"kind": "ordinal_neg", "s": int(ch_b["star"]), "r": int(cell["val_a"])})
     elif int(ch_b["cat"]) == Category.SEQUENCE:
         solver_facts.append({"kind": "ordinal_neg", "s": int(ch_a["star"]), "r": int(cell["val_b"])})
-    return {"chars": [ch_a, ch_b], "text": text, "grid_updates": [cell], "solver_facts": solver_facts}
+    var value_facts: Array = _name_group_facts(ch_a, ch_b, false)
+    return {"chars": [ch_a, ch_b], "text": text, "grid_updates": [cell], "solver_facts": solver_facts, "value_facts": value_facts}
 
 
 func _build_form_disjunction(chain: Dictionary) -> Dictionary:
@@ -4331,12 +4411,74 @@ func _generate_clues_forms_attempt() -> Dictionary:
         if not revealed:
             name_unique = false
             break
+    # NAME CLOSURE (Phase 2 of the position-axis migration, first slice,
+    # 2026-08-16) — a genuine uniqueness PROOF over POSITION x NAME,
+    # replacing the mention-coverage flag above wherever it eventually
+    # takes over. NOT the live gate yet: only Exact Identity and Single
+    # Negation are wired to emit name_group facts so far, and BOTH are
+    # structurally unable to carry Colour — the shared cell sampler
+    # requires _category_uniquely_labels on both sides, and Colour's group
+    # size is never 1 (measured). So this is a KNOWN undercount, reported
+    # for measurement (see probe_scratch.gd), not enforced. Swapping it in
+    # as the real gate before more Forms are wired would starve
+    # generation, since almost no puzzle would close on Sequence+Pitch
+    # facts alone.
+    var name_unique_closure: bool = false
+    var name_solutions_count: int = -1   # -1 = not attempted (seq not unique yet)
+    if seq_unique:
+        var name_solutions: Array = _solve_name_closure(seq_solutions)
+        name_unique_closure = name_solutions.size() == 1
+        name_solutions_count = name_solutions.size()
     return {
         "seq_unique": seq_unique,
         "name_unique": name_unique,
+        "name_unique_closure": name_unique_closure,
+        "name_solutions_count": name_solutions_count,
         "seq_solutions_count": seq_solutions.size(),
         "tier_counts": tier_counts,
     }
+
+
+func _solve_name_closure(seq_solutions: Array) -> Array:
+    # possible[name_star][candidate_position] — same shape _solve() already
+    # uses for possible[star][candidate_rank]. Meaningless before Sequence
+    # is unique: a Sequence-anchored name_group fact only resolves to a
+    # single position via the one true Sequence solution, so the caller
+    # gates this on seq_unique first.
+    if seq_solutions.size() != 1:
+        return []
+    var rank_to_star: Array = []
+    rank_to_star.resize(star_count)
+    var seq_sol: Array = seq_solutions[0]
+    for st in star_count:
+        rank_to_star[int(seq_sol[st])] = st
+    var name_clues: Array[Dictionary] = []
+    for clue in chosen_form_clues:
+        for f in (clue.get("disclosures", []) as Array):
+            if not (f is Dictionary):
+                continue
+            var fd: Dictionary = f
+            var kind: String = str(fd.get("kind", ""))
+            if kind != "name_group" and kind != "name_group_neg":
+                continue
+            var violation: String = _validate_name_group_fact(fd)
+            if violation != "":
+                push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NAME FACT — %s" % [constellation_id, violation])
+            var name_star: int = int(fd["name_star"])
+            var obs_cat: int = int(fd["cat"])
+            var group_key: int = int(fd["group_key"])
+            var members: Array = []
+            if obs_cat == Category.SEQUENCE:
+                members = [int(rank_to_star[group_key])]
+            else:
+                for s2 in star_count:
+                    if _name_group_key(obs_cat, s2) == group_key:
+                        members.append(s2)
+            if kind == "name_group":
+                name_clues.append({"kind": "value_in_set", "s": name_star, "allowed": members})
+            else:
+                name_clues.append({"kind": "value_out_set", "s": name_star, "excluded": members})
+    return _solve(name_clues, 2)
 
 
 func get_form_clue_texts() -> Array[String]:

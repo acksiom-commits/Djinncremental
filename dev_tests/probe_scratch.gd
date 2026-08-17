@@ -9,44 +9,44 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── Phase 0 of the position-axis migration, ANSWERED 2026-08-16 ──────────
+# ── Phase 2 of the position-axis migration, first slice, 2026-08-16 ──────
 #
-# Question: can a POSITION x NAME closure be built on the EXISTING matrix,
-# deferring the Colour/Pitch cardinality drop (Phase 3)? ANSWER: YES.
+# Built _solve_name_closure(): a possible[name_star][candidate_position]
+# grid, same shape _solve() already uses for Sequence, fed by NEW value_fact
+# kinds "name_group"/"name_group_neg" (descriptor-anchored, mirroring
+# distance_hop's ref_cat/target_cat idiom rather than storing a resolved
+# position list) emitted ONLY from characteristics that were ACTUALLY
+# rendered via _characteristic_label() in a clue's own text line — never
+# from grid_updates/chars, which include touched-but-unrendered bookkeeping
+# (confirmed via Pairwise Order's axis_a/axis_b and Equality Pair's
+# axis_a/axis_b, neither ever passed to _characteristic_label).
 #
-# Measured over 20 puzzles / 971 clues, all five constellations:
-#     clues naming a COLOUR                 177
-#     clues naming a PITCH                  277
-#     clues carrying a sub-rank letter        0
-# The two nonzero rows are the non-vacuity check: zero leaks would also be
-# what "no colour clue was ever generated" looks like.
+# Wired to exactly two Forms so far: Exact Identity and Single Negation —
+# the only two whose relation (same star / different star) is unambiguous
+# at the cell level. Measured, NOT assumed: both are structurally UNABLE to
+# carry a Colour fact, because every clue drawn from
+# _sample_grid_cell_maybe_chained requires _category_uniquely_labels on
+# BOTH sides, and Colour's group size is never 1 (measured earlier: only
+# 3/4/5). So this slice can only ever produce Sequence-anchored (always
+# singleton) or Pitch-anchored (singleton only ~19% of stars) facts.
 #
-# The stronger result came from the follow-up, over 15 puzzles / 237 stars:
-#     colour group sizes seen    3, 4, 5      — NEVER 1
-#     pitch  group sizes seen    1..6         — 45 stars in singleton groups
+# Result over 20 puzzles, all 5 constellations:
+#     name_unique_closure   0 of 20   (fully expected, not a bug)
+#     under-constrained (>1 solutions)   20 of 20
+#     CONTRADICTIONS (0 solutions)        0 of 20
+# The 0/0 split is the important number: the closure never contradicts the
+# true assignment, so the ENGINE is sound — it is starved of facts, not
+# broken. name_unique_closure is a non-gating field on
+# _generate_clues_forms_attempt's return dict; the LIVE gate (name_unique,
+# the old mention-coverage flag) is untouched.
 #
-# _category_uniquely_labels() requires group size <= 1, so COLOUR CAN NEVER
-# BE AN IDENTITY LABEL AT ALL, yet 339 COLOR chars appear in clues. Both
-# facts hold because `chars` records MENTIONS, not rendered identities:
-# colour reaches the player only as a SET constraint ("Theryis is among the
-# blue ones"), which is exactly the semantics a player-space closure needs.
-# Pitch differs legitimately — a note played by exactly one star IS a
-# checkable identity once the player has listened.
+# NEXT: the 177/971 colour-naming clues measured in the Phase 0 probe come
+# from a DIFFERENT code path — group-phrase Forms (Mutual Exclusion / Count
+# / Group Comparison) that describe a colour GROUP directly rather than
+# rendering one star's identity — not yet mapped. That's where the real
+# coverage gain is; wiring more identity-anchored Forms won't reach it.
 #
-# So the shipped clue set is ALREADY expressed in the player's value space.
-# The sub-rank fiction lives entirely inside _matrix as clue-SELECTION
-# bookkeeping and never escapes it. Phase 3 is cleanup, not a prerequisite.
-#
-# Consequence for Phase 2, still unverified: the closure looks like a NEW
-# CONSUMER of `chars` rather than a re-encoding — translate each char to
-# the position SET it constrains (colour -> its group, pitch -> its group,
-# name/sequence -> singleton) instead of the single star it is stored
-# against. If that holds for all 21 Form builders, the `cells` re-encoding
-# and the CACHE_VERSION bump both drop out of the plan. Negation,
-# betweenness, count and distance Forms are the ones to check: their
-# constraint is not carried by the two chars alone.
-#
-# ── Process notes from earlier runs, each of which cost a wrong call ─────
+# ── Earlier process notes, each of which cost a wrong conclusion ─────────
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true
 #     and the inference from it was wrong — the raw vectors showed 12 of 15
 #     entries were -1 (unreachable), not a symmetry.
