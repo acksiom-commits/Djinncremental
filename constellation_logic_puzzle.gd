@@ -1833,10 +1833,64 @@ func _matrix_cell(cat_a: int, val_a: int, cat_b: int, val_b: int) -> Dictionary:
     return rows[row][col]
 
 
-func _random_bijective_category_pair() -> Array:
+## Weight given to Category.NAME specifically, at the handful of category-
+## draw sites inside the Forms that feed the NAME closure (Exact Identity,
+## Single Negation, Group Order, Equality Pair — see the bias_name
+## parameter each takes). Found necessary by the coverage audit
+## (generator_ships_unsolvable_puzzles.md): 40% of untouched singleton-
+## pitch stars WERE disclosed by a closure-feeding Form, just not paired
+## with NAME that specific draw. A real weighted random pick, not a
+## best-first ranking — same distinction MUTEX_REPEAT_CATEGORY_WEIGHT's
+## own comment makes: always picking the highest-weighted option would
+## make every draw from these Forms look the same, trading clue variety
+## for closure coverage instead of just improving the odds. Scoped to
+## these specific call sites via an opt-in parameter, never touching the
+## shared helpers' behavior for the ~15 OTHER Forms that also call them.
+const CLOSURE_NAME_BIAS_WEIGHT := 2.0
+
+## Weighted-random pick from `items` (single pick, no removal — unlike
+## _mutex_weighted_pick_remove, nothing here drains a pool across
+## multiple draws). Returns items[items.size()-1] on float-rounding
+## fallback, same convention as _mutex_weighted_pick_remove.
+func _weighted_pick(items: Array, weights: Array) -> int:
+    var total: float = 0.0
+    for w in weights:
+        total += float(w)
+    var roll: float = _rng.randf() * total if total > 0.0 else 0.0
+    var acc: float = 0.0
+    for i in items.size():
+        acc += float(weights[i])
+        if roll < acc:
+            return int(items[i])
+    return int(items[items.size() - 1])
+
+
+## Weighted pick over {NAME, SEQUENCE, COLOR, PITCH} \ {exclude}, favoring
+## NAME by CLOSURE_NAME_BIAS_WEIGHT. Shared by both identity-cell samplers'
+## bias_name paths — same pool, same weighting, one place to retune.
+func _weighted_category_excluding(exclude: int) -> int:
+    var pool: Array = []
+    for c in [Category.NAME, Category.SEQUENCE, Category.COLOR, Category.PITCH]:
+        if int(c) != exclude:
+            pool.append(c)
+    var weights: Array = []
+    for c2 in pool:
+        weights.append(CLOSURE_NAME_BIAS_WEIGHT if int(c2) == Category.NAME else 1.0)
+    return _weighted_pick(pool, weights)
+
+
+func _random_bijective_category_pair(bias_name: bool = false) -> Array:
     var pool: Array = BIJECTIVE_CATEGORIES.duplicate()
+    if not bias_name:
+        _shuffle_array(pool)
+        return [pool[0], pool[1]]
+    var weights: Array = []
+    for c in pool:
+        weights.append(CLOSURE_NAME_BIAS_WEIGHT if int(c) == Category.NAME else 1.0)
+    var first: int = _weighted_pick(pool, weights)
+    pool.erase(first)
     _shuffle_array(pool)
-    return [pool[0], pool[1]]
+    return [first, pool[0]]
 
 
 func _sample_grid_cell_from_chain(chain_cat: int, chain_star: int, other_cat: int) -> Dictionary:
@@ -1868,7 +1922,7 @@ func _sample_grid_cell_from_chain(chain_cat: int, chain_star: int, other_cat: in
     }
 
 
-func _sample_grid_cell_maybe_chained(chain: Dictionary) -> Dictionary:
+func _sample_grid_cell_maybe_chained(chain: Dictionary, bias_name: bool = false) -> Dictionary:
     # Chaining is the standard case, not an occasional preference — every
     # clue after the first reuses one node from the immediately-previous
     # clue (Step 9). Falls back to a fresh, unchained pair only when there
@@ -1881,11 +1935,19 @@ func _sample_grid_cell_maybe_chained(chain: Dictionary) -> Dictionary:
             if int(c) != chain_cat:
                 other_pool.append(c)
         _shuffle_array(other_pool)
+        # Trying NAME first (when eligible) costs nothing and loses no
+        # variety — this is an ORDERED ATTEMPT LIST, not a final pick; if
+        # NAME fails (already used/no candidates) every other option still
+        # gets tried in its shuffled order exactly as before. Unlike the
+        # fresh-pair case below, no soft weighting needed here.
+        if bias_name and other_pool.has(Category.NAME):
+            other_pool.erase(Category.NAME)
+            other_pool.push_front(Category.NAME)
         for other_cat in other_pool:
             var cell: Dictionary = _sample_grid_cell_from_chain(chain_cat, int(chain["star"]), int(other_cat))
             if not cell.is_empty():
                 return cell
-    var pair: Array = _random_bijective_category_pair()
+    var pair: Array = _random_bijective_category_pair(bias_name)
     return _sample_grid_cell(int(pair[0]), int(pair[1]))
 
 
@@ -2559,7 +2621,7 @@ func _build_form_exact_identity(chain: Dictionary) -> Dictionary:
     # deferred to generate_clues_forms(), after the dedup check, so a
     # discarded attempt never corrupts Used/Unused bookkeeping for a cell
     # that was never actually shown to the player.
-    var cell: Dictionary = _sample_grid_cell_maybe_chained(chain)
+    var cell: Dictionary = _sample_grid_cell_maybe_chained(chain, true)
     if cell.is_empty() or not bool(cell["is_true"]):
         return {}
     var ch_a: Dictionary = {"cat": int(cell["cat_a"]), "star": int(cell["star_a"])}
@@ -2573,7 +2635,7 @@ func _build_form_exact_identity(chain: Dictionary) -> Dictionary:
 func _build_form_single_negation(chain: Dictionary) -> Dictionary:
     # Same purely-random landing as Exact Identity, just needing a False
     # cell instead of a True one — no steering either direction.
-    var cell: Dictionary = _sample_grid_cell_maybe_chained(chain)
+    var cell: Dictionary = _sample_grid_cell_maybe_chained(chain, true)
     if cell.is_empty() or bool(cell["is_true"]):
         return {}
     var ch_a: Dictionary = {"cat": int(cell["cat_a"]), "star": int(cell["star_a"])}
@@ -2732,7 +2794,7 @@ func _build_form_range(chain: Dictionary) -> Dictionary:
 # ── Shape B: two-star relational fact (Forms 5, 6, 7, 12) ────────────────
 
 
-func _sample_identity_axis_cell(axis_cat: int, chain: Dictionary, exclude_star: int) -> Dictionary:
+func _sample_identity_axis_cell(axis_cat: int, chain: Dictionary, exclude_star: int, bias_name: bool = false) -> Dictionary:
     # Establishes one star's identity for a comparison-shaped Form (Pairwise
     # Order and similar): a TRUE cell pairing some other category against
     # axis_cat. This is NOT the same "steering" Forms 1/2 avoid — no
@@ -2754,9 +2816,14 @@ func _sample_identity_axis_cell(axis_cat: int, chain: Dictionary, exclude_star: 
             var true_axis_val: int = int(_cat_star_to_value[axis_cat][chain_star])
             if not bool(_matrix_cell(chain_cat, chain_val, axis_cat, true_axis_val)["used"]):
                 return {"id_cat": chain_cat, "id_val": chain_val, "axis_val": true_axis_val, "star": chain_star}
-    var id_cat: int = _non_distance_category()
+    # Single, final-commitment draw (no fallback to a different id_cat if
+    # candidates comes back empty below), so a soft weighted pick when
+    # biased — not the chained path's costless try-NAME-first above,
+    # since picking NAME here and having it fail closes off this whole
+    # attempt rather than falling through to the next candidate.
+    var id_cat: int = _weighted_category_excluding(axis_cat) if bias_name else _non_distance_category()
     while id_cat == axis_cat:
-        id_cat = _non_distance_category()
+        id_cat = _weighted_category_excluding(axis_cat) if bias_name else _non_distance_category()
     var candidates: Array = []
     for s in star_count:
         if s == exclude_star or not _category_uniquely_labels(id_cat, s):
@@ -2855,16 +2922,16 @@ func _build_form_exact_offset(chain: Dictionary) -> Dictionary:
     }
 
 
-func _identity_cell_for_known_star(star: int, axis_cat: int) -> Dictionary:
+func _identity_cell_for_known_star(star: int, axis_cat: int, bias_name: bool = false) -> Dictionary:
     # Like _sample_identity_axis_cell, but for a star whose identity is
     # already pinned by something OTHER than a free random pick — e.g.
     # Adjacency's target star, determined by an exact rank offset rather
     # than chosen among remaining candidates. Same TRUE-cell requirement:
     # the (id_cat, axis_cat) pairing for this star must not already be
     # Used, or this attempt fails and the main loop moves on.
-    var id_cat: int = _non_distance_category()
+    var id_cat: int = _weighted_category_excluding(axis_cat) if bias_name else _non_distance_category()
     while id_cat == axis_cat or not _category_uniquely_labels(id_cat, star):
-        id_cat = _non_distance_category()
+        id_cat = _weighted_category_excluding(axis_cat) if bias_name else _non_distance_category()
     var id_val: int = int(_cat_star_to_value[id_cat][star])
     var axis_val: int = int(_cat_star_to_value[axis_cat][star])
     if bool(_matrix_cell(id_cat, id_val, axis_cat, axis_val)["used"]):
@@ -2919,7 +2986,13 @@ func _build_form_equality_pair(chain: Dictionary) -> Dictionary:
     # chosen among all remaining candidates like Forms 5/6.
     var axis: int = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
     var raw_of: Callable = func(s): return star_colors[s] if axis == Category.COLOR else star_pitch_index[s]
-    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
+    # bias_name on both draws: this Form is the biggest closure-coverage
+    # contributor by volume, and every one-side-NAME instance feeds a
+    # name_group fact directly, every both-NAME instance feeds
+    # _propagate_same_group — biasing EITHER side toward NAME raises the
+    # rate of both outcomes over the current "neither side NAME" case,
+    # which discloses nothing to the closure at all.
+    var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1, true)
     if a.is_empty():
         return {}
     var star_a: int = int(a["star"])
@@ -2931,7 +3004,7 @@ func _build_form_equality_pair(chain: Dictionary) -> Dictionary:
     if candidates.is_empty():
         return {}
     var star_b: int = int(candidates[_rng.randi_range(0, candidates.size() - 1)])
-    var b: Dictionary = _identity_cell_for_known_star(star_b, axis)
+    var b: Dictionary = _identity_cell_for_known_star(star_b, axis, true)
     if b.is_empty():
         return {}
     # Both ends must not be labelled off GIVEN axes. The identity picks are
@@ -3516,9 +3589,13 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
             subj_id_val = cv
             subj_axis_val = av
     if subject_star == -1:
-        var id_cat: int = _non_distance_category()
-        while id_cat == axis:
-            id_cat = _non_distance_category()
+        # Single, final-commitment draw (bails {} if candidates comes back
+        # empty below, no retry with a different id_cat) — soft weighted
+        # pick toward NAME, same rationale as Equality Pair's identity
+        # draws: this is one of the closure-feeding Forms, and its subject
+        # can only be NAME or Pitch here (axis=SEQUENCE excludes itself,
+        # Colour never survives the uniqueness check below regardless).
+        var id_cat: int = _weighted_category_excluding(axis)
         var candidates: Array = []
         for s in star_count:
             if group_stars.has(s) or not _category_uniquely_labels(id_cat, s):
@@ -4083,7 +4160,11 @@ func _build_form_group_membership(chain: Dictionary) -> Dictionary:
         # relational content even when its d2 lands on Pitch; this Form
         # has no such mandatory content, so the identifying side must BE
         # the hidden content instead.
-        var idc: int = Category.NAME if _rng.randf() < 0.5 else Category.SEQUENCE
+        # Was a plain 0.5 coinflip; now shares CLOSURE_NAME_BIAS_WEIGHT
+        # with the other closure-feeding Forms' draws (NAME:SEQUENCE
+        # weighted 2:1 = 2/3), one tunable constant instead of a second,
+        # independently-drifting magic number.
+        var idc: int = Category.NAME if _rng.randf() < (CLOSURE_NAME_BIAS_WEIGHT / (CLOSURE_NAME_BIAS_WEIGHT + 1.0)) else Category.SEQUENCE
         if not _category_uniquely_labels(idc, int(cand)):
             continue
         var idv: int = int(_cat_star_to_value[idc][cand])
