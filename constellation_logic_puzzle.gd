@@ -99,7 +99,25 @@ extends RefCounted
 # GROUND TRUTH GENERATION — ported verbatim, upstream of all three tiers
 # ==================================================
 enum StarColor { BLUE, WHITE, YELLOW_ORANGE, RED }
-enum Category { NAME, SEQUENCE, COLOR, PITCH, DISTANCE }
+enum Category { NAME, SEQUENCE, COLOR, PITCH, DISTANCE, POSITION }
+# POSITION is deliberately NOT in BIJECTIVE_CATEGORIES and never will be by
+# the same route NAME/COLOR/PITCH are: putting it there would make the
+# clue-selection pool (_random_bijective_category_pair,
+# _sample_grid_cell_maybe_chained) eligible to draw it as a clue subject,
+# and _characteristic_label() has no branch for it — falls through to
+# `return "?"`, a silently broken clue, not a crash. Confirmed by reading
+# both call sites before adding this line.
+#
+# It doesn't need that route. Per the Phase 0 measurement
+# (generator_ships_unsolvable_puzzles.md), the position-axis closure is a
+# NEW CONSUMER of rendered clue chars, structurally identical to how
+# _solve() already handles SEQUENCE: its own possibility grid, fed by
+# facts parsed OUT of the clues, never touching _matrix or
+# BIJECTIVE_CATEGORIES. POSITION exists here only so that solver has a
+# name to reference instead of a bare int. Appended at the END so no
+# existing enum value's int shifts — cached chosen_form_clues store "cat"
+# as a raw int, and a mid-list insert would silently misread a stale
+# cache's old category as the wrong new one.
 const COLOR_NAMES           := ["Blue", "White", "Yellow", "Red"]
 const SEQ_WORD_EARLIER      := "earlier"
 const SEQ_WORD_LATER        := "later"
