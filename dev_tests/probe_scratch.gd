@@ -9,47 +9,41 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── Phase 2, second slice, 2026-08-16: Form 23 (Group Membership) ────────
+# ── Phase 2, third slice, 2026-08-16: Group Order (form_id 9) ────────────
 #
-# Built the bare "X is [not] one of the [colour/pitch] stars" clue — found
-# missing by a matrix-up review of negative-exclusion coverage. Registered
-# as form_id 23, tier 2, wired into FORM_NAMES/AUTOMATED_FORM_IDS/
-# _build_form/FORM_TIER.
+# Wired via two NEW fact kinds — name_precedes_group / name_follows_group —
+# a rank RANGE restriction, genuinely different from name_group's set-
+# membership shape, so it got its own kind rather than being forced into
+# the existing one. Closure resolves it via the ALREADY-established seq_sol
+# (not pitch_rank_solution directly, even though they're equal whenever
+# seq_unique holds — kept consistent with how the Sequence-anchored branch
+# already resolves positions).
 #
-# CAUGHT AND FIXED before landing: subj_id_cat was drawn via
-# _non_distance_category() excluding only group_cat — which let
-# (subj_id_cat=PITCH, group_cat=COLOR) through, e.g. "The star that plays
-# C#5 is one of the blue stars." — both sides purely observable (map +
-# listened pitch), zero Name/Sequence content, same tautology class as the
-# F5/E5 bug fixed earlier this session. test_clue_has_hidden_content.gd
-# caught it immediately. Fixed by restricting the identifying side to
-# NAME/SEQUENCE only — the two axes actually hidden from the player.
+# Measured, 20 puzzles / 316 names:
+#     exact Sequence pin:                     5 (2%)   — unchanged
+#     colour/pitch group OR order fact only: 126 (40%)  — up from 118 (37%)
+#     NO closure-usable constraint at all:   185 (59%)  — down from 193 (61%)
+# Only 19 Form-9 clues fired across 20 puzzles (vs Form 23's 231) — Group
+# Order is tier 3 (Systemic), generated far less often by design, so a
+# small gain here was expected, not a sign anything's wrong. Still 0/20
+# contradictions (engine sound, third slice running), still 0/20 full
+# closures (well short of the ~59% coverage gap remaining).
 #
-# MEASURED, and a diagnostic mistake caught along the way: a first
-# coverage probe reported "301 of 316 names already pinned," which was
-# WRONG — it counted "ordinal_exact" facts, a Sequence-rank bookkeeping
-# kind that fires whenever ANY Form incidentally renders a Sequence
-# characteristic, unrelated to NAME, and not even read by
-# _solve_name_closure() (which only consumes name_group/name_group_neg).
-# Redone against the RIGHT fact kinds:
-#     exact Sequence pin (name_group, cat==SEQUENCE):      5 of 316  (2%)
-#     colour/pitch group fact only (narrows, doesn't pin): 118 of 316 (37%)
-#     NO closure-usable constraint at all:                 193 of 316 (61%)
-# name_unique_closure is STILL 0/20 — fully explained by this, not a
-# regression: 61% of names get literally nothing from the wired Forms, so
-# there is no way the closure could reach uniqueness yet. Still 0/20
-# CONTRADICTIONS across both slices — the engine remains sound throughout,
-# it is coverage that is incomplete. Form 23 measurably moved the needle
-# (0 -> 37% weakly covered) even though full closure is still far off.
+# NEXT: 59% of names still get nothing. Two untested levers — raise Form
+# 23/9's selection frequency (FORM_TIER/tier_ratio), or find another
+# colour-capable source among the Forms mapped as "structurally blind"
+# (worth re-checking whether that conclusion still holds given group_
+# noun_phrase-style bypasses weren't considered for all of them).
 #
-# NEXT: Group Order (comparative colour/pitch-group facts) is the other
-# mapped-but-unwired source; wiring it, or biasing Form 23's selection
-# frequency upward, are the two obvious next levers — untested which
-# matters more.
+# ── Phase 2, second slice, 2026-08-16 (superseded numbers) — Form 23 wired
+# alone: 118/316 (37%) group-only, 193/316 (61%) untouched, 0/20 closures,
+# 0/20 contradictions. A diagnostic mistake was caught and fixed here: a
+# first pass counted "ordinal_exact" (Sequence-rank bookkeeping, unrelated
+# to NAME, not read by the closure) instead of the actual consumed kinds.
 #
-# ── Phase 2, first slice, 2026-08-16 (superseded numbers, kept for the
-# process notes) — Exact Identity + Single Negation only:
-#     name_unique_closure 0/20, under-constrained 20/20, contradictions 0/20
+# ── Phase 2, first slice, 2026-08-16 (superseded numbers) — Exact Identity
+# + Single Negation only: name_unique_closure 0/20, under-constrained
+# 20/20, contradictions 0/20.
 #
 # ── Earlier process notes, each of which cost a wrong conclusion ─────────
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true

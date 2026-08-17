@@ -2292,6 +2292,43 @@ func _validate_name_group_fact(f: Dictionary) -> String:
     return ""
 
 
+## Group Order's claim (form_id 9): subject's RANK precedes/follows EVERY
+## member of a Colour/Pitch group — a range restriction, not the "belongs
+## to this group" shape name_group/name_group_neg cover. Different claim,
+## different kind, on purpose: forcing it through the membership shape
+## would either lose the ordinal content or misrepresent it as exact
+## membership, neither of which is what the clue actually asserts.
+func _name_order_vs_group_facts(subject_id: Dictionary, group_def_ch: Dictionary, precedes: bool) -> Array:
+    if int(subject_id["cat"]) != Category.NAME:
+        return []
+    var obs_cat: int = int(group_def_ch["cat"])
+    if obs_cat != Category.COLOR and obs_cat != Category.PITCH:
+        return []
+    return [{
+        "kind": "name_precedes_group" if precedes else "name_follows_group",
+        "name_star": int(subject_id["star"]),
+        "cat": obs_cat,
+        "group_key": _name_group_key(obs_cat, int(group_def_ch["star"])),
+    }]
+
+
+func _validate_name_order_vs_group_fact(f: Dictionary) -> String:
+    var s: int = int(f["name_star"])
+    var cat: int = int(f["cat"])
+    var key: int = int(f["group_key"])
+    var kind: String = str(f.get("kind", ""))
+    var subj_rank: int = int(pitch_rank_solution[s])
+    for m in star_count:
+        if _name_group_key(cat, m) != key:
+            continue
+        var member_rank: int = int(pitch_rank_solution[m])
+        if kind == "name_precedes_group" and subj_rank >= member_rank:
+            return "name_precedes_group name_star=%d cat=%d group_key=%d claims subject precedes every member but subject rank=%d >= member %d rank=%d" % [s, cat, key, subj_rank, m, member_rank]
+        if kind == "name_follows_group" and subj_rank <= member_rank:
+            return "name_follows_group name_star=%d cat=%d group_key=%d claims subject follows every member but subject rank=%d <= member %d rank=%d" % [s, cat, key, subj_rank, m, member_rank]
+    return ""
+
+
 ## Converts a Form's grid_updates (matrix cells, addressed by each
 ## category's own bijective value index) into the star-space form that gets
 ## cached — see CACHE_VERSION 4's comment for why the conversion happens
@@ -3420,6 +3457,7 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
     var solver_facts: Array = _seq_fact_for_label(subject_id)
     for gs3 in group_stars:
         solver_facts.append({"kind": "ordinal_cmp", "a": subject_star, "b": int(gs3), "a_gt_b": not precedes})
+    var value_facts: Array = _name_order_vs_group_facts(subject_id, group_def_ch, precedes)
     return {
         "chars": [subject_id, subject_axis, group_def_ch],
         "text": text,
@@ -3428,6 +3466,7 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
             {"cat_a": subj_id_cat, "val_a": subj_id_val, "cat_b": axis, "val_b": subj_axis_val, "is_true": true},
         ],
         "solver_facts": solver_facts,
+        "value_facts": value_facts,
     }
 
 
@@ -4577,25 +4616,56 @@ func _solve_name_closure(seq_solutions: Array) -> Array:
                 continue
             var fd: Dictionary = f
             var kind: String = str(fd.get("kind", ""))
-            if kind != "name_group" and kind != "name_group_neg":
-                continue
-            var violation: String = _validate_name_group_fact(fd)
-            if violation != "":
-                push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NAME FACT — %s" % [constellation_id, violation])
-            var name_star: int = int(fd["name_star"])
-            var obs_cat: int = int(fd["cat"])
-            var group_key: int = int(fd["group_key"])
-            var members: Array = []
-            if obs_cat == Category.SEQUENCE:
-                members = [int(rank_to_star[group_key])]
-            else:
-                for s2 in star_count:
-                    if _name_group_key(obs_cat, s2) == group_key:
-                        members.append(s2)
-            if kind == "name_group":
-                name_clues.append({"kind": "value_in_set", "s": name_star, "allowed": members})
-            else:
-                name_clues.append({"kind": "value_out_set", "s": name_star, "excluded": members})
+            if kind == "name_group" or kind == "name_group_neg":
+                var violation: String = _validate_name_group_fact(fd)
+                if violation != "":
+                    push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NAME FACT — %s" % [constellation_id, violation])
+                var name_star: int = int(fd["name_star"])
+                var obs_cat: int = int(fd["cat"])
+                var group_key: int = int(fd["group_key"])
+                var members: Array = []
+                if obs_cat == Category.SEQUENCE:
+                    members = [int(rank_to_star[group_key])]
+                else:
+                    for s2 in star_count:
+                        if _name_group_key(obs_cat, s2) == group_key:
+                            members.append(s2)
+                if kind == "name_group":
+                    name_clues.append({"kind": "value_in_set", "s": name_star, "allowed": members})
+                else:
+                    name_clues.append({"kind": "value_out_set", "s": name_star, "excluded": members})
+            elif kind == "name_precedes_group" or kind == "name_follows_group":
+                var violation2: String = _validate_name_order_vs_group_fact(fd)
+                if violation2 != "":
+                    push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NAME-ORDER FACT — %s" % [constellation_id, violation2])
+                var name_star2: int = int(fd["name_star"])
+                var obs_cat2: int = int(fd["cat"])
+                var group_key2: int = int(fd["group_key"])
+                # Rank range comes from seq_sol (the closure's OWN resolved
+                # solution), not pitch_rank_solution directly — equal
+                # whenever seq_unique holds (required to reach this point
+                # at all), but reading through seq_sol keeps this
+                # consistent with how the SEQUENCE-anchored branch above
+                # already resolves positions, rather than reaching past it
+                # to ground truth for no reason.
+                var min_rank: int = -1
+                var max_rank: int = -1
+                for m in star_count:
+                    if _name_group_key(obs_cat2, m) != group_key2:
+                        continue
+                    var r: int = int(seq_sol[m])
+                    if min_rank == -1 or r < min_rank:
+                        min_rank = r
+                    if max_rank == -1 or r > max_rank:
+                        max_rank = r
+                var allowed2: Array = []
+                for p in star_count:
+                    var pr: int = int(seq_sol[p])
+                    if kind == "name_precedes_group" and pr < min_rank:
+                        allowed2.append(p)
+                    elif kind == "name_follows_group" and pr > max_rank:
+                        allowed2.append(p)
+                name_clues.append({"kind": "value_in_set", "s": name_star2, "allowed": allowed2})
     return _solve(name_clues, 2)
 
 
