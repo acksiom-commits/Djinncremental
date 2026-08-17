@@ -1,57 +1,48 @@
 extends "res://dev_tests/test_base.gd"
 # Reusable throwaway driver — EDIT IN PLACE. MUST call finish() on every
-# exit path. LEAVE IT GREEN when an investigation ends: a permanently red
-# suite is one whose red stops meaning anything, which would quietly defeat
-# test_matrix_up_lint.gd. Open findings go in that file's KNOWN_UNTRIAGED,
-# never in a standing failure here. Keep `fails` even while idle, or the
-# runner scores this module "unscored" and the summary stops reading
-# ALL MODULES PASS.
+# exit path. LEAVE IT GREEN when an investigation ends.
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── Phase 2, fifth slice, 2026-08-16: same-group propagation ─────────────
+# ── Audit, 2026-08-17: which names stay untouched by the NAME closure ────
 #
-# Built _propagate_same_group(): domain-level reachability pruning for
-# Equality Pair's both-sides-NAME case, deferred since the fourth slice.
-# name_star_a's and name_star_b's positions must share the same raw `cat`
-# value with NO group_key known (unlike name_group) — not expressible as
-# a per-row value_in_set/value_out_set restriction. Removes a candidate
-# position from one row only when unreachable by ANY value in the other
-# row's domain, repeated to a fixpoint (transitive chains across multiple
-# pairs fall out for free, no extra logic).
+# 8 seeds x 5 constellations, 632 names, 211 untouched (33%). Question:
+# CONCENTRATED (same structural positions every seed — a real gap) or
+# DIFFUSE (roughly uniform — needs more volume/breadth, not a fix)?
 #
-# SOUND but NOT COMPLETE by construction — never teaches _solve()'s own
-# backtracking about the constraint. Argued safe in the code's own header
-# comment: every fact fed to _solve() is validated against ground truth
-# first, so the TRUE assignment is always among whatever _solve() finds;
-# if it finds exactly one, that one IS truth, full stop. The only failure
-# direction is UNDER-claiming uniqueness, never over-claiming it — safe
-# for a rejection gate. MEASURED, not just argued: 0/20 contradictions,
-# confirming the argument held rather than assuming it did.
+# ANSWER: diffuse. No position was untouched in EVERY seed (0 of 632 at
+# 8/8); the distribution peaks in the middle (2-4 misses out of 8 for most
+# positions), tapering at both ends — the signature of randomness, not a
+# structural blind spot.
 #
-# Measured, 20 puzzles / 316 names:
-#     exact Sequence pin:                     5 (2%)   — unchanged
-#     colour/pitch group OR order fact only: 172 (54%)  — unchanged
-#     same-group pairing only (no group_key): 21 (7%)   — NEW bucket
-#     NO closure-usable constraint at all:   118 (37%)  — down from 139 (44%)
-# 17 name_same_group facts fired across 20 puzzles. Still 0/20
-# contradictions across all FIVE slices now; still 0/20 full closures.
+#     untouched in 0 of 8 seeds: 3 positions      6 of 8: 1 position
+#     untouched in 1 of 8 seeds: 12 positions      never 7 or 8 of 8
+#     ...peaks at 2-4 of 8 (23/19/15 positions)
 #
-# NEXT: 37% still untouched. The both-sides-NAME propagation was the
-# recorded highest-leverage item and it's done — no single obvious next
-# lever remains; candidates are raising Form 23/9's selection frequency,
-# revisiting Dual Negation/Mutual Exclusion for player-facing variety
-# (not closure coverage, per the earlier finding), or auditing which
-# SPECIFIC names stay untouched across seeds to see if it's concentrated
-# (a structural gap) or diffuse (needs broader coverage across the board).
+# By attribute:
+#     DEGREE:        flat, 32-44%, no correlation (the 44% outlier sits
+#                     on only 48 samples — noise).
+#     COLOUR size:    flat, 32-34% regardless of group size 3/4/5 — does
+#                     NOT predict coverage at all.
+#     PITCH size:     the one real spread — singleton (48% untouched) vs
+#                     size-2 (26%). Plausible mechanism: a singleton-pitch
+#                     star is the ONLY candidate for a pitch-anchored
+#                     identity cell, so it's likelier to get consumed
+#                     early by a CLOSURE-IRRELEVANT Form (Pairwise Order,
+#                     Exact Offset, Pseudo-True-Pair) via the matrix's
+#                     "used"-cell tracking, leaving nothing for Form
+#                     23/Group Order/Equality Pair later. Real but modest
+#                     (120 samples), not the dominant story.
 #
-# ── Superseded numbers, kept for the process trail (all 0/20 closures,
-# 0/20 contradictions throughout) ─────────────────────────────────────────
-#   fourth slice (+ Equality Pair, one-side only): 172/316 (54%) covered,
-#     139 (44%) untouched
-#   third slice  (+ Group Order):     126/316 (40%) covered, 185 (59%) not
-#   second slice (+ Form 23):         118/316 (37%) covered, 193 (61%) not
-#   first slice  (Exact Id + Neg only): 0 group facts reaching the closure
+# CONCLUSION: the gap is the expected consequence of two compounding
+# facts, not a bug hiding in one property — only 5 of ~21 Forms feed the
+# closure at all, and none of the generation is EXHAUSTIVE (nothing
+# guarantees every name gets at least one closure-usable disclosure; it's
+# draws against a random pool with "used"-cell exhaustion, not a
+# coverage-complete scheduler). NEXT lever is volume/breadth (wire more
+# Forms, bias selection frequency), not a targeted structural fix — except
+# possibly the singleton-pitch starvation angle, worth a closer look on
+# its own if pursued.
 #
 # ── Earlier process notes, each of which cost a wrong conclusion ─────────
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true
