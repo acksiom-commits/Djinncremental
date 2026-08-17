@@ -2351,6 +2351,10 @@ func _validate_name_order_vs_group_fact(f: Dictionary) -> String:
 func _name_same_axis_facts(id_a: Dictionary, id_b: Dictionary, axis: int, star_a: int, star_b: int) -> Array:
     var a_is_name: bool = int(id_a["cat"]) == Category.NAME
     var b_is_name: bool = int(id_b["cat"]) == Category.NAME
+    if a_is_name and b_is_name:
+        # Both positions genuinely unknown — no group_key to compute at
+        # all, unlike the one-side case below. See _propagate_same_group.
+        return [{"kind": "name_same_group", "name_star_a": star_a, "name_star_b": star_b, "cat": axis}]
     if a_is_name == b_is_name:
         return []
     var name_star: int = star_a if a_is_name else star_b
@@ -2361,6 +2365,74 @@ func _name_same_axis_facts(id_a: Dictionary, id_b: Dictionary, axis: int, star_a
         "cat": axis,
         "group_key": _name_group_key(axis, known_star),
     }]
+
+
+func _validate_name_same_group_fact(f: Dictionary) -> String:
+    var a: int = int(f["name_star_a"])
+    var b: int = int(f["name_star_b"])
+    var cat: int = int(f["cat"])
+    var ka: int = _name_group_key(cat, a)
+    var kb: int = _name_group_key(cat, b)
+    if ka != kb:
+        return "name_same_group name_star_a=%d name_star_b=%d cat=%d claims same group but true group_keys are %d and %d" % [a, b, cat, ka, kb]
+    return ""
+
+
+## Same-group EQUIVALENCE propagation — the both-sides-NAME case
+## _name_same_axis_facts defers. name_star_a's and name_star_b's positions
+## must share the same raw `cat` value, but WHICH value is unknown (no
+## group_key at all, unlike name_group), so this can't be expressed as a
+## per-row value_in_set/value_out_set restriction. Domain-level
+## reachability pruning: remove a candidate position from one row only
+## when NO position remains in the OTHER row's domain sharing its group,
+## repeated to a fixpoint (narrowing one row can enable narrowing the
+## other, and chains transitively across multiple pairs for free — no
+## separate transitive-closure logic needed).
+##
+## SOUND but NOT COMPLETE, and that gap is deliberately safe rather than
+## papered over: this never teaches _solve()'s own backtracking about the
+## constraint, so its cap-limited search could in principle report a
+## second "solution" that actually violates same-group and isn't real.
+## That is NOT a false positive, though — every fact fed into _solve() is
+## validated against ground truth first, so the TRUE assignment is always
+## among whatever _solve() finds; if it finds exactly one, that one IS the
+## true assignment, full stop. The only failure direction is UNDER-
+## claiming uniqueness (reporting >1 for a puzzle that IS actually
+## unique), the safe direction for a rejection gate — never over-claiming.
+func _propagate_same_group(possible: Array, pairs: Array) -> bool:
+    var changed: bool = true
+    while changed:
+        changed = false
+        for pair in pairs:
+            var pd: Dictionary = pair
+            var a: int = int(pd["a"])
+            var b: int = int(pd["b"])
+            var cat: int = int(pd["cat"])
+            var groups_b: Dictionary = {}
+            for rb in star_count:
+                if possible[b][rb]:
+                    groups_b[_name_group_key(cat, rb)] = true
+            for ra in star_count:
+                if possible[a][ra] and not groups_b.has(_name_group_key(cat, ra)):
+                    possible[a][ra] = false
+                    changed = true
+            var groups_a: Dictionary = {}
+            for ra2 in star_count:
+                if possible[a][ra2]:
+                    groups_a[_name_group_key(cat, ra2)] = true
+            for rb2 in star_count:
+                if possible[b][rb2] and not groups_a.has(_name_group_key(cat, rb2)):
+                    possible[b][rb2] = false
+                    changed = true
+    for i in star_count:
+        var any_left: bool = false
+        for r in star_count:
+            if possible[i][r]:
+                any_left = true
+                break
+        if not any_left:
+            return false
+    return true
 
 
 ## Converts a Form's grid_updates (matrix cells, addressed by each
@@ -4646,6 +4718,7 @@ func _solve_name_closure(seq_solutions: Array) -> Array:
     for st in star_count:
         rank_to_star[int(seq_sol[st])] = st
     var name_clues: Array[Dictionary] = []
+    var same_group_pairs: Array = []
     for clue in chosen_form_clues:
         for f in (clue.get("disclosures", []) as Array):
             if not (f is Dictionary):
@@ -4702,7 +4775,32 @@ func _solve_name_closure(seq_solutions: Array) -> Array:
                     elif kind == "name_follows_group" and pr > max_rank:
                         allowed2.append(p)
                 name_clues.append({"kind": "value_in_set", "s": name_star2, "allowed": allowed2})
-    return _solve(name_clues, 2)
+            elif kind == "name_same_group":
+                var violation3: String = _validate_name_same_group_fact(fd)
+                if violation3 != "":
+                    push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NAME-SAME-GROUP FACT — %s" % [constellation_id, violation3])
+                same_group_pairs.append({
+                    "a": int(fd["name_star_a"]), "b": int(fd["name_star_b"]), "cat": int(fd["cat"]),
+                })
+
+    # Same-group pairs (Equality Pair's both-sides-NAME case) can't be
+    # expressed as a per-row value_in_set/value_out_set restriction — see
+    # _propagate_same_group's header. Pre-narrow a grid with the ordinary
+    # per-row facts applied first (so same-group pruning benefits from
+    # whatever they already established), THEN run same-group to a
+    # fixpoint, and hand the result to _solve() as rank_restriction — its
+    # OWN clue application/propagation/backtracking then runs as normal on
+    # top, name_clues passed again is a harmless no-op re-narrowing.
+    if same_group_pairs.is_empty():
+        return _solve(name_clues, 2)
+    var pre: Array = _init_possibility_grid()
+    if not _apply_range_clues(pre, name_clues):
+        return []
+    if not _apply_negative_clues(pre, name_clues):
+        return []
+    if not _propagate_same_group(pre, same_group_pairs):
+        return []
+    return _solve(name_clues, 2, pre)
 
 
 func get_form_clue_texts() -> Array[String]:

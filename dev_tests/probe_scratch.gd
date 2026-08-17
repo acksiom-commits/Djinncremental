@@ -9,43 +9,46 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── Phase 2, fourth slice, 2026-08-16: Equality Pair (form_id 12) ────────
+# ── Phase 2, fifth slice, 2026-08-16: same-group propagation ─────────────
 #
-# Wired via a NEW helper, _name_same_axis_facts, but it emits a PLAIN
-# "name_group" fact — reuses the existing kind and closure-side code
-# unchanged. Key realization that shaped this: Equality Pair's "known"
-# (non-NAME) side is a concrete generator-known star index the WHOLE WAY
-# THROUGH, regardless of whether its id_cat is Sequence or Pitch — unlike
-# the EXISTING Sequence-anchored name_group branch, whose group_key is an
-# abstract RANK needing rank_to_star resolution INSIDE the closure. This
-# one computes its raw axis value at EMISSION time, so no new closure
-# code was needed at all, only a new emission function.
+# Built _propagate_same_group(): domain-level reachability pruning for
+# Equality Pair's both-sides-NAME case, deferred since the fourth slice.
+# name_star_a's and name_star_b's positions must share the same raw `cat`
+# value with NO group_key known (unlike name_group) — not expressible as
+# a per-row value_in_set/value_out_set restriction. Removes a candidate
+# position from one row only when unreachable by ANY value in the other
+# row's domain, repeated to a fixpoint (transitive chains across multiple
+# pairs fall out for free, no extra logic).
 #
-# Deliberately scoped to the ONE-SIDE-NAME case only (~44% of draws,
-# reuses everything). The BOTH-SIDES-NAME case (~11%) needs real mutual
-# arc-consistency propagation ("once domain(A) collapses to one group,
-# narrow domain(B) to the same group") that neither value_in_set nor
-# value_out_set can express, and _solve()'s existing propagation passes
-# are order-shaped, not equivalence-class-shaped — deferred as separate
-# work, not silently dropped.
+# SOUND but NOT COMPLETE by construction — never teaches _solve()'s own
+# backtracking about the constraint. Argued safe in the code's own header
+# comment: every fact fed to _solve() is validated against ground truth
+# first, so the TRUE assignment is always among whatever _solve() finds;
+# if it finds exactly one, that one IS truth, full stop. The only failure
+# direction is UNDER-claiming uniqueness, never over-claiming it — safe
+# for a rejection gate. MEASURED, not just argued: 0/20 contradictions,
+# confirming the argument held rather than assuming it did.
 #
-# Measured, 20 puzzles / 316 names — the biggest single jump so far:
-#     exact Sequence pin:                     5 (2%)    — unchanged
-#     colour/pitch group OR order fact only: 172 (54%)  — up from 126 (40%)
-#     NO closure-usable constraint at all:   139 (44%)  — down from 185 (59%)
-# 121 Form-12 clues fired across 20 puzzles — Equality Pair is one of the
-# two historically-dominant Forms by clue volume, so the size of this
-# jump was expected once wired. Still 0/20 contradictions across all FOUR
-# slices now (engine remains sound); still 0/20 full closures — 44%
-# untouched is real progress but still short of complete.
+# Measured, 20 puzzles / 316 names:
+#     exact Sequence pin:                     5 (2%)   — unchanged
+#     colour/pitch group OR order fact only: 172 (54%)  — unchanged
+#     same-group pairing only (no group_key): 21 (7%)   — NEW bucket
+#     NO closure-usable constraint at all:   118 (37%)  — down from 139 (44%)
+# 17 name_same_group facts fired across 20 puzzles. Still 0/20
+# contradictions across all FIVE slices now; still 0/20 full closures.
 #
-# NEXT: the both-sides-NAME propagation pass is now the single highest-
-# leverage remaining item (Equality Pair alone leaves ~11% of ITS OWN
-# draws on the table for exactly this reason) — bigger lift than any fact-
-# kind addition so far, genuinely new solver machinery, not a quick add.
+# NEXT: 37% still untouched. The both-sides-NAME propagation was the
+# recorded highest-leverage item and it's done — no single obvious next
+# lever remains; candidates are raising Form 23/9's selection frequency,
+# revisiting Dual Negation/Mutual Exclusion for player-facing variety
+# (not closure coverage, per the earlier finding), or auditing which
+# SPECIFIC names stay untouched across seeds to see if it's concentrated
+# (a structural gap) or diffuse (needs broader coverage across the board).
 #
 # ── Superseded numbers, kept for the process trail (all 0/20 closures,
 # 0/20 contradictions throughout) ─────────────────────────────────────────
+#   fourth slice (+ Equality Pair, one-side only): 172/316 (54%) covered,
+#     139 (44%) untouched
 #   third slice  (+ Group Order):     126/316 (40%) covered, 185 (59%) not
 #   second slice (+ Form 23):         118/316 (37%) covered, 193 (61%) not
 #   first slice  (Exact Id + Neg only): 0 group facts reaching the closure
