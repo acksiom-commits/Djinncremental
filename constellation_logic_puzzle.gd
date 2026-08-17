@@ -2224,12 +2224,21 @@ func _validate_sequence_fact(f: Dictionary) -> String:
 # ==================================================
 # What a clue's rendered text discloses about the NAME axis, same
 # discipline as _seq_fact_for_label above: only call this on characteristics
-# that were ACTUALLY passed through _characteristic_label() in the clue's
-# own text line, never on grid_updates/chars alone — those include
-# touched-but-unrendered bookkeeping (Pairwise Order's axis_a/axis_b,
-# Equality Pair's axis_a/axis_b) that would silently reintroduce the same
-# ground-truth-leak class this whole migration exists to close, one level
-# more subtle for landing on a bijection-position value instead of a rank.
+# that were ACTUALLY DISCLOSED in the clue's own text line, never on
+# grid_updates/chars alone — those include touched-but-unrendered
+# bookkeeping (Pairwise Order's axis_a/axis_b, Equality Pair's axis_a/
+# axis_b) that would silently reintroduce the same ground-truth-leak class
+# this whole migration exists to close, one level more subtle for landing
+# on a bijection-position value instead of a rank.
+#
+# "Disclosed" has TWO legitimate shapes, not one — a characteristic passed
+# through _characteristic_label() (an individual star's identity), or one
+# whose raw value is named directly in a GROUP-descriptive phrase like
+# _group_noun_phrase or Cross-Domain Bridge/Group Membership's group_phrase
+# ("the blue stars"). The second shape never goes through
+# _characteristic_label at all — it can't, Colour/Pitch are rarely unique —
+# but the raw value is still genuinely stated in the text, which is the
+# actual test, not which function happened to render it.
 #
 # group_key is the OBSERVING star's raw value under cat, never a resolved
 # position list — same choice distance_hop made for ref_cat/target_cat, and
@@ -2355,11 +2364,11 @@ const FORM_NAMES := {
     14: "Group Comparison", 15: "Distance Existential", 16: "Distance Extreme",
     17: "Betweenness", 18: "Degree Fact", 19: "Non-Adjacency",
     20: "Cross-Domain Bridge", 21: "Pseudo-True Pair (Aligned)",
-    22: "Pseudo-True Pair (Staggered)",
+    22: "Pseudo-True Pair (Staggered)", 23: "Group Membership",
 }
 
 const AUTOMATED_FORM_IDS: Array[int] = [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23,
 ]
 # Form 18 (Degree Fact) deliberately excluded from automatic generation —
 # Degree stays hand-tuned per constellation (topology varies too much; some
@@ -2391,6 +2400,7 @@ func _build_form(form_id: int, chain: Dictionary) -> Dictionary:
         20: return _build_form_cross_domain_bridge(chain)
         21: return _build_form_pseudo_true_pair_aligned(chain)
         22: return _build_form_pseudo_true_pair_staggered(chain)
+        23: return _build_form_group_membership(chain)
     return {}
 
 
@@ -3862,6 +3872,114 @@ func _build_form_cross_domain_bridge(chain: Dictionary) -> Dictionary:
     }
 
 
+# ── Form 23: Group Membership — the bare case Cross-Domain Bridge (20) and
+# Group Order (9) both build ON TOP of but never state directly: "X is
+# [not] one of the [colour/pitch] stars." No extremum, no ordering, just
+# membership — found missing by a matrix-up review of negative-exclusion
+# coverage (2026-08-16): Colour is never a legal IDENTIFIER anywhere in
+# this file (its group size is never 1 — see MUTEX_AXIS_WEIGHTS' note), so
+# every Form that needs to pin ONE star's colour is structurally blind to
+# it; only Forms describing a GROUP by raw value (via _group_noun_phrase's
+# approach, bypassing the uniqueness gate entirely) can touch it at all,
+# and until now both of those wrapped it in something extra. This is the
+# unwrapped version, and specifically the NEGATIVE half is the point: a
+# single "not one of the blue stars" is weak alone, but is available for
+# roughly 3 of 4 stars (vs. Cross-Domain Bridge's single per-group extreme
+# member), and several such facts about the SAME name compound by
+# elimination — the classic zebra-puzzle technique this Form set had no
+# way to produce before. ──────────────────────────────────────────────────
+
+func _build_form_group_membership(chain: Dictionary) -> Dictionary:
+    var group_cat: int = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
+    var g: Dictionary = _sample_identity_axis_cell(group_cat, chain, -1)
+    if g.is_empty():
+        return {}
+    var def_star: int = int(g["star"])
+    var raw_of: Callable = func(s): return star_colors[s] if group_cat == Category.COLOR else star_pitch_index[s]
+    var raw_val = raw_of.call(def_star)
+    var group_stars: Array = []
+    for s in star_count:
+        if raw_of.call(s) == raw_val:
+            group_stars.append(s)
+    # A singleton "group" makes "one of" degenerate — same guard
+    # Cross-Domain Bridge uses (group_stars.size() < 2).
+    if group_stars.size() < 2:
+        return {}
+
+    var want_positive: bool = _rng.randf() < 0.5
+    var pool: Array = []
+    if want_positive:
+        # A genuine, DISTINCT member — excludes def_star itself, which
+        # would otherwise make the clue "X is one of the group X defines."
+        for gs in group_stars:
+            if int(gs) != def_star:
+                pool.append(gs)
+    else:
+        for s2 in star_count:
+            if not group_stars.has(s2):
+                pool.append(s2)
+    _shuffle_array(pool)
+
+    var subject_star: int = -1
+    var subj_id_cat: int = -1
+    for cand in pool:
+        # NAME/SEQUENCE only — NOT _non_distance_category() excluding just
+        # group_cat, which would also allow PITCH here whenever
+        # group_cat==COLOR. That pairing is purely observational on BOTH
+        # sides (map colour + a listened pitch) with no Name/Sequence
+        # content anywhere in the clue — caught live by
+        # test_clue_has_hidden_content.gd: "The star that plays C#5 is one
+        # of the blue stars." is fully readable off the map, zero
+        # deduction, same failure class as the F5/E5 bug fixed earlier
+        # this session. Cross-Domain Bridge avoids this because its
+        # "earliest/latest-firing" framing is ALWAYS genuine Sequence-
+        # relational content even when its d2 lands on Pitch; this Form
+        # has no such mandatory content, so the identifying side must BE
+        # the hidden content instead.
+        var idc: int = Category.NAME if _rng.randf() < 0.5 else Category.SEQUENCE
+        if not _category_uniquely_labels(idc, int(cand)):
+            continue
+        var idv: int = int(_cat_star_to_value[idc][cand])
+        var axv: int = int(_cat_star_to_value[group_cat][cand])
+        if bool(_matrix_cell(idc, idv, group_cat, axv)["used"]):
+            continue
+        subject_star = int(cand)
+        subj_id_cat = idc
+        break
+    if subject_star == -1:
+        return {}
+
+    var subj_id_val: int = int(_cat_star_to_value[subj_id_cat][subject_star])
+    var subj_axis_val: int = int(_cat_star_to_value[group_cat][subject_star])
+    var subject_id: Dictionary = {"cat": subj_id_cat, "star": subject_star}
+    var group_def_ch: Dictionary = {"cat": group_cat, "star": def_star}
+    _note_group_value_term(group_cat, def_star)
+    var group_phrase: String = ("the %s stars" % COLOR_NAMES[star_colors[def_star]].to_lower()) if group_cat == Category.COLOR else ("the stars that play %s" % note_name_for_freq(_freq_for_star(def_star)))
+    var word: String = "one of" if want_positive else "not one of"
+    var text: String = "%s is %s %s." % [_characteristic_label(subject_id), word, group_phrase]
+    # Both grid_updates entries below are TAUTOLOGICAL self-identity
+    # markers (def_star's own group_cat slot; subject_star's own group_cat
+    # slot) — always is_true:true regardless of want_positive, same
+    # pattern as Cross-Domain Bridge's d1xd2 cell. The actual membership
+    # claim (does subject_star's RAW group_cat value equal def_star's) is
+    # NOT representable as a matrix cell at all: Colour/Pitch are
+    # sub-ranked there, so a cell only ever means "same star," never "same
+    # raw value, different star." That claim lives in value_facts instead,
+    # same as Cross-Domain Bridge's own group membership.
+    var solver_facts: Array = _seq_fact_for_label(subject_id)
+    var value_facts: Array = _name_group_facts(subject_id, group_def_ch, want_positive)
+    return {
+        "chars": [subject_id, group_def_ch],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": group_cat, "val_b": int(g["axis_val"]), "is_true": true},
+            {"cat_a": subj_id_cat, "val_a": subj_id_val, "cat_b": group_cat, "val_b": subj_axis_val, "is_true": true},
+        ],
+        "solver_facts": solver_facts,
+        "value_facts": value_facts,
+    }
+
+
 # ── Forms 21, 22: Pseudo-True Pair — read directly off two stars' actual
 # ground-truth values, presented as a domain restriction. ────────────────
 
@@ -4017,7 +4135,7 @@ func _build_form_pseudo_true_pair_staggered(chain: Dictionary) -> Dictionary:
 # Non-Adjacency (19), the least confident placement.
 const FORM_TIER := {
     1: 1, 2: 1, 4: 1, 6: 1, 8: 1, 10: 1, 11: 1,             # Entry Anchors
-    5: 2, 7: 2, 12: 2, 15: 2, 16: 2, 17: 2, 19: 2, 21: 2, 22: 2,  # Relational Workhorses
+    5: 2, 7: 2, 12: 2, 15: 2, 16: 2, 17: 2, 19: 2, 21: 2, 22: 2, 23: 2,  # Relational Workhorses
     3: 3, 9: 3, 13: 3, 14: 3, 20: 3,                        # Systemic Constraints
 }
 # Single target composition for the finished clueset (collapsed from the
