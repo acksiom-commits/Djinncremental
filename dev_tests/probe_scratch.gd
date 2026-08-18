@@ -9,43 +9,43 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── Fresh measurement pass, 2026-08-17, after the sixth slice ────────────
+# ── RETRACTED, 2026-08-17: Group Order scheduling priority ───────────────
 #
-# Repeated the original audit's exact shape (8 seeds x 5 constellations,
-# 632 names) on the current code. Reproduced the sixth slice's headline
-# numbers exactly (3 pinned, 379 group/order, 92 same-group, 158
-# untouched = 25%), then re-ran the degree/colour-size/pitch-size/
-# per-position breakdowns that were last measured pre-bias.
+# Built and reverted, same session. Gave Group Order (9) an unconditional
+# priority pass — one guaranteed attempt before the main loop, ahead of
+# non-feeding Forms competing for the same scarce singleton-pitch cells.
+# The existing opening_anchors mechanism was rejected as the vehicle
+# FIRST (difficulty-gated, empty for "hard" — every measurement this
+# whole investigation has run against, so it would never have shown up).
 #
-# STILL DIFFUSE: 0 of 632 positions untouched in every seed; the whole
-# per-position distribution just shifted toward fewer misses rather than
-# concentrating anywhere. Degree and colour group size stayed flat and
-# uncorrelated (the degree-3 outlier from the original audit reverted to
-# normal, confirming it was noise as flagged then).
+# MEASURED, matched-seed A/B (same 8 seeds x 5 constellations both runs):
+#     overall untouched:        25% -> 26%   (roughly flat, maybe noise)
+#     singleton-pitch untouched: 32% -> 37%  (WORSE — the targeted metric)
+#     Group Order clue volume:  ~38 -> 73    (priority pass worked AS
+#                                              SCHEDULING — just didn't help)
+# Still 0/40 contradictions throughout — nothing unsound, purely a
+# coverage regression on the exact thing this was meant to fix.
 #
-# PITCH SIZE — the bias helped, but did not fully close the gap it
-# targeted:
-#     size 1 (singleton): 48% untouched pre-bias -> 32% post-bias
-#     overall average:     33% pre-bias          -> 25% post-bias
-# The GAP between singleton-pitch and the overall average narrowed (15pts
-# -> 7pts) but did not close. Same mechanism, still live: the bias only
-# raises NAME's odds WITHIN the five closure-feeding Forms — it does
-# nothing about Mutual Exclusion / Distance Existential / Dual Negation
-# still competing for the same scarce singleton-pitch cell from outside
-# the closure-feeding set.
+# HYPOTHESIS, not yet verified: Group Order's SUBJECT draw is NAME-biased
+# (fifth slice), but its `def_star` draw (`g: _sample_identity_axis_cell
+# (group_cat, chain, -1)`) is NOT — pure bookkeeping, never produces a
+# name_group fact. Running Group Order FIRST may just mean that unbiased
+# draw claims a scarce singleton-pitch cell for BOOKKEEPING before
+# Equality Pair (far higher volume, already NAME-biased, and actually
+# capable of turning that same cell into a useful fact) reaches it in the
+# main loop — winning Group Order more turns while making each turn worse
+# for the shared resource.
 #
-# CONCLUSION: real, smaller residual lead (reduce competition from the
-# non-feeding side, a genuinely different change than strengthening the
-# feeding side further), but shrinking returns (15pt gap -> 7pt) alongside
-# everything else reading flat/diffuse suggests this is near the point of
-# diminishing value for TARGETED structural leads. Further gains likely
-# look like broad volume (more Forms wired) rather than another mechanism
-# this specific.
+# REVERTED CLEANLY: constellation_logic_puzzle.gd has zero diff against
+# the last commit. If this is revisited, the def_star draw is the first
+# thing to bias (or skip when it would land on a scarce cell) — do NOT
+# just re-add scheduling priority alone, it was already tried and made
+# the target metric worse.
 #
-# ── Prior numbers, kept for the process trail (all 0/N closures, 0/N
-# contradictions throughout) ──────────────────────────────────────────────
-#   sixth slice  (+ NAME bias):              158/632 (25%) untouched
-#   audit baseline (pre-bias):               211/632 (33%) untouched
+# ── Superseded numbers, kept for the process trail (all 0/N closures,
+# 0/N contradictions throughout) ──────────────────────────────────────────
+#   sixth slice (+ NAME bias, current committed state): 25% untouched,
+#     singleton-pitch 32% vs 25% average — the actual STANDING baseline.
 #
 # ── Earlier process notes, each of which cost a wrong conclusion ─────────
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true
@@ -65,10 +65,11 @@ extends "res://dev_tests/test_base.gd"
 #     188 "mentions" from a Form whose id_cat can never BE pitch by
 #     construction — those were touched-but-never-rendered axis_a/axis_b
 #     nodes. search_terms (rendered-only) gave the real number.
-#   * AN UNEXPLAINED METRIC SHIFT NEEDS A CONTROL, NOT A SHRUG OR A PANIC.
-#     seq_unique dropping to 38/40 was neither dismissed nor treated as a
-#     blocking bug on sight — a neutral-weight re-run isolated whether the
-#     BIAS or the CODE PATH caused it before deciding anything.
+#   * A NEW LEVER CAN MOVE THE METRIC IT TARGETS IN THE WRONG DIRECTION.
+#     Scheduling Group Order first was a reasonable hypothesis and a
+#     clean, matched-seed measurement showed it made singleton-pitch
+#     coverage WORSE, not better — reverted rather than kept "because it
+#     seemed like it should help."
 
 var fails: int = 0
 
