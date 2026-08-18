@@ -9,36 +9,61 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── CORRECTION, 2026-08-18: the tenth-slice "size-3 offset" was a bad
-# comparison, not a real effect ────────────────────────────────────────────
+# ── RETRACTED, 2026-08-18: Distance Existential pitch-scarcity fixes ─────
 #
-# The tenth slice (MUTEX_PITCH_SCARCITY_WEIGHT) was reported as showing a
-# possible offsetting regression: size-3 pitch-group untouched rate
-# "21% -> 24%". That 21% was WRONG — it was the NINTH slice's own number
-# (the RETRACTED MUTEX_AXIS_WEIGHTS state, a different committed history
-# entirely), not the tenth slice's actual starting point.
+# Built and reverted, same day — the non-feeding-Forms lead's THIRD Form,
+# and (unlike Mutex) neither sub-attempt moved the actual target metric,
+# despite both working correctly on their OWN terms.
 #
-# Verified directly: ran the EXACT committed e483b0b file (eighth slice,
-# def_star-biased, immediately before any Mutex changes) against the same
-# 8 seeds x 5 constellations. TRUE baseline for size-3: 46/168 = 27%, not
-# 21%. Cross-checked via a neutral-weight (1.0) control on the tenth-
-# slice code path first — bit-for-bit identical to the e483b0b run (same
-# 39/48/46/7/5/9 across every bucket), confirming w *= 1.0 really is a
-# mathematical no-op and the comparison is sound.
+# ATTEMPT 1 — deprioritize_pitch on the SUBJECT's id_cat draw (via
+# _sample_identity_axis_cell), reusing the proven-effective Mutex pattern
+# exactly. RESULT: flat. singleton-pitch untouched 29% -> 30% (one star's
+# worth of noise, not a regression, but no gain either).
 #
-# CORRECTED comparison, same 8 x 5 both runs:
-#     size-3 untouched:  27% (true baseline) -> 24% (actual fix) — a REAL
-#         IMPROVEMENT, not an offset. The "offset" never existed.
-# Combined with singleton-pitch's already-reported 33%->29%, the tenth
-# slice helped BOTH buckets, with no found regression anywhere. No further
-# action needed — the memory note flagging this as worth checking is now
-# resolved as a false alarm, not a live issue.
+# WHY IT DIDN'T FULLY WORK: Distance Existential has a SECOND consumption
+# pathway the id_cat fix cannot reach. `target` (the OTHER end of the
+# hop-distance clue) is chosen by pure distance-reachability with no
+# weighted pick anywhere — its scarcity risk comes from
+# _group_noun_phrase(prop_cat, target, false), which checks target's OWN
+# _group_size and collapses from an indefinite phrase ("a star that plays
+# G4") to a DEFINITE, uniquely-identifying one ("the star that plays G4")
+# whenever that size is 1 — exactly as scarce a disclosure as an id_cat
+# pick, gated on which raw value target happens to have, not on any
+# category choice.
+#
+# ATTEMPT 2 — bias prop_cat itself toward COLOR (never singleton,
+# confirmed repeatedly this session — colour group sizes are always 3-5),
+# away from PITCH, targeting this second mechanism directly. RESULT:
+# Distance Existential's OWN singleton-pitch disclosures dropped further
+# (35 -> 25, confirming the mechanism diagnosis was correct) — but EVERY
+# SINGLE closure-coverage bucket came back BYTE-FOR-BYTE IDENTICAL to
+# attempt 1's numbers (36/120, 64/224, 31/168, 8/32, 8/40, 7/48 — all six,
+# not just one). Distance Existential is non-feeding, so its own count
+# only matters INDIRECTLY (freeing cells for feeding Forms) — and unlike
+# Mutex, where that indirection measurably worked, here the freed capacity
+# does not appear to reach any feeding Form at all. Cause not diagnosed
+# further (would need tracing generation-order effects, a separate,
+# bigger investigation from "fix the next Form").
+#
+# Both mechanism diagnoses were CORRECT (each Form's own numbers moved
+# exactly as predicted); NEITHER translated into the metric this lead
+# exists to move. 0/40 contradictions throughout both attempts — nothing
+# unsound, purely ineffective for the stated goal.
+#
+# REVERTED CLEANLY via `git checkout -- constellation_logic_puzzle.gd`
+# rather than six manual reversals (the change touched two shared,
+# widely-used helpers plus a renamed constant) — zero diff against
+# f657e1a confirmed before re-running the suite.
+#
+# If revisited: do NOT re-apply id_cat/prop_cat fixes to Distance
+# Existential without FIRST tracing why Mutex's freed cells got absorbed
+# and this Form's did not — the missing piece is generation ORDER/TIMING,
+# not another category-weighting lever.
 #
 # ── Superseded numbers, kept for the process trail (all 0/N closures,
 # 0/N contradictions throughout) ──────────────────────────────────────────
-#   tenth slice (Mutex id_cat fix, current committed state): 24% untouched
-#     overall, singleton-pitch 29% (was 33%), size-3 24% (TRUE baseline
-#     was 27%, not the previously-reported 21%)
+#   tenth slice (Mutex id_cat fix, current standing committed state): 24%
+#     untouched, singleton-pitch 29%, size-3 24% — the actual baseline.
 #
 # ── Earlier process notes, each of which cost a wrong conclusion ─────────
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true
@@ -56,10 +81,12 @@ extends "res://dev_tests/test_base.gd"
 #   * A NEW LEVER CAN MOVE THE METRIC IT TARGETS IN THE WRONG DIRECTION.
 #     Scheduling Group Order first made singleton-pitch coverage WORSE —
 #     reverted rather than kept "because it seemed like it should help."
-#   * A SUSPICIOUSLY EXACT NULL RESULT DESERVES A SECOND MEASUREMENT.
-#     Singleton-pitch landed at literally 39/120 both before and after the
-#     axis-weight retune — that exactness triggered the per-Form follow-up
-#     that found the WRONG PATHWAY was targeted, not just ineffective.
+#   * A CORRECT MECHANISM DIAGNOSIS DOES NOT GUARANTEE THE METRIC MOVES.
+#     Both Distance Existential fixes reduced the Form's OWN scarce-cell
+#     consumption exactly as predicted, and STILL produced zero change on
+#     every closure-coverage bucket — the mechanism inside the Form was
+#     right; whether the freed resource reaches a feeding Form downstream
+#     is a SEPARATE question this investigation didn't answer.
 #   * A "BEFORE" NUMBER FROM A DIFFERENT COMMIT IS NOT YOUR BASELINE.
 #     Comparing the tenth slice against the ninth slice's own (retracted)
 #     measurement, rather than the actual prior committed state, invented
