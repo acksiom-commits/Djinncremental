@@ -9,48 +9,46 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── Phase 2, eighth slice, 2026-08-17: bias Group Order's def_star ───────
+# ── RETRACTED, 2026-08-17: MUTEX_AXIS_WEIGHTS retune ──────────────────────
 #
-# Followed up on the retracted scheduling-priority attempt's hypothesis:
-# def_star's OWN identity draw (`g: _sample_identity_axis_cell(group_cat,
-# chain, -1)`) was unbiased, pure bookkeeping (never rendered, never
-# produces a name_group fact), and could still land on Pitch even when
-# group_cat=Colour — possibly spending a scarce singleton-pitch cell on
-# nothing. Added `bias_name=true` to that ONE call, reusing the already-
-# verified _weighted_category_excluding machinery — no new mechanism, no
-# scheduling change (Group Order still runs wherever the main loop puts
-# it, unlike the reverted priority pass).
+# Built and reverted, same session — the non-feeding-Forms lead's first
+# attempt. Cut PITCH's axis weight 0.45 -> 0.15 (freed weight to NAME/
+# SEQUENCE), reasoning: axis=Pitch forces EVERY Mutex participant to have
+# singleton pitch (_mutex_axis_groups filters non-unique members out
+# entirely), and Mutex was measured the single largest non-feeding
+# consumer of that resource (36 genuine disclosures).
 #
-# Matched-seed comparison, same 8 x 5 as every prior slice:
-#     overall untouched:     25% (baseline) -> 26% (priority, reverted) -> 24% (this)
-#     singleton-pitch:        32%           -> 37% (priority, reverted) -> 33% (this)
-#     Group Order volume:     38            -> 73                       -> 62
-# Still 0/40 contradictions.
+# MEASURED, matched-seed (same 8 x 5 both runs):
+#     overall untouched:        24% -> 24%   (flat — null result)
+#     singleton-pitch untouched: 33% -> 33%  (EXACTLY flat: 39/120 both
+#                                              times, not just close)
+#     Mutex clue volume:        higher -> 52 (dropped, as intended)
+#     Mutex genuine disclosures: 36    -> 60 (WENT UP — the opposite of
+#                                              the goal, despite volume
+#                                              dropping)
 #
-# RESULT: modest, real, SAFE overall gain (25%->24%) with nothing
-# regressed anywhere — unlike the priority pass, there is no reason to
-# walk this back. But the hypothesis was only PARTIALLY confirmed:
-# singleton-pitch specifically landed at 33%, essentially flat against
-# the 32% baseline, not the clear win the mechanism predicted. It undid
-# the priority pass's damage on that metric without actually fixing it.
-# Group Order's volume rose even without scheduling priority — plausibly
-# because NAME-anchored candidates are basically always available (never
-# "used up" the way one specific pitch cell can be), so biasing toward
-# NAME makes MORE of its attempts succeed at all, not just changes which
-# category wins when it does.
+# WHY: the fix only addressed ONE of Mutex's two singleton-pitch
+# consumption pathways. axis=Pitch (cut 45%->15%) genuinely shrank. But
+# axis=Name/Sequence now fires 80% of the time (up from 50%), and WITHIN
+# those clues, each of 3-5 participants gets an id_cat via a SEPARATE
+# weighted pick (_mutex_legal_id_cats / MUTEX_REPEAT_CATEGORY_WEIGHT) —
+# PITCH stays fully eligible there whenever that specific participant
+# happens to have singleton pitch, entirely independent of axis. More
+# Name/Sequence-axis clues meant more chances down THIS path, and it grew
+# more than the axis path shrank. Net: the ORIGINAL FORM SELECTED (Mutex)
+# was right; the SPECIFIC MECHANISM targeted within it was incomplete.
 #
-# NEXT: singleton-pitch coverage is still the softest number (33% vs 24%
-# overall). The def_star mechanism alone doesn't close it. Untested:
-# whether Mutual Exclusion / Distance Existential / Dual Negation (the
-# non-feeding consumers) could be made to prefer NON-singleton pitch
-# stars when a singleton alternative exists elsewhere in their own
-# candidate pool — a different Form's code, not Group Order's.
+# REVERTED CLEANLY: constellation_logic_puzzle.gd has zero diff against
+# the last commit. If revisited, the id_cat-level pick inside
+# _mutex_legal_id_cats/_mutex_weighted_pick_remove is the ACTUAL dominant
+# pathway — fixing axis weight alone will not work, confirmed by
+# measurement, not theory.
 #
-# ── Superseded numbers, kept for the process trail ────────────────────────
-#   sixth slice (NAME bias, standing baseline before this slice): 25%
-#     untouched, singleton-pitch 32%
-#   RETRACTED same-day attempt (scheduling priority): 26% untouched,
-#     singleton-pitch 37% — reverted, zero diff against that commit
+# ── Superseded numbers, kept for the process trail (all 0/N closures,
+# 0/N contradictions throughout) ──────────────────────────────────────────
+#   eighth slice (def_star bias, current committed state): 24% untouched,
+#     singleton-pitch 33% vs overall average — the actual STANDING baseline.
+#   RETRACTED (Group Order priority): 26% untouched, singleton-pitch 37%.
 #
 # ── Earlier process notes, each of which cost a wrong conclusion ─────────
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true
@@ -70,10 +68,12 @@ extends "res://dev_tests/test_base.gd"
 #     clean, matched-seed measurement showed it made singleton-pitch
 #     coverage WORSE, not better — reverted rather than kept "because it
 #     seemed like it should help."
-#   * A FIX CAN BE SAFE AND STILL NOT BE THE WIN THE HYPOTHESIS PREDICTED.
-#     Biasing def_star undid the regression and moved the OVERALL number,
-#     but the SPECIFIC metric it targeted (singleton-pitch) barely moved —
-#     reported plainly as a partial result, not oversold as "fixed."
+#   * A SUSPICIOUSLY EXACT NULL RESULT DESERVES A SECOND MEASUREMENT, NOT
+#     A SHRUG. Singleton-pitch landed at literally 39/120 both before and
+#     after the axis-weight retune — that exactness, not just the flatness,
+#     is what triggered a follow-up (per-Form disclosure counts), which
+#     found the mechanism was wrong even though the AGGREGATE number
+#     looked identical.
 
 var fails: int = 0
 
