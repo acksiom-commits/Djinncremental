@@ -9,41 +9,36 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── Phase 2, tenth slice, 2026-08-17: Mutex id_cat pitch scarcity ────────
+# ── CORRECTION, 2026-08-18: the tenth-slice "size-3 offset" was a bad
+# comparison, not a real effect ────────────────────────────────────────────
 #
-# The non-feeding-Forms lead's third attempt, and the first clean win.
-# MUTEX_PITCH_SCARCITY_WEIGHT (0.5) applied at the CONFIRMED-by-
-# measurement dominant pathway — _mutex_legal_id_cats' per-participant
-# weighted pick (_mutex_weighted_pick_remove), where PITCH stays fully
-# eligible as an id_cat whenever a given participant happens to have
-# singleton pitch, entirely independent of axis. The FIRST attempt
-# (MUTEX_AXIS_WEIGHTS, retracted) targeted a DIFFERENT pathway (axis
-# choice) and made this one measurably worse (36->60) by shifting more
-# clue volume onto it.
+# The tenth slice (MUTEX_PITCH_SCARCITY_WEIGHT) was reported as showing a
+# possible offsetting regression: size-3 pitch-group untouched rate
+# "21% -> 24%". That 21% was WRONG — it was the NINTH slice's own number
+# (the RETRACTED MUTEX_AXIS_WEIGHTS state, a different committed history
+# entirely), not the tenth slice's actual starting point.
 #
-# Matched-seed measurement, same 8 x 5 as every prior slice:
-#     Mutex's OWN singleton-pitch disclosures:  36 -> 19  (mechanism
-#         validated — nearly the exact inverse of the WRONG fix's 36->60)
-#     singleton-pitch untouched:                33% -> 29%  (real gain,
-#         the largest movement on this specific metric of any attempt)
-#     overall untouched:                        24% -> 24%  (flat — the
-#         size-1 gain looks offset by a small, likely noisy shift in
-#         size-3, 21%->24%)
-#     Mutex clue volume:                        52 -> 34 (dropped further,
-#         expected — PITCH is a less attractive id_cat option overall now)
-# Still 0/40 contradictions.
+# Verified directly: ran the EXACT committed e483b0b file (eighth slice,
+# def_star-biased, immediately before any Mutex changes) against the same
+# 8 seeds x 5 constellations. TRUE baseline for size-3: 46/168 = 27%, not
+# 21%. Cross-checked via a neutral-weight (1.0) control on the tenth-
+# slice code path first — bit-for-bit identical to the e483b0b run (same
+# 39/48/46/7/5/9 across every bucket), confirming w *= 1.0 really is a
+# mathematical no-op and the comparison is sound.
 #
-# KEPT (not reverted) — first attempt in this whole lead with BOTH a
-# validated mechanism and a measured gain on the actual target metric,
-# not just a flat/harmless result or a clear regression.
+# CORRECTED comparison, same 8 x 5 both runs:
+#     size-3 untouched:  27% (true baseline) -> 24% (actual fix) — a REAL
+#         IMPROVEMENT, not an offset. The "offset" never existed.
+# Combined with singleton-pitch's already-reported 33%->29%, the tenth
+# slice helped BOTH buckets, with no found regression anywhere. No further
+# action needed — the memory note flagging this as worth checking is now
+# resolved as a false alarm, not a live issue.
 #
 # ── Superseded numbers, kept for the process trail (all 0/N closures,
 # 0/N contradictions throughout) ──────────────────────────────────────────
-#   eighth slice (def_star bias, prior standing state): 24% untouched,
-#     singleton-pitch 33%
-#   RETRACTED (Group Order priority): 26% untouched, singleton-pitch 37%
-#   RETRACTED (Mutex axis weight): 24% untouched, singleton-pitch 33%
-#     (flat), Mutex disclosures 36->60 (wrong mechanism)
+#   tenth slice (Mutex id_cat fix, current committed state): 24% untouched
+#     overall, singleton-pitch 29% (was 33%), size-3 24% (TRUE baseline
+#     was 27%, not the previously-reported 21%)
 #
 # ── Earlier process notes, each of which cost a wrong conclusion ─────────
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true
@@ -64,12 +59,13 @@ extends "res://dev_tests/test_base.gd"
 #   * A SUSPICIOUSLY EXACT NULL RESULT DESERVES A SECOND MEASUREMENT.
 #     Singleton-pitch landed at literally 39/120 both before and after the
 #     axis-weight retune — that exactness triggered the per-Form follow-up
-#     that found the WRONG PATHWAY was targeted, not just an ineffective one.
-#   * WHEN A DIAGNOSIS IS RIGHT, THE FOLLOW-UP FIX CAN CONFIRM IT DIRECTLY.
-#     The retracted attempt's OWN measurement (which pathway dominates)
-#     became this slice's target, and Mutex's disclosure count moving in
-#     the PREDICTED direction (down, not up) is independent confirmation
-#     the mechanism was correctly understood this time.
+#     that found the WRONG PATHWAY was targeted, not just ineffective.
+#   * A "BEFORE" NUMBER FROM A DIFFERENT COMMIT IS NOT YOUR BASELINE.
+#     Comparing the tenth slice against the ninth slice's own (retracted)
+#     measurement, rather than the actual prior committed state, invented
+#     a regression that never existed. Verified by re-running the exact
+#     committed pre-fix file directly, not by re-deriving the number from
+#     memory or from a differently-configured run.
 
 var fails: int = 0
 
