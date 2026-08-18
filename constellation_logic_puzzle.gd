@@ -3563,7 +3563,18 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
     # sharing THAT star's raw group_cat value" — a trivial, no-choice
     # consequence of which cell landed, not an upstream decision.
     var group_cat: int = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
-    var g: Dictionary = _sample_identity_axis_cell(group_cat, chain, -1)
+    # bias_name here too — def_star's OWN identity is pure bookkeeping
+    # (never rendered, never produces a name_group fact; only
+    # _note_group_value_term reads def_star, and that only handles
+    # Colour/Pitch terms). Retracted-and-reasoned finding: giving Group
+    # Order unconditional scheduling PRIORITY measured worse on singleton-
+    # pitch coverage (32%->37%), and the suspected cause was exactly this
+    # draw — when group_cat=Colour, id_cat could still land on Pitch and
+    # spend a scarce singleton-pitch cell on bookkeeping that Equality
+    # Pair (higher volume, already NAME-biased) could have turned into a
+    # real fact instead. This narrows PITCH's odds here (1/3 uniform ->
+    # 1/4 weighted) without touching WHEN Group Order runs at all.
+    var g: Dictionary = _sample_identity_axis_cell(group_cat, chain, -1, true)
     if g.is_empty():
         return {}
     var def_star: int = int(g["star"])

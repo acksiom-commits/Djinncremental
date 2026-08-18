@@ -9,43 +9,48 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── RETRACTED, 2026-08-17: Group Order scheduling priority ───────────────
+# ── Phase 2, eighth slice, 2026-08-17: bias Group Order's def_star ───────
 #
-# Built and reverted, same session. Gave Group Order (9) an unconditional
-# priority pass — one guaranteed attempt before the main loop, ahead of
-# non-feeding Forms competing for the same scarce singleton-pitch cells.
-# The existing opening_anchors mechanism was rejected as the vehicle
-# FIRST (difficulty-gated, empty for "hard" — every measurement this
-# whole investigation has run against, so it would never have shown up).
+# Followed up on the retracted scheduling-priority attempt's hypothesis:
+# def_star's OWN identity draw (`g: _sample_identity_axis_cell(group_cat,
+# chain, -1)`) was unbiased, pure bookkeeping (never rendered, never
+# produces a name_group fact), and could still land on Pitch even when
+# group_cat=Colour — possibly spending a scarce singleton-pitch cell on
+# nothing. Added `bias_name=true` to that ONE call, reusing the already-
+# verified _weighted_category_excluding machinery — no new mechanism, no
+# scheduling change (Group Order still runs wherever the main loop puts
+# it, unlike the reverted priority pass).
 #
-# MEASURED, matched-seed A/B (same 8 seeds x 5 constellations both runs):
-#     overall untouched:        25% -> 26%   (roughly flat, maybe noise)
-#     singleton-pitch untouched: 32% -> 37%  (WORSE — the targeted metric)
-#     Group Order clue volume:  ~38 -> 73    (priority pass worked AS
-#                                              SCHEDULING — just didn't help)
-# Still 0/40 contradictions throughout — nothing unsound, purely a
-# coverage regression on the exact thing this was meant to fix.
+# Matched-seed comparison, same 8 x 5 as every prior slice:
+#     overall untouched:     25% (baseline) -> 26% (priority, reverted) -> 24% (this)
+#     singleton-pitch:        32%           -> 37% (priority, reverted) -> 33% (this)
+#     Group Order volume:     38            -> 73                       -> 62
+# Still 0/40 contradictions.
 #
-# HYPOTHESIS, not yet verified: Group Order's SUBJECT draw is NAME-biased
-# (fifth slice), but its `def_star` draw (`g: _sample_identity_axis_cell
-# (group_cat, chain, -1)`) is NOT — pure bookkeeping, never produces a
-# name_group fact. Running Group Order FIRST may just mean that unbiased
-# draw claims a scarce singleton-pitch cell for BOOKKEEPING before
-# Equality Pair (far higher volume, already NAME-biased, and actually
-# capable of turning that same cell into a useful fact) reaches it in the
-# main loop — winning Group Order more turns while making each turn worse
-# for the shared resource.
+# RESULT: modest, real, SAFE overall gain (25%->24%) with nothing
+# regressed anywhere — unlike the priority pass, there is no reason to
+# walk this back. But the hypothesis was only PARTIALLY confirmed:
+# singleton-pitch specifically landed at 33%, essentially flat against
+# the 32% baseline, not the clear win the mechanism predicted. It undid
+# the priority pass's damage on that metric without actually fixing it.
+# Group Order's volume rose even without scheduling priority — plausibly
+# because NAME-anchored candidates are basically always available (never
+# "used up" the way one specific pitch cell can be), so biasing toward
+# NAME makes MORE of its attempts succeed at all, not just changes which
+# category wins when it does.
 #
-# REVERTED CLEANLY: constellation_logic_puzzle.gd has zero diff against
-# the last commit. If this is revisited, the def_star draw is the first
-# thing to bias (or skip when it would land on a scarce cell) — do NOT
-# just re-add scheduling priority alone, it was already tried and made
-# the target metric worse.
+# NEXT: singleton-pitch coverage is still the softest number (33% vs 24%
+# overall). The def_star mechanism alone doesn't close it. Untested:
+# whether Mutual Exclusion / Distance Existential / Dual Negation (the
+# non-feeding consumers) could be made to prefer NON-singleton pitch
+# stars when a singleton alternative exists elsewhere in their own
+# candidate pool — a different Form's code, not Group Order's.
 #
-# ── Superseded numbers, kept for the process trail (all 0/N closures,
-# 0/N contradictions throughout) ──────────────────────────────────────────
-#   sixth slice (+ NAME bias, current committed state): 25% untouched,
-#     singleton-pitch 32% vs 25% average — the actual STANDING baseline.
+# ── Superseded numbers, kept for the process trail ────────────────────────
+#   sixth slice (NAME bias, standing baseline before this slice): 25%
+#     untouched, singleton-pitch 32%
+#   RETRACTED same-day attempt (scheduling priority): 26% untouched,
+#     singleton-pitch 37% — reverted, zero diff against that commit
 #
 # ── Earlier process notes, each of which cost a wrong conclusion ─────────
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true
@@ -60,16 +65,15 @@ extends "res://dev_tests/test_base.gd"
 #   * MEASURE THE RIGHT FACT KIND, NOT A NEARBY ONE. "301 of 316 pinned"
 #     came from counting ordinal_exact — plausible-looking, unrelated to
 #     what was being asked, and not even read by the code under test.
-#   * "chars" INCLUDES BOOKKEEPING, NOT JUST DISCLOSURE. A first pass at
-#     the singleton-pitch mechanism scanned chars for {cat:PITCH} and got
-#     188 "mentions" from a Form whose id_cat can never BE pitch by
-#     construction — those were touched-but-never-rendered axis_a/axis_b
-#     nodes. search_terms (rendered-only) gave the real number.
 #   * A NEW LEVER CAN MOVE THE METRIC IT TARGETS IN THE WRONG DIRECTION.
 #     Scheduling Group Order first was a reasonable hypothesis and a
 #     clean, matched-seed measurement showed it made singleton-pitch
 #     coverage WORSE, not better — reverted rather than kept "because it
 #     seemed like it should help."
+#   * A FIX CAN BE SAFE AND STILL NOT BE THE WIN THE HYPOTHESIS PREDICTED.
+#     Biasing def_star undid the regression and moved the OVERALL number,
+#     but the SPECIFIC metric it targeted (singleton-pitch) barely moved —
+#     reported plainly as a partial result, not oversold as "fixed."
 
 var fails: int = 0
 
