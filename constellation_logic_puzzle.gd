@@ -3278,6 +3278,23 @@ const MUTEX_AXIS_WEIGHTS := {
 # current tripling rate — it will not move much.
 const MUTEX_REPEAT_CATEGORY_WEIGHT := 2.0
 
+## Down-weights PITCH specifically in the SAME weighted pick, applied
+## multiplicatively alongside MUTEX_REPEAT_CATEGORY_WEIGHT rather than
+## replacing it — 2026-08-17, the non-feeding-Forms lead's SECOND attempt.
+## The FIRST attempt (MUTEX_AXIS_WEIGHTS, retracted) targeted the wrong
+## pathway: cutting axis=Pitch's frequency genuinely shrank ONE consumption
+## route, but this per-participant id_cat pick is a SEPARATE, independent
+## route — PITCH stays fully eligible here whenever a given participant
+## happens to have singleton pitch, regardless of axis — and it turned out
+## to be the DOMINANT one (measured: Mutex's own singleton-pitch
+## disclosures went 36->60 under the axis-only fix, confirming this path
+## absorbs whatever the axis path gives up). 0.5 mirrors
+## CLOSURE_NAME_BIAS_WEIGHT's magnitude (2.0 favoring NAME there = 0.5
+## disfavoring PITCH here), not re-derived from scratch — same "meaningful
+## tilt, not deterministic" philosophy as every other bias weight in this
+## file.
+const MUTEX_PITCH_SCARCITY_WEIGHT := 0.5
+
 
 func _mutex_pick_axis() -> int:
     var roll: float = _rng.randf()
@@ -3386,7 +3403,10 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
             continue   # cannot happen — Name/Sequence are always legal unless one of them IS axis, and axis is only ever one category — guarded anyway
         var weights: Array = []
         for cat in legal:
-            weights.append(MUTEX_REPEAT_CATEGORY_WEIGHT if id_cat_usage.has(cat) else 1.0)
+            var w: float = MUTEX_REPEAT_CATEGORY_WEIGHT if id_cat_usage.has(cat) else 1.0
+            if int(cat) == Category.PITCH:
+                w *= MUTEX_PITCH_SCARCITY_WEIGHT
+            weights.append(w)
         var pool: Array = legal.duplicate()
         var chosen: int = -1
         while not pool.is_empty():

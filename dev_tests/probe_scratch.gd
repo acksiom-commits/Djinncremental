@@ -9,46 +9,41 @@ extends "res://dev_tests/test_base.gd"
 #
 # IDLE. Deliberately asserts nothing.
 #
-# ── RETRACTED, 2026-08-17: MUTEX_AXIS_WEIGHTS retune ──────────────────────
+# ── Phase 2, tenth slice, 2026-08-17: Mutex id_cat pitch scarcity ────────
 #
-# Built and reverted, same session — the non-feeding-Forms lead's first
-# attempt. Cut PITCH's axis weight 0.45 -> 0.15 (freed weight to NAME/
-# SEQUENCE), reasoning: axis=Pitch forces EVERY Mutex participant to have
-# singleton pitch (_mutex_axis_groups filters non-unique members out
-# entirely), and Mutex was measured the single largest non-feeding
-# consumer of that resource (36 genuine disclosures).
+# The non-feeding-Forms lead's third attempt, and the first clean win.
+# MUTEX_PITCH_SCARCITY_WEIGHT (0.5) applied at the CONFIRMED-by-
+# measurement dominant pathway — _mutex_legal_id_cats' per-participant
+# weighted pick (_mutex_weighted_pick_remove), where PITCH stays fully
+# eligible as an id_cat whenever a given participant happens to have
+# singleton pitch, entirely independent of axis. The FIRST attempt
+# (MUTEX_AXIS_WEIGHTS, retracted) targeted a DIFFERENT pathway (axis
+# choice) and made this one measurably worse (36->60) by shifting more
+# clue volume onto it.
 #
-# MEASURED, matched-seed (same 8 x 5 both runs):
-#     overall untouched:        24% -> 24%   (flat — null result)
-#     singleton-pitch untouched: 33% -> 33%  (EXACTLY flat: 39/120 both
-#                                              times, not just close)
-#     Mutex clue volume:        higher -> 52 (dropped, as intended)
-#     Mutex genuine disclosures: 36    -> 60 (WENT UP — the opposite of
-#                                              the goal, despite volume
-#                                              dropping)
+# Matched-seed measurement, same 8 x 5 as every prior slice:
+#     Mutex's OWN singleton-pitch disclosures:  36 -> 19  (mechanism
+#         validated — nearly the exact inverse of the WRONG fix's 36->60)
+#     singleton-pitch untouched:                33% -> 29%  (real gain,
+#         the largest movement on this specific metric of any attempt)
+#     overall untouched:                        24% -> 24%  (flat — the
+#         size-1 gain looks offset by a small, likely noisy shift in
+#         size-3, 21%->24%)
+#     Mutex clue volume:                        52 -> 34 (dropped further,
+#         expected — PITCH is a less attractive id_cat option overall now)
+# Still 0/40 contradictions.
 #
-# WHY: the fix only addressed ONE of Mutex's two singleton-pitch
-# consumption pathways. axis=Pitch (cut 45%->15%) genuinely shrank. But
-# axis=Name/Sequence now fires 80% of the time (up from 50%), and WITHIN
-# those clues, each of 3-5 participants gets an id_cat via a SEPARATE
-# weighted pick (_mutex_legal_id_cats / MUTEX_REPEAT_CATEGORY_WEIGHT) —
-# PITCH stays fully eligible there whenever that specific participant
-# happens to have singleton pitch, entirely independent of axis. More
-# Name/Sequence-axis clues meant more chances down THIS path, and it grew
-# more than the axis path shrank. Net: the ORIGINAL FORM SELECTED (Mutex)
-# was right; the SPECIFIC MECHANISM targeted within it was incomplete.
-#
-# REVERTED CLEANLY: constellation_logic_puzzle.gd has zero diff against
-# the last commit. If revisited, the id_cat-level pick inside
-# _mutex_legal_id_cats/_mutex_weighted_pick_remove is the ACTUAL dominant
-# pathway — fixing axis weight alone will not work, confirmed by
-# measurement, not theory.
+# KEPT (not reverted) — first attempt in this whole lead with BOTH a
+# validated mechanism and a measured gain on the actual target metric,
+# not just a flat/harmless result or a clear regression.
 #
 # ── Superseded numbers, kept for the process trail (all 0/N closures,
 # 0/N contradictions throughout) ──────────────────────────────────────────
-#   eighth slice (def_star bias, current committed state): 24% untouched,
-#     singleton-pitch 33% vs overall average — the actual STANDING baseline.
-#   RETRACTED (Group Order priority): 26% untouched, singleton-pitch 37%.
+#   eighth slice (def_star bias, prior standing state): 24% untouched,
+#     singleton-pitch 33%
+#   RETRACTED (Group Order priority): 26% untouched, singleton-pitch 37%
+#   RETRACTED (Mutex axis weight): 24% untouched, singleton-pitch 33%
+#     (flat), Mutex disclosures 36->60 (wrong mechanism)
 #
 # ── Earlier process notes, each of which cost a wrong conclusion ─────────
 #   * PRINT THE DATA, NOT THE SUMMARY. "0 hop-distance differences" was true
@@ -64,16 +59,17 @@ extends "res://dev_tests/test_base.gd"
 #     came from counting ordinal_exact — plausible-looking, unrelated to
 #     what was being asked, and not even read by the code under test.
 #   * A NEW LEVER CAN MOVE THE METRIC IT TARGETS IN THE WRONG DIRECTION.
-#     Scheduling Group Order first was a reasonable hypothesis and a
-#     clean, matched-seed measurement showed it made singleton-pitch
-#     coverage WORSE, not better — reverted rather than kept "because it
-#     seemed like it should help."
-#   * A SUSPICIOUSLY EXACT NULL RESULT DESERVES A SECOND MEASUREMENT, NOT
-#     A SHRUG. Singleton-pitch landed at literally 39/120 both before and
-#     after the axis-weight retune — that exactness, not just the flatness,
-#     is what triggered a follow-up (per-Form disclosure counts), which
-#     found the mechanism was wrong even though the AGGREGATE number
-#     looked identical.
+#     Scheduling Group Order first made singleton-pitch coverage WORSE —
+#     reverted rather than kept "because it seemed like it should help."
+#   * A SUSPICIOUSLY EXACT NULL RESULT DESERVES A SECOND MEASUREMENT.
+#     Singleton-pitch landed at literally 39/120 both before and after the
+#     axis-weight retune — that exactness triggered the per-Form follow-up
+#     that found the WRONG PATHWAY was targeted, not just an ineffective one.
+#   * WHEN A DIAGNOSIS IS RIGHT, THE FOLLOW-UP FIX CAN CONFIRM IT DIRECTLY.
+#     The retracted attempt's OWN measurement (which pathway dominates)
+#     became this slice's target, and Mutex's disclosure count moving in
+#     the PREDICTED direction (down, not up) is independent confirmation
+#     the mechanism was correctly understood this time.
 
 var fails: int = 0
 
