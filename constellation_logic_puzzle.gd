@@ -4875,11 +4875,25 @@ func _generate_clues_forms_attempt() -> Dictionary:
         "name_unique_closure": name_unique_closure,
         "name_solutions_count": name_solutions_count,
         "seq_solutions_count": seq_solutions.size(),
+        # The solutions themselves, not just the count — already computed
+        # above, so carrying the reference costs nothing. Lets a probe
+        # re-run _solve_name_closure() at a higher cap to learn the TRUE
+        # surviving-solution count, which name_solutions_count cannot
+        # report (it is capped at 2; see _solve_name_closure's header).
+        "seq_solutions": seq_solutions,
         "tier_counts": tier_counts,
     }
 
 
-func _solve_name_closure(seq_solutions: Array) -> Array:
+## `cap` is _solve()'s solution-count ceiling, NOT a count — the solver
+## stops as soon as it has that many, so the default 2 answers "unique or
+## not" as cheaply as possible and can never report a number above 2. That
+## is correct for the gate and misleading for diagnosis: a probe reading
+## name_solutions_count off the default will see every non-closing puzzle
+## report exactly 2 and can mistake a capped read for a real 2-fold
+## symmetry (nearly reported as a finding 2026-08-18). Raise it only for
+## measurement; every production caller wants the default.
+func _solve_name_closure(seq_solutions: Array, cap: int = 2) -> Array:
     # possible[name_star][candidate_position] — same shape _solve() already
     # uses for possible[star][candidate_rank]. Meaningless before Sequence
     # is unique: a Sequence-anchored name_group fact only resolves to a
@@ -4994,7 +5008,7 @@ func _solve_name_closure(seq_solutions: Array) -> Array:
     # OWN clue application/propagation/backtracking then runs as normal on
     # top, name_clues passed again is a harmless no-op re-narrowing.
     if same_group_pairs.is_empty():
-        return _solve(name_clues, 2)
+        return _solve(name_clues, cap)
     var pre: Array = _init_possibility_grid()
     if not _apply_range_clues(pre, name_clues):
         return []
@@ -5002,7 +5016,7 @@ func _solve_name_closure(seq_solutions: Array) -> Array:
         return []
     if not _propagate_same_group(pre, same_group_pairs):
         return []
-    return _solve(name_clues, 2, pre)
+    return _solve(name_clues, cap, pre)
 
 
 func get_form_clue_texts() -> Array[String]:
