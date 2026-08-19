@@ -2391,6 +2391,56 @@ func _validate_name_order_vs_group_fact(f: Dictionary) -> String:
     return ""
 
 
+## Cross-Domain Bridge's claim (form_id 20): the subject is the Sequence-
+## EXTREME member OF a Colour/Pitch group — "Among the blue stars, the
+## earliest-firing one is X." Strictly stronger than name_group's plain
+## membership: a group's extreme member is a SINGLE position once the
+## Sequence solution is known, so this PINS a name rather than narrowing
+## it. Exact pins are the scarcest thing the closure gets (measured ~6-8%
+## of names), which is why this Form was worth its own fact kind.
+##
+## DELIBERATELY NOT name_precedes_group, and the difference is not
+## cosmetic: that kind means "precedes every member of the group," and
+## _validate_name_order_vs_group_fact loops over EVERY member requiring
+## subj_rank < member_rank. Here the subject IS a member, so the m ==
+## subject comparison would test its rank against itself and fire a
+## spurious INCONSISTENT NAME-ORDER FACT on every single clue. The
+## validator below skips m == s for exactly that reason.
+func _name_extreme_in_group_facts(name_ch: Dictionary, group_def_ch: Dictionary, want_lowest: bool) -> Array:
+    if int(name_ch["cat"]) != Category.NAME:
+        return []
+    var obs_cat: int = int(group_def_ch["cat"])
+    if obs_cat != Category.COLOR and obs_cat != Category.PITCH:
+        return []
+    return [{
+        "kind": "name_extreme_in_group",
+        "name_star": int(name_ch["star"]),
+        "cat": obs_cat,
+        "group_key": _name_group_key(obs_cat, int(group_def_ch["star"])),
+        "want_lowest": want_lowest,
+    }]
+
+
+func _validate_name_extreme_in_group_fact(f: Dictionary) -> String:
+    var s: int = int(f["name_star"])
+    var cat: int = int(f["cat"])
+    var key: int = int(f["group_key"])
+    var want_lowest: bool = bool(f["want_lowest"])
+    var own_key: int = _name_group_key(cat, s)
+    if own_key != key:
+        return "name_extreme_in_group name_star=%d cat=%d claims to be the extreme OF group_key=%d but its own group_key is %d" % [s, cat, key, own_key]
+    var subj_rank: int = int(pitch_rank_solution[s])
+    for m in star_count:
+        if m == s or _name_group_key(cat, m) != key:
+            continue
+        var member_rank: int = int(pitch_rank_solution[m])
+        if want_lowest and subj_rank > member_rank:
+            return "name_extreme_in_group name_star=%d cat=%d group_key=%d claims EARLIEST but member %d has rank %d < subject rank %d" % [s, cat, key, m, member_rank, subj_rank]
+        if not want_lowest and subj_rank < member_rank:
+            return "name_extreme_in_group name_star=%d cat=%d group_key=%d claims LATEST but member %d has rank %d > subject rank %d" % [s, cat, key, m, member_rank, subj_rank]
+    return ""
+
+
 ## Equality Pair's claim ("X and Y share the same axis value," axis never
 ## named) only tells the NAME closure something when EXACTLY one side is
 ## NAME. The other side's star is already a concrete, known index — this
@@ -4116,6 +4166,18 @@ func _build_form_cross_domain_bridge(chain: Dictionary) -> Dictionary:
             extreme_neighbors.append(int(gs4))
     var solver_facts: Array = _seq_fact_for_label(d2_ch)
     solver_facts.append({"kind": "ordinal_extreme", "s": extreme_star, "want_lowest": want_lowest, "neighbors": extreme_neighbors})
+    # NAME closure (Phase 2, eleventh slice): d2_ch IS rendered — it is the
+    # clue's subject, "...the earliest-firing one is X" — so when d2 lands
+    # on Name this clue discloses two separate things about that name, and
+    # both are emitted. Membership reuses the existing kind unchanged;
+    # the extremum is the new one and is the valuable half, since it
+    # resolves to a single position (a PIN). Both emitters no-op unless
+    # d2 == NAME and group_cat is Colour/Pitch, so the ~25% of draws where
+    # d2 lands on Pitch cost nothing. group_def_ch is disclosed by VALUE
+    # via group_phrase/_note_group_value_term, never as an identity label
+    # — same shape Group Membership already relies on.
+    var value_facts: Array = _name_group_facts(d2_ch, group_def_ch, true)
+    value_facts.append_array(_name_extreme_in_group_facts(d2_ch, group_def_ch, want_lowest))
     return {
         "chars": [group_def_ch, d1_ch, d2_ch],
         "text": text,
@@ -4124,6 +4186,7 @@ func _build_form_cross_domain_bridge(chain: Dictionary) -> Dictionary:
             {"cat_a": d1, "val_a": d1_val, "cat_b": d2, "val_b": d2_val, "is_true": true},
         ],
         "solver_facts": solver_facts,
+        "value_facts": value_facts,
     }
 
 
@@ -4887,6 +4950,33 @@ func _solve_name_closure(seq_solutions: Array) -> Array:
                     elif kind == "name_follows_group" and pr > max_rank:
                         allowed2.append(p)
                 name_clues.append({"kind": "value_in_set", "s": name_star2, "allowed": allowed2})
+            elif kind == "name_extreme_in_group":
+                var violation4: String = _validate_name_extreme_in_group_fact(fd)
+                if violation4 != "":
+                    push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NAME-EXTREME FACT — %s" % [constellation_id, violation4])
+                var name_star3: int = int(fd["name_star"])
+                var obs_cat3: int = int(fd["cat"])
+                var group_key3: int = int(fd["group_key"])
+                var want_lowest3: bool = bool(fd["want_lowest"])
+                # A group's Sequence-extreme member is exactly ONE position
+                # once Sequence is resolved, so this collapses to a
+                # single-element value_in_set — a PIN, not a narrowing.
+                # Ranks read through seq_sol (the closure's own resolved
+                # solution) rather than pitch_rank_solution directly, same
+                # reasoning as the order branch above.
+                var extreme_pos: int = -1
+                for p2 in star_count:
+                    if _name_group_key(obs_cat3, p2) != group_key3:
+                        continue
+                    if extreme_pos == -1:
+                        extreme_pos = p2
+                        continue
+                    var pr2: int = int(seq_sol[p2])
+                    var cur2: int = int(seq_sol[extreme_pos])
+                    if (want_lowest3 and pr2 < cur2) or (not want_lowest3 and pr2 > cur2):
+                        extreme_pos = p2
+                if extreme_pos != -1:
+                    name_clues.append({"kind": "value_in_set", "s": name_star3, "allowed": [extreme_pos]})
             elif kind == "name_same_group":
                 var violation3: String = _validate_name_same_group_fact(fd)
                 if violation3 != "":
