@@ -2441,6 +2441,46 @@ func _validate_name_extreme_in_group_fact(f: Dictionary) -> String:
     return ""
 
 
+## distance_hop (Forms 15 and 19) read as a NAME-closure constraint. The
+## fact is a claim about DESCRIPTORS — "the star this ref_cat descriptor
+## denotes is `hops` hops from SOME star in target_cat's group" — so it
+## says something about a NAME's position only when ref_cat is NAME, and
+## then it restricts that name to the positions lying exactly `hops` from
+## some member of the group.
+##
+## Generator star indices ARE positions, so the true assignment maps
+## name_star -> name_star and validation is a direct _distances lookup.
+##
+## NEGATION IS NOT THE MIRROR IMAGE, and getting it backwards yields
+## unsolvable puzzles that look healthy (recorded in the hop-clue
+## framework's own notes). "Not `hops` from SOME member" is ambiguous for
+## a multi-member group — existential or universal — so the closure below
+## only consumes a negated fact when the group is a SINGLETON, which is
+## exactly what Form 19 guarantees via its _category_uniquely_labels
+## filter on value_cat. The two readings coincide there.
+func _validate_distance_hop_name_fact(f: Dictionary) -> String:
+    var ref_star: int = int(f["ref"])
+    var target: int = int(f["target"])
+    var target_cat: int = int(f["target_cat"])
+    var hops: int = int(f["hops"])
+    var negated: bool = bool(f.get("negated", false))
+    var tkey: int = _name_group_key(target_cat, target)
+    if tkey == -1:
+        return ""   # target_cat has no group notion (Name/Distance) — not consumed
+    var hit: bool = false
+    for q in star_count:
+        if _name_group_key(target_cat, q) != tkey:
+            continue
+        if int(_distances[ref_star][q]) == hops:
+            hit = true
+            break
+    if negated and hit:
+        return "distance_hop(negated) ref=%d claims NOT %d hops from any member of target_cat=%d group %d, but one is" % [ref_star, hops, target_cat, tkey]
+    if not negated and not hit:
+        return "distance_hop ref=%d claims %d hops from a member of target_cat=%d group %d, but none is at that distance" % [ref_star, hops, target_cat, tkey]
+    return ""
+
+
 ## Equality Pair's claim ("X and Y share the same axis value," axis never
 ## named) only tells the NAME closure something when EXACTLY one side is
 ## NAME. The other side's star is already a concrete, known index — this
@@ -4991,6 +5031,41 @@ func _solve_name_closure(seq_solutions: Array, cap: int = 2) -> Array:
                         extreme_pos = p2
                 if extreme_pos != -1:
                     name_clues.append({"kind": "value_in_set", "s": name_star3, "allowed": [extreme_pos]})
+            elif kind == "distance_hop":
+                # Only a NAME-anchored hop says anything about which
+                # position a name occupies; a Sequence/Pitch-anchored one
+                # constrains a descriptor the closure is not solving for.
+                if int(fd.get("ref_cat", -1)) != Category.NAME:
+                    continue
+                var dh_target_cat: int = int(fd["target_cat"])
+                var dh_key: int = _name_group_key(dh_target_cat, int(fd["target"]))
+                if dh_key == -1:
+                    continue   # Name/Distance target — no reconstructable group
+                var violation5: String = _validate_distance_hop_name_fact(fd)
+                if violation5 != "":
+                    push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT DISTANCE FACT — %s" % [constellation_id, violation5])
+                var dh_negated: bool = bool(fd.get("negated", false))
+                var dh_group: Array = []
+                for q3 in star_count:
+                    if _name_group_key(dh_target_cat, q3) == dh_key:
+                        dh_group.append(q3)
+                # See _validate_distance_hop_name_fact: the negated reading
+                # is only unambiguous for a singleton group. Skipping is
+                # safe — it under-constrains, and this gate only ever errs
+                # toward claiming LESS uniqueness.
+                if dh_negated and dh_group.size() != 1:
+                    continue
+                var dh_hops: int = int(fd["hops"])
+                var dh_allowed: Array = []
+                for p3 in star_count:
+                    var reach: bool = false
+                    for q4 in dh_group:
+                        if int(_distances[p3][int(q4)]) == dh_hops:
+                            reach = true
+                            break
+                    if reach != dh_negated:
+                        dh_allowed.append(p3)
+                name_clues.append({"kind": "value_in_set", "s": int(fd["ref"]), "allowed": dh_allowed})
             elif kind == "name_same_group":
                 var violation3: String = _validate_name_same_group_fact(fd)
                 if violation3 != "":
