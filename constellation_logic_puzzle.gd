@@ -2023,55 +2023,44 @@ func _apply_grid_cell_result(cat_a: int, val_a: int, cat_b: int, val_b: int, is_
     _mark_used({"cat": cat_b, "star": int(_cat_value_to_star[cat_b][val_b])})
 
 
-func _grid_zebratutor_pass(cat_a: int, cat_b: int) -> void:
-    # Naked-single elimination (if a row/column has exactly one remaining
-    # Unused cell, it's forced True by elimination) PLUS naked-pair/triple
-    # elimination, reusing the already-ported _naked_subset_pass rather than
-    # reimplementing it a second time — this pair's cells aren't stored as
-    # plain booleans (each is a {is_true, used} Dictionary), so a temporary
-    # boolean "possible" view gets built each round (possible = not yet Used,
-    # OR the one cell already confirmed True in its row — matches "hasn't
-    # been ruled out" semantics), fed through the ported algorithm, and any
-    # newly-excluded cell gets translated back into a real matrix Used mark.
-    # Both techniques run in one fixed-point loop since either can unlock
-    # the other (a naked-pair exclusion can create a fresh naked single).
-    var changed: bool = true
-    while changed:
-        changed = false
-        for v1 in star_count:
-            var unused_cols: Array = []
-            for v2 in star_count:
-                if not bool(_matrix_cell(cat_a, v1, cat_b, v2)["used"]):
-                    unused_cols.append(v2)
-            if unused_cols.size() == 1:
-                var forced_v2: int = int(unused_cols[0])
-                if not bool(_matrix_cell(cat_a, v1, cat_b, forced_v2)["used"]):
-                    _apply_grid_cell_result(cat_a, v1, cat_b, forced_v2, true)
-                    changed = true
-        for v2 in star_count:
-            var unused_rows: Array = []
-            for v1 in star_count:
-                if not bool(_matrix_cell(cat_a, v1, cat_b, v2)["used"]):
-                    unused_rows.append(v1)
-            if unused_rows.size() == 1:
-                var forced_v1: int = int(unused_rows[0])
-                if not bool(_matrix_cell(cat_a, forced_v1, cat_b, v2)["used"]):
-                    _apply_grid_cell_result(cat_a, forced_v1, cat_b, v2, true)
-                    changed = true
-
-        var possible: Array = []
-        for v1 in star_count:
-            var row_possible: Array = []
-            for v2 in star_count:
-                var cell: Dictionary = _matrix_cell(cat_a, v1, cat_b, v2)
-                row_possible.append((not bool(cell["used"])) or bool(cell["is_true"]))
-            possible.append(row_possible)
-        if _naked_subset_pass(possible, star_count, true):
-            for v1 in star_count:
-                for v2 in star_count:
-                    if not possible[v1][v2] and not bool(_matrix_cell(cat_a, v1, cat_b, v2)["used"]):
-                        _apply_grid_cell_result(cat_a, v1, cat_b, v2, false)
-                        changed = true
+## _grid_zebratutor_pass was REMOVED here 2026-08-18. It ran naked-single
+## and naked-subset elimination over the matrix and marked the results
+## Used, so the generator would not spend a clue on something already
+## derivable. It got derivability wrong in two ways, both the same tier
+## error as the True-cell cascade (see the note above
+## _apply_grid_cell_result):
+##
+##   - `used` is ONE BIT conflating "disclosed True", "disclosed False"
+##     and "merely touched as bookkeeping", so the pass recovered the
+##     missing polarity by reading GROUND TRUTH:
+##         row_possible.append((not cell["used"]) or cell["is_true"])
+##     `not used` already covers unstated cells, so `or is_true` only ever
+##     fired for USED cells — it was consulting the answer key to learn
+##     what a clue had asserted.
+##   - its naked-single half was unsound outright: "one unused cell left
+##     in this row, therefore forced True" is false whenever the row's
+##     True cell was among the stated ones (the remainder is then FALSE),
+##     and it passed is_true:true unconditionally without checking.
+##
+## Measured before removing — 20 puzzles per arm, identical seeds, the
+## only difference being whether the pass ran:
+##
+##     cells it marked   688 -> 0        full closures    0 -> 1
+##     closure median     29 -> 12       closure mean   246 -> 15
+##     closure worst    2848 -> 54       clues/puzzle   258 -> 289
+##     seq_unique, contradictions and Forms-firing all unchanged
+##
+## So it was neither inert nor load-bearing — it was HARMFUL. It spent 688
+## cells per 20 puzzles telling the generator not to state facts, on a
+## derivability model that read the solution. The unused pool ended at the
+## same size either way; with the pass gone that budget goes to real
+## clues instead of phantom derivations.
+##
+## If a redundancy filter is wanted later it needs a tri-state cell
+## (unstated / disclosed_true / disclosed_false) so derivability is
+## computed from what was actually DISCLOSED, with no ground-truth read —
+## and it must stay a SEPARATE derived view, never written back onto the
+## record of what has been said.
 
 
 # ==================================================
@@ -4495,11 +4484,17 @@ func _build_form_pseudo_true_pair_staggered(chain: Dictionary) -> Dictionary:
 # of one. Removed rather than "extended to more Forms," since extending it
 # would have meant keeping two parallel trackers for the identical fact —
 # the same class of redundancy already corrected twice this session (the
-# ten possibility grids, then the separate cell-used dict). All Sequence
-# derivability now flows through _grid_zebratutor_pass on the Name x
-# Sequence (and Sequence x Color, Sequence x Pitch) matrix pairs, which
-# also now has naked-pair/triple elimination this standalone version
-# already had — see _grid_zebratutor_pass above.
+# ten possibility grids, then the separate cell-used dict).
+#
+# UPDATED 2026-08-18: this used to say Sequence derivability "now flows
+# through _grid_zebratutor_pass". That pass has been REMOVED (see the note
+# where it lived) — it inferred derivability from a `used` bit that cannot
+# distinguish disclosed-True from disclosed-False from merely-touched, and
+# patched the gap by reading ground truth. Nothing replaces it: the
+# generator no longer tries to avoid stating derivable facts at all, and
+# measured strictly better for it. The real uniqueness proofs are _solve()
+# for Sequence and _solve_name_closure() for Name, both of which reason
+# from DISCLOSED facts rather than from matrix Used-state.
 
 
 # ==================================================
@@ -4768,14 +4763,9 @@ func _try_build_and_commit(form_id: int, sequence_solver_facts: Array,
         if stars_with_other.has(named_star):
             name_revealed[int(named_star)] = true
     if result.has("grid_updates"):
-        var touched_pairs: Dictionary = {}
         for gu in result["grid_updates"]:
             var g: Dictionary = gu
             _apply_grid_cell_result(int(g["cat_a"]), int(g["val_a"]), int(g["cat_b"]), int(g["val_b"]), bool(g["is_true"]))
-            touched_pairs[_pair_key(int(g["cat_a"]), int(g["cat_b"]))] = [int(g["cat_a"]), int(g["cat_b"])]
-        for key in touched_pairs.keys():
-            var pair: Array = touched_pairs[key]
-            _grid_zebratutor_pass(int(pair[0]), int(pair[1]))
     _last_clue_nodes = chars
     var tier: int = int(FORM_TIER.get(form_id, 2))
     tier_counts[tier] = int(tier_counts.get(tier, 0)) + 1
