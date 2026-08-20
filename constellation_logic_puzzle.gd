@@ -1984,19 +1984,41 @@ func _sample_grid_cell(cat_a: int, cat_b: int) -> Dictionary:
     }
 
 
+## Marks the ONE cell a clue actually stated. Nothing else.
+##
+## This used to cascade: on a True cell it also marked that cell's whole
+## row and column Used, reasoning that "bijection guarantees exactly one
+## True per row and column, so every other cell involving val_a or val_b
+## is ALREADY known False." That reasoning is about the SOLUTION, and it
+## was used to decide what the PLAYER can derive — a ground-truth fact
+## driving a knowledge claim, which is the tier error this project's whole
+## matrix-up discipline exists to prevent, committed in the generator where
+## the lint does not scan.
+##
+## It was wrong on its own terms too. The cascade is only sound when the
+## player LEARNS the True cell, and almost no Form discloses one: 1542 of
+## 1547 True cells emitted across 886 measured clues are (identity, axis)
+## pairs whose axis side is never rendered. Pairwise Order says so in its
+## own comment ("axis_a/axis_b ... are never textually disclosed as exact
+## values") while emitting exactly those cells; Group Membership calls its
+## pair "TAUTOLOGICAL self-identity markers". Only Exact Identity renders
+## both sides — 5 clues of 886.
+##
+## `used` is the generator's record of WHAT HAS BEEN SAID, not a model of
+## what the player knows. Populating it from the answer key made the
+## generator refuse to state facts the player could legitimately still
+## learn, which is what collapsed the clue budget to ~2.5x star_count and
+## produced every "the Form set cannot express this" result measured
+## against it.
+##
+## The per-CHARACTERISTIC _mark_used calls below are a different mechanism
+## on a different pool (_used_characteristics, for chain/repeat steering),
+## not a cell-status marking, and are deliberately left exactly as they
+## were.
 func _apply_grid_cell_result(cat_a: int, val_a: int, cat_b: int, val_b: int, is_true: bool) -> void:
     _matrix_cell(cat_a, val_a, cat_b, val_b)["used"] = true
     if not is_true:
-        return   # a False reveal excludes only this one stored cell — no cascade, matches
-                  # how a negative fact never cascades anywhere else in this puzzle's design.
-    # A True reveal: bijection guarantees exactly one True per row and per
-    # column, so every OTHER stored cell involving val_a or val_b is
-    # ALREADY MARKED False in the matrix — just flip their Used flag too.
-    for v in star_count:
-        if v != val_b:
-            _matrix_cell(cat_a, val_a, cat_b, v)["used"] = true
-        if v != val_a:
-            _matrix_cell(cat_a, v, cat_b, val_b)["used"] = true
+        return
     _mark_used({"cat": cat_a, "star": int(_cat_value_to_star[cat_a][val_a])})
     _mark_used({"cat": cat_b, "star": int(_cat_value_to_star[cat_b][val_b])})
 

@@ -2,36 +2,34 @@ extends "res://dev_tests/test_base.gd"
 # Reusable throwaway driver — EDIT IN PLACE. MUST call finish() on every
 # exit path. LEAVE IT GREEN when an investigation ends.
 #
-# PHASE 2 TWELFTH SLICE (2026-08-18): distance_hop wired into
-# _solve_name_closure(). Chosen after a READ-ONLY diagnostic (not a guess):
-# 123 of 318 distance facts carry ref_cat==NAME, they reach 118 distinct
-# names of which 42 are currently unconstrained (32% of the 131-name gap),
-# and only 4 of 123 constrain nothing. Expected LOOSE though — median 8 of
-# ~15.8 positions survive per fact, only 3 of 123 pin outright — so the
-# real hope is INTERSECTION: 76 of those 118 names already carry a
-# constraint, and a second independent one can collapse them.
+# RE-MEASURING EVERYTHING AFTER THE CASCADE FIX (2026-08-18).
 #
-# BASELINE is commit 6c9004a (the eleventh slice), same seeds:
-#     exact pin        136  (21.5%)
-#     group/order      293  (46.4%)
-#     same-group        72  (11.4%)
-#     UNTOUCHED        131  (20.7%)
-#     contradictions   0 / 38
-#     full closures    0 / 38
-#     TRUE solutions   144 / 732 / 2312 / 2880, then 5000-cap x34
+# _apply_grid_cell_result no longer marks a True cell's whole row and
+# column Used. That cascade was a ground-truth fact ("bijection gives one
+# True per row/column") driving a claim about what the PLAYER can derive —
+# the tier error, in the generator, where the matrix-up lint does not
+# scan. It has been in since 3497453 (2026-07-24), so EVERY measurement
+# taken since was characterising the bug's blast radius rather than the
+# system.
 #
-# Distance is a NARROWING, not a membership/pin kind, so it does NOT move
-# a name between the coverage buckets above — a name whose only constraint
-# is a hop still counts as "untouched" in that classification, which reads
-# the same five name_* kinds it always has. The number that matters for
-# this slice is therefore the TRUE SOLUTION COUNT, not the buckets.
+# Conclusions that were derived against the broken cascade and are now
+# suspect — this run exists to re-test them:
 #
-# CONTRADICTIONS is still the load-bearing check: 0/N across all twelve
-# slices is what proves the closure sound rather than merely under-fed. A
-# nonzero count means the distance reading (especially the negated one) is
-# WRONG and must be reverted regardless of what the counts did.
+#   "clue budget is ~2.5 x star_count (~44)"        <- cascade cost 29 cells/clue
+#   "generation dead-ends, no Form can emit"        <- pool exhausted by cascade
+#   "the Form set cannot express uniqueness"        <- measured under that dead-end
+#   "COLOR:PITCH is 74% unreachable"                <- 2608 of its cells were CASCADE marks
+#   "_unused_pool_size()==0 is never reached"       <- reached how, now?
+#   "full closures 0/38"                            <- the headline
+#   "multi-element clues cost 58 cells each"        <- 2 cascading cells; now ~2
+#
+# Baseline for every line below is commit 8e13f83, the parent of this
+# change, same seeds, same probe shape.
 
 var fails: int = 0
+
+const COLOR_CAT: int = 2
+const PITCH_CAT: int = 3
 
 
 func run() -> void:
@@ -39,10 +37,17 @@ func run() -> void:
 	var seeds: Array = [11, 4242, 31337, 55555, 77, 909090, 13, 24601]
 
 	var puzzles: int = 0
+	var seq_unique_count: int = 0
 	var contradictions: int = 0
-	var closures_attempted: int = 0
 	var full_closures: int = 0
+	var clue_counts: Array = []
 	var solution_counts: Array = []
+	var pool_left: Array = []
+	var pool_zero: int = 0
+	var cp_used: int = 0
+	var cp_total: int = 0
+	var form_dist: Dictionary = {}
+	var t0: int = Time.get_ticks_msec()
 
 	for cid in [0, 1, 2, 3, 4]:
 		var cdef: Dictionary = cd.get_constellation_def(cid)
@@ -59,9 +64,26 @@ func run() -> void:
 				cd.get_note_freqs(cid), null)
 			var result: Dictionary = await g._generate_clues_forms_attempt()
 			puzzles += 1
+			clue_counts.append(g.chosen_form_clues.size())
+
+			var pool: int = g._unused_pool_size()
+			pool_left.append(pool)
+			if pool == 0:
+				pool_zero += 1
+
+			var rows: Array = g._matrix[g._pair_key(COLOR_CAT, PITCH_CAT)]
+			for row in rows:
+				for cell in row:
+					cp_total += 1
+					if bool(cell["used"]):
+						cp_used += 1
+
+			for clue in g.chosen_form_clues:
+				var fn: String = str(clue.get("form_name", "?"))
+				form_dist[fn] = int(form_dist.get(fn, 0)) + 1
 
 			if bool(result.get("seq_unique", false)):
-				closures_attempted += 1
+				seq_unique_count += 1
 				if int(result.get("name_solutions_count", -1)) == 0:
 					contradictions += 1
 				if bool(result.get("name_unique_closure", false)):
@@ -69,37 +91,62 @@ func run() -> void:
 				var seq_sols: Array = result.get("seq_solutions", []) as Array
 				solution_counts.append(g._solve_name_closure(seq_sols, 5000).size())
 
-	print("\n  puzzles: %d" % puzzles)
-	print("  CONTRADICTIONS: %d / %d   [MUST be 0 — 0/N across all 12 slices]"
-		% [contradictions, closures_attempted])
-	print("  FULL CLOSURES:  %d / %d   [0/N for all 11 prior slices]"
-		% [full_closures, closures_attempted])
+	var elapsed: float = (Time.get_ticks_msec() - t0) / 1000.0
+	clue_counts.sort()
+	pool_left.sort()
+	var csum: int = 0
+	for c in clue_counts:
+		csum += int(c)
+
+	print("\n  puzzles: %d   (%.0fs, %.1fs each)" % [puzzles, elapsed, elapsed / float(maxi(1, puzzles))])
+
+	print("\n  === gates ===")
+	print("    seq_unique:      %d / %d        [8e13f83: 38 / 40]" % [seq_unique_count, puzzles])
+	print("    CONTRADICTIONS:  %d / %d        [MUST be 0]" % [contradictions, seq_unique_count])
+	print("    FULL CLOSURES:   %d / %d        [8e13f83: 0 / 38]" % [full_closures, seq_unique_count])
+
+	print("\n  === the clue budget (was ~2.5x star_count) ===")
+	print("    clues/puzzle: min=%d median=%d max=%d mean=%.0f   [8e13f83: ~44]"
+		% [int(clue_counts[0]), int(clue_counts[clue_counts.size() / 2]),
+			int(clue_counts[clue_counts.size() - 1]), float(csum) / float(maxi(1, clue_counts.size()))])
+	print("    unused pool left: min=%d median=%d max=%d   [8e13f83: 90-304]"
+		% [int(pool_left[0]), int(pool_left[pool_left.size() / 2]), int(pool_left[pool_left.size() - 1])])
+	print("    reached pool==0:  %d / %d   [8e13f83: 0 / 40]" % [pool_zero, puzzles])
+	print("    COLOR:PITCH used: %.1f%%   [8e13f83: 25.8%% — of which nearly all was CASCADE]"
+		% [100.0 * float(cp_used) / float(maxi(1, cp_total))])
 
 	if not solution_counts.is_empty():
-		var sorted_counts: Array = solution_counts.duplicate()
-		sorted_counts.sort()
-		var sum: int = 0
-		for v in sorted_counts:
-			sum += int(v)
-		print("\n  TRUE surviving name-solutions (cap 5000):")
-		print("    min=%d  median=%d  max=%d  mean=%.1f"
-			% [int(sorted_counts[0]), int(sorted_counts[sorted_counts.size() / 2]),
-				int(sorted_counts[sorted_counts.size() - 1]),
-				float(sum) / float(sorted_counts.size())])
-		print("    BASELINE (6c9004a): min=144  median=5000  max=5000  mean=4633.4")
+		solution_counts.sort()
+		var ssum: int = 0
 		var capped: int = 0
 		var near: int = 0
-		for v2 in sorted_counts:
-			if int(v2) >= 5000:
+		for v in solution_counts:
+			ssum += int(v)
+			if int(v) >= 5000:
 				capped += 1
-			if int(v2) <= 4:
+			if int(v) <= 4:
 				near += 1
-		print("    still cap-limited: %d / %d   [baseline 34 / 38]" % [capped, sorted_counts.size()])
-		print("    within 4 of closing: %d / %d   [baseline 0 / 38]" % [near, sorted_counts.size()])
-		print("    full distribution: %s" % str(sorted_counts))
+		print("\n  === closure distance ===")
+		print("    min=%d median=%d max=%d mean=%.0f   [8e13f83: min=144 median=5000 mean=4633]"
+			% [int(solution_counts[0]), int(solution_counts[solution_counts.size() / 2]),
+				int(solution_counts[solution_counts.size() - 1]),
+				float(ssum) / float(solution_counts.size())])
+		print("    cap-limited: %d / %d   [8e13f83: 34 / 38]" % [capped, solution_counts.size()])
+		print("    within 4:    %d / %d   [8e13f83: 0 / 38]" % [near, solution_counts.size()])
+		print("    distribution: %s" % str(solution_counts))
+
+	print("\n  === vocabulary (the thing the negation workaround destroyed) ===")
+	var fnames: Array = form_dist.keys()
+	fnames.sort_custom(func(a, b): return int(form_dist[a]) > int(form_dist[b]))
+	var total_c: int = 0
+	for f in fnames:
+		total_c += int(form_dist[f])
+	for f in fnames:
+		print("    %-32s %5d  (%.1f%%)" % [f, int(form_dist[f]), 100.0 * float(form_dist[f]) / float(maxi(1, total_c))])
+	print("    Forms firing: %d of 23" % fnames.size())
 
 	if contradictions > 0:
-		print("  !! CONTRADICTIONS — the distance reading is unsound, revert !!")
+		print("\n  !! CONTRADICTIONS — unsound !!")
 		fails += 1
 	print("ALL PASS (%d failures)" % fails)
 	finish()
