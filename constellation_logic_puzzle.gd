@@ -3237,6 +3237,19 @@ func _build_form_dual_negation(chain: Dictionary) -> Dictionary:
     if value_cat == Category.SEQUENCE:
         solver_facts.append({"kind": "ordinal_neg", "s": s1, "r": v_val})
         solver_facts.append({"kind": "ordinal_neg", "s": s2, "r": v_val})
+    # NAME closure (Phase 2, thirteenth slice): "neither X nor Y is V" is
+    # two INDEPENDENT False cells bundled into one clue — (id1, false_val)
+    # and (id2, false_val) — each exactly the shape Single Negation already
+    # feeds via _name_group_facts(ch_a, ch_b, false). Reused unchanged, one
+    # call per pair; its own "exactly one side must be NAME" check already
+    # returns [] for whichever pair doesn't qualify (both id1/id2 land on
+    # NAME only if value_cat forced them off it, and false_val lands on
+    # NAME only when value_cat==NAME, in which case id_cat1/id_cat2 are
+    # guaranteed non-NAME by construction — so at most one of the three
+    # labels is ever NAME per pair, never zero-vs-two ambiguity). No new
+    # fact kind, no new validator: this is pure reuse.
+    var value_facts: Array = _name_group_facts(id1, false_val, false) \
+        + _name_group_facts(id2, false_val, false)
     return {
         "chars": [id1, id2, false_val],
         "text": text,
@@ -3245,6 +3258,7 @@ func _build_form_dual_negation(chain: Dictionary) -> Dictionary:
             {"cat_a": id_cat2, "val_a": int(_cat_star_to_value[id_cat2][s2]), "cat_b": value_cat, "val_b": v_val, "is_true": false},
         ],
         "solver_facts": solver_facts,
+        "value_facts": value_facts,
     }
 
 
