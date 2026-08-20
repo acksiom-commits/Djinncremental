@@ -2979,6 +2979,33 @@ func _build_form_pairwise_order(chain: Dictionary) -> Dictionary:
     var solver_facts: Array = _seq_fact_for_label(id_a) + _seq_fact_for_label(id_b)
     if axis == Category.SEQUENCE:
         solver_facts.append({"kind": "ordinal_cmp", "a": star_a, "b": star_b, "a_gt_b": a_gt_b})
+    # NAME closure (Phase 2, fourteenth slice): reuses Group Order's
+    # existing name_precedes_group/name_follows_group via
+    # _name_order_vs_group_facts — no new fact kind, no new validator.
+    # TWO conditions, both load-bearing:
+    #
+    #   axis == SEQUENCE. The validator compares pitch_rank_solution (the
+    #   SEQUENCE ranks, despite the legacy name), so the fact asserts
+    #   firing order. A Pitch-axis comparison ("plays lower than") says
+    #   nothing about sequence and emitting one would be flatly false.
+    #
+    #   The equivalence "precedes THIS star" == "precedes EVERY member of
+    #   its group", which _name_order_vs_group_facts asserts, holds only
+    #   for a singleton group. It always is one here: rendering a
+    #   Colour/Pitch identity label requires _category_uniquely_labels,
+    #   which IS _group_size(cat, star) <= 1, and both of
+    #   _sample_identity_axis_cell's paths enforce it on id_cat. So the
+    #   group-shaped fact and the pairwise claim coincide exactly.
+    #
+    # Direction: a_gt_b is val_a > val_b on rank, so a precedes b exactly
+    # when NOT a_gt_b. Both calls are made unconditionally —
+    # _name_order_vs_group_facts returns [] unless its subject is NAME and
+    # its other side is Colour/Pitch, and since id_a/id_b can't both
+    # satisfy that, at most one ever emits.
+    var value_facts: Array = []
+    if axis == Category.SEQUENCE:
+        value_facts = _name_order_vs_group_facts(id_a, id_b, not a_gt_b) \
+            + _name_order_vs_group_facts(id_b, id_a, a_gt_b)
     return {
         "chars": [id_a, id_b, axis_a, axis_b],
         "text": text,
@@ -2987,6 +3014,7 @@ func _build_form_pairwise_order(chain: Dictionary) -> Dictionary:
             {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
         ],
         "solver_facts": solver_facts,
+        "value_facts": value_facts,
     }
 
 
@@ -4918,6 +4946,19 @@ func _recompute_name_revealed(name_revealed: Array) -> void:
 ##
 ## Returns the rebuilt Sequence fact list, since the caller's flat
 ## accumulator is stale the moment any clue is removed.
+## Yields a frame every this many removal candidates. Pruning tests one
+## clue per iteration and each test costs a _solve() plus usually a
+## _solve_name_closure() — measured at ~9ms per iteration, ~2.7s per
+## puzzle across a ~289-clue set. That is a FULL-STOP FREEZE if run in one
+## synchronous block, which is the exact bug the YIELD_INTERVAL note above
+## the main loop records as already having been fixed once (Archon
+## face-tracking stutter was visible at a far smaller chunk than this). 2
+## keeps each chunk near a single 60fps frame; the resulting ~2.4s of wall
+## clock spread over ~145 frames is free, since generation has a whole
+## prestige cycle to finish in.
+const PRUNE_YIELD_INTERVAL: int = 2
+
+
 func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array[Dictionary]:
     var seq_facts: Array[Dictionary] = _seq_facts_from_clues()
     var seq_sols: Array = _solve(seq_facts, 2)
@@ -4926,6 +4967,7 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
     var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
     if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP:
         return seq_facts
+    var since_yield: int = 0
     var i: int = chosen_form_clues.size() - 1
     while i >= protected_count:
         var removed: Dictionary = chosen_form_clues[i]
@@ -4938,6 +4980,13 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
         if keep:
             chosen_form_clues.insert(i, removed)
         i -= 1
+        # Same guard the main loop uses: _host is null under the headless
+        # test runner, where suspending would be pointless and the whole
+        # pass runs synchronously as before.
+        since_yield += 1
+        if _host and since_yield >= PRUNE_YIELD_INTERVAL:
+            since_yield = 0
+            await _host.get_tree().process_frame
     _recompute_name_revealed(name_revealed)
     return _seq_facts_from_clues()
 
@@ -5034,7 +5083,7 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # anchors and preserving both the Sequence gate and the name closure
     # exactly. Rebuilds sequence_solver_facts, which is stale the moment
     # any clue is removed.
-    sequence_solver_facts = _prune_redundant_clues(name_revealed, protected_clue_count)
+    sequence_solver_facts = await _prune_redundant_clues(name_revealed, protected_clue_count)
 
     # Phase C — uniqueness gate for THIS attempt. Whether a failure here
     # gets retried with a fresh draw (rather than shipped as-is) is decided
