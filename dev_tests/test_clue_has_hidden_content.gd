@@ -117,6 +117,43 @@ func run() -> void:
 
 	ok(total > 100, "generated a meaningful sample (%d clues)" % total)
 
+	# The tautology check below needs 'all different stars' clues (form_id
+	# 13, Mutual Exclusion) specifically. Pruning was added 2026-08-18
+	# (_prune_redundant_clues) and, on the standard 8x5 measurement, cut
+	# Mutex to 0.13% of surviving clues (2 of 1581) — down from a
+	# comfortable share before pruning existed. Expected count in THIS
+	# test's 140-clue sample is ~0.18, so a plain 0-in-sample result is the
+	# single most likely outcome (~84%) even with pruning working exactly
+	# as intended: the property under test belongs to the FORM BUILDER, not
+	# to whether pruning's minimization happens to keep one of its clues.
+	# Reaching that reliably by adding more full-puzzle seeds would need
+	# ~45 independent puzzles for 90% confidence (~14 minutes at ~19s
+	# each) — the wrong lever. Calling the builder directly on a scratch
+	# matrix is the right one: cheap, and it tests the actual invariant
+	# ("does Mutual Exclusion ever emit a zero-content clue") rather than
+	# hoping generation-plus-pruning happens to preserve an instance of it.
+	var mx_cd: Dictionary = cd.get_constellation_def(0)
+	var mx_scn: int = int(mx_cd["star_count"])
+	var mx_g = load("res://constellation_logic_puzzle.gd").new()
+	var mx_sq: Array = []
+	for mi in range(mx_scn):
+		mx_sq.append(mi)
+	mx_g.setup(mx_scn, mx_cd["line_pairs"], mx_sq, 11, 0, mx_cd.get("name_theme", {}),
+		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
+	mx_g._build_record_array()
+	mx_g._build_matrix()
+	var mx_name_revealed: Array = []
+	for _mn in mx_scn:
+		mx_name_revealed.append(false)
+	var mx_tier_counts: Dictionary = {1: 0, 2: 0, 3: 0}
+	var mx_form_counts: Dictionary = {}
+	for _attempt in 60:
+		mx_g._try_build_and_commit(13, [], mx_name_revealed, mx_tier_counts, mx_form_counts)
+	for mx_clue in mx_g.chosen_form_clues:
+		all_clues.append(mx_clue)
+	print("  supplementary Mutual Exclusion clues built directly (bypassing prune): %d"
+		% mx_g.chosen_form_clues.size())
+
 	# ── SECOND VACUITY CLASS: tautology, not map-readability ─────────────
 	#
 	# Reported 2026-08-14:

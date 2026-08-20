@@ -2,39 +2,29 @@ extends "res://dev_tests/test_base.gd"
 # Reusable throwaway driver — EDIT IN PLACE. MUST call finish() on every
 # exit path. LEAVE IT GREEN when an investigation ends.
 #
-# PHASE 2 THIRTEENTH SLICE (2026-08-18): Dual Negation wired into
-# _solve_name_closure(). Picked by a fresh post-fix survey (cost structure
-# changed completely today — cascade + zebratutor pass both removed):
-# 2922 clues, 87% naming a star (2553), zero feeding, by a huge margin the
-# largest unwired source. "Neither X nor Y is V" split into two
-# independent _name_group_facts calls, reusing Single Negation's exact
-# proven shape — no new fact kind, no new validator.
+# DOES PRUNING COLLAPSE VOCABULARY, JUST BY A DIFFERENT MECHANISM? (2026-08-18)
 #
-# BASELINE is commit 87a1abe (zebratutor removed, cascade already gone),
-# same 4-seed sample used for that A/B:
-#     seq_unique 20/20   contradictions 0   full closures 1/20
-#     closure: min=1 median=12 max=54 mean=15
-#     clues/puzzle: median=306 mean=289
-#     distribution: [1,2,3,3,4,5,6,8,10,11,12,12,14,16,16,23,24,28,44,54]
+# test_clue_has_hidden_content failed on its NON-VACUITY guards (0 Mutual
+# Exclusion clues in ITS sample) after pruning landed — same failure SHAPE
+# as this morning's negation-flood collapse, but the cause is structurally
+# different and needs checking, not assuming: pruning keeps a clue only if
+# removing it INCREASES the solution count, and non-feeding Forms (Mutual
+# Exclusion, Count, Betweenness, Disjunction, Group Comparison, ...) never
+# carry closure content by definition — so every one of their clues is a
+# provably-safe removal candidate regardless of what else survives.
 #
-# CONTRADICTIONS is still the check that overrides everything else — the
-# reused _name_group_facts machinery has been sound for 13 slices, but a
-# nonzero count here would mean the (id1,false_val)/(id2,false_val)
-# splitting is wrong regardless of what the counts show.
+# Measuring the actual post-prune Form mix directly, standard 8x5 sample,
+# rather than inferring health from one test's vacuity failure.
 
 var fails: int = 0
 
 
 func run() -> void:
 	var cd = load("res://constellation_data.gd").new()
-	var seeds: Array = [11, 4242, 31337, 55555]
+	var seeds: Array = [11, 4242, 31337, 55555, 77, 909090, 13, 24601]
 
-	var clues: Array = []
-	var sols: Array = []
-	var seq_ok: int = 0
-	var closures: int = 0
-	var contradictions: int = 0
-	var n: int = 0
+	var form_dist: Dictionary = {}
+	var puzzles: int = 0
 	var t0: int = Time.get_ticks_msec()
 
 	for cid in [0, 1, 2, 3, 4]:
@@ -50,41 +40,32 @@ func run() -> void:
 			g.setup(scn, cdef["line_pairs"], sq, seed, cid,
 				cdef.get("name_theme", {}), cd.get_note_assignment(cid),
 				cd.get_note_freqs(cid), null)
-			var result: Dictionary = await g._generate_clues_forms_attempt()
-			n += 1
-			clues.append(g.chosen_form_clues.size())
-			if bool(result.get("seq_unique", false)):
-				seq_ok += 1
-				if int(result.get("name_solutions_count", -1)) == 0:
-					contradictions += 1
-				if bool(result.get("name_unique_closure", false)):
-					closures += 1
-				sols.append(g._solve_name_closure(result.get("seq_solutions", []) as Array, 5000).size())
+			await g._generate_clues_forms_attempt()
+			puzzles += 1
+			for clue in g.chosen_form_clues:
+				var fn: String = str(clue.get("form_name", "?"))
+				form_dist[fn] = int(form_dist.get(fn, 0)) + 1
 
 	var elapsed: float = (Time.get_ticks_msec() - t0) / 1000.0
-	clues.sort()
-	sols.sort()
-	var csum: int = 0
-	for c in clues:
-		csum += int(c)
-	var ssum: int = 0
-	for s in sols:
-		ssum += int(s)
+	var total_c: int = 0
+	for k in form_dist.keys():
+		total_c += int(form_dist[k])
 
-	print("\n  puzzles: %d   (%.0fs)" % [n, elapsed])
-	print("  seq_unique:      %d / %d      [baseline 20/20]" % [seq_ok, n])
-	print("  CONTRADICTIONS:  %d / %d      [MUST be 0]" % [contradictions, seq_ok])
-	print("  full closures:   %d / %d      [baseline 1/20]" % [closures, seq_ok])
-	print("  clues/puzzle:    median=%d mean=%.0f   [baseline 306 / 289]"
-		% [int(clues[clues.size() / 2]), float(csum) / float(maxi(1, clues.size()))])
-	if not sols.is_empty():
-		print("  closure:         min=%d median=%d max=%d mean=%.0f   [baseline 1 / 12 / 54 / 15]"
-			% [int(sols[0]), int(sols[sols.size() / 2]), int(sols[sols.size() - 1]),
-				float(ssum) / float(sols.size())])
-		print("  distribution:    %s" % str(sols))
+	print("\n  puzzles: %d   (%.0fs)   total clues: %d\n" % [puzzles, elapsed, total_c])
+	var names: Array = form_dist.keys()
+	names.sort_custom(func(a, b): return int(form_dist[a]) > int(form_dist[b]))
+	var top: String = ""
+	var top_n: int = 0
+	for f in names:
+		var c: int = int(form_dist[f])
+		if c > top_n:
+			top_n = c
+			top = f
+		print("    %-32s %5d  (%.1f%%)" % [f, c, 100.0 * float(c) / float(maxi(1, total_c))])
 
-	if contradictions > 0:
-		print("\n  !! CONTRADICTIONS — unsound, revert !!")
-		fails += 1
+	print("\n  Forms firing: %d of 23     dominant: %s at %.0f%%   [pre-fix collapse: 7/23, 88%%]"
+		% [names.size(), top, 100.0 * float(top_n) / float(maxi(1, total_c))])
+	print("  clues/puzzle: %.1f" % (float(total_c) / float(maxi(1, puzzles))))
+
 	print("ALL PASS (%d failures)" % fails)
 	finish()

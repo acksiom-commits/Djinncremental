@@ -4819,6 +4819,129 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
     _prefer_true_cells = false
 
 
+## The value_fact kinds — everything a clue discloses that is NOT input to
+## the Sequence CSP. Needed because `disclosures` merges solver_facts and
+## value_facts into one array (CACHE_VERSION 6), and the pruning pass has
+## to rebuild the Sequence fact list from the SURVIVING clues after any
+## removal. Listed explicitly rather than derived, so adding a new value
+## kind and forgetting this list fails loudly (the fact leaks into the
+## Sequence solver as an unknown kind) rather than silently.
+const VALUE_FACT_KINDS: Array = [
+    "name_group", "name_group_neg", "name_precedes_group",
+    "name_follows_group", "name_extreme_in_group", "name_same_group",
+    "distance_hop",
+]
+
+## Above this many surviving name-solutions the pruning pass gives up on a
+## puzzle rather than pruning it. RE-DERIVED 2026-08-18 against the
+## CURRENT baseline, not the pre-fix one this was first built against: with
+## the True-cell cascade and the zebratutor pass both removed and Dual
+## Negation wired into the closure, every puzzle in the measured 20-puzzle
+## sample closes to EXACTLY 1 surviving solution (`11c2482`) — a prior
+## value of 64 was sized against a distribution that ran up to 2848 and no
+## longer describes this generator at all. 8 gives comfortable headroom
+## over the observed baseline of 1 while staying cheap to solve for; a
+## puzzle that doesn't close within that margin needs more Form-wiring,
+## not pruning, so skipping it here is the correct fallback, not a
+## compromise forced by the cap.
+const PRUNE_CLOSURE_CAP: int = 8
+
+
+func _seq_facts_from_clues() -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    for clue in chosen_form_clues:
+        for f in _coerce_array(clue.get("disclosures"), []):
+            if not (f is Dictionary):
+                continue
+            if VALUE_FACT_KINDS.has(str((f as Dictionary).get("kind", ""))):
+                continue
+            out.append(f)
+    return out
+
+
+## Recomputes the name-coverage flags from the surviving clues. Pruning can
+## remove the only clue that paired a Name with another category for some
+## star, and `name_unique` — still the live ship gate — is built from these.
+## Without this, pruning a puzzle the CLOSURE has just proven uniquely
+## solvable could flip name_unique false and send it back for a retry.
+func _recompute_name_revealed(name_revealed: Array) -> void:
+    for i in name_revealed.size():
+        name_revealed[i] = false
+    for clue in chosen_form_clues:
+        var stars_with_name: Dictionary = {}
+        var stars_with_other: Dictionary = {}
+        for ch in _coerce_array(clue.get("chars"), []):
+            if not (ch is Dictionary):
+                continue
+            var c: Dictionary = ch
+            var s: int = int(c.get("star", -1))
+            if s < 0 or s >= name_revealed.size():
+                continue
+            if int(c.get("cat", -1)) == Category.NAME:
+                stars_with_name[s] = true
+            else:
+                stars_with_other[s] = true
+        for named_star in stars_with_name.keys():
+            if stars_with_other.has(named_star):
+                name_revealed[int(named_star)] = true
+
+
+## Over-generate, then minimize. The main loop runs until stall_count maxes
+## out (Step 13's termination condition), which now yields ~289 clues per
+## puzzle — every one sound, far more than a player needs once the name
+## closure has actually closed. A clue is dropped only if, without it,
+## Sequence is STILL uniquely solvable AND the name closure survives with
+## no MORE solutions than before. Both halves required — dropping on the
+## closure alone would silently break the Sequence gate, dropping on
+## Sequence alone would undo real name-closure content.
+##
+## `protected_count` excludes the leading N clues — the opening anchors —
+## from pruning entirely, rather than relying on sweep direction to happen
+## to leave them alone. Anchors shape a SPECIFIC opening foothold for
+## difficulty tuning (_build_opening_anchors); without an explicit
+## exclusion, pruning could silently remove one whenever the rest of the
+## clue set already covers the same ground, changing the intended opening
+## without that being a deliberate decision.
+##
+## Sweep BACKWARD over the remaining, non-anchor clues. RE-DERIVED
+## 2026-08-18 — the previous rationale for this direction was built around
+## a since-deleted negation-first generation pass and no longer applies.
+## The current reason is about the main loop's own shape, not clue cost:
+## _tiers_by_underrepresentation + TIER_OPPORTUNISTIC_ATTEMPTS commit
+## whichever Form succeeds first for the most-underrepresented tier each
+## pass, so a clue committed LATE is more likely an opportunistic fill
+## reached for once better-fitting options were already used up, not
+## something structurally central to the puzzle. Testing those for
+## redundancy first is the informed greedy order; forward order would
+## spend the first several hundred trial-solves on the clues most likely
+## to be load-bearing.
+##
+## Returns the rebuilt Sequence fact list, since the caller's flat
+## accumulator is stale the moment any clue is removed.
+func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array[Dictionary]:
+    var seq_facts: Array[Dictionary] = _seq_facts_from_clues()
+    var seq_sols: Array = _solve(seq_facts, 2)
+    if seq_sols.size() != 1:
+        return seq_facts   # not uniquely solvable on Sequence — nothing safe to prune against
+    var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
+    if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP:
+        return seq_facts
+    var i: int = chosen_form_clues.size() - 1
+    while i >= protected_count:
+        var removed: Dictionary = chosen_form_clues[i]
+        chosen_form_clues.remove_at(i)
+        var trial_seq: Array = _solve(_seq_facts_from_clues(), 2)
+        var keep: bool = true
+        if trial_seq.size() == 1:
+            if _solve_name_closure(trial_seq, baseline + 1).size() <= baseline:
+                keep = false
+        if keep:
+            chosen_form_clues.insert(i, removed)
+        i -= 1
+    _recompute_name_revealed(name_revealed)
+    return _seq_facts_from_clues()
+
+
 func _generate_clues_forms_attempt() -> Dictionary:
     _build_record_array()
     _build_matrix()
@@ -4875,6 +4998,9 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # BEFORE the main loop — see _build_opening_anchors for why ordering is
     # the whole point. No-op on "hard" (empty anchor list).
     _build_opening_anchors(sequence_solver_facts, name_revealed, tier_counts, form_counts)
+    # Anchor-sourced clues are the only ones committed so far — this is the
+    # boundary _prune_redundant_clues protects them behind.
+    var protected_clue_count: int = chosen_form_clues.size()
 
     while _unused_pool_size() > 0 and stall_count < max_stall:
         var tier_order: Array = _tiers_by_underrepresentation(tier_counts)
@@ -4902,6 +5028,13 @@ func _generate_clues_forms_attempt() -> Dictionary:
         if _host and _since_yield >= YIELD_INTERVAL:
             _since_yield = 0
             await _host.get_tree().process_frame
+
+    # Phase B2 — minimize. _prune_redundant_clues drops clues the main
+    # loop's over-generation left redundant, protecting the opening
+    # anchors and preserving both the Sequence gate and the name closure
+    # exactly. Rebuilds sequence_solver_facts, which is stale the moment
+    # any clue is removed.
+    sequence_solver_facts = _prune_redundant_clues(name_revealed, protected_clue_count)
 
     # Phase C — uniqueness gate for THIS attempt. Whether a failure here
     # gets retried with a fresh draw (rather than shipped as-is) is decided
