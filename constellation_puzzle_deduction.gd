@@ -850,30 +850,52 @@ func _propagate_pitch_confirmed_same_record(record_idx: int, confirmed_note: Str
         r["pitch_slot_label"] = ""
 
 
-## Clue texts the player has right-clicked into Used Up. Player state, so it
-## round-trips through the save; reversible, so a misclick costs nothing.
-##
-## Deliberately NOT computed from coverage. The utility categorisation this
-## replaced was the engine GUESSING how much of a clue the player had
-## absorbed, and it was wrong in both directions repeatedly — see the DEV
-## SPEC above _populate_clue_markers() in constellation_puzzle_widgets.gd.
-var _retired_clues: Dictionary = {}
+## Clue texts the player has right-clicked into Notes, as reference material
+## rather than a "done" marker — Used Up (2026-08-14 to 2026-08-24) was the
+## same gesture but meant "I am finished with this clue"; Notes means "I
+## want this clue in front of me while I work," which is why it sits next
+## to freeform text (_note_entries below) instead of a separate tab. Player
+## state, so it round-trips through the save; reversible, so a misclick
+## costs nothing.
+var _noted_clue_refs: Dictionary = {}
+
+## Freeform lines the player has typed into the Notes tab's entry box.
+## Ordered (Array, not Dictionary) — unlike clue refs, entry order is
+## meaningful; the player is building a running scratchpad, not a set.
+var _note_entries: Array[String] = []
 
 
-func is_clue_retired(text: String) -> bool:
-    return _retired_clues.has(text)
+func is_clue_noted(text: String) -> bool:
+    return _noted_clue_refs.has(text)
 
 
 ## Returns the new state, so the caller can rebuild without re-querying.
-func toggle_clue_retired(text: String) -> bool:
+func toggle_clue_noted(text: String) -> bool:
     if text == "":
         return false
-    if _retired_clues.has(text):
-        _retired_clues.erase(text)
+    if _noted_clue_refs.has(text):
+        _noted_clue_refs.erase(text)
     else:
-        _retired_clues[text] = true
+        _noted_clue_refs[text] = true
     _save_puzzle_notes()
-    return _retired_clues.has(text)
+    return _noted_clue_refs.has(text)
+
+
+## Appends one freeform note. Trimmed and rejected if blank, so a stray
+## Enter-press on an empty box doesn't litter the list with nothing rows.
+func add_note_entry(text: String) -> void:
+    var trimmed: String = text.strip_edges()
+    if trimmed == "":
+        return
+    _note_entries.append(trimmed)
+    _save_puzzle_notes()
+
+
+func remove_note_entry(index: int) -> void:
+    if index < 0 or index >= _note_entries.size():
+        return
+    _note_entries.remove_at(index)
+    _save_puzzle_notes()
 
 
 ## Every descriptor value the PLAYER has personally marked, as rendered
@@ -940,10 +962,17 @@ func _save_puzzle_notes() -> void:
         return
     var notes: Dictionary = {}
     notes["match_records"] = _save_match_records()
-    # Player state, not derived: which clues they right-clicked into Used Up.
-    # Keyed by clue TEXT rather than index, because clue order is not a
-    # stable identifier across a cache regeneration.
-    notes["retired_clues"] = _retired_clues.keys()
+    # WIRE KEY STAYS "retired_clues" — renamed to _noted_clue_refs in code
+    # 2026-08-24 (Used Up became Notes), but every save on disk already uses
+    # this key, and a save clues had filed away under the old "done" meaning
+    # carry forward as Notes references under the new one, which is the
+    # right outcome: nothing the player filed is lost, it just lives under
+    # a tab with a clearer purpose now. Keyed by clue TEXT rather than
+    # index, because clue order is not a stable identifier across a cache
+    # regeneration.
+    notes["retired_clues"] = _noted_clue_refs.keys()
+    # Freeform notes. New field, no legacy key to preserve.
+    notes["note_text_entries"] = _note_entries.duplicate()
     # protected_names / user_blocks are gone as separate note fields — the
     # star widget's protect and manual-block flags now live on each star's
     # own record, so they round-trip inside match_records above.
@@ -2067,7 +2096,7 @@ func _debug_dump_pitch_records(note_name: String) -> void:
             str(_host._star_names[int(s2)]) if int(s2) < _host._star_names.size() else "?",
             int(_host._star_colors[int(s2)]) if int(s2) < _host._star_colors.size() else -1,
             int(_host._star_degrees[int(s2)]) if int(s2) < _host._star_degrees.size() else -1,
-            (int(_host._pitch_rank_solution[int(s2)]) + 1) if int(s2) < _host._pitch_rank_solution.size() else -1,
+            (int(_host._sequence_rank_solution[int(s2)]) + 1) if int(s2) < _host._sequence_rank_solution.size() else -1,
         ])
     print("  --- records mentioning this note ---")
     var shown: int = 0
@@ -4030,7 +4059,7 @@ func _compute_excluded_degrees_for(record_idx: int) -> Array[int]:
 # correct by adjustment: "chars" records which entities a clue MENTIONS,
 # and two clues asserting opposite things carry identical chars.
 #
-# Also note what's gone: no ground-truth lookup (pitch_rank_solution /
+# Also note what's gone: no ground-truth lookup (sequence_rank_solution /
 # star_names / star_colors as an answer key) appears below any more. Both
 # sides are expressed in the same descriptor space, so coverage no longer
 # asks "is the truth about this star known" — only "did the player record
@@ -4054,9 +4083,9 @@ func _record_descriptor_state(record_idx: int, cat: int, star: int) -> int:
                 return 0
             return _effective_name_state(record_idx, str(_host._star_names[star]))
         ConstellationLogicPuzzle.Category.SEQUENCE:
-            if star >= _host._pitch_rank_solution.size():
+            if star >= _host._sequence_rank_solution.size():
                 return 0
-            var pos: int = int(_host._pitch_rank_solution[star]) + 1
+            var pos: int = int(_host._sequence_rank_solution[star]) + 1
             # Deliberately the stored-plus-derived set, NOT
             # _effective_seq_candidates: the latter calls
             # _compute_excluded_positions_for, which loops every record
@@ -4146,9 +4175,9 @@ func _descriptor_term(cat: int, star: int) -> String:
         ConstellationLogicPuzzle.Category.NAME:
             return "N:" + str(_host._star_names[star]) if star < _host._star_names.size() else ""
         ConstellationLogicPuzzle.Category.SEQUENCE:
-            if star >= _host._pitch_rank_solution.size():
+            if star >= _host._sequence_rank_solution.size():
                 return ""
-            return "S:%d" % (int(_host._pitch_rank_solution[star]) + 1)
+            return "S:%d" % (int(_host._sequence_rank_solution[star]) + 1)
         ConstellationLogicPuzzle.Category.COLOR:
             if star >= _host._star_colors.size():
                 return ""
@@ -4328,6 +4357,23 @@ func _value_domain(cat: int) -> Array:
 var _star_values_cache: Dictionary = {}
 
 
+## The RAW Colour/Pitch value of a star, matching the generator's
+## _name_group_key exactly — Colour is the raw colour index, Pitch the raw
+## pitch-table index. Deliberately NOT the sub-ranked matrix value: a group
+## key must say "which colour", where the matrix value says "which star",
+## and confusing the two is what makes a group claim look like an identity
+## claim. Both sides must agree on this or a group_key will never match.
+func _raw_group_key(cat: int, star: int) -> int:
+    if star < 0 or star >= _host._star_count:
+        return -1
+    match cat:
+        ConstellationLogicPuzzle.Category.COLOR:
+            return int(_host._star_colors[star]) if star < _host._star_colors.size() else -1
+        ConstellationLogicPuzzle.Category.PITCH:
+            return int(_host._star_pitch_index[star]) if star < _host._star_pitch_index.size() else -1
+    return -1
+
+
 func _possible_values_for_star(star: int, cat: int) -> Array:
     var vkey: String = "%d:%d" % [star, cat]
     if _star_values_cache.has(vkey):
@@ -4366,7 +4412,7 @@ func _value_sets_disjoint(a: Array, b: Array) -> bool:
 ## Has the player already derived everything this disclosure says?
 ##
 ## Rank fields in the fact vocabulary are 0-based (they index
-## pitch_rank_solution); player-side positions are 1-based, hence the +1
+## sequence_rank_solution); player-side positions are 1-based, hence the +1
 ## on every crossing.
 func _disclosure_satisfied(f: Dictionary) -> bool:
     var kind: String = str(f.get("kind", ""))
@@ -4443,6 +4489,35 @@ func _disclosure_satisfied(f: Dictionary) -> bool:
                 elif not _positions_strictly_before(cs, n2p):
                     return false   # this neighbour is still undecided
             return before == int(f.get("k", -1))
+        "descriptor_not_in_group":
+            # "Neither Helios nor the star that fires 7th note is blue."
+            # Entailed when every star the descriptor could still BE sits
+            # outside the named Colour/Pitch group.
+            #
+            # Sound for the same reason the column rule is:
+            # _stars_possible_for_descriptor returns a SUPERSET of the
+            # truth, so if no member of that superset is in the group, the
+            # real star certainly is not either. An overcount can only make
+            # this answer "not yet", never "yes" wrongly.
+            #
+            # Keyed on the DESCRIPTOR, not on a Name record, which is the
+            # whole point: a Sequence subject ("the star that fires 7th
+            # note is not blue") is exactly as evaluable as a Name one, and
+            # the player records both the same way — by crossing the colour
+            # off that descriptor's row.
+            var dcat: int = int(f.get("cat", -1))
+            var dstar: int = int(f.get("star", -1))
+            var gcat: int = int(f.get("group_cat", -1))
+            var gkey: int = int(f.get("group_key", -1))
+            if dstar < 0 or dstar >= _host._star_count:
+                return false
+            var possible: Array = _stars_possible_for_descriptor(dcat, dstar)
+            if possible.is_empty():
+                return false
+            for ps in possible:
+                if _raw_group_key(gcat, int(ps)) == gkey:
+                    return false   # still could be a member — not yet entailed
+            return true
         "values_all_different":
             var cat: int = int(f.get("cat", -1))
             var stars: Array = f.get("stars", [])
@@ -4530,6 +4605,9 @@ const SCOREABLE_DISCLOSURE_KINDS: Array = [
     "ordinal_adjacent", "ordinal_offset", "ordinal_range",
     "ordinal_either_or", "ordinal_extreme", "ordinal_count_before",
     "values_all_different", "values_same", "descriptor_either_or",
+    # Group Negation (Form 24). Descriptor-keyed so a Sequence subject
+    # scores exactly like a Name one -- see _disclosure_satisfied.
+    "descriptor_not_in_group",
     # CACHE_VERSION 6 content, added 2026-08-12. Only present on clues
     # generated after that date — older saves' distance clues carry no
     # distance disclosure and score exactly as they did before.
@@ -4986,7 +5064,6 @@ func _candidate_stars_for_record(record_idx: int) -> Array:
     if _candidate_star_cache.has(record_idx):
         return _candidate_star_cache[record_idx]
 
-    var r: Dictionary = _match_records[record_idx]
     var out: Array = []
     var pinned: int = _effective_star_idx(record_idx)
     if pinned >= 0 and pinned < _host._star_count:
@@ -5245,7 +5322,7 @@ func _settle_identity_from_value_columns() -> void:
                 and _host._star_names.size() != _host._star_count:
             continue
         if int(cat) == ConstellationLogicPuzzle.Category.SEQUENCE \
-                and _host._pitch_rank_solution.size() != _host._star_count:
+                and _host._sequence_rank_solution.size() != _host._star_count:
             continue
 
         # Value handles. Every descriptor in this engine is addressed as

@@ -49,7 +49,7 @@ func run() -> void:
 	h._star_degrees = []
 	for _s in scn:
 		h._star_degrees.append(0)
-	h._pitch_rank_solution = g.pitch_rank_solution
+	h._sequence_rank_solution = g.sequence_rank_solution
 	h._pitch_freqs = cd.get_note_freqs(0)
 	h._star_pitch_index = cd.get_note_assignment(0)
 	h._form_clues_cache = g.chosen_form_clues
@@ -64,7 +64,7 @@ func run() -> void:
 	# The reported shape: a sequence row that has resolved to a star, and a
 	# separate star-widget record for that same star.
 	var star: int = 6
-	var pos: int = int(g.pitch_rank_solution[star]) + 1
+	var pos: int = int(g.sequence_rank_solution[star]) + 1
 	var note: String = h._widgets._note_name_for_star(star)
 	var seq_rec: int = e._get_or_create_match_record_for_seq(pos)
 	# The player's own entry against that sequence row: this name is not it.

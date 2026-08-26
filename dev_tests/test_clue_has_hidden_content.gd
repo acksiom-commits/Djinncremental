@@ -132,27 +132,45 @@ func run() -> void:
 	# matrix is the right one: cheap, and it tests the actual invariant
 	# ("does Mutual Exclusion ever emit a zero-content clue") rather than
 	# hoping generation-plus-pruning happens to preserve an instance of it.
-	var mx_cd: Dictionary = cd.get_constellation_def(0)
-	var mx_scn: int = int(mx_cd["star_count"])
-	var mx_g = load("res://constellation_logic_puzzle.gd").new()
-	var mx_sq: Array = []
-	for mi in range(mx_scn):
-		mx_sq.append(mi)
-	mx_g.setup(mx_scn, mx_cd["line_pairs"], mx_sq, 11, 0, mx_cd.get("name_theme", {}),
-		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
-	mx_g._build_record_array()
-	mx_g._build_matrix()
-	var mx_name_revealed: Array = []
-	for _mn in mx_scn:
-		mx_name_revealed.append(false)
-	var mx_tier_counts: Dictionary = {1: 0, 2: 0, 3: 0}
-	var mx_form_counts: Dictionary = {}
-	for _attempt in 60:
-		mx_g._try_build_and_commit(13, [], mx_name_revealed, mx_tier_counts, mx_form_counts)
-	for mx_clue in mx_g.chosen_form_clues:
-		all_clues.append(mx_clue)
+	# MORE MATRICES, NOT MORE ATTEMPTS. One scratch matrix yields ~4 Mutex
+	# clues and then saturates — every cell the Form could use is marked
+	# used, so further attempts all fail. Raising 60 attempts to 250 on a
+	# single matrix changed the yield by exactly zero. Only one of those 4
+	# was the identity variant this check targets, and a denominator of 1
+	# is luck rather than a sample (more so since 2026-08-19, when the
+	# non-reducible shapes began being rejected instead of rendered).
+	#
+	# Each fresh matrix is a _build_record_array + _build_matrix with no
+	# solver work, so a dozen of them is still far cheaper than one puzzle.
+	var mx_total: int = 0
+	for mx_cid in CONSTELLATIONS:
+		var mx_cd: Dictionary = cd.get_constellation_def(mx_cid)
+		if mx_cd.is_empty() or not (mx_cd.get("line_pairs") is Array) \
+				or (mx_cd["line_pairs"] as Array).is_empty():
+			continue
+		for mx_seed in [11, 77, 4242, 31337, 5150, 2027]:
+			var mx_scn: int = int(mx_cd["star_count"])
+			var mx_g = load("res://constellation_logic_puzzle.gd").new()
+			var mx_sq: Array = []
+			for mi in range(mx_scn):
+				mx_sq.append(mi)
+			mx_g.setup(mx_scn, mx_cd["line_pairs"], mx_sq, mx_seed, mx_cid,
+				mx_cd.get("name_theme", {}), cd.get_note_assignment(mx_cid),
+				cd.get_note_freqs(mx_cid), null)
+			mx_g._build_record_array()
+			mx_g._build_matrix()
+			var mx_name_revealed: Array = []
+			for _mn in mx_scn:
+				mx_name_revealed.append(false)
+			var mx_tier_counts: Dictionary = {1: 0, 2: 0, 3: 0}
+			var mx_form_counts: Dictionary = {}
+			for _attempt in 60:
+				mx_g._try_build_and_commit(13, [], mx_name_revealed, mx_tier_counts, mx_form_counts)
+			for mx_clue in mx_g.chosen_form_clues:
+				all_clues.append(mx_clue)
+				mx_total += 1
 	print("  supplementary Mutual Exclusion clues built directly (bypassing prune): %d"
-		% mx_g.chosen_form_clues.size())
+		% mx_total)
 
 	# ── SECOND VACUITY CLASS: tautology, not map-readability ─────────────
 	#
@@ -170,14 +188,35 @@ func run() -> void:
 	# already skips same-axis pairs precisely because they carry nothing. So
 	# a "different stars" clue with zero False cells is a clue that says
 	# nothing at all, and that is exactly what is asserted here.
-	print("\n  --- tautology check: 'all different stars' with no content ---")
+	# RETARGETED 2026-08-19. This used to select on the literal text "are
+	# all different stars", which no longer exists: that phrasing was
+	# retired because it spent most of its length restating the obvious
+	# ("the star that fires 9th note, the star that fires 15th note ... are
+	# all different" — two Sequence descriptors are distinct by
+	# construction). The identity variant now renders as a negation,
+	# "Neither the 9th nor the 15th plays B4".
+	#
+	# Selecting on text would now be ambiguous, since Dual Negation writes
+	# the same "Neither ... nor ..." shape. The identity variant is instead
+	# exactly the Mutual Exclusion clue WITHOUT a values_all_different
+	# disclosure — that kind is emitted only on the Colour/Pitch axis,
+	# where the clue's content is same-axis value distinctness rather than
+	# cross-axis identity.
+	print("\n  --- tautology check: identity-variant Mutual Exclusion with no content ---")
 	var empty_distinct: int = 0
 	var distinct_clues: int = 0
 	var total_false_cells: int = 0
 	var shown: int = 0
 	for clue in all_clues:
 		var c2: Dictionary = clue
-		if not str(c2.get("text", "")).contains("are all different stars"):
+		if str(c2.get("form_name", "")) != "Mutual Exclusion":
+			continue
+		var value_variant: bool = false
+		for d in (c2.get("disclosures", []) as Array):
+			if d is Dictionary and str((d as Dictionary).get("kind", "")) == "values_all_different":
+				value_variant = true
+				break
+		if value_variant:
 			continue
 		distinct_clues += 1
 		var false_cells: int = 0
@@ -191,7 +230,7 @@ func run() -> void:
 		if shown < 5:
 			print("    TAUTOLOGY: %s" % str(c2.get("text", "")))
 			shown += 1
-	print("    'all different stars' clues in sample: %d, cross-axis cells among them: %d"
+	print("    identity-variant Mutex clues in sample: %d, cross-axis cells among them: %d"
 		% [distinct_clues, total_false_cells])
 	# The check states its own denominator, because "0 tautologies" is also
 	# what a check that inspected NOTHING would report — either because the
@@ -199,13 +238,13 @@ func run() -> void:
 	# in-memory clue dicts (the generator writes grid_updates; `cells`
 	# appears at the persist boundary). Both would pass silently.
 	ok(distinct_clues > 0,
-		"the sample actually contains 'all different stars' clues (%d) — "
+		"the sample actually contains identity-variant Mutual Exclusion clues (%d) — "
 			% distinct_clues + "otherwise the check below proves nothing")
 	ok(total_false_cells > 0,
 		"and their cross-axis cells are readable here (%d) — a 0 would mean "
 			% total_false_cells + "this is reading an encoding that does not exist yet")
 	ok(empty_distinct == 0,
-		"no 'all different stars' clue is a tautology — each records at least "
+		"no identity-variant Mutual Exclusion clue is a tautology — each records at least "
 			+ "one cross-axis distinctness cell (%d empty)" % empty_distinct)
 	ok(bad == 0,
 		"every clue names at least one Name or Sequence value — nothing is "

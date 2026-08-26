@@ -626,7 +626,120 @@ func _batch_roll_monads(amount: BigNum) -> void:
         _roll_monads_simplex(amount, unlocked)
 
 
+# ==================================================
+# TUTORIAL VARIETY BACKSTOP
+# ==================================================
+# The 2nd Volition is SUPPOSED to be introduced by enqueue_first_particle()
+# ("Two Volitions!"), which root_ui gates on all_tetrads_done AND a Particle
+# existing. But _check_volition_grant() hands out Volitions purely on
+# archon_foci crossing 5 / 25 / 125, with no reference to that chain — so if
+# Foci reach 25 through unrelated milestones first, Volition #2 arrives
+# silently, before the dialogue that explains it.
+#
+# The realistic way that happens: the "All Monads — 100 of each type
+# created: +1 Focus" award (root_ui's monad_all totals milestone) lands
+# while the Tetrad randomiser still has not rolled all 15 varieties, since
+# the rare compositions (4-of-a-kind, and the 3+1 medials) can go a long
+# time unseen on pure chance.
+#
+# Same bug class as the Uonite reveal fixed earlier — a raw Foci threshold
+# racing a dialogue chain — but fixed from the other end: rather than
+# re-gating the Volition, guarantee the varieties finish first, which is
+# what the intended ordering assumed all along.
+#
+# SELF-LIMITING TO THE TUTORIAL: it only ever acts while some variety has
+# never been created. Once all 15 exist, _missing_tetrad_varieties() is
+# empty forever and this is dead weight costing one dictionary scan.
+
+## Exact monad composition (solid, liquid, gas) for each variety — the
+## inverse of _resolve_tetrad's partition table, and it must be kept in step
+## with it. Every partition of 4 into 3 parts appears exactly once, so this
+## can force ANY variety, not just the common ones.
+const TETRAD_COMPOSITIONS := {
+    "adaemant": [4, 0, 0], "aquae": [0, 4, 0], "aethyr": [0, 0, 4],
+    "earth":    [2, 1, 1], "water": [1, 2, 1], "air":    [1, 1, 2],
+    "mud":      [2, 2, 0], "dust":  [2, 0, 2], "cloud":  [0, 2, 2],
+    "dirt":     [3, 1, 0], "sand":  [3, 0, 1], "haze":   [1, 0, 3],
+    "mist":     [0, 1, 3], "ooze":  [1, 3, 0], "foam":   [0, 3, 1],
+}
+
+## Window, measured the same way root_ui measures the award this races:
+## the MINIMUM of the three monad totals-ever-created. Using the same metric
+## is what guarantees ordering — min crosses 90 strictly before it crosses
+## the 100 that triggers the Focus.
+const TUTORIAL_FORCE_MIN_MONADS: int = 90
+## Above this, stop trickling and force everything still missing. A big
+## production batch can jump the whole window in one tick, so the trickle
+## alone is not a guarantee; this is the deadline that makes it one.
+const TUTORIAL_FORCE_DEADLINE_MONADS: int = 95
+
+
+func _missing_tetrad_varieties() -> Array:
+    var missing: Array = []
+    for key in TETRAD_COMPOSITIONS:
+        if gc.totals_created.get(key, BigNum.zero()).is_zero():
+            missing.append(key)
+    return missing
+
+
+## Lowest of the three monad totals-ever-created, as an int (these are in
+## the low hundreds during the tutorial, so int is safe here).
+func _min_monad_total() -> int:
+    var lowest: BigNum = null
+    for k in ["monad_solid", "monad_liquid", "monad_gas"]:
+        var v: BigNum = gc.totals_created.get(k, BigNum.zero())
+        if lowest == null or v.is_less_than(lowest):
+            lowest = v
+    return 0 if lowest == null else lowest.to_int()
+
+
+## Forces one (or, past the deadline, every) still-unseen variety, paying
+## the normal recipe cost so this cannot be used as free resources. Returns
+## how many it actually made.
+##
+## Trickles ONE per batch inside the window rather than dumping all fifteen
+## at once, so the tail of the set fills in looking like ordinary luck
+## instead of a visible glitch.
+func _force_missing_tetrad_varieties() -> int:
+    var missing: Array = _missing_tetrad_varieties()
+    if missing.is_empty():
+        return 0
+    var monads: int = _min_monad_total()
+    if monads < TUTORIAL_FORCE_MIN_MONADS:
+        return 0
+    var budget: int = missing.size() if monads >= TUTORIAL_FORCE_DEADLINE_MONADS else 1
+
+    var made: int = 0
+    for key in missing:
+        if made >= budget:
+            break
+        var comp: Array = TETRAD_COMPOSITIONS[key]
+        var s: int = int(comp[0])
+        var l: int = int(comp[1])
+        var g: int = int(comp[2])
+        # Affordability, checked against the SAME guards a normal assembly
+        # uses — a locked monad type or missing Sparks must block a forced
+        # variety exactly as it blocks a rolled one.
+        if gc.monad["solid"].is_less_than(BigNum.from_int(s)) \
+                or gc.monad["liquid"].is_less_than(BigNum.from_int(l)) \
+                or gc.monad["gas"].is_less_than(BigNum.from_int(g)):
+            continue
+        if not gc.spend_sparks(1):
+            break   # out of Sparks entirely; nothing further will succeed
+        if not gc.spend_monad(s, l, g):
+            continue   # locked type — refunding the Spark is not worth the coupling
+        gc.tetrad[key] = gc.tetrad[key].add(BigNum.one())
+        gc.add_to_total(key, BigNum.one())
+        made += 1
+    return made
+
+
 func _batch_assemble_tetrads(amount: BigNum) -> void:
+    # Runs BEFORE the random assembly below, and independently of whether
+    # that assembly can afford anything — the backstop's whole job is to
+    # complete the set on a schedule, not to piggyback on a successful roll.
+    _force_missing_tetrad_varieties()
+
     var s_avail = BigNum.zero() if gc.is_locked("monad_solid")  else gc.monad["solid"]
     var l_avail = BigNum.zero() if gc.is_locked("monad_liquid") else gc.monad["liquid"]
     var g_avail = BigNum.zero() if gc.is_locked("monad_gas")    else gc.monad["gas"]
@@ -1112,6 +1225,15 @@ func _draw_monad_composition(count: int, candidate_keys: Array) -> Array:
 
 
 func _try_assemble_tetrad() -> bool:
+    # The manual path does NOT route through _batch_assemble_tetrads, so the
+    # tutorial variety backstop has to be invoked here as well or a player
+    # who assembles Tetrads by hand never gets it. Same manual-vs-batch
+    # divergence that has bitten this file before (see manual_mote_compress
+    # skipping _add_resource's counters) — the two paths share
+    # _draw_monad_composition and _resolve_tetrad but nothing else, so
+    # anything added to one has to be checked against the other.
+    _force_missing_tetrad_varieties()
+
     var sparks_cost: int = _recipe_cost("tetrad_assemble", "sparks")
     var monad_draws: int = _recipe_cost("tetrad_assemble", "monad")
     if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false

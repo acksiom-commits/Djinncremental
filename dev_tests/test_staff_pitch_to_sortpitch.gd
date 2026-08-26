@@ -38,7 +38,7 @@ func configure(host) -> void:
     host._star_degrees = [2, 2, 3, 1]
     host._pitch_freqs = [440.0, 493.88, 523.25, 554.37]
     host._star_pitch_index = [0, 1, 2, 3]
-    host._pitch_rank_solution = [0, 1, 2, 3]
+    host._sequence_rank_solution = [0, 1, 2, 3]
 
 
 func report(d, w, target_note: String, slot_rec: int, label: String) -> void:

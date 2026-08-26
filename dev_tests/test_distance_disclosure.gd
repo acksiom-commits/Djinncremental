@@ -100,6 +100,14 @@ func run() -> void:
 		seq0.append(i)
 	lp0.setup(sc0, def0["line_pairs"], seq0, 31337, 0, def0.get("name_theme", {}),
 		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
+	# Unpruned on purpose. Every check in this file is about clue CONTENT
+	# and the deduction engine's reading of it, not about what survives
+	# minimization -- so a pruned ~36-clue puzzle is the wrong fixture: it
+	# left Part 2b exactly ONE hidden-side distance constraint, which
+	# happened not to narrow, and the suite went red on "0 of 1" with
+	# nothing actually broken. Pruning is verified on its own terms in
+	# test_prune_protects_anchors.gd and the probe measurements.
+	lp0.prune_enabled = false
 	await lp0.generate_clues_forms()
 
 	var emitted := 0
@@ -141,7 +149,7 @@ func run() -> void:
 	host2._star_degrees = []
 	for s in sc0:
 		host2._star_degrees.append(0)
-	host2._pitch_rank_solution = lp0.pitch_rank_solution
+	host2._sequence_rank_solution = lp0.sequence_rank_solution
 	host2._pitch_freqs = cd.get_note_freqs(0)
 	host2._star_pitch_index = cd.get_note_assignment(0)
 	host2._rebuild_star_distances()
@@ -309,7 +317,7 @@ func run() -> void:
 	h3._star_degrees = []
 	for _s3 in sc0:
 		h3._star_degrees.append(0)
-	h3._pitch_rank_solution = lp0.pitch_rank_solution
+	h3._sequence_rank_solution = lp0.sequence_rank_solution
 	h3._pitch_freqs = cd.get_note_freqs(0)
 	h3._star_pitch_index = cd.get_note_assignment(0)
 	h3._form_clues_cache = lp0.chosen_form_clues
@@ -372,6 +380,7 @@ func run() -> void:
 				sq.append(i)
 			g.setup(scn, cdef["line_pairs"], sq, seed_v, cid, cdef.get("name_theme", {}),
 				cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
+			g.prune_enabled = false   # soundness sweep wants every clue, see above
 			await g.generate_clues_forms()
 
 			var h = OverlayScene.instantiate()
@@ -385,7 +394,7 @@ func run() -> void:
 			h._star_degrees = []
 			for _s in scn:
 				h._star_degrees.append(0)
-			h._pitch_rank_solution = g.pitch_rank_solution
+			h._sequence_rank_solution = g.sequence_rank_solution
 			h._pitch_freqs = cd.get_note_freqs(cid)
 			h._star_pitch_index = cd.get_note_assignment(cid)
 			h._form_clues_cache = g.chosen_form_clues

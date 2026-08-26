@@ -1,10 +1,11 @@
 extends "res://dev_tests/test_base.gd"
-# PLAYER-CONTROLLED CLUE STATE (built 2026-08-14, replacing the utility
-# categorisation).
+# PLAYER-CONTROLLED CLUE STATE (built 2026-08-14; Used Up renamed to Notes
+# 2026-08-24, same right-click gesture, plus a freeform text half).
 #
 #   GREEN    untouched
 #   MAGENTA  the player marked something the clue NAMES
-#   USED UP  the player right-clicked it; right-click again restores it
+#   NOTES    the player right-clicked it (clue reference), or typed it
+#            (freeform text) — right-click / the row's × removes it
 #
 # The trap this pins hardest: "the player marked it" must EXCLUDE the
 # sibling-clearing fallout of a confirm. Confirming one name sets
@@ -42,11 +43,15 @@ func run() -> void:
 	await process_frame
 	# The scene must still expose every tab button the scripts bind to —
 	# these are .tscn node paths, so a rename breaks them silently at load.
-	ok(h._tab_clues != null and h._tab_used_up != null and h._tab_guide != null
+	ok(h._tab_clues != null and h._tab_notes != null and h._tab_guide != null
 			and h._tab_search != null and h._tab_hint != null,
 		"all five tab buttons resolve from the scene")
 	ok(h._tab_clues.text == "Clues" and h._tab_hint.text == "HINT",
 		"tabs are labelled Clues / ... / HINT")
+	# The Notes entry box is a PERSISTENT node (never rebuilt with the clue
+	# rows — see its @onready comment) — same silent-break-on-rename risk.
+	ok(h._notes_entry_box != null and h._notes_text_edit != null and h._notes_add_button != null,
+		"the Notes entry box (TextEdit + ADD button) resolves from the scene")
 
 	h._cd = cd
 	h._constellation_id = 0
@@ -56,7 +61,7 @@ func run() -> void:
 	h._star_degrees = []
 	for _s in scn:
 		h._star_degrees.append(0)
-	h._pitch_rank_solution = g.pitch_rank_solution
+	h._sequence_rank_solution = g.sequence_rank_solution
 	h._pitch_freqs = cd.get_note_freqs(0)
 	h._star_pitch_index = cd.get_note_assignment(0)
 	h._form_clues_cache = g.chosen_form_clues
@@ -132,35 +137,57 @@ func run() -> void:
 	ok(e.player_marked_terms().has("N:" + str(g.star_names[1])),
 		"a manual block counts as a player mark")
 
-	# ── retire / restore ────────────────────────────────────────────────
-	print("\n=== right-click retires, right-click restores ===")
+	# ── right-click files a clue into Notes, right-click un-files it ─────
+	print("\n=== right-click files to Notes, right-click un-files ===")
 	var some: String = ""
 	for clue in h._widgets._all_final_clues_for_tabs():
 		some = str((clue as Dictionary).get("text", ""))
 		if some != "":
 			break
-	ok(not e.is_clue_retired(some), "clue starts in the working list")
-	e.toggle_clue_retired(some)
-	ok(e.is_clue_retired(some), "right-click retires it to Used Up")
-	e.toggle_clue_retired(some)
-	ok(not e.is_clue_retired(some), "right-click again brings it back")
+	ok(not e.is_clue_noted(some), "clue starts in the working list")
+	e.toggle_clue_noted(some)
+	ok(e.is_clue_noted(some), "right-click files it to Notes")
+	e.toggle_clue_noted(some)
+	ok(not e.is_clue_noted(some), "right-click again brings it back")
 
-	# ── retirement persists, and does not leak across constellations ────
+	# ── freeform text notes: add, list order, remove ─────────────────────
+	print("\n=== freeform notes: add, order, remove ===")
+	ok(e._note_entries.is_empty(), "no notes on a fresh board")
+	e.add_note_entry("  first note  ")   # deliberately padded
+	e.add_note_entry("second note")
+	ok(e._note_entries.size() == 2, "two notes recorded (%d)" % e._note_entries.size())
+	ok(e._note_entries[0] == "first note", "leading/trailing space trimmed on add")
+	ok(e._note_entries[1] == "second note", "insertion order preserved, not sorted")
+	e.add_note_entry("   ")
+	ok(e._note_entries.size() == 2, "a blank/whitespace-only note is rejected, not appended")
+	e.remove_note_entry(0)
+	ok(e._note_entries.size() == 1 and e._note_entries[0] == "second note",
+		"remove_note_entry(0) drops the first entry, the second shifts up")
+
+	# ── both halves persist, and neither leaks across constellations ────
 	print("\n=== persistence ===")
 	# set_player_puzzle_notes early-returns unless a puzzle cache entry
 	# exists for this constellation. The harness builds its puzzle by hand
 	# and never populated one, so give it the minimum to write into.
 	if not cd._puzzle_cache.has("0"):
 		cd._puzzle_cache["0"] = {}
-	e.toggle_clue_retired(some)      # also writes the notes
+	e.toggle_clue_noted(some)      # also writes the notes
 	var notes: Dictionary = cd.get_player_puzzle_notes(0)
+	# WIRE KEY STAYS "retired_clues" (save compatibility — see
+	# _save_puzzle_notes' comment); only the in-code identifier renamed.
 	ok((notes.get("retired_clues", []) as Array).has(some),
-		"the retired set reaches the save notes")
-	e._retired_clues.clear()
-	ok(not e.is_clue_retired(some), "cleared in memory")
+		"the noted-clue set reaches the save notes")
+	ok((notes.get("note_text_entries", []) as Array).has("second note"),
+		"the freeform note reaches the save notes too")
+	e._noted_clue_refs.clear()
+	e._note_entries.clear()
+	ok(not e.is_clue_noted(some) and e._note_entries.is_empty(), "cleared in memory")
 	for t2 in (notes.get("retired_clues", []) as Array):
-		e._retired_clues[str(t2)] = true
-	ok(e.is_clue_retired(some), "and restores from the notes")
+		e._noted_clue_refs[str(t2)] = true
+	for n2 in (notes.get("note_text_entries", []) as Array):
+		e._note_entries.append(str(n2))
+	ok(e.is_clue_noted(some), "clue reference restores from the notes")
+	ok(e._note_entries.has("second note"), "freeform note restores from the notes")
 
 	h.queue_free()
 	print("\nALL PASS (%d failures)" % fails if fails == 0 else "\nFAILURES (%d failures)" % fails)

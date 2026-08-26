@@ -699,6 +699,40 @@ func _on_monad_random_dialogue_ended() -> void:
     _reveal_panel("allocation_wheel")
 
 
+## Whether the SECOND Volition is allowed to be granted yet.
+##
+## Deliberately the exact same condition root_ui's `_first_particle_triggered`
+## entry uses to fire enqueue_first_particle() — the "Two Volitions!"
+## dialogue. Matching it means the grant and its explanation become
+## simultaneous instead of racing, which is the whole point.
+##
+## Both halves are required because the design is "all fifteen Tetrad
+## varieties, THEN a Particle": all_tetrads_done alone would still let the
+## Volition land at the instant the last variety appears, before a Particle
+## has ever been built and so before the dialogue can queue.
+## LATCHES OPEN PERMANENTLY once the dialogue has played, and that is not
+## optional. game_context's reset zeroes `particle` (see its
+## `particle = BigNum.zero()`), while _check_volition_grant() is called
+## right after a prestige specifically to re-grant Volitions from lifetime
+## Foci. A purely live condition would therefore re-close every prestige
+## and claw the player back to one Volition until they rebuilt a Particle —
+## turning a one-time tutorial gate into a recurring tax.
+##
+## first_particle_done is the right latch: it is the dialogue's own
+## persisted flag, so it survives prestige, needs no new save field, and
+## means exactly "the player has been told about the second Volition".
+func _second_volition_gate_open() -> bool:
+    if not game_context or not archon_dialogue_manager:
+        return false
+    if archon_dialogue_manager.first_particle_done:
+        return true
+    # First-time opening, before the dialogue has queued: the same compound
+    # condition the first_particle trigger fires on. Its effect calls
+    # _grant_foci() -> here, so the grant lands in the same frame the
+    # dialogue queues, rather than racing it.
+    return archon_dialogue_manager.all_tetrads_done and not game_context.particle.is_zero()
+
+
 func _check_volition_grant() -> void:
     if not game_context or not archon_dialogue_manager:
         return
@@ -708,6 +742,24 @@ func _check_volition_grant() -> void:
     while foci >= threshold:
         volitions_earned += 1
         threshold        *= 5
+    # THE SECOND VOLITION IS GATED, NOT MERELY THRESHOLDED.
+    #
+    # Foci arrive from many unrelated milestones (resource firsts, totals
+    # thresholds, Expansion counts, Tetrad categories), so crossing 25 says
+    # nothing about tutorial progress. Ungated, a player could be handed
+    # Volition #2 with no idea where it came from — the same decoupling
+    # that showed the Uonite button early, see the note below.
+    #
+    # Capped to 1 rather than skipped: reaching 125 Foci before the gate
+    # opens must not grant a THIRD Volition either, and the cap re-applies
+    # every call, so nothing accumulates behind it. Nothing is ever taken
+    # BACK — the grant below only ever adds — so a save that already got
+    # its early Volition keeps it.
+    #
+    # Re-checked automatically when the gate opens: the first_particle
+    # trigger's own effect calls _grant_foci(), which calls this.
+    if volitions_earned > 1 and not _second_volition_gate_open():
+        volitions_earned = 1
     if volitions_earned > game_context.volitions:
         var to_grant = volitions_earned - game_context.volitions
         game_context.volitions += to_grant
@@ -905,6 +957,12 @@ func _on_constellation_selected_logic_puzzle(constellation_id: int) -> void:
     if not cached.is_empty():
         var puzzle := ConstellationLogicPuzzle.new()
         if puzzle.from_cache_dict(cached):
+            # Dump the ALREADY-generated puzzle too, not just freshly built
+            # ones. The generation-time dump never fires for a puzzle that
+            # is being served from cache, which is every puzzle after the
+            # session that created it — i.e. exactly the one being played.
+            if puzzle.DEBUG_DUMP_CLUES:
+                puzzle.debug_dump_clueset("loaded from cache")
             return
 
     # Cache miss — generate now (should only happen on first run before

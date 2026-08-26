@@ -56,7 +56,7 @@ func run() -> void:
 	h._star_degrees = []
 	for _s in scn:
 		h._star_degrees.append(0)
-	h._pitch_rank_solution = g.pitch_rank_solution
+	h._sequence_rank_solution = g.sequence_rank_solution
 	h._pitch_freqs = cd.get_note_freqs(0)
 	h._star_pitch_index = cd.get_note_assignment(0)
 	h._form_clues_cache = g.chosen_form_clues

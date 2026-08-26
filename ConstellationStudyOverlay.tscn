@@ -90,10 +90,12 @@ vertical_alignment = 1
 
 [node name="TuningForkButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=2140373983]
 layout_mode = 2
+size_flags_vertical = 4
 text = "  SOLVE  "
 
 [node name="PitchListenButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=1256225004]
 layout_mode = 2
+size_flags_vertical = 4
 text = "  LISTEN  "
 
 [node name="SelectedClueDisplay" type="RichTextLabel" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=1600000001]
@@ -104,11 +106,15 @@ size_flags_vertical = 4
 theme_override_colors/default_color = Color(0.82, 0.78, 0.92, 1)
 theme_override_font_sizes/normal_font_size = 19
 bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 3
 text = "Select a clue below to pin it here."
 
 [node name="CloseButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox" unique_id=1515545597]
 custom_minimum_size = Vector2(32, 32)
 layout_mode = 2
+size_flags_vertical = 4
 focus_mode = 0
 theme_override_colors/font_color = Color(1, 0.5, 0.5, 1)
 theme_override_font_sizes/font_size = 19
@@ -176,12 +182,12 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 19
 text = "Clues"
 
-[node name="TabUsedUp" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=394915045]
+[node name="TabNotes" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=394915045]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_font_sizes/font_size = 19
-text = "Used Up"
+text = "Notes"
 
 [node name="TabGuide" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar" unique_id=1922528263]
 layout_mode = 2
@@ -219,6 +225,24 @@ text = " RESET "
 custom_minimum_size = Vector2(0, 1)
 layout_mode = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_header_sep")
+
+[node name="NotesEntryBox" type="VBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=1600000010]
+layout_mode = 2
+theme_override_constants/separation = 4
+visible = false
+
+[node name="NotesTextEdit" type="TextEdit" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/NotesEntryBox" unique_id=1600000011]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+placeholder_text = "Type a note to yourself and press ADD NOTE..."
+wrap_mode = 1
+
+[node name="NotesAddButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/NotesEntryBox" unique_id=1600000012]
+layout_mode = 2
+focus_mode = 0
+theme_override_font_sizes/font_size = 16
+text = "ADD NOTE"
 
 [node name="SortSubTabBar" type="HBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=1278433470]
 layout_mode = 2

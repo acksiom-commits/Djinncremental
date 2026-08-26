@@ -148,7 +148,7 @@ const KNOWN_UNTRIAGED_STUB := {}
 ## behind LISTEN and tracked per record as "pitch_revealed", so reading a
 ## frequency the player has not listened to is as much a leak as reading a
 ## name. An earlier draft of this rule wrongly exempted it.
-const IDENTITY_GROUND_TRUTH := ["star_names[", "pitch_rank_solution["]
+const IDENTITY_GROUND_TRUTH := ["star_names[", "sequence_rank_solution["]
 
 ## name -> reason. A function that legitimately bridges position and
 ## identity (there should be very few, and each is a place the puzzle is

@@ -47,7 +47,7 @@ func run() -> void:
 	host._star_degrees = [5, 5, 6, 6, 7, 7]
 	host._pitch_freqs = [440.0, 493.88, 523.25, 554.37]
 	host._star_pitch_index = [0, 1, 2, 3, 0, 1]
-	host._pitch_rank_solution = [0, 1, 2, 3, 0, 1]
+	host._sequence_rank_solution = [0, 1, 2, 3, 0, 1]
 	host._widgets.clear_pitch_caches()
 	var d = host._deduction
 

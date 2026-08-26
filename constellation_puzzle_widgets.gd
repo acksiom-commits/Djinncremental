@@ -40,6 +40,45 @@ func setup(host: ConstellationStudyOverlay, deduction: ConstellationPuzzleDeduct
     _deduction = deduction
 
 
+# ==================================================
+# SCREEN-SPACE POPUP CLAMPING
+# ==================================================
+# The Staff popup, Name checklist, and Pitch checklist are all PopupPanel
+# (i.e. Window) — entirely outside the Control clipping hierarchy that
+# protects every other panel element, positioned in real screen pixels.
+# Reported live: they can render over the pinned-clue box at the top of
+# the header. The existing mitigation (_staff_popup's column-count scaling,
+# see _open_staff_popup) only ever shrinks a popup's OWN height; it was
+# never a guarantee the popup stays below any particular line, so a large
+# constellation (more Name rows even after column-scaling) or Godot's own
+# generic off-screen-avoidance (which only knows about the SCREEN edge, not
+# this app's header) can both still push one up over the clue box.
+#
+# The actual invariant — no popup's top edge renders above the header — was
+# never enforced anywhere. This is that enforcement, applied once at the
+# tail of each of the three _open_*_popup functions rather than at every
+# call site, so it also covers the re-open-at-current-position calls
+# (toggling a checklist row) for free.
+
+## Screen-space Y a popup's top edge must never render above: the header's
+## bottom edge (HeaderSeparator, the 1px line under HeaderHBox). Read live,
+## not cached — SelectedClueDisplay now grows to fit a long pinned clue
+## (fit_content), so the header's height is no longer a fixed number.
+func _popup_min_screen_y() -> float:
+    var sep: Control = _host._header_separator
+    if sep == null or not is_instance_valid(sep):
+        return 0.0
+    var local_bottom: Vector2 = sep.global_position + Vector2(0, sep.size.y)
+    return (sep.get_viewport().get_screen_transform() * local_bottom).y
+
+
+## Apply to every screen_pos handed to a PopupPanel's open()/position —
+## floors Y at the header boundary, leaves X untouched.
+func _clamp_popup_screen_pos(screen_pos: Vector2) -> Vector2:
+    screen_pos.y = maxf(screen_pos.y, _popup_min_screen_y())
+    return screen_pos
+
+
 ## Character budget for the middle sequence field (the explicit
 ## candidate-position list, e.g. "1,4-8,12-15"). Was a flat max_length=12,
 ## which silently truncated real clue-derived lists — confirmed live: a
@@ -69,7 +108,7 @@ func _max_candidate_list_length() -> int:
 ## (where it meant SEARCH) sent the search-term picker to HINT instead
 ## (reported 2026-08-14). Use these, never a literal.
 const TAB_CLUES: int = 0
-const TAB_USED_UP: int = 1
+const TAB_NOTES: int = 1
 const TAB_GUIDE: int = 2
 const TAB_SEARCH: int = 3
 const TAB_HINT: int = 4
@@ -79,8 +118,8 @@ func _set_marker_tab(tab_idx: int) -> void:
     _host._active_marker_tab = tab_idx
     _host._tab_clues.add_theme_stylebox_override("normal",
         _host._sb_tab_active if tab_idx == TAB_CLUES else _host._sb_tab_inactive)
-    _host._tab_used_up.add_theme_stylebox_override("normal",
-        _host._sb_tab_active if tab_idx == TAB_USED_UP else _host._sb_tab_inactive)
+    _host._tab_notes.add_theme_stylebox_override("normal",
+        _host._sb_tab_active if tab_idx == TAB_NOTES else _host._sb_tab_inactive)
     _host._tab_guide.add_theme_stylebox_override("normal",
         _host._sb_tab_active if tab_idx == TAB_GUIDE else _host._sb_tab_inactive)
     _host._tab_search.add_theme_stylebox_override("normal",
@@ -106,9 +145,18 @@ func _populate_markers_panel() -> void:
     for child in _host._markers_content.get_children():
         child.queue_free()
 
+    # The Notes entry box is a PERSISTENT scene node (see its @onready
+    # comment in constellation_study_overlay.gd) — it is never one of the
+    # children freed above, so its visibility has to be set explicitly on
+    # every dispatch, defaulting off here and turned on only inside
+    # _populate_notes_markers(). Getting this backwards would either hide
+    # it on the one tab that needs it, or leave it floating over every
+    # other tab's content.
+    _host._notes_entry_box.visible = false
+
     match _host._active_marker_tab:
         TAB_CLUES:   _populate_clue_markers()
-        TAB_USED_UP: _populate_used_up_markers()
+        TAB_NOTES:   _populate_notes_markers()
         TAB_GUIDE:   _populate_guide_markers()
         TAB_SEARCH:  _populate_search_markers()
         TAB_HINT:    _populate_hint_markers()
@@ -260,17 +308,23 @@ func _jump_to_selected_clue() -> void:
 func _populate_clue_markers() -> void:
     var shown: bool = false
     var marked: Dictionary = _deduction.player_marked_terms()
-    for clue in _all_final_clues_for_tabs():
+    # Indexed, not `for clue in`: the loop index IS the canonical clue
+    # number (see _clue_number_for_text), and it must keep counting past
+    # the clues this tab skips — a clue filed into Notes must not renumber
+    # everything after it.
+    var all_clues: Array[Dictionary] = _all_final_clues_for_tabs()
+    for i in all_clues.size():
+        var clue: Dictionary = all_clues[i]
         var text: String = str(clue.get("text", ""))
-        if text == "" or _deduction.is_clue_retired(text):
+        if text == "" or _deduction.is_clue_noted(text):
             continue
         _host._markers_content.add_child(
-            _make_clue_label(text, _clue_state_color(clue, marked)))
+            _make_clue_label(text, _clue_state_color(clue, marked), i + 1))
         shown = true
 
     if not shown:
         var lbl := Label.new()
-        lbl.text = "Every clue is in Used Up. Right-click one there to bring it back."
+        lbl.text = "Every clue has been filed in Notes. Right-click one there to bring it back."
         lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
         lbl.add_theme_font_size_override("font_size", 16)
         lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -297,96 +351,113 @@ func _clue_state_color(clue: Dictionary, marked: Dictionary) -> Color:
 
 
 # ============================================================================
-# DEV SPEC — PLAYER-CONTROLLED CLUE STATE (decided with the user 2026-08-14).
-# Not yet built. This replaces the utility categorisation below.
+# NOTES TAB (2026-08-24, replacing Used Up — see [[planned_player_controlled_
+# clue_state]] for the 2026-08-14 history this superseded, and this block's
+# own git history for the original DEV SPEC this tab was decided from).
 #
-# WHY THE UTILITY MODEL IS BEING RETIRED
-# Unused/Useful/UsedUp are computed from _clue_coverage_fraction — the engine
-# guessing how much of a clue the player has absorbed. It has been wrong in
-# both directions repeatedly, most recently:
+# Used Up meant "I am done with this clue" and had exactly one content type
+# (a right-clicked clue, greyed out of the working list). The player asked
+# for somewhere to keep their OWN deductions while solving — chains like the
+# one that came out of a hand-traced puzzle walkthrough, where "if X is not
+# Y then Z must be W" needs to be written down somewhere the player controls,
+# not inferred by the engine. Notes has two content types instead of one:
 #
-#   "Helios is between Nyxaos and the star that fires 5th note."
+#   - clue REFERENCES, right-click same as before (still reversible, still
+#     "right-click again to remove") — kept because pinning a specific clue
+#     in front of you while you reason about it is still useful, just no
+#     longer means "finished"
+#   - freeform TEXT, typed into the persistent entry box above the list and
+#     committed with ADD NOTE (or Enter) — the player's own words, saved
+#     verbatim, never parsed or interpreted
 #
-# filed as Used Up while all three of its stars were still wide open. Every
-# fix so far has been a better heuristic, and the next one would be too. A
-# player-driven model cannot be wrong about what the player has absorbed,
-# because it stops guessing.
-#
-# THE MODEL
-#   GREEN    every clue starts here
-#   MAGENTA  the player has entered at least one mark that OVERLAPS what this
-#            clue names
-#   USED UP  the player right-clicked it. Right-click again restores it to the
-#            working list (magenta if touched, green if not). Reversible —
-#            a misclick must not cost a puzzle.
-#
-# ATTRIBUTION — the load-bearing detail.
-# "Entered by the player" means EXACTLY that: a selection or a block the
-# player made. NOT an engine derivation, and NOT the sibling-clearing
-# fallout of a confirm — _propagate_name_states_confirmed_same_record sets
-# name_states for every OTHER name too, so counting raw state != 0 would
-# turn nearly every clue magenta on the first click. The manual_*_blocks
-# dicts already exist to tell player-driven blocks from that fallout (see
-# _on_slot_name_x) and are the right source, together with state == 1
-# confirmations.
-#
-# Overlap is by RENDERED VALUE, so it matches what the clue visibly says:
-# build the set of descriptor terms the player has actually marked
-# ("N:Heleai", "C:Blue", "P:C#5", "S:5") and turn a clue magenta when any of
-# its search_terms is in that set. One mark can turn several clues magenta,
-# which is correct — it IS information about all of them.
-#
-# search_terms is the right encoding here for the same reason the SEARCH tab
-# uses it: it is what the text VISIBLY states. `cells` records assertions the
-# text may never render, and `chars` lists nodes several Forms never show.
-# See [[clue_encodings_four_representations]].
-#
-# TABS, in this order: Clues / Used Up / Guide / Search / Hint
-# "Clues" is one working list holding both green and magenta — colour is the
-# only distinction. "Useful" disappears entirely. "Hint" is a placeholder
-# for now (see the hint note below).
-#
-# BUILT 2026-08-14. The tab buttons are scene nodes, so this needed a .tscn
-# edit as well: TabUnused became TabClues, TabUseful was deleted, TabUsedUp
-# moved up into the first row, and TabHint was added to the second.
-#
-# PERSISTENCE: the retired (right-clicked) set is player state and must
-# round-trip through the save, like notes. "Touched" does NOT need saving —
-# it is derived from the marks, which are already saved.
-#
-# ── HINT SYSTEM (idea 2026-08-14, deliberately NOT part of this change) ──
-# Players can CHARGE a hint system with further Spark endowments after the
-# third tier. Charge costs start matching the Tier amounts, to be tuned down
-# later if needed — the user's note was that Hard-mode solve times may make
-# a reduction unnecessary.
-#
-# What spending a charge DOES, current plan: point at a clue that currently
-# yields new information, WITHOUT saying what it yields. That preserves the
-# deduction and removes only the search. The engine can already identify
-# those clues, which is what makes it cheap to build. To be installed after
-# the current testing cycle, not during it.
+# Both round-trip through the save (_save_puzzle_notes), both are isolated
+# per-constellation the same way Used Up was (test_constellation_switch_
+# isolation.gd covers this).
 # ============================================================================
 
-## Clues the PLAYER retired by right-clicking. No coverage anywhere in here:
-## the engine no longer has an opinion about whether a clue is spent.
-func _populate_used_up_markers() -> void:
+## Two content types, oldest first: freeform text the player typed, then
+## clues they right-clicked in as a reference. Text entries render with a
+## remove ("×") button since there's no clue row to right-click; clue
+## references reuse _make_clue_label, so right-click still un-files them —
+## the SAME gesture and SAME "right-click again" wording as before, just
+## filing to Notes instead of Used Up.
+func _populate_notes_markers() -> void:
+    _host._notes_entry_box.visible = true
     var shown: bool = false
+
+    for i in _deduction._note_entries.size():
+        _host._markers_content.add_child(_make_note_text_row(i, str(_deduction._note_entries[i])))
+        shown = true
+
     var marked: Dictionary = _deduction.player_marked_terms()
-    for clue in _all_final_clues_for_tabs():
+    # Indexed for the same reason as the Clues tab: a clue keeps the number
+    # it has there, so filing it into Notes does not rename it.
+    var all_clues: Array[Dictionary] = _all_final_clues_for_tabs()
+    for i in all_clues.size():
+        var clue: Dictionary = all_clues[i]
         var text: String = str(clue.get("text", ""))
-        if text == "" or not _deduction.is_clue_retired(text):
+        if text == "" or not _deduction.is_clue_noted(text):
             continue
         _host._markers_content.add_child(
-            _make_clue_label(text, _clue_state_color(clue, marked)))
+            _make_clue_label(text, _clue_state_color(clue, marked), i + 1))
         shown = true
 
     if not shown:
         var lbl := Label.new()
-        lbl.text = "Nothing retired yet. Right-click a clue to move it here when you are done with it — right-click again here to put it back."
+        lbl.text = "Nothing here yet. Type a note above and press ADD NOTE, or right-click a clue to keep it in view while you work on it."
         lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
         lbl.add_theme_font_size_override("font_size", 16)
         lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         _host._markers_content.add_child(lbl)
+
+
+## One freeform note row: the text plus a small remove button. Unlike a
+## clue row there is no underlying clue to right-click, so removal is an
+## explicit control rather than a gesture on the row itself.
+func _make_note_text_row(index: int, text: String) -> PanelContainer:
+    var pc := PanelContainer.new()
+    pc.add_theme_stylebox_override("panel", _host._sb_clue_normal)
+
+    var hbox := HBoxContainer.new()
+    hbox.add_theme_constant_override("separation", 8)
+    pc.add_child(hbox)
+
+    var lbl := RichTextLabel.new()
+    lbl.bbcode_enabled = false
+    lbl.fit_content = true
+    lbl.scroll_active = false
+    lbl.text = text
+    lbl.add_theme_color_override("default_color", STATE_COLORS.confirmed)
+    lbl.add_theme_font_size_override("normal_font_size", 18)
+    lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    hbox.add_child(lbl)
+
+    var remove_btn := Button.new()
+    remove_btn.text = "×"
+    remove_btn.focus_mode = Control.FOCUS_NONE
+    remove_btn.tooltip_text = "Remove this note"
+    remove_btn.add_theme_font_size_override("font_size", 18)
+    var captured_index := index
+    remove_btn.pressed.connect(func():
+        _deduction.remove_note_entry(captured_index)
+        request_markers_rebuild())
+    hbox.add_child(remove_btn)
+
+    return pc
+
+
+## ADD NOTE button handler. TextEdit, not LineEdit — a note may reasonably
+## run to several lines, so Enter inserts a newline rather than submitting;
+## the button is the only commit path. Reads the persistent entry box
+## directly rather than being passed the text, since it is the one thing in
+## this tab that is never rebuilt (see the box's @onready comment in
+## constellation_study_overlay.gd) — there is always exactly one to read.
+func _on_notes_add_pressed() -> void:
+    var text: String = _host._notes_text_edit.text
+    _deduction.add_note_entry(text)
+    _host._notes_text_edit.text = ""
+    request_markers_rebuild()
 
 
 ## Placeholder. The mechanic: charge with further Spark endowments after the
@@ -422,14 +493,18 @@ func _populate_search_markers() -> void:
 
     var shown: bool = false
     var neutral_col := STATE_COLORS.muted
-    for clue in _all_final_clues_for_tabs():
+    # Indexed: SEARCH shows a filtered subset, so its rows must still carry
+    # each clue's canonical number rather than 1..n of whatever matched.
+    var all_clues: Array[Dictionary] = _all_final_clues_for_tabs()
+    for i in all_clues.size():
+        var clue: Dictionary = all_clues[i]
         var text: String = str(clue.get("text", ""))
         if text == "":
             continue
         if not (clue.get("search_terms", []) as Array).has(_search_term):
             continue
         var col: Color = neutral_col if int(clue.get("form_id", 0)) == 2 else STATE_COLORS.neutral
-        _host._markers_content.add_child(_make_clue_label(text, col))
+        _host._markers_content.add_child(_make_clue_label(text, col, i + 1))
         shown = true
 
     if not shown:
@@ -796,7 +871,7 @@ func _open_name_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
         if (state == 0 or state == 4) and excluded_names.has(name_str):
             state = 2
         _host._name_checklist_popup.add_name_row(name_str, state, STATE_COLORS.neutral)
-    _host._name_checklist_popup.open(record_idx, screen_pos)
+    _host._name_checklist_popup.open(record_idx, _clamp_popup_screen_pos(screen_pos))
 
 
 func _on_slot_name_check(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
@@ -922,7 +997,7 @@ func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
         if (state == 0 or state == 4) and excluded_pitches.has(note_name):
             state = 2
         _host._pitch_checklist_popup.add_pitch_row(note_name, incidence_count, state, STATE_COLORS.neutral)
-    _host._pitch_checklist_popup.open(record_idx, screen_pos)
+    _host._pitch_checklist_popup.open(record_idx, _clamp_popup_screen_pos(screen_pos))
 
 
 func _on_pitch_checklist_check(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
@@ -1518,10 +1593,49 @@ func _bbcode_for_clue_text(text: String) -> String:
     return bb
 
 
+## The clue's canonical 1-based number: its index in the puzzle's own saved
+## clue order (_form_clues_cache), NOT its position in whichever tab is
+## showing it.
+##
+## This distinction is the whole point of the feature. The number exists so
+## two people can say "clue 14" and mean the same clue, and every tab shows
+## a DIFFERENT subset — Clues hides anything filed into Notes, Notes shows
+## only those, SEARCH filters by term. Numbering by display position would
+## give the same clue a different number in each tab, and would renumber
+## the entire list the moment a clue was filed. Canonical order is fixed
+## for the life of the puzzle, and is the same numbering
+## debug_dump_clueset() prints, so a dev dump and a player's screen agree.
+##
+## Returns 0 when the text isn't found, which _clue_number_prefix renders
+## as no prefix at all rather than a wrong "0.".
+func _clue_number_for_text(text: String) -> int:
+    if text == "":
+        return 0
+    var all: Array[Dictionary] = _all_final_clues_for_tabs()
+    for i in all.size():
+        if str(all[i].get("text", "")) == text:
+            return i + 1
+    return 0
+
+
+## Dimmed "12." prefix. Muted on purpose — it is a reference handle for
+## talking about the clue, not part of what the clue says, so it must not
+## compete with the clue's own state colour.
+func _clue_number_prefix(number: int) -> String:
+    if number <= 0:
+        return ""
+    return "[color=#%s]%d.[/color]  " % [STATE_COLORS.muted.to_html(), number]
+
+
 ## `color` is the clue's player-driven state: green untouched, magenta
 ## worked on (see _clue_state_color). It used to be ignored entirely — the
 ## parameter was `_color` — because the tab itself carried the state.
-func _make_clue_label(text: String, color: Color) -> PanelContainer:
+##
+## `number` is the canonical clue number (see _clue_number_for_text); 0
+## renders no prefix. It affects the DISPLAY only — `clue_text` meta and
+## every identity comparison below still use the raw text, because that is
+## what selection, right-click filing and click-to-jump all match on.
+func _make_clue_label(text: String, color: Color, number: int = 0) -> PanelContainer:
     var pc := PanelContainer.new()
     pc.add_theme_stylebox_override("panel", _host._sb_selected if text == _host._selected_clue_text else _host._sb_clue_normal)
     pc.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -1532,7 +1646,7 @@ func _make_clue_label(text: String, color: Color) -> PanelContainer:
     rtl.fit_content = true
     rtl.scroll_active = false
     rtl.mouse_filter = Control.MOUSE_FILTER_PASS
-    rtl.text = _bbcode_for_clue_text(text)
+    rtl.text = _clue_number_prefix(number) + _bbcode_for_clue_text(text)
     rtl.add_theme_color_override("default_color", color)
     rtl.add_theme_font_size_override("normal_font_size", 18)
     rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1547,10 +1661,10 @@ func _make_clue_label(text: String, color: Color) -> PanelContainer:
             _on_clue_row_clicked(captured_text)
             pc.get_viewport().set_input_as_handled()
         elif event.button_index == MOUSE_BUTTON_RIGHT:
-            # Retire to Used Up, or bring it back from there. Symmetric on
-            # purpose: this is the player's own filing, so a misclick must
-            # cost one more click and nothing else.
-            _deduction.toggle_clue_retired(captured_text)
+            # File to Notes, or un-file from there. Symmetric on purpose:
+            # this is the player's own filing, so a misclick must cost one
+            # more click and nothing else.
+            _deduction.toggle_clue_noted(captured_text)
             # The row is about to be freed by the rebuild, so drop any
             # pin pointing at it first.
             if _host._selected_clue_text == captured_text:
@@ -1570,7 +1684,16 @@ func _on_clue_row_clicked(text: String) -> void:
     # tab instead of guessing via characteristics — a clue can in
     # principle satisfy more than one tab's filter.
     _host._selected_clue_tab = _host._active_marker_tab if _host._selected_clue_text != "" else -1
-    _host._select_clue(_bbcode_for_clue_text(_host._selected_clue_text) if _host._selected_clue_text != "" else "")
+    # The pinned readout carries the number too — it is the one clue a
+    # player is most likely to be quoting to someone else. Looked up by
+    # text rather than threaded through the click, so it stays correct no
+    # matter which tab did the pinning.
+    var pinned: String = _host._selected_clue_text
+    if pinned == "":
+        _host._select_clue("")
+    else:
+        _host._select_clue(_clue_number_prefix(_clue_number_for_text(pinned))
+            + _bbcode_for_clue_text(pinned))
     # Re-style in place rather than a full repopulate — cheaper, and a
     # repopulate would re-run every populate function's own clue filtering
     # logic just to change which one row looks selected.
@@ -2001,7 +2124,11 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
     var target_top_local: Vector2 = Vector2(panel_center_local.x, panel_center_local.y - popup_height * 0.5)
     screen_pos.y = (panel.get_viewport().get_screen_transform() * target_top_local).y
 
-    _host._staff_popup.open(seq_pos, record_idx, screen_pos)
+    # Centering in the PANEL doesn't know the header eats some of that
+    # panel's height — for a tall enough popup (many stars, even after the
+    # column-scaling above) the centered top edge lands ABOVE the header,
+    # over the clue box. This is the actual floor.
+    _host._staff_popup.open(seq_pos, record_idx, _clamp_popup_screen_pos(screen_pos))
 
 
 func _on_staff_pitch_check(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
@@ -2572,8 +2699,8 @@ func _style_range_edit(edit: LineEdit, star_color: Color) -> void:
 
 
 func _sequence_number(star_idx: int) -> int:
-    if star_idx >= 0 and star_idx < _host._pitch_rank_solution.size():
-        return _host._pitch_rank_solution[star_idx] + 1
+    if star_idx >= 0 and star_idx < _host._sequence_rank_solution.size():
+        return _host._sequence_rank_solution[star_idx] + 1
     return star_idx + 1
 
 
@@ -2788,15 +2915,19 @@ func _build_star_tags_impl() -> void:
         _host._star_map_control.add_child(root)
         _host._star_tags.append(root)
 
-        var vbox := VBoxContainer.new()
-        vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        vbox.add_theme_constant_override("separation", 1)
-        root.add_child(vbox)
-
-        var hbox := HBoxContainer.new()
-        hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        hbox.add_theme_constant_override("separation", 4)
-        root.add_child(hbox)
+        # THREE DIRECT CHILDREN, no layout container. The tags used to be a
+        # VBox (stacked) plus an HBox (inline) with one of the two shown
+        # depending on which fit — a layout container positions its own
+        # children, which made per-label placement impossible. The
+        # triangular formation needs each label placed independently, and
+        # the de-overlap pass needs to move them independently, so both
+        # containers are gone and _reposition_star_tags() sets all three
+        # positions itself.
+        #
+        # `root` stays at the origin and each label carries an absolute
+        # map-space position, so a label's position IS its rect origin —
+        # no parent-offset arithmetic anywhere in the collision code.
+        root.position = Vector2.ZERO
 
         var name_str: String = _confirmed_name_for_star(i)
         if name_str == "":
@@ -2825,64 +2956,161 @@ func _build_star_tags_impl() -> void:
         pitch_lbl.add_theme_color_override("font_color", Color(star_color.r, star_color.g, star_color.b, 0.75))
         pitch_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
-        vbox.add_child(name_lbl.duplicate())
-        vbox.add_child(seq_lbl.duplicate())
-        vbox.add_child(pitch_lbl.duplicate())
-        hbox.add_child(name_lbl)
-        hbox.add_child(seq_lbl)
-        hbox.add_child(pitch_lbl)
+        # Order is load-bearing: _reposition_star_tags() reads them back by
+        # index (0 Name, 1 Sequence, 2 Pitch) to place the triangle.
+        root.add_child(name_lbl)
+        root.add_child(seq_lbl)
+        root.add_child(pitch_lbl)
 
     _reposition_star_tags()
+
+
+# ==================================================
+# STAR TAG PLACEMENT — triangular formation + de-overlap
+# ==================================================
+# Each star's three on-map labels sit in a triangle around its dot: Name
+# and Sequence stacked on the LEFT (the base), Pitch alone on the RIGHT
+# (the vertex). Name and Sequence are the two HIDDEN axes — the ones the
+# player is actually solving — so grouping them opposite the Listen-
+# revealed Pitch matches how the information is used, not just how it fits.
+#
+# Replaces a VBox-stack-with-inline-fallback. That arrangement only ever
+# checked the MAP edges, never other stars, so neighbouring tags could and
+# did overlap each other. Spreading each star's labels wider makes that
+# strictly more likely, so the separation pass below is not a nicety here —
+# it is what makes the triangle usable at all.
+
+## Desired triangle geometry, before any separation nudging.
+const TAG_TRI_GAP_X: float = 13.0   # px from dot centre to a label's near edge
+const TAG_TRI_GAP_Y: float = 3.0    # px from dot centre to each base label
+
+## Separation pass tuning. Runs on rebuild and on resize only — never per
+## frame — so the O(labels^2) sweep is affordable at 3 labels x star_count.
+const TAG_SEPARATION_PASSES: int = 12
+## How far a label may be pushed from where its triangle wanted it. Without
+## a cap, a dense cluster can shove a label most of the way across the map,
+## and a tag far from its own star is worse than a tag slightly overlapping
+## one — it reads as belonging to the wrong star. Dense clusters therefore
+## resolve as "spread as far as the cap allows", which may leave a little
+## residual overlap; that is the deliberate trade, not a failure.
+const TAG_MAX_NUDGE: float = 34.0
 
 
 func _reposition_star_tags() -> void:
     var map_w: float = _host._star_map_control.size.x
     var map_h: float = _host._star_map_control.size.y
+
+    # Phase 1 — lay out each star's triangle independently.
+    var placed: Array = []      # {label:Label, rect:Rect2, home:Vector2}
     for i in _host._star_tags.size():
         if i >= _host._star_screen_pos.size():
             break
         var root: Control = _host._star_tags[i]
         if not is_instance_valid(root):
             continue
-        # Safe enough by construction today — _build_star_tags_impl() always
-        # adds exactly a VBoxContainer then an HBoxContainer, in that order,
-        # to every root — but a direct typed assignment from get_child()
-        # HANGS the engine (not a catchable error) if that ever stops being
-        # true. `as` + null-check degrades to skipping this tag instead.
-        if root.get_child_count() < 2:
+        # Same defensive read as before: a direct typed assignment from
+        # get_child() HANGS the engine (not a catchable error) if the
+        # structure ever changes, so `as` + null-check degrades to skipping
+        # this tag instead. Now three Labels rather than a VBox + HBox.
+        if root.get_child_count() < 3:
             continue
-        var vbox: VBoxContainer = root.get_child(0) as VBoxContainer
-        var hbox: HBoxContainer = root.get_child(1) as HBoxContainer
-        if not vbox or not hbox:
+        var name_lbl: Label = root.get_child(0) as Label
+        var seq_lbl: Label = root.get_child(1) as Label
+        var pitch_lbl: Label = root.get_child(2) as Label
+        if not name_lbl or not seq_lbl or not pitch_lbl:
             continue
+
+        root.position = Vector2.ZERO
         var dot: Vector2 = _host._star_screen_pos[i]
+        for lbl in [name_lbl, seq_lbl, pitch_lbl]:
+            (lbl as Label).visible = true
+            (lbl as Label).reset_size()
 
-        vbox.reset_size()
-        var stacked_h: float = vbox.get_combined_minimum_size().y
-        var fits_below: bool = dot.y + _host.TAG_OFFSET_BELOW + stacked_h <= map_h
-        var fits_above: bool = dot.y - _host.TAG_OFFSET_ABOVE - stacked_h >= 0.0
+        var n_sz: Vector2 = name_lbl.get_combined_minimum_size()
+        var s_sz: Vector2 = seq_lbl.get_combined_minimum_size()
+        var p_sz: Vector2 = pitch_lbl.get_combined_minimum_size()
 
-        if fits_below or fits_above:
-            vbox.visible = true
-            hbox.visible = false
-            var vw: float = vbox.get_combined_minimum_size().x
-            var pos_y: float = dot.y + _host.TAG_OFFSET_BELOW if fits_below else dot.y - _host.TAG_OFFSET_ABOVE - stacked_h
-            var pos_x: float = clampf(dot.x - vw * 0.5, 0.0, maxf(0.0, map_w - vw))
-            root.position = Vector2(pos_x, pos_y)
-        else:
-            vbox.visible = false
-            hbox.visible = true
-            hbox.reset_size()
-            var hw: float = hbox.get_combined_minimum_size().x
-            var hh: float = hbox.get_combined_minimum_size().y
-            var pos_y2: float = dot.y - hh * 0.5
-            var fits_right: bool = dot.x + _host.TAG_OFFSET_SIDE + hw <= map_w
-            var pos_x2: float
-            if fits_right:
-                pos_x2 = dot.x + _host.TAG_OFFSET_SIDE
-            else:
-                pos_x2 = dot.x - _host.TAG_OFFSET_SIDE - hw
-            root.position = Vector2(pos_x2, pos_y2)
+        # Base: right-aligned against a shared edge left of the dot, one
+        # above and one below. Vertex: left edge right of the dot, centred.
+        var base_right: float = dot.x - TAG_TRI_GAP_X
+        _tag_place(placed, name_lbl,
+            Vector2(base_right - n_sz.x, dot.y - TAG_TRI_GAP_Y - n_sz.y), n_sz, map_w, map_h)
+        _tag_place(placed, seq_lbl,
+            Vector2(base_right - s_sz.x, dot.y + TAG_TRI_GAP_Y), s_sz, map_w, map_h)
+        _tag_place(placed, pitch_lbl,
+            Vector2(dot.x + TAG_TRI_GAP_X, dot.y - p_sz.y * 0.5), p_sz, map_w, map_h)
+
+    # Phase 2 — push apart anything that collides, then commit.
+    _separate_tag_rects(placed, map_w, map_h)
+    for e in placed:
+        (e["label"] as Label).position = (e["rect"] as Rect2).position
+
+
+## Clamp a label's desired rect inside the map and record it for phase 2.
+func _tag_place(placed: Array, lbl: Label, pos: Vector2, size: Vector2,
+        map_w: float, map_h: float) -> void:
+    var r := Rect2(_tag_clamp(pos, size, map_w, map_h), size)
+    placed.append({"label": lbl, "rect": r, "home": r.position})
+
+
+func _tag_clamp(pos: Vector2, size: Vector2, map_w: float, map_h: float) -> Vector2:
+    return Vector2(
+        clampf(pos.x, 0.0, maxf(0.0, map_w - size.x)),
+        clampf(pos.y, 0.0, maxf(0.0, map_h - size.y)))
+
+
+## Iterative pairwise separation: push overlapping rects apart along their
+## SHALLOWER axis (the minimum-translation direction), which keeps a label
+## near its star rather than flinging it out along the long axis of an
+## overlap. Each rect is re-clamped to the map and to TAG_MAX_NUDGE from
+## where its triangle put it, so a label can never leave the map or drift
+## far enough to look like it belongs to a different star.
+func _separate_tag_rects(placed: Array, map_w: float, map_h: float) -> void:
+    for _pass in TAG_SEPARATION_PASSES:
+        var moved: bool = false
+        for a in range(placed.size()):
+            for b in range(a + 1, placed.size()):
+                var ra: Rect2 = placed[a]["rect"]
+                var rb: Rect2 = placed[b]["rect"]
+                if not ra.intersects(rb):
+                    continue
+                var inter: Rect2 = ra.intersection(rb)
+                if inter.size.x <= 0.0 or inter.size.y <= 0.0:
+                    continue
+                # +0.5 so a resolved pair ends genuinely apart rather than
+                # exactly touching, which would re-trigger next pass.
+                if inter.size.x <= inter.size.y:
+                    var dx: float = inter.size.x * 0.5 + 0.5
+                    if ra.get_center().x <= rb.get_center().x:
+                        ra.position.x -= dx
+                        rb.position.x += dx
+                    else:
+                        ra.position.x += dx
+                        rb.position.x -= dx
+                else:
+                    var dy: float = inter.size.y * 0.5 + 0.5
+                    if ra.get_center().y <= rb.get_center().y:
+                        ra.position.y -= dy
+                        rb.position.y += dy
+                    else:
+                        ra.position.y += dy
+                        rb.position.y -= dy
+                ra.position = _tag_leash(ra.position, placed[a]["home"], ra.size, map_w, map_h)
+                rb.position = _tag_leash(rb.position, placed[b]["home"], rb.size, map_w, map_h)
+                placed[a]["rect"] = ra
+                placed[b]["rect"] = rb
+                moved = true
+        if not moved:
+            return   # settled early; nothing left overlapping
+
+
+## Clamp to the map AND to TAG_MAX_NUDGE of the label's home position.
+func _tag_leash(pos: Vector2, home: Vector2, size: Vector2,
+        map_w: float, map_h: float) -> Vector2:
+    var off: Vector2 = pos - home
+    if off.length() > TAG_MAX_NUDGE:
+        pos = home + off.normalized() * TAG_MAX_NUDGE
+    return _tag_clamp(pos, size, map_w, map_h)
 
 
 func _refresh_name_widget(star_idx: int, name_vbox: VBoxContainer,

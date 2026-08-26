@@ -82,10 +82,29 @@ const UNKNOWN_SEQ_COLOR := Color(0.35, 0.75, 0.45, 1.0)
 # Shared puzzle-state color palette — see puzzle_state_colors.gd.
 const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
 @onready var _tab_clues:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabClues")
-@onready var _tab_used_up:         Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabUsedUp")
+@onready var _tab_notes:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabNotes")
 @onready var _tab_guide:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabGuide")
 @onready var _tab_search:          Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabSearch")
 @onready var _tab_hint:            Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabHint")
+# The Notes entry box is a PERSISTENT scene node, deliberately never rebuilt
+# by _populate_markers_panel() the way clue rows are — that rebuild fires
+# from _full_propagation_refresh() (constellation_puzzle_deduction.gd),
+# which runs on nearly any board action (marking a name, LISTENing to a
+# star) regardless of which tab is open. A TextEdit torn down and recreated
+# mid-composition would silently erase whatever the player had typed but
+# not yet pressed ADD on. Only its `visible` flag is toggled per tab; the
+# node itself, and whatever text is in it, survives every rebuild.
+@onready var _notes_entry_box:     VBoxContainer = get_node(MARKERS_BASE_PATH + "/NotesEntryBox")
+@onready var _notes_text_edit:     TextEdit      = get_node(MARKERS_BASE_PATH + "/NotesEntryBox/NotesTextEdit")
+@onready var _notes_add_button:    Button        = get_node(MARKERS_BASE_PATH + "/NotesEntryBox/NotesAddButton")
+# The floor every screen-space popup (Staff / Name checklist / Pitch
+# checklist — all PopupPanel, i.e. Window, entirely outside the Control
+# clipping hierarchy) must be clamped against — see
+# ConstellationPuzzleWidgets._clamp_popup_screen_pos(). Read live rather
+# than cached: SelectedClueDisplay now grows to fit a long clue
+# (fit_content, added alongside this), so the header's own height, and
+# therefore this boundary, is no longer a fixed number.
+@onready var _header_separator:    Control       = get_node(PANEL_ROOT_PATH + "/OuterMargin/OuterVBox/HeaderSeparator")
 
 # ── STYLE CACHE ──────────────────────────────────────────────────────
 # Shared with constellation_overlay.gd — see star_color_palette.gd.
@@ -102,9 +121,11 @@ const WIDGET_OFFSET_BELOW: float = 14.0   # px below dot centre when flipping do
 const WIDGET_OFFSET_ABOVE: float = 6.0    # px above widget bottom when flipping up
 const WIDGET_NAME_MAX_H:   float = 140.0  # max height of name-list scroll container
 
-const TAG_OFFSET_BELOW:   float = 14.0   # px below dot centre when tag sits below
-const TAG_OFFSET_ABOVE:   float = 6.0    # px above dot centre (tag bottom) when flipped up
-const TAG_OFFSET_SIDE:    float = 12.0   # px horizontal gap from dot when flipped to side
+# TAG_OFFSET_BELOW / _ABOVE / _SIDE removed 2026-08-24: they parameterised
+# the stacked-with-inline-fallback tag layout, which the triangular
+# formation replaced wholesale. Its geometry constants live next to the
+# code that uses them, in ConstellationPuzzleWidgets (TAG_TRI_GAP_X/_Y,
+# TAG_SEPARATION_PASSES, TAG_MAX_NUDGE).
 
 const DRAG_SCROLL_EDGE:  float = 30.0    # px from scroll container top/bottom that triggers auto-scroll
 const DRAG_SCROLL_SPEED: float = 240.0   # px/sec scrolled while pointer sits in the edge zone
@@ -119,9 +140,9 @@ var _star_screen_pos:     Array = []     # Array[Vector2], map-space
 var _star_names:          Array = []     # Array[String] from cache
 var _star_colors:         Array = []     # Array[int] 0-3
 var _name_assignments:    Array = []     # Array[String], per-star slot
-var _active_marker_tab:   int   = -1     # -1=Default(Matches) 0=Unused 1=Useful 2=UsedUp 3=Guide 4=Search
+var _active_marker_tab:   int   = -1     # -1=Default(Matches) 0=Clues 1=Notes 2=Guide 3=Search 4=Hint
 var _widget_closed: Dictionary = {}             # star_idx -> bool, closed via X button
-var _pitch_rank_solution:   Array = []     # Array[int], melody step per star
+var _sequence_rank_solution:   Array = []     # Array[int], melody step per star
 var _star_pitch_index:      Array = []     # Array[int], raw note index per star (ConstellationData)
 var _pitch_freqs:           Array = []     # Array[float], frequency table for this constellation
 @warning_ignore("unused_private_class_variable") # read/written only via _host. from constellation_puzzle_widgets.gd
@@ -206,8 +227,9 @@ func _ready() -> void:
     # Named constants, never literals — see ConstellationPuzzleWidgets'
     # TAB_* block for the renumbering that made that a rule.
     _tab_clues.pressed.connect(func(): _widgets._set_marker_tab(_widgets.TAB_CLUES))
-    _tab_used_up.pressed.connect(func(): _widgets._set_marker_tab(_widgets.TAB_USED_UP))
+    _tab_notes.pressed.connect(func(): _widgets._set_marker_tab(_widgets.TAB_NOTES))
     _tab_guide.pressed.connect(func(): _widgets._set_marker_tab(_widgets.TAB_GUIDE))
+    _notes_add_button.pressed.connect(func(): _widgets._on_notes_add_pressed())
     # SEARCH always opens the picker (not just when switching TO the tab),
     # so pressing it again while already on the tab is how you change term.
     _tab_search.pressed.connect(func():
@@ -427,15 +449,24 @@ func _load_constellation_data() -> void:
     # Puzzle notes.
     var notes: Dictionary = _cd.get_player_puzzle_notes(_constellation_id)
 
-    # Clues the player right-clicked into Used Up. Rebuilt from scratch on
-    # every constellation load, so one puzzle's retirements can never leak
-    # into another — the same per-puzzle-state hazard
+    # Clues the player right-clicked into Notes (wire key "retired_clues" —
+    # see _save_puzzle_notes' comment). Rebuilt from scratch on every
+    # constellation load, so one puzzle's filed clues can never leak into
+    # another — the same per-puzzle-state hazard
     # test_constellation_switch_isolation.gd exists to catch.
-    _deduction._retired_clues.clear()
+    _deduction._noted_clue_refs.clear()
     for t in _coerce_array(notes.get("retired_clues", []), []):
         var txt: String = str(t)
         if txt != "":
-            _deduction._retired_clues[txt] = true
+            _deduction._noted_clue_refs[txt] = true
+
+    # Freeform notes. Order matters (a running scratchpad), so this is an
+    # Array, not a Dictionary — same isolation reasoning as above.
+    _deduction._note_entries.clear()
+    for n in _coerce_array(notes.get("note_text_entries", []), []):
+        var ntxt: String = str(n)
+        if ntxt != "":
+            _deduction._note_entries.append(ntxt)
 
     # The old "protected_names" / "user_blocks" note fields are gone: the
     # star widget's protect and manual-block flags moved onto each star's
@@ -449,9 +480,9 @@ func _load_constellation_data() -> void:
     _deduction._load_match_records(_coerce_array(notes.get("match_records"), []))
 
     # Sequence position + clue text caches (for Markers Panel display).
-    _pitch_rank_solution = []
-    for v in _coerce_array(cache.get("pitch_rank_solution"), []):
-        _pitch_rank_solution.append(_coerce_int(v, 0))
+    _sequence_rank_solution = []
+    for v in _coerce_array(cache.get("pitch_rank_solution"), []):   # wire key, see logic puzzle's to_dict
+        _sequence_rank_solution.append(_coerce_int(v, 0))
 
     _star_pitch_index = []
     for v in _cd.get_note_assignment(_constellation_id):
