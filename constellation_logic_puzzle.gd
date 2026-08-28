@@ -3142,12 +3142,47 @@ func _build_form_range(chain: Dictionary) -> Dictionary:
     var hi: int = n - 1 if want_first else star_count - 1
     var solver_facts: Array = _seq_fact_for_label(id_ch)
     solver_facts.append({"kind": "ordinal_range", "s": subject_star, "lo": lo, "hi": hi})
+    # A RANGE IS A DOMAIN RESTRICTION — same correction as Forms 4/21/22/23.
+    # Reported from a live puzzle:
+    #
+    #   "Helios and Nyxaos can only be the star that fires 3rd note or the
+    #    star that fires 1st note."
+    #   "Helios is among the first 6."
+    #   "Nyxaos is among the first 5."
+    #
+    # Both ranks the first clue offers are inside both windows, so the two
+    # Range clues are free. This Form emitted ONE cell — the subject
+    # against ITS OWN TRUE RANK, is_true — which "among the first 6" never
+    # states, and nothing for the ranks it excludes.
+    #
+    # The SEQUENCE value index IS the rank (seq_value_to_star[rank] = star),
+    # so the complement is every value outside [lo, hi], read straight off
+    # the sentence with no reference to the solution.
+    #
+    # COUNT (10) AND EXTREME (11) LOOK IDENTICAL AND MUST NOT GET THIS.
+    # "Exactly 2 of its connected stars fire before it" restricts the
+    # subject to whichever ranks satisfy that — computable only from the
+    # neighbours' ranks, which the player does not have.
+    # _name_position_allowed_stars can compute those sets, but only by
+    # reading `ranks`, so marking their complement would be deriving player
+    # knowledge from the answer key: the tier error, exactly. A range is
+    # the one member of that family whose excluded set follows from the
+    # words alone.
+    var grid_updates: Array = []
+    for v in star_count:
+        if v >= lo and v <= hi:
+            continue   # inside the stated window, left open
+        grid_updates.append({
+            "cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]),
+            "cat_b": Category.SEQUENCE, "val_b": int(v), "is_true": false,
+        })
+    if not _any_cell_fresh(grid_updates):
+        return {}   # subject already confined inside this window
+
     return {
         "chars": [id_ch, seq_ch],
         "text": text,
-        "grid_updates": [
-            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": Category.SEQUENCE, "val_b": int(a["axis_val"]), "is_true": true},
-        ],
+        "grid_updates": grid_updates,
         "solver_facts": solver_facts,
         # The same [lo, hi] the Sequence solver gets, keyed on the Name
         # instead of the star — the only ABSOLUTE-rank fact the closure has.

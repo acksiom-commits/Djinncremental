@@ -136,10 +136,17 @@ func run() -> void:
 	# rule out. See the assertion below for why this is not covered by
 	# PART 2.
 	#   4  Disjunction              "X is either A or B"
+	#   8  Range                    "X is among the first 6"
 	#   21 Pseudo-True (Aligned)    "X and Y can only be A or B"
 	#   22 Pseudo-True (Staggered)  "X can be A or B, Y can be B or C, ..."
 	#   23 Group Membership         "X is one of the yellow stars"
-	var restriction_forms: Array = [4, 21, 22, 23]
+	#
+	# COUNT (10) and EXTREME (11) are deliberately NOT here. They restrict
+	# the subject too, but to whichever ranks satisfy a condition on its
+	# NEIGHBOURS' ranks — knowable only from the solution, so marking their
+	# complement would be writing answer-key knowledge into `used`. Adding
+	# them to this list would demand exactly that.
+	var restriction_forms: Array = [4, 8, 21, 22, 23]
 	var restriction_clues: int = 0
 	var unmarked_restrictions: int = 0
 	var unmarked_examples: Array = []
