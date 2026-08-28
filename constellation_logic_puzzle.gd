@@ -1902,6 +1902,33 @@ func _build_matrix() -> void:
             _matrix[_pair_key(ca, cb)] = rows
 
 
+## Does this clue say ANYTHING the player has not already been told?
+##
+## For a domain-restriction Form ("X is either A or B") the content is the
+## COMPLEMENT — the values it rules out — so freshness has to be judged
+## there, not on the two options it names. Those Forms used to check only
+## that their options were unused, which stopped meaning anything once the
+## complement became what they assert.
+##
+## Caught by test_clue_redundancy the moment the marking was corrected:
+##   "Astaeis is either the star that fires 4th note or the star that
+##    fires 8th note."
+## with every other rank for Astaeis already eliminated by earlier clues.
+## True, well-formed, and entirely free to the reader.
+##
+## Returns false for an EMPTY list: a Form that emits no cells consumes no
+## pool, and the main loop's stall counter resets on every commit — so
+## committing one lets generation run forever. That is the Form 24 hang,
+## and this is the shared place to not repeat it.
+func _any_cell_fresh(grid_updates: Array) -> bool:
+    for gu in grid_updates:
+        var cell: Dictionary = gu
+        if not bool(_matrix_cell(int(cell["cat_a"]), int(cell["val_a"]),
+                int(cell["cat_b"]), int(cell["val_b"]))["used"]):
+            return true
+    return false
+
+
 func _matrix_cell(cat_a: int, val_a: int, cat_b: int, val_b: int) -> Dictionary:
     var rows: Array = _matrix[_pair_key(cat_a, cat_b)]
     var row: int = val_a if cat_a < cat_b else val_b
@@ -3033,14 +3060,41 @@ func _build_form_disjunction(chain: Dictionary) -> Dictionary:
         "s1": int(_cat_value_to_star[cat_b][true_val_b]),
         "s2": int(_cat_value_to_star[cat_b][decoy_val_b]),
     }]
+    # Same correction as Forms 21/22 — "either A or B" states a DOMAIN
+    # RESTRICTION, so the cells are the complement, not the answer.
+    #
+    # The two cells this replaces were `subject x true_val` TRUE and
+    # `subject x decoy` FALSE: both decided WHICH option holds by reading
+    # the solution, when the sentence exists precisely to leave that open.
+    # And neither recorded what the sentence does rule out, which is what
+    # let this pair ship:
+    #
+    #   "Neither the star that fires 1st note nor the star that fires 14th
+    #    note is Keriion."
+    #   "Keriion is either the star that fires 5th note or the star that
+    #    fires 15th note."
+    #
+    # The closure now reads descriptor_either_or so pruning can drop a clue
+    # a LATER disjunction makes free; marking the complement here is the
+    # other half, stopping such a clue being built AFTER the disjunction in
+    # the first place. Both are needed — `used` only looks backwards.
+    var grid_updates: Array = []
+    for w in star_count:
+        if w == true_val_b or w == decoy_val_b:
+            continue   # the two options, left open on purpose
+        grid_updates.append({
+            "cat_a": cat_a, "val_a": val_a,
+            "cat_b": cat_b, "val_b": int(w), "is_true": false,
+        })
+
+    if not _any_cell_fresh(grid_updates):
+        return {}   # subject already confined to these two — says nothing
+
     return {
         "value_facts": value_facts,
         "chars": [subject_ch, true_ch, decoy_ch],
         "text": text,
-        "grid_updates": [
-            {"cat_a": cat_a, "val_a": val_a, "cat_b": cat_b, "val_b": true_val_b, "is_true": true},
-            {"cat_a": cat_a, "val_a": val_a, "cat_b": cat_b, "val_b": decoy_val_b, "is_true": false},
-        ],
+        "grid_updates": grid_updates,
         "solver_facts": solver_facts,
     }
 
@@ -5061,6 +5115,9 @@ func _build_form_group_membership(chain: Dictionary) -> Dictionary:
                 "is_true": false,
             })
 
+    if not _any_cell_fresh(grid_updates):
+        return {}   # every exclusion this states is already on the board
+
     return {
         "chars": [subject_id, group_def_ch],
         "text": text,
@@ -5324,13 +5381,56 @@ func _build_form_pseudo_true_pair_aligned(chain: Dictionary) -> Dictionary:
     # Sequence label; no separate relational fact is needed or would add
     # anything beyond what the four label-facts already capture.
     var solver_facts: Array = _seq_fact_for_label(id1) + _seq_fact_for_label(id2) + _seq_fact_for_label(v1_ch) + _seq_fact_for_label(v2_ch)
+
+    # WHAT THIS SENTENCE ACTUALLY SAYS, and it was wrong in BOTH directions.
+    # Reported from a live puzzle:
+    #
+    #   "The star that plays C6 and Astaeis can only be the star that fires
+    #    15th note or the star that fires 9th note."
+    #   "Neither the star that fires 7th note nor the star that fires 8th
+    #    note plays C6."
+    #
+    # The second is free: the first already confines the C6 star to ranks
+    # 15 and 9, so it is not 7th and not 8th. Dual Negation checks `used`
+    # before picking a subject and found those cells untouched.
+    #
+    # OVER-CLAIMED: this used to emit two cells, `id1 x its own axis value`
+    # and `id2 x its own`, both is_true — the pairings that are TRUE IN THE
+    # SOLUTION. The sentence says "X or Y" and deliberately does not say
+    # which. Deciding which cell to mark by consulting the answer key is
+    # the tier error, and its effect was to suppress the one clue that
+    # WOULD resolve the ambiguity ("the C6 star is the 15th"), because that
+    # cell already read as said. Those two cells are gone; both options
+    # stay open, which is the state the reader is actually left in.
+    #
+    # UNDER-CLAIMED: nothing recorded the values ruled OUT. "id1 is v1 or
+    # v2" excludes id1 from every other value on the axis — one trivial
+    # step from the sentence, no ground truth consulted, so it belongs in
+    # `used`. That is the reported redundancy.
+    #
+    # Dropping the true cells costs no characteristic bookkeeping:
+    # _apply_grid_cell_result's is_true branch calls _mark_used on both
+    # sides, but _commit_characteristics already marks all four of `chars`
+    # at the commit site.
+    var av1: int = int(a["axis_val"])
+    var av2: int = int(b["axis_val"])
+    var grid_updates: Array = []
+    for subj in [a, b]:
+        for w in star_count:
+            if w == av1 or w == av2:
+                continue   # the sentence leaves these two open on purpose
+            grid_updates.append({
+                "cat_a": int(subj["id_cat"]), "val_a": int(subj["id_val"]),
+                "cat_b": axis, "val_b": int(w), "is_true": false,
+            })
+
+    if not _any_cell_fresh(grid_updates):
+        return {}
+
     return {
         "chars": [id1, id2, v1_ch, v2_ch],
         "text": text,
-        "grid_updates": [
-            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
-            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
-        ],
+        "grid_updates": grid_updates,
         "solver_facts": solver_facts,
     }
 
@@ -5398,14 +5498,35 @@ func _build_form_pseudo_true_pair_staggered(chain: Dictionary) -> Dictionary:
         + _seq_fact_for_label(vx_ch) + _seq_fact_for_label(vy_ch) + _seq_fact_for_label(decoy_ch)
     if axis == Category.SEQUENCE:
         solver_facts.append({"kind": "ordinal_cmp", "a": s_x, "b": s_y, "a_gt_b": _order_value(axis, s_x) > _order_value(axis, s_y)})
+    # Same correction as Form 21 above — see its comment for the reported
+    # case and the reasoning. This Form was wrong in one EXTRA way: it also
+    # emitted `id_x x decoy` as FALSE, which contradicts its own sentence.
+    # "id_x can be vx OR the decoy" leaves the decoy open; that cell is
+    # false only in the SOLUTION, which is not something the reader was
+    # told. All three old cells came from the answer key rather than from
+    # the words.
+    #
+    # What the sentence does say: id_x is confined to {vx, decoy} and id_y
+    # to {decoy, vy}, so each is excluded from every OTHER value on the
+    # axis. The ordering half already travels as an ordinal_cmp fact.
+    var grid_updates: Array = []
+    for pair in [[id_cat_a, id_val_a, true_axis_val, decoy_val],
+            [int(b["id_cat"]), int(b["id_val"]), decoy_val, y_axis_val]]:
+        for w in star_count:
+            if w == int(pair[2]) or w == int(pair[3]):
+                continue   # the two the sentence offers, left open
+            grid_updates.append({
+                "cat_a": int(pair[0]), "val_a": int(pair[1]),
+                "cat_b": axis, "val_b": int(w), "is_true": false,
+            })
+
+    if not _any_cell_fresh(grid_updates):
+        return {}
+
     return {
         "chars": [id_x, id_y, vx_ch, vy_ch, decoy_ch],
         "text": text,
-        "grid_updates": [
-            {"cat_a": id_cat_a, "val_a": id_val_a, "cat_b": axis, "val_b": true_axis_val, "is_true": true},
-            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": y_axis_val, "is_true": true},
-            {"cat_a": id_cat_a, "val_a": id_val_a, "cat_b": axis, "val_b": decoy_val, "is_true": false},
-        ],
+        "grid_updates": grid_updates,
         "solver_facts": solver_facts,
     }
 

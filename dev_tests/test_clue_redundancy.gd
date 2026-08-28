@@ -132,6 +132,17 @@ func run() -> void:
 	var examples: Array = []
 	# PART 4 -- the guaranteed opening Mutual Exclusion, folded in here so
 	# it rides the same generation pass instead of paying for its own.
+	# PART 5 -- Forms that state a DOMAIN RESTRICTION must mark what they
+	# rule out. See the assertion below for why this is not covered by
+	# PART 2.
+	#   4  Disjunction              "X is either A or B"
+	#   21 Pseudo-True (Aligned)    "X and Y can only be A or B"
+	#   22 Pseudo-True (Staggered)  "X can be A or B, Y can be B or C, ..."
+	#   23 Group Membership         "X is one of the yellow stars"
+	var restriction_forms: Array = [4, 21, 22, 23]
+	var restriction_clues: int = 0
+	var unmarked_restrictions: int = 0
+	var unmarked_examples: Array = []
 	var opened_mutex: int = 0
 	var opening_big: int = 0
 	var opening_sizes: Dictionary = {}
@@ -190,6 +201,18 @@ func run() -> void:
 				# Bucket by (left descriptor, right category). The Forms
 				# concerned emit subject-side first, so this is the
 				# subject's claim against one axis -- "Heleai vs COLOUR".
+				if restriction_forms.has(int(c.get("form_id", -1))):
+					restriction_clues += 1
+					var false_cells: int = 0
+					for u0 in (c.get("cells", []) as Array):
+						if not bool((u0 as Dictionary).get("is_true", false)):
+							false_cells += 1
+					if false_cells == 0:
+						unmarked_restrictions += 1
+						if unmarked_examples.size() < 3:
+							unmarked_examples.append("[%s] %s"
+								% [str(c.get("form_name", "?")), str(c.get("text", ""))])
+
 				var buckets: Dictionary = {}
 				for u in (c.get("cells", []) as Array):
 					var ud: Dictionary = u
@@ -335,6 +358,31 @@ func run() -> void:
 	else:
 		print("  ---   PART 3 exercised: %d name-subject disjunctions in sample" % disjunctions)
 	ok(subsumed == 0, "no clue is made entirely free by a disjunction elsewhere in the set (%d subsumed) — report 3" % subsumed)
+
+	# PART 5 -- WHY THIS EXISTS, and it is the hole PART 2 cannot see.
+	#
+	# Reported 2026-08-27:
+	#   "The star that plays C6 and Astaeis can only be the star that fires
+	#    15th note or the star that fires 9th note."
+	#   "Neither the star that fires 7th note nor the star that fires 8th
+	#    note plays C6."
+	# The first confines the C6 star to ranks 15 and 9, so the second is
+	# free. PART 2 was run against the pre-fix generator and reported ZERO
+	# wasted descriptors: it compares a later clue's cells against cells an
+	# EARLIER clue MARKED, and Form 21 marked none of what it ruled out. A
+	# Form that states a restriction and records nothing is invisible to
+	# every check that reads `cells` — including this whole test.
+	#
+	# So the marking itself has to be asserted structurally, not inferred
+	# from a downstream symptom.
+	print("  domain-restriction clues: %d, of which mark nothing: %d"
+		% [restriction_clues, unmarked_restrictions])
+	for ue in unmarked_examples:
+		print("      ", ue)
+	ok(restriction_clues > 0,
+		"domain-restriction Forms appear in the shipped sets (%d) — otherwise the next check is vacuous" % restriction_clues)
+	ok(unmarked_restrictions == 0,
+		"every domain-restriction clue marks the values it rules out (%d mark nothing)" % unmarked_restrictions)
 
 	# PART 4 -- the opening anchor.
 	print("  opening clue: %d of %d puzzles open with Mutual Exclusion, %d name 4+ stars %s"

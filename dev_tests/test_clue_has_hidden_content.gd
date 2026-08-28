@@ -115,7 +115,23 @@ func run() -> void:
 		for o in offenders:
 			print("    %s" % str(o))
 
-	ok(total > 100, "generated a meaningful sample (%d clues)" % total)
+	# VACUITY FLOOR, not a volume assertion. This guard exists so that
+	# "0 clues with no hidden-axis term" means something -- it has to fail
+	# if generation produced almost nothing. It was `> 100` against a
+	# 4-puzzle sample, i.e. sitting within a clue or two of the typical
+	# yield, and on 2026-08-27 it failed at 99 while everything it actually
+	# tests passed.
+	#
+	# That drop was CORRECT: the domain-restriction Forms stopped emitting
+	# clues that say nothing new (measured 28.8 -> 27.0 clues/puzzle, with
+	# live gate 6/6, closure 6/6, 0 names unbound), so a threshold this
+	# tight turns a deliberate quality improvement into a red suite.
+	#
+	# Clue VOLUME is monitored where it belongs and against a real
+	# baseline: probe_scratch prints clues/puzzle every run, and
+	# test_pruning_is_gate_neutral asserts pruning stays gate-neutral.
+	# Half the typical yield is a real collapse; 99 is not.
+	ok(total > 50, "generated a meaningful sample (%d clues) — vacuity floor, see comment" % total)
 
 	# The tautology check below needs 'all different stars' clues (form_id
 	# 13, Mutual Exclusion) specifically. Pruning was added 2026-08-18
