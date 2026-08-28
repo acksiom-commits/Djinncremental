@@ -75,6 +75,13 @@ func run() -> void:
 			var elapsed: int = Time.get_ticks_msec() - t0
 			print("    c%d seed %-6d %6.1f s   %d clues" % [cid, seed,
 				float(elapsed) / 1000.0, g.chosen_form_clues.size()])
+			# The opening clue is the guaranteed Mutual Exclusion. Printed
+			# because its GROUP elements read universally ("every yellow
+			# star") to match what its cells actually assert, and that is a
+			# wording only a human can judge -- the tests can only confirm
+			# it agrees with ground truth, not that it reads right.
+			if not g.chosen_form_clues.is_empty():
+				print("        %s" % str((g.chosen_form_clues[0] as Dictionary).get("text", "")))
 			if bool(r.get("seq_unique", false)) and bool(r.get("name_unique", false)):
 				gate_ok += 1
 			if bool(r.get("name_unique_closure", false)):

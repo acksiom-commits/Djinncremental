@@ -3852,7 +3852,28 @@ func _mutex_build_distinct_set() -> Dictionary:
                 if (chosen[j]["members"] as Array).has(x):
                     return {}
 
-    # Render. Group elements take the indefinite phrasing.
+    # Render. GROUP ELEMENTS TAKE THE UNIVERSAL PHRASING — "every yellow
+    # star", not "a yellow star".
+    #
+    # The cells below assert every member of each element against every
+    # member of every other, so a group element's claim is UNIVERSAL: the
+    # sentence says Oraeides is none of the yellow stars, i.e. Oraeides is
+    # not yellow. "a yellow star" reads EXISTENTIALLY in English — "there
+    # is some yellow star that differs from Oraeides" — which is trivially
+    # true of any board and tells the player nothing. The clue was
+    # therefore asserting far more than it appeared to, and a player acting
+    # on the sentence as written would under-use it.
+    #
+    # Same clue-text-vs-encoding tier as the Adjacency inversion: every
+    # gate reads `cells`/`disclosures` and was correct throughout, while
+    # only the PLAYER reads `text`. See test_clue_text_matches_fact, whose
+    # _re_distinct branch already resolved these phrases to whole SETS and
+    # checked set disjointness — the test agreed with the encoding, not
+    # with the sentence.
+    #
+    # The indefinite article stays correct in other Forms and is not
+    # touched: Distance Existential's "X is 3 hops from a white star" is a
+    # genuine existential (SOME member sits at that distance).
     var label_items: Array = []
     var chars: Array = []
     var solver_facts: Array = []
@@ -3866,14 +3887,20 @@ func _mutex_build_distinct_set() -> Dictionary:
         var lbl: String
         if (ec == Category.COLOR or ec == Category.PITCH) and _group_size(ec, es) > 1:
             _note_group_value_term(ec, es)
-            lbl = _group_noun_phrase(ec, es, false)
+            lbl = _group_noun_phrase(ec, es, true)
         else:
-            # DISTANCE renders "a star 1 hop from Theryis" and picks its own
-            # article from how many stars sit at that distance, so it needs
-            # no special casing here. It contributes no Sequence fact.
             lbl = _characteristic_label(ch)
             if ec != Category.DISTANCE:
                 solver_facts.append_array(_seq_fact_for_label(ch))
+            elif (e["members"] as Array).size() > 1:
+                # DISTANCE has no universal variant of its own — the label
+                # is built in _characteristic_label, which picks "a" or
+                # "the" from how many stars sit at that hop count. Promote
+                # the article here rather than duplicating the phrase, so
+                # the wording and its search terms keep ONE source of
+                # truth. A singleton set already reads "the star ...",
+                # which is universal over a set of one and correct as-is.
+                lbl = "every " + lbl.trim_prefix("a ")
         label_items.append({"cat": ec, "star": es, "label": lbl})
 
     # Cells: every cross pair is FALSE, expanded over group members. A
