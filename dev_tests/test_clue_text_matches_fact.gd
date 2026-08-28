@@ -61,6 +61,7 @@ var _re_not: RegEx
 var _re_neither: RegEx
 var _re_hop: RegEx
 var _re_conn: RegEx
+var _re_dextr: RegEx
 var _re_gcmp: RegEx
 var _re_either: RegEx
 var _re_only: RegEx
@@ -107,6 +108,19 @@ func _compile() -> void:
 	_re_distinct = _rx("(.+) are all different stars\\.$")
 	_re_hop     = _rx("(.+?) is (\\d+) hops? from (.+)\\.$")
 	_re_conn    = _rx("(.+?) is not connected to (.+)\\.$")
+	# Distance Extreme. Added 2026-08-27 after this test FAILED on a true
+	# sentence: "The star that fires 1st note is the farthest star to
+	# Oryides." was claimed by the greedy _re_ident below, which reads
+	# "X is Y" as an identity and so demanded the two labels name the SAME
+	# star -- while this Form guarantees they are DIFFERENT by construction.
+	# Exactly the collision _re_ident's own comment warns about; this Form's
+	# shape had simply never been given a branch.
+	#
+	# It went unseen for the Form's whole life because Distance Extreme is
+	# ~0.2% of clues and had never once landed in a sample. The generator
+	# changes of 2026-08-26/27 shifted the RNG stream and drew one in. A
+	# pre-existing gap, surfaced rather than caused.
+	_re_dextr   = _rx("^(.+?) is the (closest|farthest) star to (.+)\\.$")
 	_re_gcmp    = _rx("(.+?) has a (higher|lower) (sequence position|frequency|color rank) than (.+)\\.$")
 	_re_either  = _rx("(.+?) is either (.+?) or (.+)\\.$")
 	_re_only    = _rx("(.+?) and (.+?) can only be (.+?) or (.+)\\.$")
@@ -605,6 +619,37 @@ func _try_parse(clue: Dictionary, text: String, form: String) -> void:
 		var k2: int = _one_star(mm.get_string(2), m)
 		if k1 >= 0 and k2 >= 0:
 			_judge(form, text, int(_g._distances[k1][k2]) != 1, "they ARE 1 hop apart")
+		return
+
+	# "X is the closest/farthest star to Y" — judged on the CLAIM, not just
+	# on the two labels being distinct. "THE farthest" asserts three things:
+	# the pair differ, X sits at the extreme hop distance from Y, and that
+	# extreme is UNIQUE (otherwise the definite article lies). Unreachable
+	# stars (-1) are excluded from the comparison, matching how the Form
+	# itself skips them.
+	mm = _re_dextr.search(text)
+	if mm:
+		var dt: int = _one_star(mm.get_string(1), m)
+		var dr: int = _one_star(mm.get_string(3), m)
+		if dt >= 0 and dr >= 0:
+			var want_min: bool = mm.get_string(2) == "closest"
+			var ext: int = -1
+			var ties: int = 0
+			for s4 in _g.star_count:
+				if s4 == dr:
+					continue
+				var d4: int = int(_g._distances[dr][s4])
+				if d4 == -1:
+					continue
+				if ext == -1 or (want_min and d4 < ext) or (not want_min and d4 > ext):
+					ext = d4
+					ties = 1
+				elif d4 == ext:
+					ties += 1
+			var claimed: int = int(_g._distances[dr][dt])
+			_judge(form, text, dt != dr and claimed == ext and ties == 1,
+				"claimed %d hops, %s is %d (ties %d)"
+					% [claimed, mm.get_string(2), ext, ties])
 		return
 
 	# ── subject vs an explicit list ─────────────────────────────────────

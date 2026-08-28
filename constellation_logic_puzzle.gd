@@ -2433,6 +2433,19 @@ func _name_group_facts(ch_a: Dictionary, ch_b: Dictionary, is_true: bool) -> Arr
     }]
 
 
+## "Keriion is either the star that fires 5th or the star that fires 15th."
+## s1/s2 are already resolved star indices, so unlike name_group there is no
+## rank/group_key indirection to get wrong — the only thing to check is that
+## the subject really is one of the two.
+func _validate_name_either_or_fact(f: Dictionary) -> String:
+    var s: int = int(f["star_a"])
+    var s1: int = int(f["s1"])
+    var s2: int = int(f["s2"])
+    if s != s1 and s != s2:
+        return "descriptor_either_or star_a=%d claims to be %d or %d but is neither" % [s, s1, s2]
+    return ""
+
+
 func _validate_name_group_fact(f: Dictionary) -> String:
     var s: int = int(f["name_star"])
     var cat: int = int(f["cat"])
@@ -3743,7 +3756,11 @@ func _mutex_build_distinct_set() -> Dictionary:
     var cats: Array = [Category.NAME, Category.SEQUENCE, Category.COLOR,
         Category.PITCH, Category.DISTANCE]
     _shuffle_array(cats)
-    var want: int = 3 + _rng.randi_range(0, 2)   # 3, 4 or 5 elements
+    # 3, 4 or 5 elements, unless an anchor slot demanded a floor (see
+    # _mutex_min_elements). Five categories exist, so a floor of 5 asks for
+    # every one of them and leaves the draw no freedom — that is intended
+    # for the guaranteed opening clue and nowhere else.
+    var want: int = maxi(_mutex_min_elements, 3 + _rng.randi_range(0, 2))
     cats = cats.slice(0, mini(want, cats.size()))
 
     var chosen: Array = []          # {cat, star, members:Array, ref, hops}
@@ -3809,7 +3826,10 @@ func _mutex_build_distinct_set() -> Dictionary:
             chosen.append({"cat": int(cat), "star": int(s2), "members": members})
             used_stars[int(s2)] = true
             break
-    if chosen.size() < 3:
+    # Same result-not-request floor as the axis variant: `cats` is sliced to
+    # `want`, but an element can fail to construct (a stranded DISTANCE
+    # anchor, a group with no free member), so chosen can come in short.
+    if chosen.size() < maxi(3, _mutex_min_elements):
         return {}
 
     # NON-OVERLAP, the soundness condition — and it must compare FULL
@@ -3860,7 +3880,28 @@ func _mutex_build_distinct_set() -> Dictionary:
     # group element's claim is about the whole group, so marking only its
     # sampled star would assert less than the sentence says.
     var grid_updates: Array = []
-    var any_fresh: bool = false
+    # PROPER FORM: a distinctness clue may not assert a pairing the player
+    # has already been told. Was `any_fresh` — true if ANY single cell in
+    # the whole cross product was unused — which shipped this:
+    #
+    #   "Oraeides, the star that fires 10th note, the star that plays B4,
+    #    and a star 1 hop from Nyxaos are all different stars."
+    #   "The star that plays B4 is not Oraeides."
+    #
+    # I first argued that was acceptable because five of its six pairings
+    # were still new, and that was wrong: proper logic-puzzle form precludes
+    # the overlap outright, regardless of how much else the sentence
+    # carries. The user corrected it.
+    #
+    # Same weak-guard shape Form 24 Group Negation had, and the same fix,
+    # one step stricter — there the unit was the subject, here it is the
+    # PAIR, because a distinctness clue cannot drop a pairing without
+    # dropping a participant, so the only way to avoid a stale pair is to
+    # not build this set at all. Bailing is the normal "this attempt is not
+    # a Mutex instance" path the main loop already expects; it is NOT the
+    # Form 24 hang, which came from COMMITTING a clue that consumed no
+    # cells and so let the stall counter reset forever.
+    var all_fresh: bool = true
     var value_facts: Array = []
     for i2 in chosen.size():
         for j2 in range(i2 + 1, chosen.size()):
@@ -3889,8 +3930,11 @@ func _mutex_build_distinct_set() -> Dictionary:
                 for mb in (b["members"] as Array):
                     var av: int = int(_cat_star_to_value[int(a["cat"])][int(ma)])
                     var bv: int = int(_cat_star_to_value[int(b["cat"])][int(mb)])
-                    if not bool(_matrix_cell(int(a["cat"]), av, int(b["cat"]), bv)["used"]):
-                        any_fresh = true
+                    # EVERY pair must be new — see the all_fresh note at the
+                    # declaration. This was `any_fresh = true` on the first
+                    # unused cell it happened to find.
+                    if bool(_matrix_cell(int(a["cat"]), av, int(b["cat"]), bv)["used"]):
+                        all_fresh = false
                     grid_updates.append({
                         "cat_a": int(a["cat"]), "val_a": av,
                         "cat_b": int(b["cat"]), "val_b": bv, "is_true": false,
@@ -3913,7 +3957,7 @@ func _mutex_build_distinct_set() -> Dictionary:
                 })
                 if int(nm["cat"]) == Category.NAME:
                     value_facts.append_array(_name_group_facts(nm, gp, false))
-    if not any_fresh:
+    if not all_fresh:
         return {}
 
     return {
@@ -3976,6 +4020,17 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
         return {}   # this puzzle's matrix doesn't support this axis right now — skip, nothing to negotiate
     var max_n: int = mini(5, groups.size())
     var n: int = maxi(3, mini(max_n, 3 + _rng.randi_range(0, 2)))
+    # An anchor slot's element floor applies to BOTH variants of this Form.
+    # _mutex_min_elements was first read only inside
+    # _mutex_build_distinct_set, so a slot asking for 4 fell through to
+    # this variant whenever the distinct-set roll missed or its draw
+    # failed, and silently produced a 3-participant clue instead. Measured:
+    # only 9 of 36 Mutex clues reached 4+ elements while 17 of 18 puzzles
+    # opened with one.
+    if _mutex_min_elements > 0:
+        if max_n < _mutex_min_elements:
+            return {}   # this axis cannot seat the floor; let the slot retry on another draw
+        n = maxi(n, _mutex_min_elements)
 
     var participants: Array = []   # each: {id_cat, id_val, axis_val, star}
     var id_cat_usage: Dictionary = {}   # id_cat(int) -> times used so far, for the repeat bias
@@ -4016,6 +4071,30 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
             var axis_val2: int = int(_cat_star_to_value[axis][s])
             if bool(_matrix_cell(candidate, val2, axis, axis_val2)["used"]):
                 continue   # this specific cell is already claimed by an earlier clue this attempt — try this star's next-best legal category
+            # PROPER FORM, the other half of the all_fresh rule in
+            # _mutex_build_distinct_set. That guard covers the heterogeneous
+            # variant; THIS variant emitted its cross-participant cells
+            # (below) with no `used` check whatsoever, so a pairing the
+            # player had already been told could ride into the list
+            # untouched — the same defect, in the half of Form 13 the first
+            # fix did not reach.
+            #
+            # Checked HERE rather than as a bail after the set is built:
+            # participants are accepted one at a time, so rejecting a
+            # candidate whose pairings are stale keeps the rest of the set
+            # and simply tries this star's next legal identifier. A
+            # post-hoc bail would throw away a whole viable list over one
+            # bad pair and would cut this variant's yield hard.
+            var pairs_fresh: bool = true
+            for prev in participants:
+                var pc: int = int(prev["id_cat"])
+                if pc == candidate:
+                    continue   # same-id_cat pairs emit no cell — see the cross loop below
+                if bool(_matrix_cell(candidate, val2, pc, int(prev["id_val"]))["used"]):
+                    pairs_fresh = false
+                    break
+            if not pairs_fresh:
+                continue
             chosen = candidate
             break
         if chosen < 0:
@@ -4025,7 +4104,10 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
         participants.append({"id_cat": chosen, "id_val": id_val, "axis_val": axis_val, "star": s})
         id_cat_usage[chosen] = int(id_cat_usage.get(chosen, 0)) + 1
 
-    if participants.size() < 3:
+    # The floor is on the RESULT, not the request: the loop above accepts
+    # participants one at a time and can fall short of `n`, so checking
+    # only the request would let a slot that asked for 4 ship 3.
+    if participants.size() < maxi(3, _mutex_min_elements):
         return {}
 
     var chars: Array = []
@@ -4909,13 +4991,53 @@ func _build_form_group_membership(chain: Dictionary) -> Dictionary:
     # same as Cross-Domain Bridge's own group membership.
     var solver_facts: Array = _seq_fact_for_label(subject_id)
     var value_facts: Array = _name_group_facts(subject_id, group_def_ch, want_positive)
+
+    # ── WHAT THE SENTENCE ALSO RULES OUT ────────────────────────────────
+    # Reported from a live puzzle: these two shipped together —
+    #
+    #   "Pyrios is one of the stars that play A4."
+    #   "Neither Pyrios nor the star that fires 7th note is the star that
+    #    plays E5."
+    #
+    # The Pyrios half of the second says nothing: a star has ONE pitch, so
+    # the moment the first clue is read, Pyrios-is-not-the-E5-star is read
+    # with it. `used` exists to stop exactly that, and was not being fed —
+    # this Form only ever marked the two tautological self-cells below, so
+    # Dual Negation (which does check `used` on the cell it wants, see its
+    # _matrix_cell(...)["used"] guards) had no way to know.
+    #
+    # NOT the True-cell cascade that was removed on 2026-08-18, and the
+    # difference is the whole point. That cascade reasoned from the
+    # SOLUTION ("bijection gives one True per row, so the rest are known
+    # False") — an answer-key fact driving a claim about player knowledge.
+    # This reasons only from what a clue SAID plus a rule of the puzzle
+    # (one pitch, one colour per star). No ground truth is consulted:
+    # membership is decided by _name_group_key, which is the same raw value
+    # the sentence itself names.
+    #
+    # Positive ("is one of X"): every star OUTSIDE the group is ruled out.
+    # Negative ("is not one of X"): every star INSIDE it is. Both are one
+    # trivial step from the sentence, which is the bar for marking `used`.
+    var grid_updates: Array = [
+        {"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": group_cat, "val_b": int(g["axis_val"]), "is_true": true},
+        {"cat_a": subj_id_cat, "val_a": subj_id_val, "cat_b": group_cat, "val_b": subj_axis_val, "is_true": true},
+    ]
+    var group_key: int = _name_group_key(group_cat, def_star)
+    for m in star_count:
+        if m == subject_star:
+            continue   # the subject's own cell is the True marker above
+        var in_group: bool = _name_group_key(group_cat, m) == group_key
+        if in_group != want_positive:
+            grid_updates.append({
+                "cat_a": subj_id_cat, "val_a": subj_id_val,
+                "cat_b": group_cat, "val_b": int(_cat_star_to_value[group_cat][m]),
+                "is_true": false,
+            })
+
     return {
         "chars": [subject_id, group_def_ch],
         "text": text,
-        "grid_updates": [
-            {"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": group_cat, "val_b": int(g["axis_val"]), "is_true": true},
-            {"cat_a": subj_id_cat, "val_a": subj_id_val, "cat_b": group_cat, "val_b": subj_axis_val, "is_true": true},
-        ],
+        "grid_updates": grid_updates,
         "solver_facts": solver_facts,
         "value_facts": value_facts,
     }
@@ -4976,6 +5098,7 @@ func _build_form_group_membership(chain: Dictionary) -> Dictionary:
 func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
     # ── the groups being excluded ──
     var group_defs: Array = []       # {cat, star}
+    var group_members: Array = []    # parallel to group_defs: Array[star]
     var excluded: Dictionary = {}    # star -> true, every member of every group
     var cats: Array = [Category.COLOR, Category.PITCH]
     _shuffle_array(cats)
@@ -4991,9 +5114,12 @@ func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
             continue   # every value on this axis is a singleton here — nothing to negate against
         var def_star: int = int(pool[_rng.randi_range(0, pool.size() - 1)])
         group_defs.append({"cat": int(gc), "star": def_star})
+        var members: Array = []
         for s2 in star_count:
             if _name_group_key(int(gc), s2) == _name_group_key(int(gc), def_star):
                 excluded[s2] = true
+                members.append(int(s2))
+        group_members.append(members)
     if group_defs.is_empty():
         return {}
 
@@ -5023,6 +5149,38 @@ func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
         # kind, not a wrong subject — descriptor_not_in_group (below) now
         # covers both axes properly.
         var id_cat: int = Category.NAME if _rng.randf() < (CLOSURE_NAME_BIAS_WEIGHT / (CLOSURE_NAME_BIAS_WEIGHT + 1.0)) else Category.SEQUENCE
+        # WASTED WORDS: every subject must be fresh against EVERY group this
+        # sentence lists, not just against one of them. The any_fresh guard
+        # below is a TERMINATION guard (a clue that consumes no cells lets
+        # the main loop's stall counter reset forever) and is satisfied by a
+        # single fresh cell anywhere in the cross product — which let this
+        # ship:
+        #
+        #     "Heleai is one of the white stars."
+        #     "Neither Pyrios nor Heleai is red or plays A4."
+        #
+        # Heleai-is-not-red was already known from the first clue; the
+        # sentence carried it anyway because Pyrios's half was fresh.
+        #
+        # The granularity is the (subject, group) PAIR, not the cell. "Is
+        # not red" is one claim the player acts on, spanning one cell per
+        # red star; if even one of those cells is still open the claim is
+        # still doing work, so only an ENTIRELY known pair is waste. Judging
+        # this per cell would reject sentences that genuinely inform.
+        var informative: bool = true
+        var c_val: int = int(_cat_star_to_value[id_cat][int(c)])
+        for gi in group_defs.size():
+            var gcat: int = int(group_defs[gi]["cat"])
+            var pair_fresh: bool = false
+            for m in (group_members[gi] as Array):
+                if not bool(_matrix_cell(id_cat, c_val, gcat, int(_cat_star_to_value[gcat][m]))["used"]):
+                    pair_fresh = true
+                    break
+            if not pair_fresh:
+                informative = false
+                break
+        if not informative:
+            continue
         subjects.append({"cat": id_cat, "star": int(c)})
     if subjects.size() < 2:
         return {}
@@ -5317,8 +5475,56 @@ const DIFFICULTY_PROFILES := {
     "hard": {
         "tier_ratio": TIER_TARGET_RATIO,
         "excluded_forms": [],
+        # EMPTY ON PURPOSE. `{24: 4}` was built and MEASURED here on
+        # 2026-08-27, then dropped: it cost 2.2x generation time for a
+        # modest mix gain, and did not fix the miss it targeted.
+        #
+        #     c0 generation   73.0 s  ->  177.9 s   (2.2x)
+        #     tier 3          42%     ->  37%       (target 30%)
+        #     tier 2          35%     ->  36%       (target 45%)  <- the miss
+        #
+        # Group Negation was 23.9% of every shipped clueset and looked like
+        # the obvious lever. The structural reason capping it backfires:
+        # this Form is the matrix pool's biggest CONSUMER, and the main
+        # loop terminates on the pool draining. Cap it and the loop cannot
+        # drain the pool, so it grinds toward max_stall (~2730) instead of
+        # finishing — the cap starves the TERMINATION CONDITION rather than
+        # rebalancing what ships.
+        #
+        # If clue mix is retuned, measure GENERATION TIME alongside the
+        # shares. A cap on a high-yield Form buys mix with wall-clock, and
+        # this generator runs at runtime for the player. Note also that the
+        # shipped mix is decided AFTER pruning, so capping GENERATION is a
+        # blunt instrument for it either way; tier_ratio steering or
+        # prune-side preference are the unexplored levers.
+        #
+        # The old "easy" caps below predate pruning and are not a precedent
+        # for a value here.
         "form_caps": {},
-        "opening_anchors": [],
+        # NO LONGER EMPTY, and this profile is the LIVE one — `difficulty`
+        # defaults to "hard" and nothing in production ever sets it, so
+        # until 2026-08-26 the whole anchor mechanism ran and returned
+        # immediately on every generation.
+        #
+        # One guaranteed 4-or-5 element Mutual Exclusion, first, per user
+        # direction. Measured need, 18 puzzles: Mutex appeared in only
+        # 10 of them, at 3.4% of clues, and when it did appear the first
+        # one landed at position [2,2,5,7,6,5,8,16,13,10] — median ~6, as
+        # late as 16th.
+        #
+        # It has to be FIRST specifically, not merely early: after the
+        # all-pairs-fresh rule a distinctness clue can only be built while
+        # none of its pairings has been stated, so every clue that commits
+        # ahead of it removes candidate sets. Same ordering asymmetry
+        # measured on 2026-08-18 — cheap FALSE-cell Forms leave the
+        # expensive Forms' inputs intact, but not the reverse.
+        #
+        # prefer_true:false because Mutex is entirely FALSE cells; the old
+        # pass forced TRUE-cell sampling on every slot, which is exactly
+        # what made a Form like this impossible to anchor.
+        "opening_anchors": [
+            {"form": 13, "prefer_true": false, "min_elements": 4, "tries": 12},
+        ],
     },
     "easy": {
         # Heavily weighted to Entry Anchors. Tier 3 is not banned outright
@@ -5360,6 +5566,17 @@ var difficulty: String = "hard"
 ## than hope to land on one — the same matrix-native-over-guess-and-reject
 ## correction applied to Form 13 earlier.
 var _prefer_true_cells: bool = false
+
+## Floor on Mutual Exclusion's element count, set ONLY for the duration of
+## an anchor slot that asked for one, and 0 (no floor) everywhere else —
+## same transient-override shape as _prefer_true_cells above, and always
+## restored on every exit path of the anchor pass.
+##
+## Exists because Mutex draws `want` from 3..5 with no way to ask for more,
+## and a guaranteed OPENING Mutex is only worth the slot at 4 or 5: a
+## 3-element one is a weaker statement than the Group Negation clues that
+## already dominate the mix.
+var _mutex_min_elements: int = 0
 
 
 func _profile() -> Dictionary:
@@ -5649,19 +5866,42 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
     var anchors: Array = _profile()["opening_anchors"]
     if anchors.is_empty():
         return
-    # Anchors are direct, positive footholds by definition, so the sampler
-    # is pointed at True cells for this pass only. A negation Form listed
-    # here would be self-defeating — it needs a False cell and would find
-    # none. Always restored, including on the empty-list early return above.
-    _prefer_true_cells = true
-    for form_id in anchors:
+    # TWO SLOT FORMS, because the original assumption stopped holding:
+    #
+    #   int          — a positive foothold, sampled from TRUE cells, tried
+    #                  3 times. Exactly the old behaviour, so "easy"'s
+    #                  existing [1,1,1,11,8,1] is unchanged by this.
+    #   Dictionary   — {form, prefer_true, min_elements, tries}, for a slot
+    #                  the true-cell assumption does not fit.
+    #
+    # The old header said "a negation Form listed here would be
+    # self-defeating — it needs a False cell and would find none," and that
+    # was correct while the pass forced _prefer_true_cells for its whole
+    # duration. It is a property of the PASS, not of anchoring, and the
+    # reason it now has to go is Mutual Exclusion: a distinctness clue is
+    # entirely FALSE cells and is the one Form that MUST run first, because
+    # after the all-pairs-fresh rule it can only be built while none of its
+    # pairings has been stated yet.
+    #
+    # `tries` is per-slot for the same reason: a 5-element all-fresh Mutex
+    # on a clean matrix is far from guaranteed on any single draw (the
+    # category draw can strand the DISTANCE element), and 3 was sized for
+    # Forms that either fit the sampled cell or do not.
+    for slot in anchors:
+        var form_id: int = int(slot["form"]) if slot is Dictionary else int(slot)
+        var tries_max: int = int((slot as Dictionary).get("tries", 3)) if slot is Dictionary else 3
+        _prefer_true_cells = bool((slot as Dictionary).get("prefer_true", true)) if slot is Dictionary else true
+        _mutex_min_elements = int((slot as Dictionary).get("min_elements", 0)) if slot is Dictionary else 0
         var tries: int = 0
-        while tries < 3:
+        while tries < tries_max:
             tries += 1
-            if _try_build_and_commit(int(form_id), sequence_solver_facts,
+            if _try_build_and_commit(form_id, sequence_solver_facts,
                     name_revealed, tier_counts, form_counts):
                 break
+    # Restored unconditionally — every later Form must see the unbiased
+    # sampler and no element floor.
     _prefer_true_cells = false
+    _mutex_min_elements = 0
 
 
 ## The value_fact kinds — everything a clue discloses that is NOT input to
@@ -6085,6 +6325,48 @@ func _solve_name_closure(seq_solutions: Array, cap: int = 2) -> Array:
                     name_clues.append({"kind": "value_in_set", "s": name_star, "allowed": members})
                 else:
                     name_clues.append({"kind": "value_out_set", "s": name_star, "excluded": members})
+            elif kind == "descriptor_either_or":
+                # "Keriion is either the star that fires 5th or the star
+                # that fires 15th" — a two-element domain restriction, the
+                # tightest constraint short of a pin, and the closure could
+                # not read it at all until 2026-08-26.
+                #
+                # REPORTED SYMPTOM, and the reason this is a closure fix and
+                # not a `used`/pruning one. A player saw:
+                #     2. "Neither the star that fires 1st note nor the star
+                #         that fires 14th note is Keriion."
+                #     3. "Keriion is either the star that fires 5th note or
+                #         the star that fires 15th note."
+                # Clue 3 subsumes clue 2 outright. `used` cannot catch that
+                # — it only looks BACKWARDS, and clue 2 was informative when
+                # it was written; clue 3 made it redundant retroactively.
+                # _prune_redundant_clues is the pass that removes a clue
+                # something later made free, and its test is "does the
+                # closure grow without it" — so a fact the closure cannot
+                # read makes every earlier clue look load-bearing. Pruning
+                # was working; it was blind.
+                #
+                # Only when the SUBJECT is a Name: the closure solves
+                # name -> star, and "the star that fires 3rd is either
+                # Keriion or Pyrios" (cat_a == SEQUENCE) is a disjunction
+                # over WHICH NAME, not a domain restriction on one name.
+                # Skipping it under-constrains, which is always safe for a
+                # rejection gate — same argument as the negated-distance
+                # guard.
+                #
+                # s1/s2 are already star indices, so no seq_sol resolution
+                # is needed here; that indirection is what the rank-keyed
+                # name_group branch above needs and is a step this one
+                # simply does not have.
+                if int(fd.get("cat_a", -1)) == Category.NAME:
+                    var violation_e: String = _validate_name_either_or_fact(fd)
+                    if violation_e != "":
+                        push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NAME EITHER-OR FACT — %s" % [constellation_id, violation_e])
+                    name_clues.append({
+                        "kind": "value_in_set",
+                        "s": int(fd["star_a"]),
+                        "allowed": [int(fd["s1"]), int(fd["s2"])],
+                    })
             elif NAME_POSITION_PRED_KINDS.has(kind):
                 # Range / Count / Extreme: the name's star must satisfy a
                 # predicate on its POSITION rather than belong to a group.
