@@ -1895,7 +1895,25 @@ func _check_star_in_view_trigger(delta: float) -> void:
 # ==================================================
 # DEV INPUT
 # ==================================================
+## True while the player is typing into a text field.
+##
+## _input() runs BEFORE focused GUI controls see the event, so every
+## bare-letter dev key below fires mid-typing unless this is checked. Some
+## of them also call set_input_as_handled(), which eats the keystroke
+## outright — reported as the Notes tab "not registering G". It was
+## registering: G ran dev_inject_ten_grains() and consumed the key.
+##
+## Affects every text surface, not just Notes: the Clues search box has the
+## same exposure, and the hijacked set is TAB V R C H T G plus Shift+D in
+## the study overlay, not only the two that got noticed.
+func _text_entry_has_focus() -> bool:
+    var f: Control = get_viewport().gui_get_focus_owner()
+    return f is LineEdit or f is TextEdit
+
+
 func _input(event: InputEvent) -> void:
+    if _text_entry_has_focus():
+        return
     if event is InputEventKey and event.pressed and not event.echo:
         # if event.keycode == KEY_TAB:
           #  if game_context:

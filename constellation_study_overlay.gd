@@ -993,6 +993,14 @@ func _on_backdrop_input(event: InputEvent) -> void:
         visible = false
 
 
+## True while the player is typing into a text field — the Notes entry box
+## or the Clues search field. Mirrors root_ui's helper of the same name;
+## both _input() handlers need it for the same reason.
+func _text_entry_has_focus() -> bool:
+    var f: Control = get_viewport().gui_get_focus_owner()
+    return f is LineEdit or f is TextEdit
+
+
 func _input(event: InputEvent) -> void:
     if not visible:
         return
@@ -1007,8 +1015,19 @@ func _input(event: InputEvent) -> void:
         # Staff-popup -> Sort:Pitch report, which a six-scenario headless
         # repro could not reproduce. Remove with
         # _debug_dump_pitch_records() once that's resolved.
+        # ...and NOT while the player is typing. SHIFT+D is a capital D, so
+        # this swallowed every capital D typed into the Notes box or the
+        # Clues search field — _input() runs before focused GUI controls,
+        # and this branch consumes the key. Reported alongside G (whose dev
+        # handler lives in root_ui._input) as "the Notes tab doesn't like
+        # to register some keypresses".
+        #
+        # ESCAPE above is deliberately NOT guarded: it is not a text
+        # character, and closing the overlay is the expected response to it
+        # whether or not a field has focus.
         elif (event as InputEventKey).keycode == KEY_D \
-                and (event as InputEventKey).shift_pressed:
+                and (event as InputEventKey).shift_pressed \
+                and not _text_entry_has_focus():
             for note in _widgets._distinct_note_names():
                 _deduction._debug_dump_pitch_records(str(note))
             get_viewport().set_input_as_handled()
