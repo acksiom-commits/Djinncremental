@@ -5047,13 +5047,38 @@ func _build_form_cross_domain_bridge(chain: Dictionary) -> Dictionary:
     # — same shape Group Membership already relies on.
     var value_facts: Array = _name_group_facts(d2_ch, group_def_ch, true)
     value_facts.append_array(_name_extreme_in_group_facts(d2_ch, group_def_ch, want_lowest))
+    # THE MEMBERSHIP THIS SENTENCE PRESUPPOSES. "Among the white stars, the
+    # latest-firing one is Helios" cannot be true unless Helios IS white —
+    # and that half was reaching the closure through _name_group_facts
+    # while nothing recorded it in CELLS, so `used` never knew. Reported:
+    #
+    #    8. "Among the white stars, the latest-firing one is Helios."
+    #   25. "Neither Pyrios nor Helios is red or plays A4."
+    #
+    # Helios-is-not-red was already known. Same gap Group Membership (23)
+    # had, in a Form that states its membership implicitly rather than as
+    # the whole sentence.
+    #
+    # Marking the complement, exactly as Form 23 does: the subject is none
+    # of the group's NON-members. Read off the sentence plus one rule of
+    # the puzzle (a star has one colour, one pitch); no ground truth.
+    var grid_updates: Array = [
+        {"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": group_cat, "val_b": int(g["axis_val"]), "is_true": true},
+        {"cat_a": d1, "val_a": d1_val, "cat_b": d2, "val_b": d2_val, "is_true": true},
+    ]
+    for m in star_count:
+        if group_stars.has(int(m)):
+            continue   # a member — the sentence puts the subject among these
+        grid_updates.append({
+            "cat_a": d2, "val_a": d2_val,
+            "cat_b": group_cat, "val_b": int(_cat_star_to_value[group_cat][m]),
+            "is_true": false,
+        })
+
     return {
         "chars": [group_def_ch, d1_ch, d2_ch],
         "text": text,
-        "grid_updates": [
-            {"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": group_cat, "val_b": int(g["axis_val"]), "is_true": true},
-            {"cat_a": d1, "val_a": d1_val, "cat_b": d2, "val_b": d2_val, "is_true": true},
-        ],
+        "grid_updates": grid_updates,
         "solver_facts": solver_facts,
         "value_facts": value_facts,
     }

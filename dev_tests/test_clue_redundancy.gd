@@ -137,16 +137,21 @@ func run() -> void:
 	# PART 2.
 	#   4  Disjunction              "X is either A or B"
 	#   8  Range                    "X is among the first 6"
+	#   20 Cross-Domain Bridge      "Among the white stars, the latest is X"
 	#   21 Pseudo-True (Aligned)    "X and Y can only be A or B"
 	#   22 Pseudo-True (Staggered)  "X can be A or B, Y can be B or C, ..."
 	#   23 Group Membership         "X is one of the yellow stars"
+	#
+	# Form 20 states its membership IMPLICITLY — "the latest-firing white
+	# star is Helios" cannot be true unless Helios is white — which is
+	# exactly why it went unmarked while the explicit Form 23 was fixed.
 	#
 	# COUNT (10) and EXTREME (11) are deliberately NOT here. They restrict
 	# the subject too, but to whichever ranks satisfy a condition on its
 	# NEIGHBOURS' ranks — knowable only from the solution, so marking their
 	# complement would be writing answer-key knowledge into `used`. Adding
 	# them to this list would demand exactly that.
-	var restriction_forms: Array = [4, 8, 21, 22, 23]
+	var restriction_forms: Array = [4, 8, 20, 21, 22, 23]
 
 	# PART 2 JUDGES ONLY FORMS WHOSE CONTENT IS ENTIRELY CELLS.
 	#
