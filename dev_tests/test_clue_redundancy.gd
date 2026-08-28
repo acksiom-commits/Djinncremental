@@ -147,6 +147,32 @@ func run() -> void:
 	# complement would be writing answer-key knowledge into `used`. Adding
 	# them to this list would demand exactly that.
 	var restriction_forms: Array = [4, 8, 21, 22, 23]
+
+	# PART 2 JUDGES ONLY FORMS WHOSE CONTENT IS ENTIRELY CELLS.
+	#
+	# These state a set of cell assertions and nothing else, so "every cell
+	# this descriptor carries was already said" means the sentence wasted
+	# it:
+	#   1 Exact Identity   2 Single Negation   3 Dual Negation
+	#   4 Disjunction      8 Range            13 Mutual Exclusion
+	#   21/22 Pseudo-True Pair   23 Group Membership   24 Group Negation
+	#
+	# RELATIONAL Forms are excluded, and the reason matters. Betweenness
+	# carries an ordinal_chain fact; Pairwise Order an ordinal_cmp; Exact
+	# Offset, Adjacency, Count, Extreme, the distance and group-comparison
+	# Forms likewise. Their cells are CONSEQUENCES of the relation (the
+	# endpoint exclusions added 2026-08-27), not the claim itself. Judging
+	# them by cells alone flagged
+	#   "The star that plays C#5 fires before Kerais, which fires before
+	#    Selieia."
+	# as wasting a descriptor whose endpoint ranks happened to be known —
+	# while the ordering it states about that descriptor was entirely new.
+	#
+	# Their cells STILL populate `said`, so a later cell-only clue that
+	# restates one is still caught. That is the whole point of the
+	# Betweenness endpoint marks: they exist to block a later Dual Negation
+	# saying "the 1st note is not Oraeides".
+	var cell_content_forms: Array = [1, 2, 3, 4, 8, 13, 21, 22, 23, 24]
 	var restriction_clues: int = 0
 	var unmarked_restrictions: int = 0
 	var unmarked_examples: Array = []
@@ -277,6 +303,8 @@ func run() -> void:
 					if whole:
 						(descriptors[dk] as Array)[1] += 1
 				for dk2 in descriptors:
+					if not cell_content_forms.has(int(c.get("form_id", -1))):
+						break   # relational Form — see cell_content_forms
 					var tally: Array = descriptors[dk2]
 					if int(tally[0]) > 0 and int(tally[0]) == int(tally[1]):
 						wasted += 1

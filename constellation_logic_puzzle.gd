@@ -3304,13 +3304,37 @@ func _build_form_pairwise_order(chain: Dictionary) -> Dictionary:
     if axis == Category.SEQUENCE:
         value_facts = _name_order_vs_group_facts(id_a, id_b, not a_gt_b) \
             + _name_order_vs_group_facts(id_b, id_a, a_gt_b)
+    # ENDPOINT EXCLUSIONS. "A fires earlier than B" means something has to
+    # fit on each side: the earlier one cannot hold the LAST rank and the
+    # later one cannot hold the FIRST. Pure sentence logic — no reference to
+    # the solution, only to how many ranks exist.
+    #
+    # SEQUENCE ONLY, and the guard is the point. On the Pitch axis
+    # _order_value returns a frequency rank where ties are normal (15 stars
+    # across 10 notes), so "no star is lower than the lowest" does not
+    # follow — two stars can share the extreme. Sequence is a permutation
+    # and never ties, and its value index IS the rank
+    # (seq_value_to_star[rank] = star), so the endpoints are exact.
+    var grid_updates: Array = [
+        {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+        {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
+    ]
+    if axis == Category.SEQUENCE:
+        var later: Dictionary = a if a_gt_b else b
+        var earlier: Dictionary = b if a_gt_b else a
+        grid_updates.append({
+            "cat_a": int(later["id_cat"]), "val_a": int(later["id_val"]),
+            "cat_b": axis, "val_b": 0, "is_true": false,
+        })
+        grid_updates.append({
+            "cat_a": int(earlier["id_cat"]), "val_a": int(earlier["id_val"]),
+            "cat_b": axis, "val_b": star_count - 1, "is_true": false,
+        })
+
     return {
         "chars": [id_a, id_b, axis_a, axis_b],
         "text": text,
-        "grid_updates": [
-            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
-            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
-        ],
+        "grid_updates": grid_updates,
         "solver_facts": solver_facts,
         "value_facts": value_facts,
     }
@@ -4913,14 +4937,42 @@ func _build_form_betweenness(chain: Dictionary) -> Dictionary:
     var solver_facts: Array = _seq_fact_for_label(lo_id) + _seq_fact_for_label(mid_id) + _seq_fact_for_label(hi_id)
     if axis == Category.SEQUENCE:
         solver_facts.append({"kind": "ordinal_chain", "a": lo, "mid": mid, "b": hi})
+    # ENDPOINT EXCLUSIONS, the three-star version of Pairwise Order's — see
+    # its comment for why SEQUENCE only (Pitch ranks tie; Sequence is a
+    # permutation whose value index IS the rank). Reported:
+    #
+    #   "Keraides fires before Pyrios, which fires before Oraeides."
+    #   "Neither the star that fires 6th note nor the star that fires 1st
+    #    note is Oraeides."
+    #
+    # Two stars fire before Oraeides, so it cannot be 1st or 2nd — the
+    # "1st note" half of the second clue was already known. A chain of
+    # three needs room on both sides: `hi` clears the first two ranks, `lo`
+    # clears the last two, and `mid` clears both extremes. Counting ranks,
+    # nothing more.
+    var grid_updates: Array = [
+        {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
+        {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
+        {"cat_a": int(c["id_cat"]), "val_a": int(c["id_val"]), "cat_b": axis, "val_b": int(c["axis_val"]), "is_true": true},
+    ]
+    if axis == Category.SEQUENCE:
+        var n_last: int = star_count - 1
+        var excl: Array = [
+            [hi_info, [0, 1]],                  # two stars fire before it
+            [lo_info, [n_last - 1, n_last]],    # two fire after it
+            [mid_info, [0, n_last]],            # one on each side
+        ]
+        for e in excl:
+            var info: Dictionary = e[0]
+            for rank in (e[1] as Array):
+                grid_updates.append({
+                    "cat_a": int(info["id_cat"]), "val_a": int(info["id_val"]),
+                    "cat_b": axis, "val_b": int(rank), "is_true": false,
+                })
     return {
         "chars": [lo_id, mid_id, hi_id, axis_lo, axis_mid, axis_hi],
         "text": text,
-        "grid_updates": [
-            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": axis, "val_b": int(a["axis_val"]), "is_true": true},
-            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": axis, "val_b": int(b["axis_val"]), "is_true": true},
-            {"cat_a": int(c["id_cat"]), "val_a": int(c["id_val"]), "cat_b": axis, "val_b": int(c["axis_val"]), "is_true": true},
-        ],
+        "grid_updates": grid_updates,
         "solver_facts": solver_facts,
     }
 
@@ -5458,6 +5510,40 @@ func _build_form_pseudo_true_pair_aligned(chain: Dictionary) -> Dictionary:
                 "cat_a": int(subj["id_cat"]), "val_a": int(subj["id_val"]),
                 "cat_b": axis, "val_b": int(w), "is_true": false,
             })
+
+    # THE COLUMN SIDE. Two distinct subjects confined to two options is a
+    # BIJECTION: each option is claimed by one of them. So the options are
+    # closed to everyone else, not just the subjects narrowed. Reported:
+    #
+    #   "Oryides and Keraides can only be the star that fires 12th note or
+    #    the star that fires 1st note."
+    #   "The star that fires 1st note is not Heleai."
+    #
+    # The second is free — the 1st star is Oryides or Keraides, so it is
+    # not Heleai. The row-side marking above cannot express that; it only
+    # narrows the two subjects.
+    #
+    # ONLY WHEN BOTH SUBJECTS SHARE AN id_cat, and that restriction is the
+    # whole soundness argument. Every star has a value in every category,
+    # so this could be written for a mixed pair by mapping subject B into
+    # A's category — but B's value THERE is not something the sentence
+    # disclosed, so using it would be reading the answer key. With a shared
+    # category both values are rendered in the text and the reader has
+    # them.
+    #
+    # Form 22 deliberately does NOT get this: its two subjects range over
+    # THREE distinct options (vx, decoy, vy), so there is no counting
+    # argument — an option can go unclaimed and the column stays open.
+    if int(a["id_cat"]) == int(b["id_cat"]):
+        var shared_cat: int = int(a["id_cat"])
+        for opt in [av1, av2]:
+            for d in star_count:
+                if d == int(a["id_val"]) or d == int(b["id_val"]):
+                    continue   # one of these two IS this option
+                grid_updates.append({
+                    "cat_a": shared_cat, "val_a": int(d),
+                    "cat_b": axis, "val_b": int(opt), "is_true": false,
+                })
 
     if not _any_cell_fresh(grid_updates):
         return {}
