@@ -34,6 +34,10 @@ var current_record_idx: int = -1
 ## reopen).
 var _added_count: int = 0
 
+## Expected total rows for the current fill, set by set_expected_row_count()
+## and cleared by clear_rows(). Drives the column-major split.
+var _expected_rows: int = 0
+
 @onready var _left_col: VBoxContainer = %LeftCol
 @onready var _right_col: VBoxContainer = %RightCol
 @onready var _btn_undo_selects: Button = %BtnUndoSelects
@@ -49,6 +53,13 @@ func _ready() -> void:
 
 func open(record_idx: int, screen_pos: Vector2) -> void:
     current_record_idx = record_idx
+    # Same declared-vs-observed hazard StaffPopup carries, same reasoning —
+    # see _warn_on_row_count_mismatch() there, including the OPTION 3 note
+    # on removing the failure mode outright rather than reporting it.
+    if _expected_rows > 0 and _added_count != _expected_rows:
+        push_warning(("ChecklistPopup: declared %d rows but received %d — "
+            + "column-major split will be wrong. See set_expected_row_count.")
+            % [_expected_rows, _added_count])
     position = Vector2i(screen_pos)
     popup()
 
@@ -68,14 +79,44 @@ func clear_rows() -> void:
         _right_col.remove_child(child)
         child.queue_free()
     _added_count = 0
+    # Reset so a caller that does not set a new total splits by the safe
+    # alternating fallback rather than by the previous fill's count.
+    _expected_rows = 0
 
 
 ## Subclasses call this after building a row to place it and connect its
 ## row-independent signals (check_pressed/x_pressed/row_right_clicked are
 ## still connected by the caller, since those carry type-specific args).
+##
+## COLUMN-MAJOR: the left column fills top-to-bottom before the right one
+## starts, so an alphabetical list reads DOWN then RIGHT. The alternating
+## split this replaced put A,C,E on the left and B,D,F on the right, which
+## is not an order anyone can scan a name in. Matches StaffPopup's
+## multi-column sections — see _add_row_to_column_array() there.
+##
+## Falls back to the old alternating split when no total has been supplied
+## (see set_expected_row_count), so a caller that forgets degrades to the
+## previous behaviour instead of piling every row into one column.
 func _add_row_to_columns(row: StaffPopupRow) -> void:
-    if _added_count % 2 == 0:
+    var per_col: int = 0
+    if _expected_rows > 0:
+        per_col = ceili(float(_expected_rows) / 2.0)
+    if per_col > 0:
+        if _added_count < per_col:
+            _left_col.add_child(row)
+        else:
+            _right_col.add_child(row)
+    elif _added_count % 2 == 0:
         _left_col.add_child(row)
     else:
         _right_col.add_child(row)
     _added_count += 1
+
+
+## How many rows are about to be added. Required for the column-major split
+## above, because which column a row belongs in depends on the total, not
+## on how many have been added so far. Call AFTER clear_rows(), which
+## deliberately resets this to 0 so a stale total from the previous open
+## can never mis-split the next one.
+func set_expected_row_count(count: int) -> void:
+    _expected_rows = count

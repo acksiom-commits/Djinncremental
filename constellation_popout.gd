@@ -94,6 +94,11 @@ const INFO_BASE_PATH:       String = PANEL_BASE_PATH + "/ConstellationInfoVBox"
 @onready var _vol_value  : Label   = get_node(ALLOCATION_BASE_PATH + "/FociVolHBox/VolValueLabel")
 @onready var _vol_plus   : Button  = get_node(ALLOCATION_BASE_PATH + "/FociVolHBox/VolPlusButton")
 @onready var _feed_hbox  : HBoxContainer = get_node(ALLOCATION_BASE_PATH + "/FeedHBox")
+## Manual spark endowment. Deliberately NOT part of _feed_buttons: those
+## two are mutually-exclusive feed MODES, this is an action, and folding it
+## into that array would make _refresh_feed_buttons treat it as a third
+## mode and light it up as "active" whenever mode == 2.
+@onready var _redistribute_btn : Button = get_node(ALLOCATION_BASE_PATH + "/RedistributeButton")
 
 @onready var _info_vbox       : VBoxContainer = get_node(INFO_BASE_PATH)
 @onready var _info_name_label : Label         = get_node(INFO_BASE_PATH + "/InfoNameLabel")
@@ -124,6 +129,7 @@ func _ready() -> void:
     _octant_spin.value_changed.connect(_on_octant_changed)
     _octant_spin.visible = _octant_gating_enabled
     _connect_feed_buttons()
+    _redistribute_btn.pressed.connect(_on_redistribute_pressed)
     _spark_counter_label.mouse_filter = Control.MOUSE_FILTER_STOP
     _spark_counter_label.gui_input.connect(_on_spark_counter_input)
     var multi_grid = get_node_or_null(ALLOCATION_BASE_PATH + "/MultiGrid")
@@ -397,6 +403,7 @@ func _refresh_allocation_display() -> void:
         if _foci_value: _foci_value.text = "-"
         if _vol_value:  _vol_value.text  = "-"
         _refresh_feed_buttons()
+        _refresh_redistribute_button()
         return
     var id_str    := str(_selected_slot)
     var foci:      int = _gc._assignment_int("constellation_" + id_str + "_foci",      0)
@@ -411,6 +418,7 @@ func _refresh_allocation_display() -> void:
         else:
             _vol_value.remove_theme_color_override("font_color")
     _refresh_feed_buttons()
+    _refresh_redistribute_button()
 
 
 func _on_foci_plus() -> void:
@@ -474,6 +482,7 @@ func _on_feed_mode_set(mode: int) -> void:
     var key := "constellation_%d_feed_mode" % _selected_slot
     _gc.assignments[key] = mode
     _refresh_feed_buttons()
+    _refresh_redistribute_button()
 
 
 func _connect_feed_buttons() -> void:
@@ -513,6 +522,46 @@ func _refresh_feed_buttons() -> void:
         btn.add_theme_stylebox_override("normal",
             _make_slot_style(Color(0.15, 0.13, 0.28, 1.0) if is_active \
                              else Color(0.05, 0.05, 0.08, 1.0)))
+
+
+## Manual endowment: push Sparks from the pool into the selected
+## Constellation now, rather than waiting for the auto-feed tick.
+##
+## Scales with the Volumitions click multiplier and NOT with the
+## 10X/100X/CSTM/ALL selector — that selector sizes *automation resource*
+## assignment (Foci, Volitions, later high-tier Uonites) via the +/-
+## buttons, which is a separate axis. See
+## game_context.endow_constellation_sparks_manual().
+func _on_redistribute_pressed() -> void:
+    if not _gc or _selected_slot < 0:
+        return
+    if _gc.endow_constellation_sparks_manual(_selected_slot) <= 0.0:
+        # Capped or out of Sparks — the button should already be disabled,
+        # so just re-sync rather than repainting the panel for a no-op.
+        _refresh_redistribute_button()
+        return
+    _refresh_spark_counter()
+    _refresh_info_panel()
+    _refresh_redistribute_button()
+
+
+## Greys the button out when a press could not do anything: no
+## Constellation selected, no Sparks left, or this one already at its cap.
+## Checked against the same cap the endowment itself honours, so the button
+## cannot claim to be usable when the transfer would return 0.
+func _refresh_redistribute_button() -> void:
+    if not _redistribute_btn:
+        return
+    var usable: bool = false
+    if _gc and _selected_slot >= 0 and not _gc.sparks.is_zero():
+        usable = true
+        if _cd:
+            var cap: float = _cd.get_spark_cap(_selected_slot)
+            var current: float = _gc.constellation_spark_totals.get(str(_selected_slot), 0.0)
+            usable = current < cap
+    _redistribute_btn.disabled = not usable
+    _redistribute_btn.add_theme_color_override("font_color",
+        Color(0.85, 0.78, 1.0) if usable else Color(0.40, 0.38, 0.48))
 
 
 func _on_multi_pressed(amount: int) -> void:

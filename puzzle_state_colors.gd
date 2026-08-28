@@ -13,7 +13,17 @@ extends Resource
 # instead of hand-typing the RGBA values.
 
 @export var confirmed: Color = Color(0.3, 1.0, 0.4, 1.0)
+## The red used for the X CONTROL on an eliminated row — "this is the
+## button that is engaged". NOT for the row's own text: see
+## eliminated_label.
 @export var eliminated: Color = Color(1.0, 0.35, 0.25, 1.0)
+## Greyed-out text for an eliminated (deselected) element. Red text read as
+## an error rather than as "ruled out", and the star widget and the popup
+## rows disagreed about it — the widget greyed its labels while the popups
+## turned them red, so the same state looked like two different things.
+## Darker than soft_eliminated on purpose: hard elimination should sit
+## further back than a leaning one.
+@export var eliminated_label: Color = Color(0.35, 0.30, 0.45, 1.0)
 @export var soft_eliminated: Color = Color(0.45, 0.40, 0.55, 1.0)
 @export var protected: Color = Color(1.0, 0.0, 1.0, 1.0)
 @export var neutral: Color = Color(0.82, 0.78, 0.92, 1.0)

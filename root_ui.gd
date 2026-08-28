@@ -2135,17 +2135,14 @@ func _refresh_click_vol_buttons() -> void:
         _click_vol_minus_btn.add_theme_color_override("font_hover_color", GOLD_HOV if can_sub else GOLD_OFF)
 
 
+## Delegates to game_context.get_click_multiplier(). The calculation moved
+## there when the Constellation slideout needed it too — that panel holds
+## the autoloads only and cannot reach root_ui, and a second copy of a
+## formula this many click handlers depend on would be a drift risk for
+## nothing.
 func _get_click_multiplier() -> int:
     if not game_context: return 1
-    var base: int = 1 + _coerce_assignment_int("click_volitions", 0) \
-                      + _coerce_assignment_int("click_bonus_volitions", 0)
-    var cd: Node = get_node_or_null("/root/ConstellationData")
-    if not cd:
-        return base
-    var tier_mult: float = cd.get_active_level_bonus("click_volition_multiplier")
-    if tier_mult <= 1.0:
-        return base
-    return int(float(base) * tier_mult)
+    return game_context.get_click_multiplier()
 
 
 func _update_click_vol_label() -> void:

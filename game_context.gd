@@ -1022,6 +1022,75 @@ func get_constellation_spark_fraction(constellation_id: int, threshold: float) -
     return clamp(total / threshold, 0.0, 1.0)
 
 
+## The Volumitions click multiplier: how many units of work one manual
+## click performs. 1 + assigned click Volitions + bonus click Volitions,
+## scaled by the Constellation tier bonus.
+##
+## Lives here rather than in root_ui because both inputs are game state,
+## and root_ui is not reachable from the Constellation slideout (which has
+## the autoloads only). root_ui._get_click_multiplier() now delegates to
+## this so there is exactly one implementation to keep correct.
+func get_click_multiplier() -> int:
+    var base: int = 1 + _assignment_int("click_volitions", 0) \
+                      + _assignment_int("click_bonus_volitions", 0)
+    var cd: Node = get_node_or_null("/root/ConstellationData")
+    if not cd:
+        return base
+    var tier_mult: float = cd.get_active_level_bonus("click_volition_multiplier")
+    if tier_mult <= 1.0:
+        return base
+    return int(float(base) * tier_mult)
+
+
+## MANUAL spark endowment — the Constellation slideout's REDISTRIBUTE
+## button. Pushes Sparks from the player's pool into one Constellation on
+## demand, instead of waiting for the auto-feed tick.
+##
+## Scales with the Volumitions click multiplier and NOT with the slideout's
+## 10X/100X/CSTM/ALL multi-selector: those select how many *automation
+## resources* (Foci, Volitions, eventually high-tier Uonites) a +/- press
+## assigns, which is a different axis entirely. Endowment is a click
+## action, so it follows the click stat.
+##
+## Deliberately independent of feed_mode. IGNORE only suppresses the
+## automatic drain; a player who has parked a Constellation on IGNORE must
+## still be able to hand it Sparks deliberately, which is the whole point
+## of having a manual control.
+##
+## Per click: one auto-tick's worth (the Constellation's assigned points)
+## times the click multiplier, floored at 1 point. Without that floor a
+## Constellation with no Foci or Volitions assigned yields 0 points and the
+## button would silently do nothing — exactly the case where manual
+## endowment is most wanted.
+##
+## Returns how much was actually moved, so the caller can tell a real
+## transfer from a no-op (capped, or out of Sparks) without re-deriving it.
+func endow_constellation_sparks_manual(constellation_id: int) -> float:
+    if sparks.is_zero():
+        return 0.0
+    var key: String = str(constellation_id)
+    var current: float = constellation_spark_totals.get(key, 0.0)
+    var points: int = maxi(get_constellation_points(constellation_id), 1)
+    var want: BigNum = BigNum.from_int(points * get_click_multiplier())
+
+    var cd: Node = get_node_or_null("/root/ConstellationData")
+    if cd:
+        var cap: float = cd.get_spark_cap(constellation_id)
+        if current >= cap:
+            return 0.0
+        var room: float = cap - current
+        if want.to_float() > room:
+            want = BigNum.from_float(room)
+    if sparks.is_less_than(want):
+        want = sparks.copy()
+    if want.is_zero():
+        return 0.0
+
+    sparks = sparks.sub(want)
+    constellation_spark_totals[key] = current + want.to_float()
+    return want.to_float()
+
+
 func accumulate_constellation_sparks() -> void:
     var cd: Node = get_node_or_null("/root/ConstellationData")
     for key in constellation_spark_totals:

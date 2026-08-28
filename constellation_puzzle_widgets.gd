@@ -855,6 +855,9 @@ func _open_name_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     _host._name_checklist_popup.clear_rows()
     var names_sorted: Array = _host._star_names.duplicate()
     names_sorted.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
+    # Every name gets a row, so the sorted list's size IS the total the
+    # column-major split needs. Must come after clear_rows(), which resets it.
+    _host._name_checklist_popup.set_expected_row_count(names_sorted.size())
     # A record another Sort:tab has already proven distinct from this one,
     # that has ITSELF confirmed a name, rules that name out here too — see
     # _compute_excluded_names_for. Computed once, not per-row.
@@ -982,6 +985,9 @@ func _make_pitch_checklist_trigger_button(record_idx: int) -> Button:
 
 func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     _host._pitch_checklist_popup.clear_rows()
+    # One row per pitch, so the pitch count IS the total the column-major
+    # split needs. After clear_rows(), which resets it.
+    _host._pitch_checklist_popup.set_expected_row_count(_host._pitch_freqs.size())
     # A record another Sort:tab has already proven distinct from this one,
     # that has ITSELF confirmed a note whose incidence count is exactly
     # 1 (the only case where excluding it elsewhere is sound — a shared
@@ -2069,9 +2075,17 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
     # constellations with more stars than fit nicely in 2 columns, and
     # also what keeps the popup from growing tall enough to cover the
     # study panel's clue readout above it.
-    _host._staff_popup.set_pitch_column_count(_staff_popup_column_count(_host._pitch_freqs.size()))
-    _host._staff_popup.set_color_column_count(_staff_popup_column_count(_host.COLOR_NAME_LABELS.size()))
-    _host._staff_popup.set_name_column_count(_staff_popup_column_count(_host._star_count))
+    # Second argument is the row TOTAL, which the column-major split needs
+    # — see StaffPopup._add_row_to_column_array. Each section receives
+    # exactly as many rows as the collection it is built from, and the
+    # loops below add one row per element with no filtering, so these
+    # counts are the totals rather than an estimate of them.
+    _host._staff_popup.set_pitch_column_count(
+        _staff_popup_column_count(_host._pitch_freqs.size()), _host._pitch_freqs.size())
+    _host._staff_popup.set_color_column_count(
+        _staff_popup_column_count(_host.COLOR_NAME_LABELS.size()), _host.COLOR_NAME_LABELS.size())
+    _host._staff_popup.set_name_column_count(
+        _staff_popup_column_count(_host._star_count), _host._star_count)
 
     # Add pitch rows — same cross-record exclusion as
     # _open_pitch_checklist_popup, since the Staff popup is a third UI
@@ -3139,7 +3153,9 @@ func _apply_name_row_visual(state: int, name_lbl: Label,
             btn_check.modulate = STATE_COLORS.confirmed
             btn_x.modulate = Color(1, 1, 1, 1.0)
         2:  # eliminated ✗ (hard)
-            name_lbl.add_theme_color_override("font_color", Color(0.35, 0.30, 0.45, 1.0))
+            # Was this exact literal; now the shared palette entry, so the
+            # popup rows and this list cannot drift apart again.
+            name_lbl.add_theme_color_override("font_color", STATE_COLORS.eliminated_label)
             name_lbl.modulate = Color(1, 1, 1, 1.0)
             btn_check.modulate = Color(1, 1, 1, 1.0)
             btn_x.modulate = STATE_COLORS.eliminated

@@ -55,6 +55,13 @@ var _pitch_added_count: int = 0
 var _color_added_count: int = 0
 var _name_added_count: int = 0
 
+## Expected row count per section, supplied by set_*_column_count(). Drives
+## the column-major split in _add_row_to_column_array() — see there for why
+## the total is required and what 0 falls back to.
+var _pitch_total_rows: int = 0
+var _color_total_rows: int = 0
+var _name_total_rows: int = 0
+
 ## Column VBoxContainers, rebuilt on demand via set_*_column_count() —
 ## see that function's comment for why the column count is dynamic
 ## rather than a fixed 2.
@@ -95,8 +102,46 @@ func open(seq_pos: int, record_idx: int, screen_pos: Vector2) -> void:
     current_seq_pos = seq_pos
     current_record_idx = record_idx
     _title_label.text = "Note %d" % seq_pos
+    _warn_on_row_count_mismatch()
     position = Vector2i(screen_pos)
     popup()
+
+
+## The column-major split is driven by a DECLARED total (see
+## set_*_column_count) rather than an observed one, so a caller whose row
+## loop ever stops adding exactly one row per element — a `continue` added
+## for a filter, say — would silently mis-split the columns with nothing to
+## show for it. Verified 2026-08-24 that no loop filters today; this exists
+## so the day one starts, it says so instead of just looking wrong.
+##
+## Warns rather than asserts: a mis-split popup is ugly, not dangerous, and
+## crashing a UI panel over column arithmetic would be the worse trade.
+##
+## OPTION 3, if these popups are ever reworked for another reason: buffer
+## rows on add and parent them inside open(), which makes the count
+## OBSERVED and removes this failure mode entirely rather than reporting
+## it. It cannot be done cheaply today because
+## ConstellationPuzzleWidgets._open_staff_popup() calls
+## get_contents_minimum_size() BEFORE open() to centre the popup, so
+## unparented rows would measure as empty and break the positioning. Doing
+## it properly means moving that centring INTO open() (caller passes the
+## bounds to centre within), so there is exactly one entry point and no
+## ordering hazard is possible. Do NOT instead add a separate
+## finalize_rows() call: that swaps a benign failure (wrong column order,
+## still readable) for a severe one (forget the call, get an empty popup).
+func _warn_on_row_count_mismatch() -> void:
+    var sections := [
+        ["Pitch", _pitch_added_count, _pitch_total_rows],
+        ["Colour", _color_added_count, _color_total_rows],
+        ["Name", _name_added_count, _name_total_rows],
+    ]
+    for s in sections:
+        var declared: int = int(s[2])
+        var actual: int = int(s[1])
+        if declared > 0 and actual != declared:
+            push_warning(("StaffPopup: %s section declared %d rows but received %d — "
+                + "column-major split will be wrong. See _warn_on_row_count_mismatch.")
+                % [str(s[0]), declared, actual])
 
 
 func clear_all_rows() -> void:
@@ -133,16 +178,22 @@ func _rebuild_columns(container: HBoxContainer, count: int) -> Array[VBoxContain
     return columns
 
 
-func set_pitch_column_count(count: int) -> void:
+## `total_rows` is how many rows this section is about to receive. Required
+## for the column-major split (see _add_row_to_column_array); omitting it
+## degrades to round-robin rather than misplacing rows.
+func set_pitch_column_count(count: int, total_rows: int = 0) -> void:
     _pitch_columns = _rebuild_columns(_pitch_columns_box, count)
+    _pitch_total_rows = total_rows
 
 
-func set_color_column_count(count: int) -> void:
+func set_color_column_count(count: int, total_rows: int = 0) -> void:
     _color_columns = _rebuild_columns(_color_columns_box, count)
+    _color_total_rows = total_rows
 
 
-func set_name_column_count(count: int) -> void:
+func set_name_column_count(count: int, total_rows: int = 0) -> void:
     _name_columns = _rebuild_columns(_name_columns_box, count)
+    _name_total_rows = total_rows
 
 
 func add_pitch_row(note_name: String, incidence_count: int, state: int, label_color: Color) -> StaffPopupRow:
@@ -157,7 +208,7 @@ func add_pitch_row(note_name: String, incidence_count: int, state: int, label_co
     row.x_pressed.connect(func(): pitch_x_pressed.emit(current_record_idx, note_name, row))
     row.row_right_clicked.connect(func(): pitch_row_right_clicked.emit(current_record_idx, note_name))
 
-    _add_row_to_column_array(row, _pitch_columns, _pitch_added_count)
+    _add_row_to_column_array(row, _pitch_columns, _pitch_added_count, _pitch_total_rows)
     _pitch_added_count += 1
     return row
 
@@ -173,7 +224,7 @@ func add_color_row(color_name: String, color_idx: int, state: int, star_color: C
     row.x_pressed.connect(func(): color_x_pressed.emit(current_record_idx, color_idx, row))
     row.row_right_clicked.connect(func(): color_row_right_clicked.emit(current_record_idx, color_idx))
 
-    _add_row_to_column_array(row, _color_columns, _color_added_count)
+    _add_row_to_column_array(row, _color_columns, _color_added_count, _color_total_rows)
     _color_added_count += 1
     return row
 
@@ -189,15 +240,40 @@ func add_name_row(name_str: String, state: int, label_color: Color) -> StaffPopu
     row.x_pressed.connect(func(): name_x_pressed.emit(current_record_idx, name_str, row))
     row.row_right_clicked.connect(func(): name_row_right_clicked.emit(current_record_idx, name_str))
 
-    _add_row_to_column_array(row, _name_columns, _name_added_count)
+    _add_row_to_column_array(row, _name_columns, _name_added_count, _name_total_rows)
     _name_added_count += 1
     return row
 
 
-func _add_row_to_column_array(row: StaffPopupRow, columns: Array[VBoxContainer], added_index: int) -> void:
-    # Round-robin across however many columns this section currently has
-    # (set via set_*_column_count(), driven by the caller's per-section
-    # counter, not live get_child_count() — see that var's comment above).
+## COLUMN-MAJOR, not round-robin. Rows arrive alphabetically, so filling
+## each column top-to-bottom before starting the next is what makes the
+## alphabet read DOWN then RIGHT:
+##
+##     A  E  I        (column-major, this)
+##     B  F  J
+##     C  G  K
+##
+##     A  B  C        (round-robin, what this replaced — reading down a
+##     D  E  F         column gave A, D, G, which is not an order anyone
+##     G  H  I         can scan for a name)
+##
+## Needs the section's TOTAL row count, which round-robin did not: the
+## column a row belongs in depends on how many rows there will be in
+## total, not just on how many have been added so far. Callers supply it
+## through set_*_column_count(); a total of 0 (nothing supplied) falls
+## back to the old round-robin rather than dividing by zero.
+func _add_row_to_column_array(row: StaffPopupRow, columns: Array[VBoxContainer],
+        added_index: int, total_rows: int) -> void:
     if columns.is_empty():
         return
-    columns[added_index % columns.size()].add_child(row)
+    if total_rows <= 0:
+        columns[added_index % columns.size()].add_child(row)
+        return
+    var per_col: int = ceili(float(total_rows) / float(columns.size()))
+    if per_col <= 0:
+        per_col = 1
+    # mini() guards the last column against a rounding overshoot — with
+    # 15 rows over 4 columns, per_col is 4 and index 14 computes column 3,
+    # but an odd total/column pair could otherwise index past the end.
+    var col: int = mini(added_index / per_col, columns.size() - 1)
+    columns[col].add_child(row)

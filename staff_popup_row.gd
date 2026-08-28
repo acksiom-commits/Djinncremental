@@ -134,7 +134,13 @@ func set_visual_state(state: int) -> void:
             _btn_check.disabled = false
             _btn_x.disabled = false
         2:  # Eliminated (X)
-            _label.add_theme_color_override("font_color", STATE_COLORS.eliminated)
+            # Greyed, NOT red. Red text read as an error rather than as
+            # "ruled out", and the star widget's own name list already
+            # greyed its eliminated labels — so the same state looked like
+            # two different things depending on which surface you were
+            # looking at. The X button below keeps the red, which marks
+            # which CONTROL is engaged rather than colouring the element.
+            _label.add_theme_color_override("font_color", STATE_COLORS.eliminated_label)
             _btn_check.add_theme_color_override("font_color", DISABLED_BTN_COLOR)
             _btn_x.add_theme_color_override("font_color", STATE_COLORS.eliminated)
             _btn_check.disabled = false
