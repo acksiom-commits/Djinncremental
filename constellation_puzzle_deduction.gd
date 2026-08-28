@@ -1509,10 +1509,34 @@ func _get_or_create_match_record_for_degree_slot(degree: int, position_in_group:
     return _match_records.size() - 1
 
 
+## Which record IS this position, if one already is.
+##
+## READS THE EFFECTIVE CANDIDATE SET, not seq_lo/seq_hi. A position the
+## player established by DEDUCTION lives in the derived layer and
+## deliberately never touches those fields (see test_derived_layer:
+## "...WITHOUT writing into the player's own seq_lo"), so the old own-field
+## test could not see it. Reported live:
+##
+##   "Player has locked Keriion down as Sequence 8, and also an A4 star
+##    which means it's either yellow or red, but that did not propagate to
+##    the Staff popup for sequence 8. It DOES show up on Keriion's Name tab."
+##
+## Keriion's pin was derived, so this returned -1, and
+## _get_or_create_match_record_for_seq appended a SECOND, empty record for
+## position 8. The popup read that one — hence a blank popup beside a
+## correct Name tab, for the same star.
+##
+## THE EXACT MISTAKE _seq_singleton_owners ALREADY FIXED, still standing
+## here: "Reading seq_lo == seq_hi alone stopped seeing derived pins the
+## moment they moved into the derived layer, which silently dropped every
+## exclusion cascade." One instance was corrected; this one was missed.
+##
+## Every caller is a UI path (popup open, widget build), never the
+## fixpoint, so scanning the effective set here costs nothing per refresh.
 func _find_match_record_by_exact_seq(seq: int) -> int:
     for i in _match_records.size():
-        var r: Dictionary = _match_records[i]
-        if int(r["seq_lo"]) > 0 and int(r["seq_lo"]) == int(r["seq_hi"]) and int(r["seq_lo"]) == seq:
+        var s: Array = _seq_candidate_set_for(i)
+        if s.size() == 1 and int(s[0]) == seq:
             return i
     return -1
 

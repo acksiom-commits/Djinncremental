@@ -91,6 +91,50 @@ func run() -> void:
 	ok(d._effective_pitch_state(pyr, note) == 0,
 		"and the borrowed pitch elimination is gone from the name row")
 
+	# ── 4b. the popup OPENED AFTER the refresh, which is the live order ──
+	# Everything above creates the popup record BEFORE
+	# _full_propagation_refresh(), so the fixpoint sees both records and
+	# wires them together. THE GAME DOES THE OPPOSITE: the refresh has
+	# already run, and _open_staff_popup then calls
+	# _get_or_create_match_record_for_seq, which appends a record and calls
+	# only _sync_derived_size(). Nothing runs the fixpoint in between.
+	#
+	# Reported 2026-08-27:
+	#   "Player has locked Keriion down as Sequence 8, and also an A4 star
+	#    which means it's either yellow or red, but that did not propagate
+	#    to the Staff popup for sequence 8. It DOES show up correctly on
+	#    Keriion's Name tab slot entries for Color."
+	#
+	# _find_match_record_by_exact_seq read the record's OWN seq_lo/seq_hi, so
+	# a DERIVED pin was invisible to it and a second, empty record was
+	# created for that position — a blank popup beside a correct Name tab,
+	# for the same star. The same mistake _seq_singleton_owners had already
+	# fixed once and this site kept.
+	print("\n=== 4b. a popup opened after the refresh finds the derived pin ===")
+	d._load_match_records([])
+	var ker: int = d._get_or_create_match_record_for_name("Keriion")
+	d._match_records[ker]["seq_candidates"] = [3, 5]
+	var sel: int = d._get_or_create_match_record_for_name("Selion")
+	d._match_records[sel]["seq_lo"] = 5
+	d._match_records[sel]["seq_hi"] = 5
+	d._match_records[ker]["color_states"] = {1: 2}
+	d._full_propagation_refresh()
+	ok(d._seq_candidate_set_for(ker) == [3],
+		"Keriion is pinned to position 3 by DERIVATION, not by seq_lo (own seq_lo=%s)"
+			% str(d._match_records[ker]["seq_lo"]))
+	ok(d._effective_color_state(ker, 1) == 2,
+		"and its own row knows colour 1 is out — the Name-tab surface that worked")
+	var n_before: int = d._match_records.size()
+	var pop3: int = d._get_or_create_match_record_for_seq(3)
+	ok(pop3 == ker,
+		"the popup for position 3 resolves to Keriion's record (got %d, want %d)" % [pop3, ker])
+	ok(d._match_records.size() == n_before,
+		"no duplicate record for a position already pinned (%d -> %d)"
+			% [n_before, d._match_records.size()])
+	ok(d._effective_color_state(pop3, 1) == 2,
+		"so the Staff popup sees the colour elimination (got %d)"
+			% d._effective_color_state(pop3, 1))
+
 	# ── 5. cross-record name exclusion feeds the singleton promotion ──
 	# _settle_singleton_names counted through _effective_name_state, which
 	# knows nothing about a name another record has already claimed. A popup
