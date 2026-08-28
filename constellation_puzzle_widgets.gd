@@ -1970,6 +1970,30 @@ func _freq_to_y_fraction(freq: float) -> float:
     return (freq - min_f) / (max_f - min_f)
 
 
+## Staff name row. Smaller than the numeral it sits above: a name is far
+## longer than a digit and the column it has to fit in is the same width.
+const FONT_SIZE_STAFF_NAME: int = 11
+
+
+## `text` shortened with a trailing ellipsis until it fits `max_w`.
+##
+## Returns "" rather than a lone ellipsis when even one character will not
+## fit — a column too narrow to say anything should say nothing, not draw a
+## dot the player might read as a value.
+func _fit_string_to_width(font: Font, text: String, size: int, max_w: float) -> String:
+    if max_w <= 0.0:
+        return ""
+    if font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x <= max_w:
+        return text
+    var cut: int = text.length() - 1
+    while cut > 0:
+        var candidate: String = text.substr(0, cut) + "…"
+        if font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x <= max_w:
+            return candidate
+        cut -= 1
+    return ""
+
+
 func _draw_melody_staff() -> void:
     var panel_size: Vector2 = _host._melody_staff_panel.size
     if _host._star_count <= 0 or panel_size.x <= 0.0 or panel_size.y <= 0.0:
@@ -1977,7 +2001,11 @@ func _draw_melody_staff() -> void:
 
     var margin_x: float = 20.0
     var margin_top: float = 14.0
-    var margin_bottom: float = 20.0
+    # Room for TWO stacked readouts under the staff now — the name sits
+    # above the sequence numeral. Taken out of the staff's own height rather
+    # than the panel's, so the .tscn is untouched and the pitch spread just
+    # compresses slightly.
+    var margin_bottom: float = 34.0
     var usable_w: float = panel_size.x - margin_x * 2.0
     var usable_h: float = panel_size.y - margin_top - margin_bottom
     var step_x: float = usable_w / float(maxi(_host._star_count - 1, 1))
@@ -1998,8 +2026,8 @@ func _draw_melody_staff() -> void:
             Vector2(bx, margin_top), Vector2(bx, margin_top + usable_h), bar_col, 1.0)
         pos += 4
 
-    var note_col := STATE_COLORS.neutral
-    var unknown_col := STATE_COLORS.muted
+    # No per-readout colours any more: every mark belonging to a position
+    # takes that POSITION's colour. See pos_col in the loop.
     var font := ThemeDB.fallback_font
     var font_size_small := 16
 
@@ -2007,26 +2035,58 @@ func _draw_melody_staff() -> void:
         var x: float = margin_x + step_x * float(seq_pos - 1)
         var marker: Dictionary = _deduction._melody_marker_for_position(seq_pos)
 
-        if marker["has_position"] and marker["pitch_known"]:
+        # ONE COLOUR PER POSITION, and COLOUR is what sets it.
+        #
+        # Green (UNKNOWN_SEQ_COLOR) is the not-yet-known state for the whole
+        # position: at puzzle start the numeral and both "?" marks are
+        # green. The moment the position's COLOUR is deduced, all three turn
+        # that colour — whether they are still showing "?" or have since
+        # resolved to a real pitch and name. So the row reads as "this
+        # position is now known to be a blue star" independently of how much
+        # else about it has been worked out.
+        #
+        # Colour is a GIVEN axis (painted on the map), so tinting by it
+        # reveals nothing the player has not already got.
+        var known_color: int = _deduction._known_color_for_seq_position(seq_pos)
+        var pos_col: Color = _host.STAR_COLORS_BY_IDX[known_color] if known_color >= 0 else _host.UNKNOWN_SEQ_COLOR
+
+        # PITCH: its note at its own staff height once known, otherwise "?"
+        # on the baseline. The "?" is NOT gated on a record existing at this
+        # position — every position has a pitch to find, so every unresolved
+        # one says so from the start. It used to draw only where a record
+        # was already pinned, which meant a fresh puzzle showed nothing at
+        # all across the whole staff.
+        if marker["pitch_known"]:
             var freq: float = _freq_for_note_name(str(marker["note_name"]))
             var frac: float = _freq_to_y_fraction(freq)
             var y: float = margin_top + usable_h * (1.0 - frac)
-            _host._melody_staff_panel.draw_circle(Vector2(x, y), 5.0, note_col)
+            _host._melody_staff_panel.draw_circle(Vector2(x, y), 5.0, pos_col)
             var label: String = str(marker["note_name"])
             var label_w: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
             _host._melody_staff_panel.draw_string(font, Vector2(x - label_w * 0.5, y - 9.0),
-                label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, note_col)
-        elif marker["has_position"]:
+                label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, pos_col)
+        else:
             var qw: float = font.get_string_size("?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
             _host._melody_staff_panel.draw_string(font, Vector2(x - qw * 0.5, baseline_y + 4.0),
-                "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, unknown_col)
+                "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, pos_col)
+
+        # NAME, between the staff and the numeral. "?" until identified,
+        # then the name itself.
+        #
+        # Ellipsised to its own column: names run to ~10 characters and 15
+        # positions across this panel leave roughly a third of that per
+        # slot, so drawn full they would overlap their neighbours.
+        var star_name: String = _deduction._known_name_for_seq_position(seq_pos)
+        var name_label: String = _fit_string_to_width(
+            font, star_name, FONT_SIZE_STAFF_NAME, step_x - 4.0) if star_name != "" else "?"
+        var fw: float = font.get_string_size(name_label, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_STAFF_NAME).x
+        _host._melody_staff_panel.draw_string(font, Vector2(x - fw * 0.5, margin_top + usable_h + 13.0),
+            name_label, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_STAFF_NAME, pos_col)
 
         var num_label: String = str(seq_pos)
         var nw: float = font.get_string_size(num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
-        var known_color: int = _deduction._known_color_for_seq_position(seq_pos)
-        var num_col: Color = _host.STAR_COLORS_BY_IDX[known_color] if known_color >= 0 else _host.UNKNOWN_SEQ_COLOR
-        _host._melody_staff_panel.draw_string(font, Vector2(x - nw * 0.5, margin_top + usable_h + 14.0),
-            num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, num_col)
+        _host._melody_staff_panel.draw_string(font, Vector2(x - nw * 0.5, margin_top + usable_h + 28.0),
+            num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, pos_col)
 
 
 func _on_melody_staff_input(event: InputEvent) -> void:

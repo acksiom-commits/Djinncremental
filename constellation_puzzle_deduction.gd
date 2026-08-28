@@ -775,17 +775,64 @@ func _melody_marker_for_position(seq_pos: int) -> Dictionary:
     # so the staff used to show "?" for positions whose pitch was fully
     # known. Same bypass-the-effective-layer class as _known_color_for_
     # seq_position and _display_color_for_record below.
+    # ALSO the effective POSITION, for the same reason. Matching on the
+    # record's own seq_lo/seq_hi missed every position the player pinned by
+    # DEDUCTION rather than by typing — those live in the derived layer and
+    # deliberately never touch those fields — so the staff drew "?" over a
+    # position that was actually solved. Third instance of the mistake
+    # _seq_singleton_owners documents and d27d9c4 fixed in
+    # _find_match_record_by_exact_seq; see _record_at_seq_position.
     var has_position: bool = false
     for i in _match_records.size():
-        var r: Dictionary = _match_records[i]
-        var lo: int = int(r.get("seq_lo", 0))
-        var hi: int = int(r.get("seq_hi", 0))
-        if lo == seq_pos and hi == seq_pos:
-            has_position = true
-            var note: String = _displayable_pitch_for_record(i)
-            if note != "":
-                return {"has_position": true, "pitch_known": true, "note_name": note}
+        if not _record_is_at_seq(i, seq_pos):
+            continue
+        has_position = true
+        var note: String = _displayable_pitch_for_record(i)
+        if note != "":
+            return {"has_position": true, "pitch_known": true, "note_name": note}
     return {"has_position": has_position, "pitch_known": false, "note_name": ""}
+
+
+## Is this record THIS sequence position, by any route the player has?
+##
+## Reads the effective candidate set, so a derived pin counts exactly like a
+## typed one. The staff's three per-position readouts (pitch, name, the
+## numeric's colour) all ask this, and all three used to ask it of
+## seq_lo/seq_hi and get "no" for a position the player had solved.
+func _record_is_at_seq(record_idx: int, seq_pos: int) -> bool:
+    var s: Array = _seq_candidate_set_for(record_idx)
+    return s.size() == 1 and int(s[0]) == seq_pos
+
+
+## The name at a sequence position, or "" if it is not yet determined.
+##
+## Same "resolves by elimination" rule _known_color_for_seq_position uses: a
+## directly-recorded name counts, and so does the last name standing once
+## every other has been ruled out.
+func _known_name_for_seq_position(seq_pos: int) -> String:
+    for i in _match_records.size():
+        if not _record_is_at_seq(i, seq_pos):
+            continue
+        var own: String = str(_match_records[i].get("name", ""))
+        if own != "":
+            return own
+        var confirmed: String = ""
+        var eliminated_count: int = 0
+        var remaining: String = ""
+        for n in _host._star_names:
+            var nm: String = str(n)
+            var st: int = _effective_name_state(i, nm)
+            if st == 1:
+                confirmed = nm
+            elif st == 2:
+                eliminated_count += 1
+            else:
+                remaining = nm
+        if confirmed != "":
+            return confirmed
+        if eliminated_count == _host._star_names.size() - 1 and remaining != "":
+            return remaining
+    return ""
 
 
 func _known_color_for_seq_position(seq_pos: int) -> int:
@@ -798,11 +845,11 @@ func _known_color_for_seq_position(seq_pos: int) -> int:
     # record is pinned to a star, or because it wears a "Blue A" slot label,
     # never lands in that dict. Colour is a given axis (painted on the map),
     # so reading its ground-truth tier leaks nothing.
+    # Effective POSITION too — see _record_is_at_seq. This matched on
+    # seq_lo/seq_hi and so left the numeric uncoloured for any position the
+    # player had pinned by deduction rather than by typing.
     for i in _match_records.size():
-        var r: Dictionary = _match_records[i]
-        var lo: int = int(r.get("seq_lo", 0))
-        var hi: int = int(r.get("seq_hi", 0))
-        if lo != seq_pos or hi != seq_pos:
+        if not _record_is_at_seq(i, seq_pos):
             continue
         var confirmed: int = -1
         var eliminated_count: int = 0

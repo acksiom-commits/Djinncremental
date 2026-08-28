@@ -93,6 +93,49 @@ func run() -> void:
         "star tag shows the Listen-revealed pitch")
     ok(w._confirmed_sequence_str(0) == "1",
         "star tag shows the sequence position")
+    # NAME IS THE HIDDEN AXIS, so a record bound to a star_idx with a
+    # revealed pitch must NOT surrender its name — _effective_name_state
+    # refuses the star_idx shortcut on purpose (a Pitch slot once showed an
+    # unconfirmed star's true name because of it). The staff's name row
+    # inherits that guard, and this asserts it before asserting the display.
+    ok(d._known_name_for_seq_position(1) == "",
+        "staff shows NO name for a star-bound record the player never identified (got '%s')"
+            % d._known_name_for_seq_position(1))
+    d._match_records[rec]["name"] = str(host._star_names[0])
+    ok(d._known_name_for_seq_position(1) == str(host._star_names[0]),
+        "and shows it once identity IS confirmed (got '%s')"
+            % d._known_name_for_seq_position(1))
+
+    # ---------------------------------------------------------------
+    # A position pinned by DEDUCTION, not typed. All three staff readouts
+    # ask _record_is_at_seq, which reads the effective candidate set; they
+    # used to match on the record's own seq_lo/seq_hi and so drew "?" and an
+    # uncoloured numeral over a position the player had solved. Same class
+    # as d27d9c4's _find_match_record_by_exact_seq, found while adding the
+    # name row that would have inherited it.
+    print("\n=== staff readouts see a DERIVED position, not just a typed one ===")
+    d._load_match_records([])
+    var dr: int = d._get_or_create_match_record_for_star_idx(0)
+    d._match_records[dr]["pitch_revealed"] = true
+    d._match_records[dr]["seq_candidates"] = [1, 2]
+    var other: int = d._get_or_create_match_record_for_star_idx(1)
+    d._match_records[other]["seq_lo"] = 2
+    d._match_records[other]["seq_hi"] = 2
+    d._full_propagation_refresh()
+    ok(int(d._match_records[dr]["seq_lo"]) == 0,
+        "precondition: the pin is DERIVED — own seq_lo is still 0")
+    ok(d._seq_candidate_set_for(dr) == [1],
+        "precondition: and it resolves to position 1 (got %s)"
+            % str(d._seq_candidate_set_for(dr)))
+    var dmark: Dictionary = d._melody_marker_for_position(1)
+    ok(bool(dmark["has_position"]), "the staff sees a position there at all")
+    ok(bool(dmark["pitch_known"]), "and its pitch, rather than drawing '?'")
+    ok(d._known_color_for_seq_position(1) == host._star_colors[0],
+        "and its colour, so the numeral is tinted rather than left unknown")
+    d._match_records[dr]["name"] = str(host._star_names[0])
+    ok(d._known_name_for_seq_position(1) == str(host._star_names[0]),
+        "and its name, once identity is confirmed (got '%s')"
+            % d._known_name_for_seq_position(1))
 
     # ---------------------------------------------------------------
     print("\n=== leak guard still holds: un-listened stub must stay hidden ===")
