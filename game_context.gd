@@ -1057,11 +1057,24 @@ func get_click_multiplier() -> int:
 ## still be able to hand it Sparks deliberately, which is the whole point
 ## of having a manual control.
 ##
-## Per click: one auto-tick's worth (the Constellation's assigned points)
-## times the click multiplier, floored at 1 point. Without that floor a
-## Constellation with no Foci or Volitions assigned yields 0 points and the
-## button would silently do nothing — exactly the case where manual
-## endowment is most wanted.
+## Per click: EXACTLY the click multiplier. Nothing else scales it.
+##
+## FIXED 2026-08-27, reported as "isn't going by the Volitions amount, I
+## think it's using the Foci assigned to endowment". It was: the amount was
+## `get_constellation_points(id) * get_click_multiplier()`, and
+## get_constellation_points sums the constellation's assigned foci +
+## volitions + bonus volitions — precisely the multi-selector allocation the
+## paragraph above says this must be independent of. The header described
+## the intended rule correctly while the line below contradicted it.
+##
+## The old form was framed as "one auto-tick's worth, times the click
+## multiplier", which sounds reasonable and is the wrong axis: it makes a
+## heavily-assigned Constellation redistribute in huge steps and an
+## unassigned one in single Sparks, so the button's feel tracked automation
+## investment rather than click investment. It also needed a floor of 1 to
+## stop an unassigned Constellation moving nothing at all — a floor that is
+## unnecessary once the amount is the click multiplier, which is never
+## below 1 by construction (1 + volitions).
 ##
 ## Returns how much was actually moved, so the caller can tell a real
 ## transfer from a no-op (capped, or out of Sparks) without re-deriving it.
@@ -1070,8 +1083,7 @@ func endow_constellation_sparks_manual(constellation_id: int) -> float:
         return 0.0
     var key: String = str(constellation_id)
     var current: float = constellation_spark_totals.get(key, 0.0)
-    var points: int = maxi(get_constellation_points(constellation_id), 1)
-    var want: BigNum = BigNum.from_int(points * get_click_multiplier())
+    var want: BigNum = BigNum.from_int(get_click_multiplier())
 
     var cd: Node = get_node_or_null("/root/ConstellationData")
     if cd:
