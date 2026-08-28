@@ -21,8 +21,8 @@ extends "res://dev_tests/test_base.gd"
 # CONSTELLATIONS beats two seeds on one map: the tier/Form shares are
 # directional at this size, and anything needing a real denominator belongs
 # in a test_ module with its own non-vacuity guard, not here.
-const SEEDS := [11]
-const CONSTELLATIONS := [0, 2]
+const SEEDS := [11, 4242]
+const CONSTELLATIONS := [0, 1, 2]
 
 var fails: int = 0
 

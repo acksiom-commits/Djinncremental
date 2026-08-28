@@ -6156,7 +6156,32 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # the old coarse per-Characteristic count) — the old flat stall budget
     # was sized against the smaller number and would almost certainly cut
     # generation short well before the pool was actually exhausted.
-    var max_stall: int = maxi(400, _unused_pool_size() * 2)
+    # SIZED FROM OBSERVED BEHAVIOUR, 2026-08-27. Was
+    # `maxi(400, _unused_pool_size() * 2)` — about 2730 on the Archon.
+    #
+    # That expression sized the stall budget against the POOL, on the
+    # assumption that the loop ends by draining it. It does not: the pool
+    # is unreachable by construction (~74% of COLOR:PITCH can only ever be
+    # touched by bookkeeping), so `_unused_pool_size() > 0` is permanently
+    # true and generation ALWAYS terminates on this counter instead —
+    # measured, ending at exactly max_stall every time with 164-338 cells
+    # still unused. The final ~2730 stalled passes, some 33,000 build
+    # attempts, produced zero clues on every generation ever run.
+    #
+    # Measured at 300, 18 puzzles across three constellations:
+    #
+    #     per-puzzle    38-178 s  ->  5.4-11.9 s
+    #     clues/puzzle      28.8  ->  28.8        (unchanged)
+    #     live gate        18/18  ->  18/18
+    #     name closure     18/18  ->  18/18
+    #     names unbound        0  ->  0
+    #     tier mix    22/35/42    ->  22/35/42    (unchanged)
+    #
+    # Nothing is lost because nothing was being found in that tail. If clue
+    # counts ever look thin, RAISE this and measure — but check first
+    # whether the Forms have simply run out of constructible draws, which
+    # is what a long stall run actually means.
+    var max_stall: int = 300
     # Yields a frame every YIELD_INTERVAL passes through this outer loop —
     # see the FIXED 2026-07-27 note above generation_complete. This is the
     # loop that can run into the hundreds of iterations building up a
@@ -6184,7 +6209,13 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # boundary _prune_redundant_clues protects them behind.
     var protected_clue_count: int = chosen_form_clues.size()
 
+    # Generation-cost instrumentation, off by default — see DEBUG_GEN_TIMING.
+    var _t_loop_start: int = Time.get_ticks_msec()
+    var _loop_passes: int = 0
+    var _build_attempts: int = 0
+
     while _unused_pool_size() > 0 and stall_count < max_stall:
+        _loop_passes += 1
         var tier_order: Array = _tiers_by_underrepresentation(tier_counts)
         var committed: bool = false
         for tier in tier_order:
@@ -6197,6 +6228,7 @@ func _generate_clues_forms_attempt() -> Dictionary:
             while tier_attempts < TIER_OPPORTUNISTIC_ATTEMPTS and not succeeded:
                 tier_attempts += 1
                 var form_id: int = int(tier_forms[tier_attempts % tier_forms.size()])
+                _build_attempts += 1
                 succeeded = _try_build_and_commit(form_id, sequence_solver_facts,
                     name_revealed, tier_counts, form_counts)
             if succeeded:
@@ -6227,8 +6259,15 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # anchors and preserving the Sequence gate, the name closure, and
     # every name binding exactly. Rebuilds sequence_solver_facts, which is
     # stale the moment any clue is removed.
+    var _t_loop_end: int = Time.get_ticks_msec()
     if prune_enabled:
         sequence_solver_facts = await _prune_redundant_clues(name_revealed, protected_clue_count)
+    var _t_prune_end: int = Time.get_ticks_msec()
+    if DEBUG_GEN_TIMING:
+        print("      [gen] loop %5.1fs (%d passes, %d attempts) | prune %5.1fs | clues %d | max_stall %d, ended at %d, pool left %d"
+            % [float(_t_loop_end - _t_loop_start) / 1000.0, _loop_passes, _build_attempts,
+                float(_t_prune_end - _t_loop_end) / 1000.0, chosen_form_clues.size(),
+                max_stall, stall_count, _unused_pool_size()])
 
     # Phase C — uniqueness gate for THIS attempt. Whether a failure here
     # gets retried with a fresh draw (rather than shipped as-is) is decided
@@ -6503,6 +6542,17 @@ func _solve_name_closure(seq_solutions: Array, cap: int = 2) -> Array:
 
 
 ## Set false to silence the post-generation dump below.
+## Per-generation cost breakdown: main-loop time and pass/attempt counts,
+## pruning time, and how the loop TERMINATED (max_stall vs pool). Off by
+## default; flip it when generation time is the question.
+##
+## Worth keeping rather than deleting: nothing was measuring generation
+## time at all until 2026-08-27, when the suite started blowing a 30-minute
+## timeout and three separate causes got blamed before this print showed
+## the real one in a single run — 185,667 build attempts to ship 25 clues,
+## terminating on a stall budget sized against a pool that never drains.
+const DEBUG_GEN_TIMING: bool = false
+
 const DEBUG_DUMP_CLUES: bool = true
 
 ## Print the whole puzzle: solution, map, and every clue verbatim.
