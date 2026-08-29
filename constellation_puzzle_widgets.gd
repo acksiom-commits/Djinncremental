@@ -936,9 +936,21 @@ func _copy_header_for_record(record_idx: int, section: String) -> String:
 ## is a SUPERSET of the truth. Nothing looks malformed, nothing contradicts
 ## anything the player typed — the note just quietly offers options that
 ## are gone, while the popup beside it shows them struck out.
+##
+## "sequence" is the one section that skips step 2 deliberately, not by
+## omission: _effective_seq_candidates already folds cross-record exclusion
+## in at its own base tier (_compute_excluded_positions_for), unlike the
+## per-value state dicts the other three sections read — it's exactly the
+## set the row's own centre box renders, so there is no second overlay step
+## left to reproduce.
 func _on_staff_copy(record_idx: int, section: String) -> void:
     var items: Array = []
     match section:
+        "sequence":
+            var positions: Array = _deduction._effective_seq_candidates(record_idx).duplicate()
+            positions.sort()
+            for p in positions:
+                items.append(str(int(p)))
         "pitch":
             var excluded_pitches: Array[String] = _deduction._compute_excluded_pitches_for(record_idx)
             for pitch_idx in _host._pitch_freqs.size():
@@ -1108,6 +1120,27 @@ func _make_pitch_checklist_trigger_button(record_idx: int) -> Button:
     return btn
 
 
+## The trigger button plus a COPY button, same pairing as
+## _make_color_toggle_row_for_record's inline copy — the popup this trigger
+## opens carries its own copy button too (added when checklist popups first
+## got one), but that one only reaches Notes while the popup is open. This
+## is the tab slot's own line, so a player working straight down a Sort:tab
+## list doesn't have to open the popup just to file this record's pitches.
+func _make_pitch_checklist_row_for_record(record_idx: int) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 3)
+    row.add_child(_make_pitch_checklist_trigger_button(record_idx))
+    var copy_btn := Button.new()
+    copy_btn.text = "⎘"
+    copy_btn.custom_minimum_size = Vector2(26, 24)
+    copy_btn.focus_mode = Control.FOCUS_NONE
+    copy_btn.tooltip_text = "Write the still-possible pitches into the Notes tab"
+    var cridx := record_idx
+    copy_btn.pressed.connect(func(): _on_staff_copy(cridx, "pitch"))
+    row.add_child(copy_btn)
+    return row
+
+
 func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     _host._pitch_checklist_popup.clear_rows()
     # One row per pitch, so the pitch count IS the total the column-major
@@ -1265,10 +1298,13 @@ func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
             cur_state = 2
         _style_color_toggle_btn(btn, ci, cur_state)
         row.add_child(btn)
-    # COPY, on the slot's own colour row. The slot's Name and Pitch lists
-    # live in the shared checklist popups (which carry their own button), so
-    # colour is the one axis a tab slot shows inline and therefore the only
-    # one needing a button here.
+    # COPY, on the slot's own colour row — matched by Sequence's and
+    # Pitch's own inline copy buttons on their rows (see
+    # _make_sequence_range_row_for_record / _make_pitch_checklist_row_for_
+    # record). Name is the one axis with no inline copy: it has no
+    # candidate list of its own to show inline at all — just the trigger
+    # button that opens the shared checklist popup, which carries its own
+    # copy button already.
     var copy_btn := Button.new()
     copy_btn.text = "⎘"
     copy_btn.custom_minimum_size = Vector2(26, 24)
@@ -1424,10 +1460,11 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     row.add_theme_constant_override("separation", 2)
 
     var edit_lo := LineEdit.new()
-    # Wide enough for the "= N" exact-pin form _refresh_range_edits renders
-    # (up to "= 15"), not just a bare two-digit bound.
-    edit_lo.custom_minimum_size = Vector2(38, 24)
-    edit_lo.max_length = 4
+    # A bare two-digit bound is all this box ever shows now — the "= N"
+    # exact-pin form moved to the centre box (see _refresh_range_edits), so
+    # it no longer needs room for the leading "= ".
+    edit_lo.custom_minimum_size = Vector2(22, 24)
+    edit_lo.max_length = 2
     edit_lo.placeholder_text = "–"
     edit_lo.add_theme_font_size_override("font_size", 15)
     edit_lo.add_theme_constant_override("minimum_character_width", 2)
@@ -1458,7 +1495,7 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     row.add_child(lbl_gt)
 
     var edit_hi := LineEdit.new()
-    edit_hi.custom_minimum_size = Vector2(20, 24)
+    edit_hi.custom_minimum_size = Vector2(18, 24)
     edit_hi.max_length = 2
     edit_hi.placeholder_text = "–"
     edit_hi.add_theme_font_size_override("font_size", 15)
@@ -1467,17 +1504,29 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     row.add_child(edit_hi)
 
     var ridx := record_idx
-    edit_lo.text_submitted.connect(func(_t): _commit_sequence_range(ridx, edit_lo, edit_hi))
-    edit_lo.focus_exited.connect(func(): _commit_sequence_range(ridx, edit_lo, edit_hi))
-    edit_hi.text_submitted.connect(func(_t): _commit_sequence_range(ridx, edit_lo, edit_hi))
-    edit_hi.focus_exited.connect(func(): _commit_sequence_range(ridx, edit_lo, edit_hi))
+    edit_lo.text_submitted.connect(func(_t): _commit_sequence_range(ridx, edit_lo, edit_mid, edit_hi))
+    edit_lo.focus_exited.connect(func(): _commit_sequence_range(ridx, edit_lo, edit_mid, edit_hi))
+    edit_hi.text_submitted.connect(func(_t): _commit_sequence_range(ridx, edit_lo, edit_mid, edit_hi))
+    edit_hi.focus_exited.connect(func(): _commit_sequence_range(ridx, edit_lo, edit_mid, edit_hi))
     edit_mid.text_submitted.connect(func(_t): _commit_sequence_candidates(ridx, edit_lo, edit_mid, edit_hi))
     edit_mid.focus_exited.connect(func(): _commit_sequence_candidates(ridx, edit_lo, edit_mid, edit_hi))
 
     # Initial render goes through the same formatter the commit path uses,
     # so an exact pin shows as "= N" here too rather than the contradictory
     # "N < x < N" the raw display helpers produce.
-    _refresh_range_edits(record_idx, edit_lo, edit_hi)
+    _refresh_range_edits(record_idx, edit_lo, edit_mid, edit_hi)
+
+    # COPY, matching Colour's and Pitch's inline buttons — see
+    # _make_color_toggle_row_for_record. "Still possible" for Sequence is
+    # exactly the centre box's own candidate set (_effective_seq_candidates),
+    # so this writes the same list the player is already looking at.
+    var copy_btn := Button.new()
+    copy_btn.text = "⎘"
+    copy_btn.custom_minimum_size = Vector2(26, 24)
+    copy_btn.focus_mode = Control.FOCUS_NONE
+    copy_btn.tooltip_text = "Write the still-possible sequence positions into the Notes tab"
+    copy_btn.pressed.connect(func(): _on_staff_copy(ridx, "sequence"))
+    row.add_child(copy_btn)
 
     return row
 
@@ -1493,14 +1542,16 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
 # The shared body lives here; the two _on_*_committed functions below are
 # thin adapters that resolve a record and delegate.
 # ==================================================
-## Re-renders a record's two bound boxes from its CURRENT stored state.
-## Used both after a successful commit and to snap the row back when an
-## entry is rejected, so a refused entry visibly reverts instead of sitting
-## there looking accepted. Single source for the display formatting, which
-## the commit path and the conflict-cancel path each used to spell out.
-func _refresh_range_edits(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
+## Re-renders a record's THREE boxes from its CURRENT stored state — the
+## two bound boxes and the centre candidate-list box. Used both after a
+## successful commit and to snap the row back when an entry is rejected, so
+## a refused entry visibly reverts instead of sitting there looking
+## accepted. Single source for the display formatting, which the commit
+## path and the conflict-cancel path each used to spell out.
+func _refresh_range_edits(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         lo_edit.text = ""
+        mid_edit.text = ""
         hi_edit.text = ""
         return
     # EFFECTIVE bounds, not the raw stored pair — matches what the row
@@ -1509,23 +1560,25 @@ func _refresh_range_edits(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdit)
     var bounds: Array = _deduction._effective_seq_bounds(record_idx)
     var lo: int = int(bounds[0])
     var hi: int = int(bounds[1])
-    # An exact pin is shown as the value in BOTH boxes by the display
-    # helpers, which under this row's "lo < position < hi" notation reads
-    # as the contradiction "7 < x < 7". Render it as "= 7" in the low box
-    # with the high box cleared instead, so the notation never contradicts
-    # itself — the commit path already treats two equal typed values as an
-    # exact pin, and _parse_exclusive_bounds keeps accepting that form.
+    # An exact pin renders as "= N" in the CENTRE box — the candidate-list
+    # box, which is exactly where a single remaining candidate belongs —
+    # with both bound boxes cleared, instead of the contradiction "7 < x <
+    # 7" this row's "lo < position < hi" notation would otherwise read as.
+    # The commit path already treats two equal typed values as an exact
+    # pin, and _parse_exclusive_bounds keeps accepting that form.
     if lo > 0 and lo == hi:
-        lo_edit.text = "= %d" % lo
+        lo_edit.text = ""
         hi_edit.text = ""
+        mid_edit.text = "= %d" % lo
         return
     var lo_val: int = _deduction._exclusive_display_lo(lo, hi)
     var hi_val: int = _deduction._exclusive_display_hi(lo, hi)
     lo_edit.text = str(lo_val) if lo_val > 0 else ""
     hi_edit.text = str(hi_val) if hi_val > 0 else ""
+    mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
 
 
-func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
+func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     var raw_lo: String = lo_edit.text.strip_edges()
@@ -1548,7 +1601,7 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdi
 
     if exact_typed:
         if typed_lo <= 0:
-            _refresh_range_edits(record_idx, lo_edit, hi_edit)
+            _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
             return
         typed_hi = typed_lo
 
@@ -1600,7 +1653,7 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdi
         var impossible_hi: bool = typed_hi > 0 and typed_hi <= 1
         var impossible_lo: bool = typed_lo > 0 and typed_lo >= _host._star_count
         if impossible_hi or impossible_lo or (lo > 0 and hi > 0 and lo > hi):
-            _refresh_range_edits(record_idx, lo_edit, hi_edit)
+            _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
             return
 
     # Same self-conflict protection _confirm_match_record_identity already
@@ -1613,7 +1666,7 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdi
     if old_lo > 0 and old_lo == old_hi and lo > 0 and lo == hi and old_lo != lo:
         var winner: String = await _deduction._conflict_dialog_fn.call("sequence position", str(old_lo), str(lo))
         if winner == str(old_lo):
-            _refresh_range_edits(record_idx, lo_edit, hi_edit)
+            _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
             _deduction._full_propagation_refresh()
             return
 
@@ -1621,7 +1674,7 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, hi_edit: LineEdi
     r["seq_hi"] = hi
     r["seq_candidates"] = []
 
-    _refresh_range_edits(record_idx, lo_edit, hi_edit)
+    _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
 
     if lo > 0 and lo == hi:
         var existing_idx: int = _deduction._find_match_record_by_exact_seq(lo)
@@ -1654,7 +1707,7 @@ func _commit_sequence_candidates(record_idx: int, lo_edit: LineEdit, mid_edit: L
     if valid.size() == 1:
         lo_edit.text = str(valid[0])
         hi_edit.text = str(valid[0])
-        _commit_sequence_range(record_idx, lo_edit, hi_edit)
+        _commit_sequence_range(record_idx, lo_edit, mid_edit, hi_edit)
         return
 
     _deduction.record_at(record_idx)["seq_candidates"] = valid
@@ -1703,11 +1756,11 @@ func _on_record_name_selected(record_idx: int, selected_name: String) -> void:
 # shared implementation (_commit_sequence_range /
 # _commit_sequence_candidates).
 # ==================================================
-func _on_widget_range_committed(star_idx: int, lo_edit: LineEdit, hi_edit: LineEdit) -> void:
+func _on_widget_range_committed(star_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
     if star_idx < 0 or star_idx >= _host._star_count:
         return
     _commit_sequence_range(
-        _deduction._get_or_create_match_record_for_star_idx(star_idx), lo_edit, hi_edit)
+        _deduction._get_or_create_match_record_for_star_idx(star_idx), lo_edit, mid_edit, hi_edit)
 
 
 func _on_widget_middle_committed(star_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
@@ -1894,7 +1947,7 @@ func _build_sequence_slot_row(slot: int) -> void:
 
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_trigger_button(record_idx), row_color))
+    facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
 
@@ -1927,7 +1980,7 @@ func _build_color_group_row(color_idx: int, position_in_group: int) -> void:
 
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
-    facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_trigger_button(record_idx), row_color))
+    facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
 
@@ -2071,7 +2124,7 @@ func _build_name_row(name_str: String) -> void:
 
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
-    facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_trigger_button(record_idx), row_color))
+    facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
 
@@ -2776,16 +2829,16 @@ func _build_star_widgets_impl() -> void:
         var lo_ref := edit_lo
         var mid_ref := edit_mid
         var hi_ref := edit_hi
-        edit_lo.text_submitted.connect(func(_t): _on_widget_range_committed(si, lo_ref, hi_ref))
-        edit_lo.focus_exited.connect(func(): _on_widget_range_committed(si, lo_ref, hi_ref))
-        edit_hi.text_submitted.connect(func(_t): _on_widget_range_committed(si, lo_ref, hi_ref))
-        edit_hi.focus_exited.connect(func(): _on_widget_range_committed(si, lo_ref, hi_ref))
+        edit_lo.text_submitted.connect(func(_t): _on_widget_range_committed(si, lo_ref, mid_ref, hi_ref))
+        edit_lo.focus_exited.connect(func(): _on_widget_range_committed(si, lo_ref, mid_ref, hi_ref))
+        edit_hi.text_submitted.connect(func(_t): _on_widget_range_committed(si, lo_ref, mid_ref, hi_ref))
+        edit_hi.focus_exited.connect(func(): _on_widget_range_committed(si, lo_ref, mid_ref, hi_ref))
         edit_mid.text_submitted.connect(func(_t): _on_widget_middle_committed(si, lo_ref, mid_ref, hi_ref))
         edit_mid.focus_exited.connect(func(): _on_widget_middle_committed(si, lo_ref, mid_ref, hi_ref))
 
         # Same shared formatter as the Sort:tab row (see there).
         if existing_record >= 0:
-            _refresh_range_edits(existing_record, edit_lo, edit_hi)
+            _refresh_range_edits(existing_record, edit_lo, edit_mid, edit_hi)
 
         var close_si := i
         btn_close.pressed.connect(func(): _host._widget_closed[close_si] = true; root.visible = false)
