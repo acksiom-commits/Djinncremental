@@ -301,5 +301,6 @@ func _add_row_to_column_array(row: StaffPopupRow, columns: Array[VBoxContainer],
     # mini() guards the last column against a rounding overshoot — with
     # 15 rows over 4 columns, per_col is 4 and index 14 computes column 3,
     # but an odd total/column pair could otherwise index past the end.
+    @warning_ignore("integer_division") # deliberate floor-divide: bucket index, not a value
     var col: int = mini(added_index / per_col, columns.size() - 1)
     columns[col].add_child(row)

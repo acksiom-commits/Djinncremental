@@ -94,7 +94,9 @@ const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres"
 # mid-composition would silently erase whatever the player had typed but
 # not yet pressed ADD on. Only its `visible` flag is toggled per tab; the
 # node itself, and whatever text is in it, survives every rebuild.
+@warning_ignore("unused_private_class_variable") # read only via _host. from constellation_puzzle_widgets.gd
 @onready var _notes_entry_box:     VBoxContainer = get_node(MARKERS_BASE_PATH + "/NotesEntryBox")
+@warning_ignore("unused_private_class_variable") # read only via _host. from constellation_puzzle_widgets.gd
 @onready var _notes_text_edit:     TextEdit      = get_node(MARKERS_BASE_PATH + "/NotesEntryBox/NotesTextEdit")
 @onready var _notes_add_button:    Button        = get_node(MARKERS_BASE_PATH + "/NotesEntryBox/NotesAddButton")
 # The floor every screen-space popup (Staff / Name checklist / Pitch
@@ -104,6 +106,7 @@ const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres"
 # than cached: SelectedClueDisplay now grows to fit a long clue
 # (fit_content, added alongside this), so the header's own height, and
 # therefore this boundary, is no longer a fixed number.
+@warning_ignore("unused_private_class_variable") # read only via _host. from constellation_puzzle_widgets.gd
 @onready var _header_separator:    Control       = get_node(PANEL_ROOT_PATH + "/OuterMargin/OuterVBox/HeaderSeparator")
 
 # ── STYLE CACHE ──────────────────────────────────────────────────────
