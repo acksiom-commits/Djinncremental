@@ -2118,9 +2118,11 @@ const FONT_SIZE_STAFF_NAME: int = 12
 ## width — at 15 stars a single column is about a third of a name and the
 ## ellipsis fired constantly.
 ##
-## Both offsets are from the staff's bottom edge; the numeral sits below
-## both. Keep NAME_ROW_LOW_DY < the numeral's offset or the low row lands on
-## top of it.
+## All three offsets are from the PANEL'S TOP EDGE now (name/pitch swapped
+## 2026-08-29: Name+numeral read first, above the staff; Pitch's height-
+## mapped note sits below them). The numeral sits below both name rows.
+## Keep NAME_ROW_LOW_DY < the numeral's offset or the low row lands on top
+## of it.
 const NAME_ROW_HIGH_DY: float = 12.0
 const NAME_ROW_LOW_DY: float = 24.0
 const STAFF_NUMERAL_DY: float = 38.0
@@ -2151,21 +2153,22 @@ func _draw_melody_staff() -> void:
         return
 
     var margin_x: float = 20.0
-    var margin_top: float = 14.0
-    # Room for THREE readout rows under the staff: the two staggered name
-    # rows (NAME_ROW_HIGH_DY / NAME_ROW_LOW_DY) and the numeral below them
-    # (STAFF_NUMERAL_DY), plus a few px of descender. Derived from those
+    var staff_pad_bottom: float = 14.0
+    # Room for THREE readout rows ABOVE the staff now (swapped 2026-08-29):
+    # the two staggered name rows (NAME_ROW_HIGH_DY / NAME_ROW_LOW_DY) and
+    # the numeral below them (STAFF_NUMERAL_DY), plus a few px of
+    # clearance before the staff itself starts. Derived from those
     # constants rather than typed, so moving a row cannot silently push it
-    # off the bottom of the panel.
+    # into the staff.
     #
     # Taken out of the staff's own height, not the panel's, so the .tscn
     # stays untouched and the pitch spread just compresses.
-    var margin_bottom: float = STAFF_NUMERAL_DY + 8.0
+    var staff_top: float = STAFF_NUMERAL_DY + 8.0
     var usable_w: float = panel_size.x - margin_x * 2.0
-    var usable_h: float = panel_size.y - margin_top - margin_bottom
+    var usable_h: float = panel_size.y - staff_top - staff_pad_bottom
     var step_x: float = usable_w / float(maxi(_host._star_count - 1, 1))
 
-    var baseline_y: float = margin_top + usable_h * 0.5
+    var baseline_y: float = staff_top + usable_h * 0.5
     var baseline_col := STATE_COLORS.muted
     _host._melody_staff_panel.draw_line(
         Vector2(margin_x, baseline_y), Vector2(margin_x + usable_w, baseline_y), baseline_col, 1.0)
@@ -2178,7 +2181,7 @@ func _draw_melody_staff() -> void:
     while pos < _host._star_count:
         var bx: float = margin_x + step_x * float(pos)
         _host._melody_staff_panel.draw_line(
-            Vector2(bx, margin_top), Vector2(bx, margin_top + usable_h), bar_col, 1.0)
+            Vector2(bx, staff_top), Vector2(bx, staff_top + usable_h), bar_col, 1.0)
         pos += 4
 
     # No per-readout colours any more: every mark belonging to a position
@@ -2205,28 +2208,8 @@ func _draw_melody_staff() -> void:
         var known_color: int = _deduction._known_color_for_seq_position(seq_pos)
         var pos_col: Color = _host.STAR_COLORS_BY_IDX[known_color] if known_color >= 0 else _host.UNKNOWN_SEQ_COLOR
 
-        # PITCH: its note at its own staff height once known, otherwise "?"
-        # on the baseline. The "?" is NOT gated on a record existing at this
-        # position — every position has a pitch to find, so every unresolved
-        # one says so from the start. It used to draw only where a record
-        # was already pinned, which meant a fresh puzzle showed nothing at
-        # all across the whole staff.
-        if marker["pitch_known"]:
-            var freq: float = _freq_for_note_name(str(marker["note_name"]))
-            var frac: float = _freq_to_y_fraction(freq)
-            var y: float = margin_top + usable_h * (1.0 - frac)
-            _host._melody_staff_panel.draw_circle(Vector2(x, y), 5.0, pos_col)
-            var label: String = str(marker["note_name"])
-            var label_w: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
-            _host._melody_staff_panel.draw_string(font, Vector2(x - label_w * 0.5, y - 9.0),
-                label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, pos_col)
-        else:
-            var qw: float = font.get_string_size("?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
-            _host._melody_staff_panel.draw_string(font, Vector2(x - qw * 0.5, baseline_y + 4.0),
-                "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, pos_col)
-
-        # NAME, on one of two staggered rows. "?" until identified, then the
-        # name itself.
+        # NAME, on one of two staggered rows, above the staff. "?" until
+        # identified, then the name itself.
         #
         # ODD positions high, EVEN low, so no name shares a row with either
         # horizontal neighbour and each may run to roughly TWO columns
@@ -2238,13 +2221,33 @@ func _draw_melody_staff() -> void:
         var name_label: String = _fit_string_to_width(
             font, star_name, FONT_SIZE_STAFF_NAME, step_x * 2.0 - 6.0) if star_name != "" else "?"
         var fw: float = font.get_string_size(name_label, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_STAFF_NAME).x
-        _host._melody_staff_panel.draw_string(font, Vector2(x - fw * 0.5, margin_top + usable_h + name_dy),
+        _host._melody_staff_panel.draw_string(font, Vector2(x - fw * 0.5, name_dy),
             name_label, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_STAFF_NAME, pos_col)
 
         var num_label: String = str(seq_pos)
         var nw: float = font.get_string_size(num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
-        _host._melody_staff_panel.draw_string(font, Vector2(x - nw * 0.5, margin_top + usable_h + STAFF_NUMERAL_DY),
+        _host._melody_staff_panel.draw_string(font, Vector2(x - nw * 0.5, STAFF_NUMERAL_DY),
             num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, pos_col)
+
+        # PITCH: its note at its own staff height once known, otherwise "?"
+        # on the baseline, now below the name/numeral block. The "?" is NOT
+        # gated on a record existing at this position — every position has
+        # a pitch to find, so every unresolved one says so from the start.
+        # It used to draw only where a record was already pinned, which
+        # meant a fresh puzzle showed nothing at all across the whole staff.
+        if marker["pitch_known"]:
+            var freq: float = _freq_for_note_name(str(marker["note_name"]))
+            var frac: float = _freq_to_y_fraction(freq)
+            var y: float = staff_top + usable_h * (1.0 - frac)
+            _host._melody_staff_panel.draw_circle(Vector2(x, y), 5.0, pos_col)
+            var label: String = str(marker["note_name"])
+            var label_w: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
+            _host._melody_staff_panel.draw_string(font, Vector2(x - label_w * 0.5, y - 9.0),
+                label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, pos_col)
+        else:
+            var qw: float = font.get_string_size("?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+            _host._melody_staff_panel.draw_string(font, Vector2(x - qw * 0.5, baseline_y + 4.0),
+                "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, pos_col)
 
 
 func _on_melody_staff_input(event: InputEvent) -> void:
