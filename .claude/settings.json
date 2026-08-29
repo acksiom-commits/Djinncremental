@@ -3,6 +3,20 @@
     "BASH_DEFAULT_TIMEOUT_MS": "600000",
     "BASH_MAX_TIMEOUT_MS": "1800000"
   },
+  "permissions": {
+    "allow": [
+      "Bash(\"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd*)",
+      "Bash(timeout 1800 \"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd*)",
+      "Bash(timeout 900 \"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd*)",
+      "Bash(timeout 600 \"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd*)",
+      "Bash(tasklist *)",
+      "PowerShell(Get-Process*)",
+      "PowerShell(Get-ChildItem*)",
+      "PowerShell(Get-Item*)",
+      "PowerShell(Get-Content*)",
+      "PowerShell(Get-CimInstance*)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
