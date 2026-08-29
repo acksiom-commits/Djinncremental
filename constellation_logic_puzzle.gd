@@ -3662,7 +3662,7 @@ func _label_sort_less_than(a: Dictionary, b: Dictionary) -> bool:
         return pa < pb
     match int(a["cat"]):
         Category.NAME:
-            return str(star_names[int(a["star"])]) > str(star_names[int(b["star"])])
+            return str(star_names[int(a["star"])]) < str(star_names[int(b["star"])])
         Category.SEQUENCE:
             return _order_value(Category.SEQUENCE, int(a["star"])) < _order_value(Category.SEQUENCE, int(b["star"]))
         Category.COLOR:
@@ -3673,7 +3673,7 @@ func _label_sort_less_than(a: Dictionary, b: Dictionary) -> bool:
 
 
 ## Sorts {cat:int, star:int, label:String} items for display in a joined
-## clue list, per category: Name descending alphabetical, Sequence
+## clue list, per category: Name ascending alphabetical, Sequence
 ## ascending (earliest star first), Color ascending alphabetical, Pitch
 ## descending by frequency (highest first) — deterministic instead of
 ## whatever order participants happened to get sampled in. Returns plain
