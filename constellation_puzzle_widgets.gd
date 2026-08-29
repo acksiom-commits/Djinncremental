@@ -1970,9 +1970,23 @@ func _freq_to_y_fraction(freq: float) -> float:
     return (freq - min_f) / (max_f - min_f)
 
 
-## Staff name row. Smaller than the numeral it sits above: a name is far
-## longer than a digit and the column it has to fit in is the same width.
-const FONT_SIZE_STAFF_NAME: int = 11
+## Staff name row. Still smaller than the numeral — a name is far longer
+## than a digit — but no longer squeezed to a single column's width: the two
+## staggered rows below give each name its neighbours' space as well.
+const FONT_SIZE_STAFF_NAME: int = 12
+
+## Names alternate between two rows, ODD positions high and EVEN low, so a
+## name's horizontal neighbours are never on its own row. Its nearest
+## same-row neighbours are two positions away, which is what buys the ~2x
+## width — at 15 stars a single column is about a third of a name and the
+## ellipsis fired constantly.
+##
+## Both offsets are from the staff's bottom edge; the numeral sits below
+## both. Keep NAME_ROW_LOW_DY < the numeral's offset or the low row lands on
+## top of it.
+const NAME_ROW_HIGH_DY: float = 12.0
+const NAME_ROW_LOW_DY: float = 24.0
+const STAFF_NUMERAL_DY: float = 38.0
 
 
 ## `text` shortened with a trailing ellipsis until it fits `max_w`.
@@ -2001,11 +2015,15 @@ func _draw_melody_staff() -> void:
 
     var margin_x: float = 20.0
     var margin_top: float = 14.0
-    # Room for TWO stacked readouts under the staff now — the name sits
-    # above the sequence numeral. Taken out of the staff's own height rather
-    # than the panel's, so the .tscn is untouched and the pitch spread just
-    # compresses slightly.
-    var margin_bottom: float = 34.0
+    # Room for THREE readout rows under the staff: the two staggered name
+    # rows (NAME_ROW_HIGH_DY / NAME_ROW_LOW_DY) and the numeral below them
+    # (STAFF_NUMERAL_DY), plus a few px of descender. Derived from those
+    # constants rather than typed, so moving a row cannot silently push it
+    # off the bottom of the panel.
+    #
+    # Taken out of the staff's own height, not the panel's, so the .tscn
+    # stays untouched and the pitch spread just compresses.
+    var margin_bottom: float = STAFF_NUMERAL_DY + 8.0
     var usable_w: float = panel_size.x - margin_x * 2.0
     var usable_h: float = panel_size.y - margin_top - margin_bottom
     var step_x: float = usable_w / float(maxi(_host._star_count - 1, 1))
@@ -2070,22 +2088,25 @@ func _draw_melody_staff() -> void:
             _host._melody_staff_panel.draw_string(font, Vector2(x - qw * 0.5, baseline_y + 4.0),
                 "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, pos_col)
 
-        # NAME, between the staff and the numeral. "?" until identified,
-        # then the name itself.
+        # NAME, on one of two staggered rows. "?" until identified, then the
+        # name itself.
         #
-        # Ellipsised to its own column: names run to ~10 characters and 15
-        # positions across this panel leave roughly a third of that per
-        # slot, so drawn full they would overlap their neighbours.
+        # ODD positions high, EVEN low, so no name shares a row with either
+        # horizontal neighbour and each may run to roughly TWO columns
+        # before it can collide — with the position two along, on its own
+        # row. The ellipsis stays as a backstop for a very narrow panel or a
+        # very long name, but at 15 stars it should now rarely fire.
         var star_name: String = _deduction._known_name_for_seq_position(seq_pos)
+        var name_dy: float = NAME_ROW_HIGH_DY if seq_pos % 2 == 1 else NAME_ROW_LOW_DY
         var name_label: String = _fit_string_to_width(
-            font, star_name, FONT_SIZE_STAFF_NAME, step_x - 4.0) if star_name != "" else "?"
+            font, star_name, FONT_SIZE_STAFF_NAME, step_x * 2.0 - 6.0) if star_name != "" else "?"
         var fw: float = font.get_string_size(name_label, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_STAFF_NAME).x
-        _host._melody_staff_panel.draw_string(font, Vector2(x - fw * 0.5, margin_top + usable_h + 13.0),
+        _host._melody_staff_panel.draw_string(font, Vector2(x - fw * 0.5, margin_top + usable_h + name_dy),
             name_label, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_STAFF_NAME, pos_col)
 
         var num_label: String = str(seq_pos)
         var nw: float = font.get_string_size(num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
-        _host._melody_staff_panel.draw_string(font, Vector2(x - nw * 0.5, margin_top + usable_h + 28.0),
+        _host._melody_staff_panel.draw_string(font, Vector2(x - nw * 0.5, margin_top + usable_h + STAFF_NUMERAL_DY),
             num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, pos_col)
 
 
