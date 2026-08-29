@@ -1478,29 +1478,50 @@ func _get_or_create_match_record_for_pitch_slot(pitch_freq: float, position_in_g
 func _reconcile_unique_pitch_slot(record_idx: int, note_name: String) -> int:
     # _get_or_create_match_record_for_pitch_slot's "adopt an existing
     # confirmed record" path only runs at the moment a slot label is
-    # FIRST created — if the Sort:Pitch tab was opened (creating a blank
-    # placeholder record for e.g. "G4 A") before this star was ever
-    # listened to, that placeholder is permanently locked in from then on
-    # by the label-match lookup that always runs first, and this newly-
-    # confirmed record never gets linked to it. Only safe to fix by
-    # merging when this note has EXACTLY one star (_pitch_star_count==1):
-    # for a shared note, the "A"/"B" slot lettering is arbitrary discovery
-    # order with no way to tell which physical letter this specific star
-    # belongs to from a single confirm alone — merging there would be
-    # unsound. Called only from the Listen click handler (a deliberate,
-    # low-frequency player action), never from the passive
+    # FIRST created — if the Sort:Pitch tab was opened (creating blank
+    # placeholder records, e.g. "G4 A" and "G4 B") before every star
+    # sharing this note had been listened to, whichever placeholder is
+    # still blank at that point is permanently locked in from then on by
+    # the label-match lookup that always runs first: a LATER listen
+    # confirming one of those stars never gets linked to it. Reported
+    # 2026-08-29 as "listened to a star, its colour never showed up on
+    # its Sort:Pitch slot" — that slot's record has a pitch_slot_label
+    # (so _effective_pitch_state already reads it as confirmed) but no
+    # star_idx, and colour reads star_idx, not the pitch label, so the
+    # slot's colour stays unknown forever even though the star it
+    # belongs to is now fully known.
+    #
+    # Safe to merge into a blank slot exactly when there is only ONE
+    # candidate left for this confirm to be: every OTHER record already
+    # wearing a pitch_slot_label for this note that has no star_idx of
+    # its own. Zero means nothing is orphaned yet — either every slot
+    # already resolved, or the tab was never opened, in which case the
+    # ADOPT path above will still catch this record whenever a slot for
+    # it IS first created. More than one is genuinely ambiguous: which
+    # blank letter this star belongs to is arbitrary discovery order,
+    # unrecoverable from a single confirm, so merging would be unsound —
+    # this is the general form of the old star-count==1-only rule (one
+    # slot total for the whole note, so at most one can ever be blank).
+    # Called only from the Listen click handler (a deliberate, low-
+    # frequency player action), never from the passive
     # _full_propagation_refresh path, so this is the one place in the
     # merge-vs-query tradeoff explored earlier where a merge is both safe
     # and necessary — there's no live-query equivalent that can make a
     # blank slot record's OWN star_idx exist.
-    if _pitch_star_count(note_name) != 1:
+    var label_prefix: String = note_name + " "
+    var blank_slots: Array = []
+    for i in _match_records.size():
+        if i == record_idx:
+            continue
+        var r: Dictionary = _match_records[i]
+        if not str(r.get("pitch_slot_label", "")).begins_with(label_prefix):
+            continue
+        if int(r.get("star_idx", -1)) < 0:
+            blank_slots.append(i)
+    if blank_slots.size() != 1:
         return record_idx
-    var freq: float = _host._widgets._freq_for_note_name(note_name)
-    if freq < 0.0:
-        return record_idx
-    var slot_idx: int = _get_or_create_match_record_for_pitch_slot(freq, 0)
-    if slot_idx != record_idx:
-        record_idx = await _merge_match_records(record_idx, slot_idx)
+    var slot_idx: int = int(blank_slots[0])
+    record_idx = await _merge_match_records(record_idx, slot_idx)
     return record_idx
 
 
