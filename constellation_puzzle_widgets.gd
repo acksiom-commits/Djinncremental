@@ -851,6 +851,131 @@ func _make_name_checklist_trigger_button(record_idx: int) -> Button:
     return btn
 
 
+# ==================================================
+# COPY TO NOTES
+# ==================================================
+# A "still open" list from any checklist surface, written straight into the
+# Notes tab as one entry. The player is reading a popup, sees three
+# survivors, and wants that written down before they close it and lose the
+# view.
+
+## Row states that survive into a copied list.
+##
+## 2 is a hard X and 3 is soft-eliminated (a sibling value on this row is
+## protected) — BOTH mean "ruled out", so both are dropped and the list is
+## exactly what is still live. 0 neutral, 1 confirmed and 4 protected all
+## stay: a confirmed value is usually the single most useful thing to note,
+## and dropping it would make the entry read as though nothing were decided.
+const COPYABLE_ROW_STATES: Array = [0, 1, 4]
+
+
+## One Notes entry: "<header>: a, b, c".
+##
+## Writes through _deduction.add_note_entry, the same path the Notes tab's
+## own text box uses, so a copied list round-trips through the save and can
+## be removed exactly like a typed note.
+##
+## An empty list still records a line — "nothing left" is a real and
+## alarming state (it means the board contradicts itself), and silently
+## writing nothing would look like the button was broken.
+func _copy_open_items_to_notes(header: String, items: Array) -> void:
+    # PackedStringArray, not a plain Array: String.join() is typed, and
+    # handing it an untyped Array is the silent-abort class this project
+    # has hit before (see _solve's typed-array crash).
+    var parts := PackedStringArray()
+    for it in items:
+        parts.append(str(it))
+    var body: String = ", ".join(parts) if parts.size() > 0 else "(none left)"
+    _deduction.add_note_entry("%s: %s" % [header, body])
+    # Repaint only when the player is actually looking at Notes. The copy is
+    # usually pressed from a popup over some OTHER tab, where rebuilding the
+    # marker list would be wasted work — and _populate_notes_markers assumes
+    # the Notes tab owns the marker area, so calling it while another tab
+    # holds it would draw notes into that tab's list.
+    if _host._active_marker_tab == TAB_NOTES:
+        _populate_notes_markers()
+
+
+## Header naming the SOURCE of a copied list, so a Notes entry still means
+## something after ten more are added above it.
+##
+## A record is identified by whatever the player has actually pinned down —
+## its name if identified, else its sequence position, else a bare "Slot".
+## Reads the effective position via the same accessor the staff uses, so a
+## DERIVED pin names the entry just as a typed one does.
+func _copy_header_for_record(record_idx: int, section: String) -> String:
+    # record_at / record_count, NOT _match_records — that array is private
+    # to the deduction engine and test_record_boundary scans every shipped
+    # script for reaches into it. Caught there rather than by review.
+    var who: String = ""
+    var nm: String = str(_deduction.record_at(record_idx).get("name", "")) \
+        if record_idx >= 0 and record_idx < _deduction.record_count() else ""
+    if nm != "":
+        who = nm
+    else:
+        var s: Array = _deduction._seq_candidate_set_for(record_idx)
+        who = "Note %d" % int(s[0]) if s.size() == 1 else "Slot"
+    return "%s — %s" % [who, section]
+
+
+## THE COPY MUST AGREE WITH THE ROWS THE PLAYER IS LOOKING AT, which means
+## reproducing BOTH steps the popup builders perform, not just the first.
+##
+## 1. collapse_soft=FALSE, same as the popups, so the raw 0-4 tiers arrive.
+##    That is why COPYABLE_ROW_STATES has to drop 3 explicitly: with the
+##    collapse ON, 3 would already read as 2 and dropping {2} alone would
+##    be correct. With it OFF — the form copied from the popup code — a
+##    filter of {2} alone silently keeps every soft-eliminated value.
+##
+## 2. The cross-record exclusion overlay. A value another record has
+##    already claimed is not in this record's own state dict at all; the
+##    popups fold it in afterwards with exactly the rule below. Omitting it
+##    listed values the popup itself was drawing as X'd.
+##
+## Both omissions fail the same way and it is the dangerous way: the list
+## is a SUPERSET of the truth. Nothing looks malformed, nothing contradicts
+## anything the player typed — the note just quietly offers options that
+## are gone, while the popup beside it shows them struck out.
+func _on_staff_copy(record_idx: int, section: String) -> void:
+    var items: Array = []
+    match section:
+        "pitch":
+            var excluded_pitches: Array[String] = _deduction._compute_excluded_pitches_for(record_idx)
+            for pitch_idx in _host._pitch_freqs.size():
+                var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(_host._pitch_freqs[pitch_idx])
+                var ps: int = _deduction._effective_pitch_state(record_idx, note_name, false)
+                if (ps == 0 or ps == 4) and excluded_pitches.has(note_name):
+                    continue
+                if COPYABLE_ROW_STATES.has(ps):
+                    items.append(note_name)
+        "color":
+            var excluded_colors: Array[int] = _deduction._compute_excluded_colors_for(record_idx)
+            for ci in _host.COLOR_NAME_LABELS.size():
+                var cs: int = _deduction._effective_color_state(record_idx, ci, false)
+                if (cs == 0 or cs == 4) and excluded_colors.has(ci):
+                    continue
+                if COPYABLE_ROW_STATES.has(cs):
+                    items.append(str(_host.COLOR_NAME_LABELS[ci]))
+        "name":
+            var excluded_names: Array[String] = _deduction._compute_excluded_names_for(record_idx)
+            for n in _host._star_names:
+                var name_str: String = str(n)
+                var ns: int = _deduction._effective_name_state(record_idx, name_str, false)
+                if (ns == 0 or ns == 4) and excluded_names.has(name_str):
+                    continue
+                if COPYABLE_ROW_STATES.has(ns):
+                    items.append(name_str)
+    _copy_open_items_to_notes(_copy_header_for_record(record_idx, section.capitalize()), items)
+
+
+func _on_name_checklist_copy(record_idx: int) -> void:
+    _on_staff_copy(record_idx, "name")
+
+
+func _on_pitch_checklist_copy(record_idx: int) -> void:
+    _on_staff_copy(record_idx, "pitch")
+
+
 func _open_name_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     _host._name_checklist_popup.clear_rows()
     var names_sorted: Array = _host._star_names.duplicate()
@@ -1140,6 +1265,18 @@ func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
             cur_state = 2
         _style_color_toggle_btn(btn, ci, cur_state)
         row.add_child(btn)
+    # COPY, on the slot's own colour row. The slot's Name and Pitch lists
+    # live in the shared checklist popups (which carry their own button), so
+    # colour is the one axis a tab slot shows inline and therefore the only
+    # one needing a button here.
+    var copy_btn := Button.new()
+    copy_btn.text = "⎘"
+    copy_btn.custom_minimum_size = Vector2(26, 24)
+    copy_btn.focus_mode = Control.FOCUS_NONE
+    copy_btn.tooltip_text = "Write the still-possible colours into the Notes tab"
+    var cridx := record_idx
+    copy_btn.pressed.connect(func(): _on_staff_copy(cridx, "color"))
+    row.add_child(copy_btn)
     return row
 
 

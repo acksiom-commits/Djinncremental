@@ -16,6 +16,12 @@ signal undo_selects_pressed(record_idx: int)
 signal undo_blocks_pressed(record_idx: int)
 signal undo_all_pressed(record_idx: int)
 
+## COPY — write this popup's still-open values into the Notes tab.
+## The popup itself does not know what it is a list OF, so the header and
+## the row-state filtering both live with the caller; this only reports the
+## press. See _copy_open_items_to_notes.
+signal copy_pressed(record_idx: int)
+
 ## Preloaded row scene for instantiation — same reusable row the staff
 ## popup and both checklist popups use, so cosmetic overrides apply
 ## everywhere at once.
@@ -49,6 +55,24 @@ func _ready() -> void:
     _btn_undo_selects.pressed.connect(func(): undo_selects_pressed.emit(current_record_idx))
     _btn_undo_blocks.pressed.connect(func(): undo_blocks_pressed.emit(current_record_idx))
     _btn_undo_all.pressed.connect(func(): undo_all_pressed.emit(current_record_idx))
+    _add_copy_button()
+
+
+## Built in code and parented next to the Undo trio, rather than added to
+## the .tscn. Both checklist popups (Name and Pitch) derive from this class
+## and share one scene, so one construction here covers both — and the
+## scene file stays untouched, which keeps this off the Option 3 row-count
+## hazard's path entirely (that only concerns rows added to the columns).
+func _add_copy_button() -> void:
+    var parent: Node = _btn_undo_all.get_parent()
+    if parent == null:
+        return
+    var btn := Button.new()
+    btn.text = "COPY"
+    btn.focus_mode = Control.FOCUS_NONE
+    btn.tooltip_text = "Write the still-possible values here into the Notes tab"
+    btn.pressed.connect(func(): copy_pressed.emit(current_record_idx))
+    parent.add_child(btn)
 
 
 func open(record_idx: int, screen_pos: Vector2) -> void:

@@ -36,6 +36,12 @@ signal name_undo_selects_pressed(record_idx: int)
 signal name_undo_blocks_pressed(record_idx: int)
 signal name_undo_all_pressed(record_idx: int)
 
+## COPY — write one section's still-open values into the Notes tab.
+## `section` is "pitch" / "color" / "name"; the popup does not gather the
+## values itself, since which states count as "still open" is a rule the
+## caller owns (see COPYABLE_ROW_STATES).
+signal copy_pressed(record_idx: int, section: String)
+
 ## Preloaded row scene for instantiation.
 var _row_scene: PackedScene = preload("res://StaffPopupRow.tscn")
 
@@ -96,6 +102,26 @@ func _ready() -> void:
     _name_btn_undo_selects.pressed.connect(func(): name_undo_selects_pressed.emit(current_record_idx))
     _name_btn_undo_blocks.pressed.connect(func(): name_undo_blocks_pressed.emit(current_record_idx))
     _name_btn_undo_all.pressed.connect(func(): name_undo_all_pressed.emit(current_record_idx))
+    # One COPY per SECTION, per user direction — the header names the
+    # section the list came from, so a single popup-wide button could not
+    # say which axis a value belonged to. Built in code beside each Undo
+    # trio rather than in the .tscn, so the three stay identical by
+    # construction.
+    _add_copy_button(_pitch_btn_undo_all, "pitch")
+    _add_copy_button(_color_btn_undo_all, "color")
+    _add_copy_button(_name_btn_undo_all, "name")
+
+
+func _add_copy_button(sibling: Button, section: String) -> void:
+    var parent: Node = sibling.get_parent()
+    if parent == null:
+        return
+    var btn := Button.new()
+    btn.text = "COPY"
+    btn.focus_mode = Control.FOCUS_NONE
+    btn.tooltip_text = "Write the still-possible %s values into the Notes tab" % section
+    btn.pressed.connect(func(): copy_pressed.emit(current_record_idx, section))
+    parent.add_child(btn)
 
 
 func open(seq_pos: int, record_idx: int, screen_pos: Vector2) -> void:

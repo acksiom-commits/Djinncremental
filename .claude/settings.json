@@ -5,16 +5,17 @@
   },
   "permissions": {
     "allow": [
-      "Bash(\"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd*)",
-      "Bash(timeout 1800 \"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd*)",
-      "Bash(timeout 900 \"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd*)",
-      "Bash(timeout 600 \"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd*)",
+      "Bash(\"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd)",
+      "Bash(\"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd *)",
+      "Bash(timeout 1800 \"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd)",
+      "Bash(timeout 1800 \"/c/Users/xosax/Downloads/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64_console.exe\" --headless --script dev_tests/test_runner.gd *)",
+      "Bash(tasklist)",
       "Bash(tasklist *)",
-      "PowerShell(Get-Process*)",
-      "PowerShell(Get-ChildItem*)",
-      "PowerShell(Get-Item*)",
-      "PowerShell(Get-Content*)",
-      "PowerShell(Get-CimInstance*)"
+      "PowerShell(Get-Process *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-Item *)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Get-CimInstance *)"
     ]
   },
   "hooks": {

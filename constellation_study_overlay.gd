@@ -277,6 +277,9 @@ func _ready() -> void:
     _pitch_checklist_popup.undo_selects_pressed.connect(_widgets._on_pitch_checklist_undo_selects)
     _pitch_checklist_popup.undo_blocks_pressed.connect(_widgets._on_pitch_checklist_undo_blocks)
     _pitch_checklist_popup.undo_all_pressed.connect(_widgets._on_pitch_checklist_undo_all)
+    _staff_popup.copy_pressed.connect(_widgets._on_staff_copy)
+    _name_checklist_popup.copy_pressed.connect(_widgets._on_name_checklist_copy)
+    _pitch_checklist_popup.copy_pressed.connect(_widgets._on_pitch_checklist_copy)
     _star_map_control.resized.connect(_on_star_map_resized)
     _close_btn.pressed.connect(_on_close)
     # Click-to-jump: clicking the pinned-clue readout switches to whichever
