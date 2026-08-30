@@ -1463,16 +1463,15 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     # A bare two-digit bound is all this box ever shows now — the "= N"
     # exact-pin form moved to the centre box (see _refresh_range_edits), so
     # it no longer needs room for the leading "= ". minimum_character_width
-    # is the real floor here, not custom_minimum_size: LineEdit's own
-    # get_minimum_size() (character-width-based) and custom_minimum_size
-    # are both floors, and Godot renders at whichever is LARGER — at 2 it
-    # was silently overriding the previous custom_minimum_size shrink, so
-    # this drops it to 1 as well or the box would not visibly shrink at all.
-    edit_lo.custom_minimum_size = Vector2(16, 24)
+    # back to 2 (was dropped to 1 in an earlier pass to make a width shrink
+    # actually visible — it worked, but 2-digit positions became unreadable
+    # at rest). "Sequence:" -> "Seq." on this row's label frees the width
+    # this row needs instead, without sacrificing legibility here.
+    edit_lo.custom_minimum_size = Vector2(22, 24)
     edit_lo.max_length = 2
     edit_lo.placeholder_text = "–"
     edit_lo.add_theme_font_size_override("font_size", 15)
-    edit_lo.add_theme_constant_override("minimum_character_width", 1)
+    edit_lo.add_theme_constant_override("minimum_character_width", 2)
     _style_range_edit(edit_lo, row_color)
     row.add_child(edit_lo)
 
@@ -1500,11 +1499,11 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     row.add_child(lbl_gt)
 
     var edit_hi := LineEdit.new()
-    edit_hi.custom_minimum_size = Vector2(14, 24)
+    edit_hi.custom_minimum_size = Vector2(18, 24)
     edit_hi.max_length = 2
     edit_hi.placeholder_text = "–"
     edit_hi.add_theme_font_size_override("font_size", 15)
-    edit_hi.add_theme_constant_override("minimum_character_width", 1)
+    edit_hi.add_theme_constant_override("minimum_character_width", 2)
     _style_range_edit(edit_hi, row_color)
     row.add_child(edit_hi)
 
@@ -1984,7 +1983,7 @@ func _build_color_group_row(color_idx: int, position_in_group: int) -> void:
     row.add_child(facts_vbox)
 
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
     facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
@@ -2045,7 +2044,7 @@ func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
     # handling above), so a separate manual Color entry here was pure UI
     # clutter, never adding information the row wasn't already showing.
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
 
@@ -2101,7 +2100,7 @@ func _build_degree_group_row(degree: int, position_in_group: int) -> void:
     row.add_child(facts_vbox)
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
     _host._markers_content.add_child(HSeparator.new())
 
 
@@ -2128,7 +2127,7 @@ func _build_name_row(name_str: String) -> void:
     row.add_child(facts_vbox)
 
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Sequence:", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
     facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
