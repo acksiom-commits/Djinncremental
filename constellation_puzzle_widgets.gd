@@ -1462,12 +1462,17 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     var edit_lo := LineEdit.new()
     # A bare two-digit bound is all this box ever shows now — the "= N"
     # exact-pin form moved to the centre box (see _refresh_range_edits), so
-    # it no longer needs room for the leading "= ".
-    edit_lo.custom_minimum_size = Vector2(22, 24)
+    # it no longer needs room for the leading "= ". minimum_character_width
+    # is the real floor here, not custom_minimum_size: LineEdit's own
+    # get_minimum_size() (character-width-based) and custom_minimum_size
+    # are both floors, and Godot renders at whichever is LARGER — at 2 it
+    # was silently overriding the previous custom_minimum_size shrink, so
+    # this drops it to 1 as well or the box would not visibly shrink at all.
+    edit_lo.custom_minimum_size = Vector2(16, 24)
     edit_lo.max_length = 2
     edit_lo.placeholder_text = "–"
     edit_lo.add_theme_font_size_override("font_size", 15)
-    edit_lo.add_theme_constant_override("minimum_character_width", 2)
+    edit_lo.add_theme_constant_override("minimum_character_width", 1)
     _style_range_edit(edit_lo, row_color)
     row.add_child(edit_lo)
 
@@ -1495,11 +1500,11 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     row.add_child(lbl_gt)
 
     var edit_hi := LineEdit.new()
-    edit_hi.custom_minimum_size = Vector2(18, 24)
+    edit_hi.custom_minimum_size = Vector2(14, 24)
     edit_hi.max_length = 2
     edit_hi.placeholder_text = "–"
     edit_hi.add_theme_font_size_override("font_size", 15)
-    edit_hi.add_theme_constant_override("minimum_character_width", 2)
+    edit_hi.add_theme_constant_override("minimum_character_width", 1)
     _style_range_edit(edit_hi, row_color)
     row.add_child(edit_hi)
 
