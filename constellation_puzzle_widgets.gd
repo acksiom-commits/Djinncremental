@@ -2796,18 +2796,20 @@ func _build_star_widgets_impl() -> void:
         _style_range_edit(edit_hi, star_color)
         range_row.add_child(edit_hi)
 
-        var spacer := Control.new()
-        spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        range_row.add_child(spacer)
-
-        var btn_close := Button.new()
-        btn_close.text = "✕"
-        btn_close.custom_minimum_size = Vector2(28, 28)
-        btn_close.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        btn_close.focus_mode = Control.FOCUS_NONE
-        btn_close.add_theme_font_size_override("font_size", 17)
-        btn_close.flat = false
-        range_row.add_child(btn_close)
+        # COPY, in the space the ✕ close button used to occupy — that
+        # button is redundant now that clicking outside this popup closes
+        # it (see _maybe_close_star_widget_on_outside_click in
+        # constellation_study_overlay.gd), matching every other popup on
+        # this panel. "Still possible" for Sequence is exactly the centre
+        # box's own candidate set, same as the Sort:tab row's copy button.
+        var range_copy_btn := Button.new()
+        range_copy_btn.text = "⎘"
+        range_copy_btn.custom_minimum_size = Vector2(26, 28)
+        range_copy_btn.focus_mode = Control.FOCUS_NONE
+        range_copy_btn.tooltip_text = "Write the still-possible sequence positions into the Notes tab"
+        var range_copy_rec := existing_record
+        range_copy_btn.pressed.connect(func(): _on_staff_copy(range_copy_rec, "sequence"))
+        range_row.add_child(range_copy_btn)
 
         root.add_child(range_row)
 
@@ -2845,9 +2847,6 @@ func _build_star_widgets_impl() -> void:
         if existing_record >= 0:
             _refresh_range_edits(existing_record, edit_lo, edit_mid, edit_hi)
 
-        var close_si := i
-        btn_close.pressed.connect(func(): _host._widget_closed[close_si] = true; root.visible = false)
-
         # ── Reset buttons ──────────────────────────────────────────
         var reset_row := HBoxContainer.new()
         reset_row.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -2855,7 +2854,12 @@ func _build_star_widgets_impl() -> void:
         root.add_child(reset_row)
 
         var btn_undo_sel := Button.new()
-        btn_undo_sel.text = "Undo selects"
+        # "Undo ✓" / "Undo ✕", not the old "Undo selects"/"Undo blocks" —
+        # same ✓/✕ iconography as the checklist rows just below this row,
+        # shortened specifically to free width for the COPY button added
+        # at the end of this row.
+        btn_undo_sel.text = "Undo ✓"
+        btn_undo_sel.tooltip_text = "Undo selects"
         btn_undo_sel.focus_mode = Control.FOCUS_NONE
         btn_undo_sel.custom_minimum_size = Vector2(0, 30)
         btn_undo_sel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2863,7 +2867,8 @@ func _build_star_widgets_impl() -> void:
         reset_row.add_child(btn_undo_sel)
 
         var btn_undo_block := Button.new()
-        btn_undo_block.text = "Undo blocks"
+        btn_undo_block.text = "Undo ✕"
+        btn_undo_block.tooltip_text = "Undo blocks"
         btn_undo_block.focus_mode = Control.FOCUS_NONE
         btn_undo_block.custom_minimum_size = Vector2(0, 30)
         btn_undo_block.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2882,6 +2887,19 @@ func _build_star_widgets_impl() -> void:
         btn_undo_sel.pressed.connect(func(): _on_undo_name_selects(si_reset))
         btn_undo_block.pressed.connect(func(): _on_undo_name_blocks(si_reset))
         btn_undo_all.pressed.connect(func(): _on_undo_name_all(si_reset))
+
+        # COPY, for this row's Name section — same button as the Sort:tab
+        # Name row's checklist popup, placed here since the star-map
+        # widget shows the Name checklist inline instead of behind a
+        # popup trigger.
+        var name_copy_btn := Button.new()
+        name_copy_btn.text = "⎘"
+        name_copy_btn.custom_minimum_size = Vector2(26, 30)
+        name_copy_btn.focus_mode = Control.FOCUS_NONE
+        name_copy_btn.tooltip_text = "Write the still-possible names into the Notes tab"
+        var name_copy_rec := existing_record
+        name_copy_btn.pressed.connect(func(): _on_staff_copy(name_copy_rec, "name"))
+        reset_row.add_child(name_copy_btn)
 
         # ── Full candidate checklist (check/X/protect) — always visible ──
         var all_star_names: Array[String] = []

@@ -144,7 +144,7 @@ var _star_names:          Array = []     # Array[String] from cache
 var _star_colors:         Array = []     # Array[int] 0-3
 var _name_assignments:    Array = []     # Array[String], per-star slot
 var _active_marker_tab:   int   = -1     # -1=Default(Matches) 0=Clues 1=Notes 2=Guide 3=Search 4=Hint
-var _widget_closed: Dictionary = {}             # star_idx -> bool, closed via X button
+var _widget_closed: Dictionary = {}             # star_idx -> bool, closed via outside-click (was the removed ✕ button)
 var _sequence_rank_solution:   Array = []     # Array[int], melody step per star
 var _star_pitch_index:      Array = []     # Array[int], raw note index per star (ConstellationData)
 var _pitch_freqs:           Array = []     # Array[float], frequency table for this constellation
@@ -1007,6 +1007,33 @@ func _text_entry_has_focus() -> bool:
     return f is LineEdit or f is TextEdit
 
 
+## Star Map popups are plain floating Controls positioned over the map, not
+## real PopupPanel windows, so they never got Godot's native click-outside-
+## closes behaviour the Staff/Name/Pitch popups have for free. Reproduces
+## it here: a click landing outside the currently-open widget's own rect
+## closes it exactly the way its ✕ button used to (sets _widget_closed,
+## same state, same effect) — see constellation_puzzle_widgets.gd's
+## range-row comment for why that button was removed once this existed.
+##
+## Deliberately does NOT consume the event or touch _selected_star: this
+## runs ahead of _on_map_input's own gui_input hit-test on the star map, so
+## a click that turns out to HIT a different star still switches selection
+## normally afterwards (that handler re-derives _selected_star itself) —
+## this only has the final say on a genuine miss.
+func _maybe_close_star_widget_on_outside_click(mbe: InputEventMouseButton) -> void:
+    if _selected_star < 0 or _selected_star >= _star_widgets.size():
+        return
+    if _widget_closed.get(_selected_star, false):
+        return
+    var w = _star_widgets[_selected_star]
+    if not is_instance_valid(w) or not (w as Control).visible:
+        return
+    if (w as Control).get_global_rect().has_point(mbe.global_position):
+        return
+    _widget_closed[_selected_star] = true
+    (w as Control).visible = false
+
+
 func _input(event: InputEvent) -> void:
     if not visible:
         return
@@ -1038,6 +1065,8 @@ func _input(event: InputEvent) -> void:
                 _deduction._debug_dump_pitch_records(str(note))
             get_viewport().set_input_as_handled()
     elif event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+        _maybe_close_star_widget_on_outside_click(event as InputEventMouseButton)
+
         var mpos: Vector2 = get_local_mouse_position()
         var panel_rect: Rect2 = get_node(PANEL_ROOT_PATH).get_global_rect()
         var local_panel_rect := Rect2(
