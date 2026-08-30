@@ -2113,11 +2113,21 @@ func _build_name_row(name_str: String) -> void:
     row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     _host._markers_content.add_child(row)
 
+    # Reported 2026-08-29: at the old fixed 90px + clip_text, a name like
+    # "Chroneeia" (9 chars) had its right edge silently cut off with no
+    # indication anything was missing — clip_text clips at whatever rect
+    # the label ends up with, it doesn't reserve room for the full text.
+    # Widened the column and swapped to the same fit-with-ellipsis helper
+    # the Staff panel's name rows already use, so a name that STILL
+    # doesn't fit (the theme pool's generated names can run to ~12 chars)
+    # reads as "Chroneeia…" instead of quietly losing a letter — the
+    # tooltip carries the untruncated name either way.
+    const NAME_LBL_WIDTH: float = 140.0
     var name_lbl := Label.new()
-    name_lbl.text = name_str
-    name_lbl.custom_minimum_size = Vector2(90, 0)
-    name_lbl.clip_text = true
+    name_lbl.custom_minimum_size = Vector2(NAME_LBL_WIDTH, 0)
     name_lbl.add_theme_font_size_override("font_size", 19)
+    name_lbl.text = _fit_string_to_width(ThemeDB.fallback_font, name_str, 19, NAME_LBL_WIDTH - 6.0)
+    name_lbl.tooltip_text = name_str
     name_lbl.add_theme_color_override("font_color", row_color)
     row.add_child(name_lbl)
 
