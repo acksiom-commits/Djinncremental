@@ -30,6 +30,8 @@
 [ext_resource type="PackedScene" uid="uid://cnj4rti3wfnae" path="res://SettingsPopout.tscn" id="26_64jby"]
 [ext_resource type="Script" uid="uid://dx4ev85nqryup" path="res://puzzle_synths.gd" id="28_64jby"]
 [ext_resource type="PackedScene" uid="uid://cgoxi50xo3g1" path="res://ConstellationStudyOverlay.tscn" id="30_6syo1"]
+[ext_resource type="PackedScene" path="res://ArchaiLatticeViewer.tscn" id="31_lattice"]
+[ext_resource type="PackedScene" path="res://LatticePanel.tscn" id="32_latticepanel"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_hloqn"]
 shader = ExtResource("1_6fk1d")
@@ -923,6 +925,9 @@ layout_mode = 2
 mouse_filter = 1
 bbcode_enabled = true
 
+[node name="ArchaiLatticeViewer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox" unique_id=770000101 instance=ExtResource("31_lattice")]
+layout_mode = 2
+
 [node name="NamePickerVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox" unique_id=1858191466]
 visible = false
 layout_mode = 2
@@ -1091,7 +1096,7 @@ theme_override_font_sizes/normal_font_size = 20
 custom_minimum_size = Vector2(0, 6)
 layout_mode = 2
 resource_key = "particle"
-operation_key = "particle_compress"
+operation_key = "particle_assemble"
 
 [node name="RowParticleInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox" unique_id=27033557 instance=ExtResource("5_g5yj0")]
 custom_minimum_size = Vector2(140, 20)
@@ -1114,13 +1119,13 @@ layout_mode = 0
 offset_top = 59.0
 offset_right = 140.0
 offset_bottom = 63.0
-resource_key = "iota"
+resource_key = "iota_uonite"
 
 [node name="IotaCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1899966072 instance=ExtResource("16_jgph3")]
 custom_minimum_size = Vector2(0, 6)
 layout_mode = 2
-resource_key = "iota"
-operation_key = "iota_assemble"
+resource_key = "iota_uonite"
+operation_key = "iota_assemble_uonite"
 
 [node name="RowIotaInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1484432392 instance=ExtResource("5_g5yj0")]
 layout_mode = 2
@@ -1133,13 +1138,13 @@ size_flags_vertical = 4
 [node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/MoteCompressButton" unique_id=575405172 instance=ExtResource("15_8msm3")]
 custom_minimum_size = Vector2(140, 0)
 layout_mode = 0
-resource_key = "mote"
+resource_key = "mote_uonite"
 
 [node name="MoteCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1119047235 instance=ExtResource("16_jgph3")]
 custom_minimum_size = Vector2(0, 6)
 layout_mode = 2
-resource_key = "mote"
-operation_key = "mote_compress"
+resource_key = "mote_uonite"
+operation_key = "mote_assemble_uonite"
 
 [node name="RowMoteInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=997858997 instance=ExtResource("5_g5yj0")]
 custom_minimum_size = Vector2(140, 20)
@@ -1211,6 +1216,8 @@ mouse_filter = 2
 script = ExtResource("26_21pfi")
 
 [node name="ConstellationStudyOverlay" parent="CanvasLayer" unique_id=675615739 instance=ExtResource("30_6syo1")]
+
+[node name="LatticePanel" parent="CanvasLayer" instance=ExtResource("32_latticepanel")]
 
 [node name="UILockBlocker" type="Control" parent="CanvasLayer" unique_id=590621401]
 visible = false

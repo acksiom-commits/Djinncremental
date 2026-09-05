@@ -3,7 +3,7 @@ extends Node
 # v1.7.0: More bug stomping
 # v1.6.0: Storage cap enforcement. All _produce_* functions now
 #         check _get_storage_headroom() before spending any inputs.
-#         particle_compress, iota_assemble, mote_compress, and
+#         particle_assemble, iota_assemble_uonite, mote_assemble_uonite, and
 #         grain_assemble consolidated into _produce_generic() since
 #         they are purely data-driven. monad_compress and
 #         tetrad_assemble remain bespoke due to random subtype
@@ -41,19 +41,28 @@ const DEPENDENCY_ORDER: Array[String] = [
     "sparks_summon",
     "monad_compress",
     "tetrad_assemble",
-    "particle_compress",
-    "iota_assemble",
-    "mote_compress",
+    "particle_assemble",
+    "iota_assemble_uonite",
+    "mote_assemble_uonite",
+    "iota_assemble_grains",
+    "mote_assemble_grains",
 	"grain_assemble"
 ]
 
 # Tier order for Stoctagon overflow — rank 0 fires first (highest tier).
+# "net storage" = storage-counted inputs consumed minus 1 output produced
+# (Sparks are never storage-counted — see GameContext.get_storage_total()).
+# Recomputed against the current recipe shapes; the old figures here (-4/-19
+# for particle_assemble/iota_assemble_uonite/mote_assemble_uonite) were left
+# over from the pre-branch-split recipes and had gone stale.
 const OVERFLOW_PRIORITY: Array[String] = [
-    "grain_assemble",    # rank 0 — net storage: -83
-    "mote_compress",     # rank 1 — net storage: -4
-    "iota_assemble",     # rank 2 — net storage: -19
-    "particle_compress", # rank 3 — net storage: -4
-    "tetrad_assemble",   # rank 4 — net storage: -3
+    "grain_assemble",       # rank 0 — net storage: -83
+    "mote_assemble_grains", # rank 1 — net storage: -59
+    "mote_assemble_uonite", # rank 2 — net storage: -3
+    "iota_assemble_grains", # rank 3 — net storage: -11
+    "iota_assemble_uonite", # rank 4 — net storage: -3
+    "particle_assemble",    # rank 5 — net storage: -3
+    "tetrad_assemble",      # rank 6 — net storage: -3
 ]
 # monad_compress is excluded: it's net +1 (creates stored resource from
 # non-stored sparks) and would inflate storage above cap indefinitely.
@@ -61,19 +70,22 @@ const OVERFLOW_PRIORITY: Array[String] = [
 
 
 # ===================== GENERIC OPERATION TABLE ============
-# Drives _produce_generic() for the four data-driven operations. Inputs and
-# output key come from game_data.RECIPES (single source of truth) — this
-# table holds only the one thing RECIPES doesn't: which locked resources
-# should abort production entirely. Deliberately NOT merged with
-# OP_LOCK_KEYS below despite the similar shape — the two tables serve
-# different call sites (_produce_generic vs. _op_has_inputs) and
-# intentionally disagree for iota_assemble/grain_assemble; see the comment
-# above OP_LOCK_KEYS.
+# Drives _produce_generic() for the data-driven operations. particle_assemble,
+# iota_assemble_grains, and mote_assemble_grains are NOT here -- all three
+# became bespoke (see _produce_particle_assemble/_produce_iota_assemble_grains/
+# _produce_mote_assemble_grains) once their Tetrad draws needed weld-
+# compatibility awareness, same reason monad_compress/tetrad_assemble were
+# already bespoke. Inputs and output key for what's left come from
+# game_data.RECIPES (single source of truth) — this table holds only the
+# one thing RECIPES doesn't: which locked resources should abort production
+# entirely. Deliberately NOT merged with OP_LOCK_KEYS below despite the
+# similar shape — the two tables serve different call sites (_produce_generic
+# vs. _op_has_inputs) and intentionally disagree for
+# iota_assemble_uonite/grain_assemble; see the comment above OP_LOCK_KEYS.
 const GENERIC_OPS_LOCK_KEYS = {
-    "particle_compress": [],
-    "iota_assemble":     ["particle"],
-    "mote_compress":     ["iota"],
-    "grain_assemble":    ["particle", "mote"],
+    "iota_assemble_uonite": ["particle"],
+    "mote_assemble_uonite": ["iota_uonite"],
+    "grain_assemble":       ["particle", "mote_grains"],
 }
 
 # Lock keys checked by _op_has_inputs() for every op it's ever called with,
@@ -83,12 +95,14 @@ const GENERIC_OPS_LOCK_KEYS = {
 # ops check no locks — this mirrors exactly what _op_has_inputs hardcoded
 # before it became RECIPES-driven, not a design choice made here.
 const OP_LOCK_KEYS = {
-    "monad_compress":    ["sparks"],
-    "tetrad_assemble":   [],
-    "particle_compress": [],
-    "iota_assemble":     [],
-    "mote_compress":     ["iota"],
-    "grain_assemble":    [],
+    "monad_compress":       ["sparks"],
+    "tetrad_assemble":      [],
+    "particle_assemble":    [],
+    "iota_assemble_uonite": [],
+    "mote_assemble_uonite": ["iota_uonite"],
+    "iota_assemble_grains": [],
+    "mote_assemble_grains": ["iota_grains"],
+    "grain_assemble":       [],
 }
 
 # Single source of truth for a recipe's per-input cost, used by the manual
@@ -154,10 +168,13 @@ func apply_offline_progress(elapsed_seconds: float) -> Dictionary:
             local_accum[op] -= float(whole)
             var batch: BigNum = assigned.mul_int(whole)
             match op:
-                "sparks_summon":   _produce_sparks_summon(batch)
-                "monad_compress":  _produce_monad_compress(batch)
-                "tetrad_assemble": _produce_tetrad_assemble(batch)
-                _:                 _produce_generic(op, batch)
+                "sparks_summon":        _produce_sparks_summon(batch)
+                "monad_compress":       _produce_monad_compress(batch)
+                "tetrad_assemble":      _produce_tetrad_assemble(batch)
+                "particle_assemble":    _produce_particle_assemble(batch)
+                "iota_assemble_grains": _produce_iota_assemble_grains(batch)
+                "mote_assemble_grains": _produce_mote_assemble_grains(batch)
+                _:                      _produce_generic(op, batch)
         # Constellation endowment: 30 ticks per 30-second chunk (1/sec rate)
         for _ct in int(CHUNK_SIZE):
             gc.accumulate_constellation_sparks()
@@ -170,10 +187,12 @@ func _snapshot_resources() -> Dictionary:
         "sparks":   gc.sparks.copy(),
         "monad":    gc.get_monad_total().copy(),
         "tetrad":   gc.get_tetrad_total().copy(),
-        "particle": gc.particle.copy(),
-        "iota":     gc.iota.copy(),
-        "mote":     gc.mote.copy(),
-        "grain":    gc.grain.copy(),
+        "particle":    gc.particle.copy(),
+        "iota_uonite": gc.iota_uonite.copy(),
+        "mote_uonite": gc.mote_uonite.copy(),
+        "iota_grains": gc.iota_grains.copy(),
+        "mote_grains": gc.mote_grains.copy(),
+        "grain":       gc.grain.copy(),
         "uonite":   gc.uonite.copy(),
     }
 
@@ -277,9 +296,12 @@ func _run_normal_production(ready_batches: Dictionary) -> void:
         var batch: BigNum = ready_batches[op]
         var actual: BigNum = BigNum.zero()
         match op:
-            "monad_compress":  actual = _produce_monad_compress(batch)
-            "tetrad_assemble": actual = _produce_tetrad_assemble(batch)
-            _:                 actual = _produce_generic(op, batch)
+            "monad_compress":       actual = _produce_monad_compress(batch)
+            "tetrad_assemble":      actual = _produce_tetrad_assemble(batch)
+            "particle_assemble":    actual = _produce_particle_assemble(batch)
+            "iota_assemble_grains": actual = _produce_iota_assemble_grains(batch)
+            "mote_assemble_grains": actual = _produce_mote_assemble_grains(batch)
+            _:                      actual = _produce_generic(op, batch)
         _update_smoothed_rate(op, actual)
 
 
@@ -308,9 +330,12 @@ func _run_overflow_production(ready_batches: Dictionary) -> void:
 
         var actual: BigNum = BigNum.zero()
         match op:
-            "monad_compress":  actual = _produce_monad_compress(batch)
-            "tetrad_assemble": actual = _produce_tetrad_assemble(batch)
-            _:                 actual = _produce_generic(op, batch)
+            "monad_compress":       actual = _produce_monad_compress(batch)
+            "tetrad_assemble":      actual = _produce_tetrad_assemble(batch)
+            "particle_assemble":    actual = _produce_particle_assemble(batch)
+            "iota_assemble_grains": actual = _produce_iota_assemble_grains(batch)
+            "mote_assemble_grains": actual = _produce_mote_assemble_grains(batch)
+            _:                      actual = _produce_generic(op, batch)
 
         if not actual.is_zero():
             fired[op] = true
@@ -484,7 +509,197 @@ func _produce_tetrad_assemble(requested: BigNum) -> BigNum:
 
 
 # ==================================================
-# PRODUCE — GENERIC (data-driven: particle, iota, mote, grain)
+# PRODUCE — PARTICLE (bespoke: weld-compatible Tetrad draw)
+# ==================================================
+## Below RANDOM_DRAW_THRESHOLD outputs: same rule as manual_particle_assemble
+## -- every Particle's 4 corner Tetrads have to be pairwise weld-compatible,
+## drawn via _draw_compatible_tetrads() so this is exactly the same
+## constraint, not a separate approximation of it. Depletes gc.tetrad/
+## gc.sparks live across the loop so later Particles in the batch see
+## earlier ones' consumption. Stops early (produces fewer than `count`) if
+## a compatible foursome can't be found or Sparks run out -- same
+## "silently short a batch rather than partially-spend" behavior the
+## existing monad/tetrad batch assemblers already have.
+func _assemble_particles_true_random(count: int, tetrad_cost: int, sparks_cost: int) -> void:
+    for _i in count:
+        if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)):
+            break
+        var drawn: Dictionary = _draw_compatible_tetrads(tetrad_cost)
+        if drawn.is_empty() and tetrad_cost > 0:
+            break
+        for key in drawn:
+            gc.tetrad[key] = gc.tetrad[key].sub(BigNum.from_int(drawn[key]))
+        gc.sparks = gc.sparks.sub(BigNum.from_int(sparks_cost))
+        gc.particle = gc.particle.add(BigNum.one())
+        gc.add_to_total("particle", BigNum.one())
+
+
+## At/above RANDOM_DRAW_THRESHOLD outputs: same statistically-proportional
+## approximation the rest of this file already accepts at scale (no
+## per-unit compatibility awareness) -- reuses the existing generic
+## _batch_spend_tetrads() rather than a second implementation of it.
+func _assemble_particles_simplex(amount: BigNum, tetrad_cost: int, sparks_cost: int) -> void:
+    gc.sparks = gc.sparks.sub(amount.mul_int(sparks_cost))
+    _batch_spend_tetrads(amount.mul_int(tetrad_cost), amount)
+    gc.particle = gc.particle.add(amount)
+    gc.add_to_total("particle", amount)
+
+
+func _produce_particle_assemble(requested: BigNum) -> BigNum:
+    if requested.is_zero():
+        return BigNum.zero()
+    if gc.is_locked("sparks"):
+        return BigNum.zero()
+    var headroom: BigNum = _get_storage_headroom()
+    if headroom.is_zero():
+        return BigNum.zero()
+    var tetrad_cost: int = _recipe_cost("particle_assemble", "tetrad")
+    var sparks_cost: int = _recipe_cost("particle_assemble", "sparks")
+    var max_by_sparks: BigNum = gc.sparks.div_int_floor(sparks_cost)
+    var max_by_tetrad: BigNum = gc.get_tetrad_unlocked_total().div_int_floor(tetrad_cost)
+    var actual: BigNum = _bignum_min(requested,
+                _bignum_min(headroom,
+                _bignum_min(max_by_sparks, max_by_tetrad)))
+    if actual.is_zero():
+        return BigNum.zero()
+
+    if _should_use_true_random(actual.to_float()):
+        _assemble_particles_true_random(actual.to_int(), tetrad_cost, sparks_cost)
+    else:
+        _assemble_particles_simplex(actual, tetrad_cost, sparks_cost)
+    return actual
+
+
+# ==================================================
+# PRODUCE — GRAIN-BRANCH IOTA/MOTE (bespoke: weld-compatible Tetrad draw)
+# ==================================================
+## Same weld-compatibility rule as Particle -- every one of the batch's
+## Tetrads has to pairwise match wherever real welds/overlaps occur, so
+## the Grain-branch's own direct Tetrad draws (cavity-fill packing, not
+## corner welds, but the same "every Monad overlap matches Type" principle)
+## get the same treatment as particle_assemble rather than staying an
+## unconstrained draw just because the geometry differs.
+func _assemble_iota_grains_true_random(count: int, particle_cost: int, tetrad_cost: int, sparks_cost: int) -> void:
+    for _i in count:
+        if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)):
+            break
+        if gc.particle.is_less_than(BigNum.from_int(particle_cost)):
+            break
+        # Iota's cavity is 1 group of 8 -- see _draw_compatible_cavity_groups.
+        var drawn: Dictionary = _draw_compatible_cavity_groups(tetrad_cost / 8)
+        if drawn.is_empty():
+            break
+        gc.spend_particle(particle_cost)
+        gc.spend_sparks(sparks_cost)
+        gc.iota_grains = gc.iota_grains.add(BigNum.one())
+        gc.add_to_total("iota_grains", BigNum.one())
+
+
+func _assemble_iota_grains_simplex(amount: BigNum, particle_cost: int, tetrad_cost: int, sparks_cost: int) -> void:
+    # Direct field subtraction, not spend_particle(int) -- that helper only
+    # takes a plain int and would truncate/overflow for a late-game BigNum
+    # batch this large (this is exactly the ≥1000-output tier).
+    gc.particle = gc.particle.sub(amount.mul_int(particle_cost))
+    gc.sparks = gc.sparks.sub(amount.mul_int(sparks_cost))
+    _batch_spend_tetrads(amount.mul_int(tetrad_cost), amount)
+    gc.iota_grains = gc.iota_grains.add(amount)
+    gc.add_to_total("iota_grains", amount)
+
+
+func _produce_iota_assemble_grains(requested: BigNum) -> BigNum:
+    if requested.is_zero():
+        return BigNum.zero()
+    if gc.is_locked("particle") or gc.is_locked("sparks"):
+        return BigNum.zero()
+    var headroom: BigNum = _get_storage_headroom()
+    if headroom.is_zero():
+        return BigNum.zero()
+    var particle_cost: int = _recipe_cost("iota_assemble_grains", "particle")
+    var tetrad_cost:   int = _recipe_cost("iota_assemble_grains", "tetrad")
+    var sparks_cost:   int = _recipe_cost("iota_assemble_grains", "sparks")
+    var max_by_particle: BigNum = gc.particle.div_int_floor(particle_cost)
+    var max_by_sparks:   BigNum = gc.sparks.div_int_floor(sparks_cost)
+    var max_by_tetrad:   BigNum = gc.get_tetrad_unlocked_total().div_int_floor(tetrad_cost)
+    var actual: BigNum = _bignum_min(requested,
+                _bignum_min(headroom,
+                _bignum_min(max_by_particle,
+                _bignum_min(max_by_sparks, max_by_tetrad))))
+    if actual.is_zero():
+        return BigNum.zero()
+
+    if _should_use_true_random(actual.to_float()):
+        _assemble_iota_grains_true_random(actual.to_int(), particle_cost, tetrad_cost, sparks_cost)
+    else:
+        _assemble_iota_grains_simplex(actual, particle_cost, tetrad_cost, sparks_cost)
+    return actual
+
+
+func _assemble_mote_grains_true_random(count: int, iota_cost: int, particle_cost: int, tetrad_cost: int, sparks_cost: int) -> void:
+    for _i in count:
+        if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)):
+            break
+        if gc.particle.is_less_than(BigNum.from_int(particle_cost)):
+            break
+        if gc.iota_grains.is_less_than(BigNum.from_int(iota_cost)):
+            break
+        # Mote's cavity is 6 independent groups of 8 -- see
+        # _draw_compatible_cavity_groups.
+        var drawn: Dictionary = _draw_compatible_cavity_groups(tetrad_cost / 8)
+        if drawn.is_empty():
+            break
+        gc.spend_iota_grains(iota_cost)
+        gc.spend_particle(particle_cost)
+        gc.spend_sparks(sparks_cost)
+        gc.mote_grains = gc.mote_grains.add(BigNum.one())
+        gc.add_to_total("mote_grains", BigNum.one())
+
+
+func _assemble_mote_grains_simplex(amount: BigNum, iota_cost: int, particle_cost: int, tetrad_cost: int, sparks_cost: int) -> void:
+    # Direct field subtraction, not the spend_X(int) helpers -- those only
+    # take a plain int and would truncate/overflow for a late-game BigNum
+    # batch this large (this is exactly the ≥1000-output tier).
+    gc.iota_grains = gc.iota_grains.sub(amount.mul_int(iota_cost))
+    gc.particle = gc.particle.sub(amount.mul_int(particle_cost))
+    gc.sparks = gc.sparks.sub(amount.mul_int(sparks_cost))
+    _batch_spend_tetrads(amount.mul_int(tetrad_cost), amount)
+    gc.mote_grains = gc.mote_grains.add(amount)
+    gc.add_to_total("mote_grains", amount)
+
+
+func _produce_mote_assemble_grains(requested: BigNum) -> BigNum:
+    if requested.is_zero():
+        return BigNum.zero()
+    if gc.is_locked("iota_grains") or gc.is_locked("particle") or gc.is_locked("sparks"):
+        return BigNum.zero()
+    var headroom: BigNum = _get_storage_headroom()
+    if headroom.is_zero():
+        return BigNum.zero()
+    var iota_cost:     int = _recipe_cost("mote_assemble_grains", "iota_grains")
+    var particle_cost: int = _recipe_cost("mote_assemble_grains", "particle")
+    var tetrad_cost:   int = _recipe_cost("mote_assemble_grains", "tetrad")
+    var sparks_cost:   int = _recipe_cost("mote_assemble_grains", "sparks")
+    var max_by_iota:     BigNum = gc.iota_grains.div_int_floor(iota_cost)
+    var max_by_particle: BigNum = gc.particle.div_int_floor(particle_cost)
+    var max_by_sparks:   BigNum = gc.sparks.div_int_floor(sparks_cost)
+    var max_by_tetrad:   BigNum = gc.get_tetrad_unlocked_total().div_int_floor(tetrad_cost)
+    var actual: BigNum = _bignum_min(requested,
+                _bignum_min(headroom,
+                _bignum_min(max_by_iota,
+                _bignum_min(max_by_particle,
+                _bignum_min(max_by_sparks, max_by_tetrad)))))
+    if actual.is_zero():
+        return BigNum.zero()
+
+    if _should_use_true_random(actual.to_float()):
+        _assemble_mote_grains_true_random(actual.to_int(), iota_cost, particle_cost, tetrad_cost, sparks_cost)
+    else:
+        _assemble_mote_grains_simplex(actual, iota_cost, particle_cost, tetrad_cost, sparks_cost)
+    return actual
+
+
+# ==================================================
+# PRODUCE — GENERIC (data-driven: iota_uonite, mote_uonite,
+# iota_grains, mote_grains, grain)
 # ==================================================
 func _produce_generic(op: String, requested: BigNum) -> BigNum:
     if requested.is_zero():
@@ -533,19 +748,23 @@ func _spend_resource(key: String, amount: BigNum) -> void:
         "sparks":   gc.sparks   = gc.sparks.sub(amount)
         "monad":    _batch_spend_monads(amount)
         "tetrad":   _batch_spend_tetrads(amount, amount.div_int_floor(5))
-        "particle": gc.particle = gc.particle.sub(amount)
-        "iota":     gc.iota     = gc.iota.sub(amount)
-        "mote":     gc.mote     = gc.mote.sub(amount)
-        "grain":    gc.grain    = gc.grain.sub(amount)
+        "particle":    gc.particle    = gc.particle.sub(amount)
+        "iota_uonite": gc.iota_uonite = gc.iota_uonite.sub(amount)
+        "mote_uonite": gc.mote_uonite = gc.mote_uonite.sub(amount)
+        "iota_grains": gc.iota_grains = gc.iota_grains.sub(amount)
+        "mote_grains": gc.mote_grains = gc.mote_grains.sub(amount)
+        "grain":       gc.grain       = gc.grain.sub(amount)
         _: push_warning("ProductionManager: unknown key in _spend_resource: " + key)
 
 
 func _add_resource(key: String, amount: BigNum) -> void:
     match key:
-        "particle": gc.particle = gc.particle.add(amount)
-        "iota":     gc.iota     = gc.iota.add(amount)
-        "mote":
-            gc.mote = gc.mote.add(amount)
+        "particle":    gc.particle    = gc.particle.add(amount)
+        "iota_uonite": gc.iota_uonite = gc.iota_uonite.add(amount)
+        "iota_grains": gc.iota_grains = gc.iota_grains.add(amount)
+        "mote_grains": gc.mote_grains = gc.mote_grains.add(amount)
+        "mote_uonite":
+            gc.mote_uonite = gc.mote_uonite.add(amount)
             # Cap the BigNum to the small per-cycle headroom BEFORE calling
             # to_int() — amount itself can be storage-headroom-bounded (i.e.
             # effectively unbounded late-game), and to_int()-ing it first
@@ -1052,47 +1271,242 @@ func manual_tetrad_assemble() -> bool:
     return _try_assemble_tetrad()
 
 
-func manual_particle_compress() -> bool:
-    var tetrad_cost: int = _recipe_cost("particle_compress", "tetrad")
-    # First pass: total availability check
+## The 6 K4 edges among a Particle's 4 corners (see _build_tier in
+## archai_lattice.gd: corner ci's 3 non-tip Monads each weld to a DIFFERENT
+## one of the other 3 corners at a dedicated shared-Monad point -- 4
+## corners, C(4,2)=6 weld points total, not one shared point for all).
+const _K4_EDGES := [Vector2i(0,1), Vector2i(0,2), Vector2i(0,3), Vector2i(1,2), Vector2i(1,3), Vector2i(2,3)]
+const _COMPATIBLE_DRAW_ATTEMPTS: int = 20
+
+## Whether `variety`'s own composition has ENOUGH of each type to cover
+## `needs` (type -> how many of that type are simultaneously demanded) --
+## not just "has at least one", since one Tetrad's finite 4 Monads can be
+## drawn on by multiple weld partners at once (e.g. a 1-Solid variety asked
+## to supply Solid to two different neighbors can't -- it only has the one
+## Solid Monad to give).
+func _tetrad_covers_needs(variety: String, needs: Dictionary) -> bool:
+    var comp: Dictionary = game_data.TETRADS[variety]
+    for t in needs:
+        if int(comp[t]) < int(needs[t]):
+            return false
+    return true
+
+## Draws 4 Tetrads for one Particle's 4 corners, respecting the REAL K4
+## weld structure verified in archai_lattice.gd's _build_tier -- each
+## corner has 3 SEPARATE weld points (one per other corner) + 1 free "tip"
+## slot (unconstrained at this assembly step, since nothing welds to it
+## yet), consuming all 4 of that corner's own Monads. A pairwise-only check
+## ("does A share >=1 type with B, independently of A's other neighbors")
+## can pass a combination that's actually infeasible, since it never checks
+## whether one corner's finite supply is enough to cover ALL its
+## simultaneous weld demands at once -- see the worked example in the
+## conversation that led to this fix.
+##
+## Assigns a random S/L/G type to each of K4's 6 edges (the weld type
+## between corners i and j), sums each corner's own 3 incident-edge types
+## into a required-count dict, then draws one Tetrad per corner whose own
+## composition covers its own requirement via _tetrad_covers_needs()
+## (leftover Monads, if any, are free for the tip). Retries with a fresh
+## random edge-typing up to _COMPATIBLE_DRAW_ATTEMPTS times before giving
+## up, since a bad random typing can dead-end a combination that a
+## different one would satisfy. Returns the drawn composition
+## (variety -> count) on success, or an empty dict on failure.
+##
+## `count` must be 4 -- this function IS the K4 structure, not a general
+## "draw N compatible tetrads" primitive; any other count is a caller bug.
+func _draw_compatible_tetrads(count: int) -> Dictionary:
+    if count != 4:
+        push_warning("_draw_compatible_tetrads: called with count=%d, only 4 (Particle's corners) is a valid K4 draw" % count)
+        return {}
+
+    for _attempt in _COMPATIBLE_DRAW_ATTEMPTS:
+        var edge_type := {}
+        for e in _K4_EDGES:
+            edge_type[e] = _MONAD_TYPES[gc.rng.randi_range(0, 2)]
+
+        var corner_needs: Array = [{}, {}, {}, {}]
+        for e in _K4_EDGES:
+            var t: String = edge_type[e]
+            var vi: Vector2i = e
+            corner_needs[vi.x][t] = int(corner_needs[vi.x].get(t, 0)) + 1
+            corner_needs[vi.y][t] = int(corner_needs[vi.y].get(t, 0)) + 1
+
+        var drawn := {}
+        var ok := true
+        for ci in range(4):
+            var needs: Dictionary = corner_needs[ci]
+            var pool := []
+            for t in gc.tetrad:
+                if gc.is_locked(t):
+                    continue
+                var already_drawn: int = drawn.get(t, 0)
+                if not gc.tetrad[t].is_greater_than(BigNum.from_int(already_drawn)):
+                    continue
+                if _tetrad_covers_needs(t, needs):
+                    pool.append(t)
+            if pool.is_empty():
+                ok = false
+                break
+            var key = pool[gc.rng.randi_range(0, pool.size() - 1)]
+            drawn[key] = drawn.get(key, 0) + 1
+        if ok:
+            return drawn
+    return {}
+
+
+# ==================================================
+# CAVITY-TETRAHEDRA WELD CONSTRAINT (Iota/Mote Grain-branch Tetrad draw)
+# ==================================================
+# _draw_compatible_tetrads above solves the K4 structure among a Particle's
+# 4 corners (6 weld points, one per pair). Iota/Mote's cavity-fill Tetrads
+# have a DIFFERENT real structure (archai_lattice.gd's build_cavity_fill
+# "tetrahedra" key, verified in dev_tests' _check_cavity_tetrahedra): a
+# group of 8 sharing ONE common centre point ALL AT ONCE, plus 6 boundary
+# points each shared by exactly 4 of the 8 (a 3-bit-cube: pick one of 2
+# values per antipodal pair, 3 pairs = 8 corners) -- not the same graph, so
+# it needs its own solver, below, rather than reusing the K4 one above.
+
+const _MONAD_TYPES := ["s", "l", "g"]
+
+## Same count-sufficiency standard as _tetrad_covers_needs() -- `needs` here
+## maps type -> how many of that type this one Tetrad's own 4 vertices
+## simultaneously demand (a corner's centre and one of its own picks can
+## land on the SAME type, e.g. both Solid, which needs 2 Solid Monads from
+## one variety at once, not just "has >=1"). Presence-only checking passed
+## combinations a variety's finite composition couldn't actually cover --
+## the same bug class fixed in _draw_compatible_tetrads(), found while
+## reviewing that fix.
+func _tetrad_supplies(variety: String, needs: Dictionary) -> bool:
+    var comp: Dictionary = game_data.TETRADS[variety]
+    for t in needs:
+        if int(comp[t]) < int(needs[t]):
+            return false
+    return true
+
+
+## Draws exactly 8 Tetrads for one cavity-tetrahedra group -- respects the
+## real 7-shared-point structure (1 centre shared by all 8, 6 boundary
+## points shared by 4 each) rather than pairwise-only compatibility.
+## Assigns a random S/L/G type to each of the 7 shared points, then draws
+## one Tetrad per corner whose own composition covers the required COUNT of
+## each type among that corner's own 4 points (centre + its 3 picks -- when
+## two or more of those 4 coincide on the same type, that type is needed
+## more than once from the SAME variety). Spends
+## nothing itself -- pure planning; its only caller,
+## _draw_compatible_cavity_groups(), does its own inline spending (needs to,
+## for correct depletion across multiple groups -- see that function).
+## Retries with a fresh random point-typing up to `attempts` times before
+## giving up (a bad
+## random typing, e.g. all 7 points forced to 3 different types when stock
+## is thin, can dead-end a group that a different typing would satisfy).
+## Returns the drawn composition (variety -> count) on success, or an
+## empty dict on failure.
+func _draw_compatible_cavity_group(attempts: int = 20) -> Dictionary:
+    for _attempt in attempts:
+        var t_centre: String = _MONAD_TYPES[gc.rng.randi_range(0, 2)]
+        var t_a: Array = [_MONAD_TYPES[gc.rng.randi_range(0, 2)], _MONAD_TYPES[gc.rng.randi_range(0, 2)]]
+        var t_b: Array = [_MONAD_TYPES[gc.rng.randi_range(0, 2)], _MONAD_TYPES[gc.rng.randi_range(0, 2)]]
+        var t_c: Array = [_MONAD_TYPES[gc.rng.randi_range(0, 2)], _MONAD_TYPES[gc.rng.randi_range(0, 2)]]
+
+        var drawn := {}
+        var ok := true
+        for a_bit in range(2):
+            if not ok: break
+            for b_bit in range(2):
+                if not ok: break
+                for c_bit in range(2):
+                    var needed := {}
+                    for t in [t_centre, t_a[a_bit], t_b[b_bit], t_c[c_bit]]:
+                        needed[t] = int(needed.get(t, 0)) + 1
+                    var pool := []
+                    for t in gc.tetrad:
+                        if gc.is_locked(t):
+                            continue
+                        var already: int = drawn.get(t, 0)
+                        if not gc.tetrad[t].is_greater_than(BigNum.from_int(already)):
+                            continue
+                        if _tetrad_supplies(t, needed):
+                            pool.append(t)
+                    if pool.is_empty():
+                        ok = false
+                        break
+                    var key = pool[gc.rng.randi_range(0, pool.size() - 1)]
+                    drawn[key] = drawn.get(key, 0) + 1
+        if ok:
+            return drawn
+    return {}
+
+
+## Draws `groups` independent cavity-tetrahedra groups of 8 -- Iota needs 1
+## (its single decompose level); Mote needs 6 (one per Level-1 branch; its
+## own top-level 8 are Particle-scale, a different tier's material entirely,
+## not drawn here). Groups don't share vertices with each other, but DO
+## share the same live gc.tetrad pool, so each group's draw is spent
+## immediately (unlike _draw_compatible_tetrads, which leaves spending to
+## the caller) so the next group's stock check sees it depleted. If any
+## group fails, everything spent by earlier groups in this same call is
+## refunded and an empty dict returned -- all-or-nothing, matching every
+## other assembly function's atomicity.
+func _draw_compatible_cavity_groups(groups: int) -> Dictionary:
+    var total := {}
+    for _g in groups:
+        var one_group: Dictionary = _draw_compatible_cavity_group()
+        if one_group.is_empty():
+            for key in total:
+                gc.tetrad[key] = gc.tetrad[key].add(BigNum.from_int(int(total[key])))
+            return {}
+        for key in one_group:
+            gc.tetrad[key] = gc.tetrad[key].sub(BigNum.from_int(int(one_group[key])))
+            total[key] = int(total.get(key, 0)) + int(one_group[key])
+    return total
+
+
+func manual_particle_assemble() -> bool:
+    var tetrad_cost:  int = _recipe_cost("particle_assemble", "tetrad")
+    var sparks_cost:  int = _recipe_cost("particle_assemble", "sparks")
+    if gc.is_locked("sparks"): return false
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
+    # Cheap fast-fail before the more expensive compatible draw below --
+    # necessary but not sufficient (says nothing about compatibility).
     var total_available := BigNum.zero()
     for t in gc.tetrad:
         if not gc.is_locked(t):
             total_available = total_available.add(gc.tetrad[t])
     if total_available.is_less_than(BigNum.from_int(tetrad_cost)): return false
 
-    # Draw tetrad_cost tetrads, rebuilding the eligible pool each step to
-    # respect per-type stock as we accumulate draws — matching
-    # the same pattern used by _try_assemble_tetrad for monads.
-    var drawn = {}
-    for j in tetrad_cost:
-        var remaining_pool = []
-        for t in gc.tetrad:
-            if not gc.is_locked(t):
-                var already_drawn: int = drawn.get(t, 0)
-                if gc.tetrad[t].is_greater_than(BigNum.from_int(already_drawn)):
-                    remaining_pool.append(t)
-        if remaining_pool.is_empty(): return false
-        var key = remaining_pool[gc.rng.randi_range(0, remaining_pool.size() - 1)]
-        drawn[key] = drawn.get(key, 0) + 1
+    var drawn: Dictionary = _draw_compatible_tetrads(tetrad_cost)
+    if drawn.is_empty() and tetrad_cost > 0: return false
 
-    # Spend and produce — draw is already validated by construction
     for key in drawn:
         gc.tetrad[key] = gc.tetrad[key].sub(BigNum.from_int(drawn[key]))
+    gc.spend_sparks(sparks_cost)
     gc.particle = gc.particle.add(BigNum.from_int(1))
     gc.add_to_total("particle", BigNum.one())
     return true
 
 
-func manual_iota_assemble() -> bool:
-    return _try_assemble_iota()
+func manual_iota_assemble_uonite() -> bool:
+    return _try_assemble_iota_uonite()
 
 
-func manual_mote_compress() -> bool:
-    if gc.is_locked("iota"): return false
-    if not gc.spend_iota(_recipe_cost("mote_compress", "iota")): return false
-    _add_resource("mote", BigNum.one())
+func manual_mote_assemble_uonite() -> bool:
+    var iota_cost:   int = _recipe_cost("mote_assemble_uonite", "iota_uonite")
+    var sparks_cost: int = _recipe_cost("mote_assemble_uonite", "sparks")
+    if gc.is_locked("iota_uonite") or gc.is_locked("sparks"): return false
+    if gc.iota_uonite.is_less_than(BigNum.from_int(iota_cost)): return false
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
+    gc.spend_iota_uonite(iota_cost)
+    gc.spend_sparks(sparks_cost)
+    _add_resource("mote_uonite", BigNum.one())
     return true
+
+
+func manual_iota_assemble_grains() -> bool:
+    return _try_assemble_iota_grains()
+
+
+func manual_mote_assemble_grains() -> bool:
+    return _try_assemble_mote_grains()
 
 
 func manual_grain_assemble() -> bool:
@@ -1106,7 +1520,7 @@ func manual_grain_assemble() -> bool:
 # Grains directly into live storage.
 # Tetrad credits are distributed at the exact multinomial
 # probability for uniform 1/3 S/L/G monad draws (denom 81),
-# scaled to 4800 total tetrads consumed.
+# scaled to 7680 total tetrads consumed.
 # Does NOT require any resources to be present;
 # purely additive — safe to call at any game state.
 # ==================================================
@@ -1115,50 +1529,54 @@ func dev_inject_ten_grains() -> void:
         return
 
     # ── Tier counts consumed to produce 10 Grains ──────────────
-    # grain_assemble:    25 sparks + 64 monad + 16 particle + 4 mote  per grain
-    # mote_compress:     5 iota                                         per mote
-    # iota_assemble:     5 sparks + 16 monad + 4 particle               per iota
-    # particle_compress: 5 tetrad                                        per particle
+    # grain_assemble:        25 sparks + 64 monad + 16 particle + 4 mote_grains
+    # mote_assemble_grains:  4 iota_grains + 8 particle + 48 tetrad + 36 sparks  per mote_grains
+    # iota_assemble_grains:  4 particle + 8 tetrad + 6 sparks                    per iota_grains
+    # particle_assemble:     4 tetrad + 1 spark                                 per particle
     #
-    # 10 grain → 40 mote → 200 iota → 960 particle → 4800 tetrad
+    # 10 grain → 40 mote_grains → 160 iota_grains → 1120 particle → 7680 tetrad
     const GRAINS_TO_INJECT:   int = 10
     const MOTES_PRODUCED:     int = 40
-    const IOTAS_PRODUCED:     int = 200
-    const PARTICLES_PRODUCED: int = 960
+    const IOTAS_PRODUCED:     int = 160
+    const PARTICLES_PRODUCED: int = 1120
 
-    # ── Credit totals_created for grain/mote/iota/particle ─────
-    gc.add_to_total("grain",    BigNum.from_int(GRAINS_TO_INJECT))
-    gc.add_to_total("mote",     BigNum.from_int(MOTES_PRODUCED))
-    gc.add_to_total("iota",     BigNum.from_int(IOTAS_PRODUCED))
-    gc.add_to_total("particle", BigNum.from_int(PARTICLES_PRODUCED))
+    # ── Credit totals_created for grain/mote_grains/iota_grains/particle ───
+    gc.add_to_total("grain",       BigNum.from_int(GRAINS_TO_INJECT))
+    gc.add_to_total("mote_grains", BigNum.from_int(MOTES_PRODUCED))
+    gc.add_to_total("iota_grains", BigNum.from_int(IOTAS_PRODUCED))
+    gc.add_to_total("particle",    BigNum.from_int(PARTICLES_PRODUCED))
     gc.add_to_total("monad_solid",  BigNum.from_int(1280))
     gc.add_to_total("monad_liquid", BigNum.from_int(1280))
     gc.add_to_total("monad_gas",    BigNum.from_int(1280))
 
     # ── Tetrad credits at correct multinomial proportions ───────
     # Uniform 1/3 S/L/G monad draw, 4 draws per tetrad → denominator 81.
-    # 4800 tetrads total. floori(4800 × k/81) per variety;
-    # remainder 21 distributed as +7 each to earth/water/air (highest-prob medials).
+    # 7680 tetrads total. floori(7680 × k/81) per variety; remainder 9
+    # distributed by largest fractional remainder (Hamilton's method) --
+    # the 6/81 class (.888), 1/81 class (.8148), and 12/81 class (.777)
+    # each have the same fraction across all their members, so each of
+    # those 3 whole classes (3 members apiece) gets +1 per member, using
+    # exactly 9; the 4/81 class (.259, lowest) gets nothing extra.
     #
-    #  1/81 each: adaemant aquae aethyr             → 59  each
-    # 12/81 each: earth water air                   → 715 each  (708 + 7 remainder)
-    #  6/81 each: mud dust cloud                    → 354 each
-    #  4/81 each: dirt sand haze mist ooze foam     → 236 each
-    gc.add_to_total("adaemant", BigNum.from_int(59))
-    gc.add_to_total("aquae",    BigNum.from_int(59))
-    gc.add_to_total("aethyr",   BigNum.from_int(59))
-    gc.add_to_total("earth",    BigNum.from_int(715))
-    gc.add_to_total("water",    BigNum.from_int(715))
-    gc.add_to_total("air",      BigNum.from_int(715))
-    gc.add_to_total("mud",      BigNum.from_int(354))
-    gc.add_to_total("dust",     BigNum.from_int(354))
-    gc.add_to_total("cloud",    BigNum.from_int(354))
-    gc.add_to_total("dirt",     BigNum.from_int(236))
-    gc.add_to_total("sand",     BigNum.from_int(236))
-    gc.add_to_total("haze",     BigNum.from_int(236))
-    gc.add_to_total("mist",     BigNum.from_int(236))
-    gc.add_to_total("ooze",     BigNum.from_int(236))
-    gc.add_to_total("foam",     BigNum.from_int(236))
+    #  1/81 each: adaemant aquae aethyr             → 95   each (94 + 1)
+    # 12/81 each: earth water air                   → 1138 each (1137 + 1)
+    #  6/81 each: mud dust cloud                    → 569  each (568 + 1)
+    #  4/81 each: dirt sand haze mist ooze foam     → 379  each
+    gc.add_to_total("adaemant", BigNum.from_int(95))
+    gc.add_to_total("aquae",    BigNum.from_int(95))
+    gc.add_to_total("aethyr",   BigNum.from_int(95))
+    gc.add_to_total("earth",    BigNum.from_int(1138))
+    gc.add_to_total("water",    BigNum.from_int(1138))
+    gc.add_to_total("air",      BigNum.from_int(1138))
+    gc.add_to_total("mud",      BigNum.from_int(569))
+    gc.add_to_total("dust",     BigNum.from_int(569))
+    gc.add_to_total("cloud",    BigNum.from_int(569))
+    gc.add_to_total("dirt",     BigNum.from_int(379))
+    gc.add_to_total("sand",     BigNum.from_int(379))
+    gc.add_to_total("haze",     BigNum.from_int(379))
+    gc.add_to_total("mist",     BigNum.from_int(379))
+    gc.add_to_total("ooze",     BigNum.from_int(379))
+    gc.add_to_total("foam",     BigNum.from_int(379))
 
     # ── Inject Grains into live storage ────────────────────────
     gc.grain = gc.grain.add(BigNum.from_int(GRAINS_TO_INJECT))
@@ -1170,21 +1588,21 @@ func dev_inject_ten_grains() -> void:
 
 
 func manual_create_uonite() -> bool:
-    # Guard: need at least mote_cost mote, sparks_cost sparks, and headroom
-    # in the cycle cap.
-    var mote_cost:   int = _recipe_cost("uonite_assemble", "mote")
+    # Guard: need at least mote_cost mote_uonite, sparks_cost sparks, and
+    # headroom in the cycle cap.
+    var mote_cost:   int = _recipe_cost("uonite_assemble", "mote_uonite")
     var sparks_cost: int = _recipe_cost("uonite_assemble", "sparks")
-    if gc.mote.is_less_than(BigNum.from_int(mote_cost)): return false
+    if gc.mote_uonite.is_less_than(BigNum.from_int(mote_cost)): return false
     if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)):  return false
     var headroom: int = gc.get_uonite_cycle_cap() - gc.uonites_this_cycle
     if headroom <= 0: return false
-    # Batch: create as many uonites as mote, sparks, and cap headroom allow.
-    var possible_by_mote:   int = gc.mote.div_int_floor(mote_cost).to_int()
+    # Batch: create as many uonites as mote_uonite, sparks, and cap headroom allow.
+    var possible_by_mote:   int = gc.mote_uonite.div_int_floor(mote_cost).to_int()
     var possible_by_sparks: int = gc.sparks.div_int_floor(sparks_cost).to_int()
     var count: int = mini(possible_by_mote, mini(possible_by_sparks, headroom))
     if count <= 0: return false
-    gc.mote   = gc.mote.sub(BigNum.from_int(count * mote_cost))
-    gc.sparks = gc.sparks.sub(BigNum.from_int(count * sparks_cost))
+    gc.mote_uonite = gc.mote_uonite.sub(BigNum.from_int(count * mote_cost))
+    gc.sparks      = gc.sparks.sub(BigNum.from_int(count * sparks_cost))
     gc.uonite = gc.uonite.add(BigNum.from_int(count))
     gc.add_to_total("uonite", BigNum.from_int(count))
     gc.uonites_this_cycle    += count
@@ -1228,7 +1646,7 @@ func _try_assemble_tetrad() -> bool:
     # The manual path does NOT route through _batch_assemble_tetrads, so the
     # tutorial variety backstop has to be invoked here as well or a player
     # who assembles Tetrads by hand never gets it. Same manual-vs-batch
-    # divergence that has bitten this file before (see manual_mote_compress
+    # divergence that has bitten this file before (see manual_mote_assemble_uonite
     # skipping _add_resource's counters) — the two paths share
     # _draw_monad_composition and _resolve_tetrad but nothing else, so
     # anything added to one has to be checked against the other.
@@ -1262,19 +1680,70 @@ func _try_assemble_tetrad() -> bool:
     return true
 
 
-func _try_assemble_iota() -> bool:
-    var sparks_cost:   int = _recipe_cost("iota_assemble", "sparks")
-    var monad_cost:    int = _recipe_cost("iota_assemble", "monad")
-    var particle_cost: int = _recipe_cost("iota_assemble", "particle")
+func _try_assemble_iota_uonite() -> bool:
+    var sparks_cost:   int = _recipe_cost("iota_assemble_uonite", "sparks")
+    var particle_cost: int = _recipe_cost("iota_assemble_uonite", "particle")
     if gc.is_locked("sparks") or gc.is_locked("particle"): return false
     if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
-    if gc.get_monad_unlocked_total().is_less_than(BigNum.from_int(monad_cost)): return false
     if gc.particle.is_less_than(BigNum.from_int(particle_cost)): return false
-    if not _draw_monads(monad_cost): return false
     gc.spend_sparks(sparks_cost)
     gc.spend_particle(particle_cost)
-    gc.iota = gc.iota.add(BigNum.from_int(1))
-    gc.add_to_total("iota", BigNum.one())
+    gc.iota_uonite = gc.iota_uonite.add(BigNum.from_int(1))
+    gc.add_to_total("iota_uonite", BigNum.one())
+    return true
+
+
+func _try_assemble_iota_grains() -> bool:
+    var particle_cost: int = _recipe_cost("iota_assemble_grains", "particle")
+    var tetrad_cost:   int = _recipe_cost("iota_assemble_grains", "tetrad")
+    var sparks_cost:   int = _recipe_cost("iota_assemble_grains", "sparks")
+    if gc.is_locked("particle") or gc.is_locked("sparks"): return false
+    if gc.particle.is_less_than(BigNum.from_int(particle_cost)): return false
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
+    var total_available := BigNum.zero()
+    for t in gc.tetrad:
+        if not gc.is_locked(t):
+            total_available = total_available.add(gc.tetrad[t])
+    if total_available.is_less_than(BigNum.from_int(tetrad_cost)): return false
+
+    # Iota's cavity is 1 group of 8 (see _draw_compatible_cavity_groups) --
+    # spends internally on success, nothing left to spend here.
+    var drawn: Dictionary = _draw_compatible_cavity_groups(tetrad_cost / 8)
+    if drawn.is_empty(): return false
+
+    gc.spend_particle(particle_cost)
+    gc.spend_sparks(sparks_cost)
+    gc.iota_grains = gc.iota_grains.add(BigNum.from_int(1))
+    gc.add_to_total("iota_grains", BigNum.one())
+    return true
+
+
+func _try_assemble_mote_grains() -> bool:
+    var iota_cost:     int = _recipe_cost("mote_assemble_grains", "iota_grains")
+    var particle_cost: int = _recipe_cost("mote_assemble_grains", "particle")
+    var tetrad_cost:   int = _recipe_cost("mote_assemble_grains", "tetrad")
+    var sparks_cost:   int = _recipe_cost("mote_assemble_grains", "sparks")
+    if gc.is_locked("iota_grains") or gc.is_locked("particle") or gc.is_locked("sparks"): return false
+    if gc.iota_grains.is_less_than(BigNum.from_int(iota_cost)): return false
+    if gc.particle.is_less_than(BigNum.from_int(particle_cost)): return false
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
+    var total_available := BigNum.zero()
+    for t in gc.tetrad:
+        if not gc.is_locked(t):
+            total_available = total_available.add(gc.tetrad[t])
+    if total_available.is_less_than(BigNum.from_int(tetrad_cost)): return false
+
+    # Mote's cavity is 6 independent groups of 8 (6 Level-1 branches; its
+    # own top-level 8 Particle-scale tetrahedra are the "particle" cost
+    # above, not drawn here) -- spends internally on success.
+    var drawn: Dictionary = _draw_compatible_cavity_groups(tetrad_cost / 8)
+    if drawn.is_empty(): return false
+
+    gc.spend_iota_grains(iota_cost)
+    gc.spend_particle(particle_cost)
+    gc.spend_sparks(sparks_cost)
+    gc.mote_grains = gc.mote_grains.add(BigNum.from_int(1))
+    gc.add_to_total("mote_grains", BigNum.one())
     return true
 
 
@@ -1282,16 +1751,16 @@ func _try_assemble_grain() -> bool:
     var sparks_cost:   int = _recipe_cost("grain_assemble", "sparks")
     var monad_cost:    int = _recipe_cost("grain_assemble", "monad")
     var particle_cost: int = _recipe_cost("grain_assemble", "particle")
-    var mote_cost:     int = _recipe_cost("grain_assemble", "mote")
-    if gc.is_locked("sparks") or gc.is_locked("particle") or gc.is_locked("mote"): return false
+    var mote_cost:     int = _recipe_cost("grain_assemble", "mote_grains")
+    if gc.is_locked("sparks") or gc.is_locked("particle") or gc.is_locked("mote_grains"): return false
     if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
     if gc.get_monad_unlocked_total().is_less_than(BigNum.from_int(monad_cost)): return false
     if gc.particle.is_less_than(BigNum.from_int(particle_cost)): return false
-    if gc.mote.is_less_than(BigNum.from_int(mote_cost)): return false
+    if gc.mote_grains.is_less_than(BigNum.from_int(mote_cost)): return false
     if not _draw_monads(monad_cost): return false
     gc.spend_sparks(sparks_cost)
     gc.spend_particle(particle_cost)
-    gc.spend_mote(mote_cost)
+    gc.spend_mote_grains(mote_cost)
     gc.grain = gc.grain.add(BigNum.from_int(1))
     gc.add_to_total("grain", BigNum.one())
     gc.grains_this_cycle = mini(gc.grains_this_cycle + 1, 20)
@@ -1429,14 +1898,16 @@ func get_workers_needed_for_resource(resource_key: String, producer_op: String) 
 
 func get_timer_intervals() -> Dictionary:
     var base: Dictionary = {
-        "sparks_summon":     TIMER_SPARKS,
-        "monad_compress":    TIMER_MONAD,
-        "tetrad_assemble":   TIMER_TETRAD,
-        "particle_compress": TIMER_PARTICLE,
-        "iota_assemble":     TIMER_IOTA,
-        "mote_compress":     TIMER_MOTE,
-        "grain_assemble":    TIMER_GRAIN,
-        "uonite_create":     TIMER_UONITE,
+        "sparks_summon":        TIMER_SPARKS,
+        "monad_compress":       TIMER_MONAD,
+        "tetrad_assemble":      TIMER_TETRAD,
+        "particle_assemble":    TIMER_PARTICLE,
+        "iota_assemble_uonite": TIMER_IOTA,
+        "mote_assemble_uonite": TIMER_MOTE,
+        "iota_assemble_grains": TIMER_IOTA,
+        "mote_assemble_grains": TIMER_MOTE,
+        "grain_assemble":       TIMER_GRAIN,
+        "uonite_create":        TIMER_UONITE,
     }
     if not gc:
         return base

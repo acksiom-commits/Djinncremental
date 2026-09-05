@@ -15,8 +15,14 @@ const RESOURCES = {
     "monad":    {"name": "Monad",     "icon": "res://icons/monad.svg",    "color": "#ee4444"},
     "tetrad":   {"name": "Tetrad",    "icon": "res://icons/tetrad.svg",   "color": "#ff9933"},
     "particle": {"name": "Particle",  "icon": "res://icons/particle.svg", "color": "#eecc00"},
-    "iota":     {"name": "Iota",      "icon": "res://icons/iota.svg",     "color": "#55ff88"},
-    "mote":     {"name": "Mote",      "icon": "res://icons/mote.svg",     "color": "#55aaff"},
+    "iota_uonite": {"name": "Iota",   "icon": "res://icons/iota.svg",     "color": "#55ff88"},
+    "mote_uonite": {"name": "Mote",   "icon": "res://icons/mote.svg",     "color": "#55aaff"},
+    # Grain-branch Iota/Mote -- material-packed (real Tetrad/Particle density
+    # in the cavity), not bare-Spark colonized. Reuse the Uonite-branch icons
+    # for now (no distinct asset yet, no UI to show them in either -- see
+    # RECIPES comment below).
+    "iota_grains": {"name": "Iota",   "icon": "res://icons/iota.svg",     "color": "#55ff88"},
+    "mote_grains": {"name": "Mote",   "icon": "res://icons/mote.svg",     "color": "#55aaff"},
     "grain":    {"name": "Grain",     "icon": "res://icons/grain.svg",    "color": "#9944ee"},
     "uonite":   {"name": "Uonite",    "icon": "res://icons/uonite.svg",   "color": "#ffdd55"},
 # ---- Firmament Stocks ----
@@ -42,9 +48,9 @@ const BUTTON_LABELS = {
     "SummonSparkButton":      ["SUMMON",      "SPARK"],
     "FuseGrainButton":        ["FUSE",        "GRAINS"],
     "MonadCompressButton":    ["Compress to", "MONAD"],
-    "ParticleCompressButton": ["Compress to", "PARTICLE"],
+    "ParticleCompressButton": ["Assemble",    "PARTICLE"],
     "IotaAssembleButton":     ["Assemble",    "IOTA"],
-    "MoteCompressButton":     ["Compress to", "MOTE"],
+    "MoteCompressButton":     ["Assemble",    "MOTE"],
     "TetradAssembleButton":   ["Assemble",    "TETRAD"],
     "GrainAssembleButton":    ["Assemble",    "GRAIN"],
     "CreateUoniteButton":     ["Create",      "UONITE"],
@@ -94,11 +100,43 @@ const POOL_NAMES = {
 const RECIPES = {
     "monad_compress":    {"inputs": {"sparks": 5},                                    "outputs": {"monad": 1}},
     "tetrad_assemble":   {"inputs": {"sparks": 1, "monad": 4},                        "outputs": {"tetrad": 1}},
-    "particle_compress": {"inputs": {"tetrad": 5},                                    "outputs": {"particle": 1}},
-    "iota_assemble":     {"inputs": {"sparks": 5, "monad": 16, "particle": 4},        "outputs": {"iota": 1}},
-    "mote_compress":     {"inputs": {"iota": 5},                                      "outputs": {"mote": 1}},
-    "grain_assemble":    {"inputs": {"sparks": 25, "monad": 64, "particle": 16, "mote": 4}, "outputs": {"grain": 1}},
-    "uonite_assemble":   {"inputs": {"mote": 20, "sparks": 1},                        "outputs": {"uonite": 1}},
+    # Every tier from Tetrad up is 4 corners of the previous tier + its own
+    # centroid Spark (Sierpinski corner+centroid assembly) -- only Monad and
+    # Uonite are still pure N-of-previous-tier compression, so everything
+    # else is named "_assemble", not "_compress".
+    "particle_assemble": {"inputs": {"tetrad": 4, "sparks": 1},                       "outputs": {"particle": 1}},
+
+    # ---- Uonite branch (cheap, unfilled -- bare-Spark cavity colonization
+    # only, no packed material).
+    #
+    # iota_assemble_uonite's 11 sparks = 5 base + 6 neurology cavity-fill
+    # pockets. No "monad" input -- Uonite-track Iota doesn't pack material,
+    # that's specifically what distinguishes it from the Grain branch.
+    # mote_assemble_uonite's 36 sparks is the 36 verified cavity-fill
+    # pockets (own centroid Spark cost not separately itemized here, unlike
+    # particle_assemble's explicit 1 -- flag if that's meant to be 37, not
+    # 36). Every Uonite-branch Iota/Mote is colonized with its cavity-fill
+    # Sparks from assembly, no separate action.
+    "iota_assemble_uonite": {"inputs": {"sparks": 11, "particle": 4},                 "outputs": {"iota_uonite": 1}},
+    "mote_assemble_uonite": {"inputs": {"iota_uonite": 4, "sparks": 36},              "outputs": {"mote_uonite": 1}},
+
+    # ---- Grain branch (expensive, filled -- real Tetrad/Particle density
+    # packed into the cavity, not bare Sparks). Numbers are the verified
+    # octahedral cavity-packing decomposition (see
+    # planned_archai_purity_tier_taxonomy.md): Iota's cavity packs down to
+    # 8 real Tetrads (its 8 tetrahedra-shaped positions) + 6 residual Spark
+    # pockets; Mote's packs to 8 Particles (Level-1 pieces) + 48 Tetrads
+    # (Level-2, 6 octahedra x 8 each) + 36 residual Spark pockets. No UI
+    # exists for this branch yet (see BUTTON_LABELS / the pending
+    # Uonite<->Grain toggle) -- recipes and production logic only.
+    "iota_assemble_grains": {"inputs": {"particle": 4, "tetrad": 8, "sparks": 6},      "outputs": {"iota_grains": 1}},
+    "mote_assemble_grains": {"inputs": {"iota_grains": 4, "particle": 8, "tetrad": 48, "sparks": 36}, "outputs": {"mote_grains": 1}},
+
+    # grain_assemble now draws its Mote input from the real Grain-branch
+    # Mote (mote_grains) instead of the Uonite-branch one it temporarily
+    # borrowed while mote_grains didn't exist yet.
+    "grain_assemble":    {"inputs": {"sparks": 25, "monad": 64, "particle": 16, "mote_grains": 4}, "outputs": {"grain": 1}},
+    "uonite_assemble":   {"inputs": {"mote_uonite": 20, "sparks": 1},                 "outputs": {"uonite": 1}},
 }
 
 

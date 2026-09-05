@@ -370,13 +370,13 @@ func _build_reference() -> String:
     t += "\n"
 
     t += "[color=%s]Particle[/color]\n" % SUBHEAD_COLOR
-    t += "[color=%s]Compress 5 Tetrads → 1 Particle.[/color]\n\n" % BODY_COLOR
+    t += "[color=%s]Assemble 4 Tetrads + 1 Spark → 1 Particle.[/color]\n\n" % BODY_COLOR
 
     t += "[color=%s]Iota[/color]\n" % SUBHEAD_COLOR
-    t += "[color=%s]Assemble 5 Sparks + 16 Monads + 4 Particles → 1 Iota.[/color]\n\n" % BODY_COLOR
+    t += "[color=%s]Assemble 11 Sparks + 4 Particles → 1 Iota.[/color]\n\n" % BODY_COLOR
 
     t += "[color=%s]Mote[/color]\n" % SUBHEAD_COLOR
-    t += "[color=%s]Compress 5 Iotas → 1 Mote.[/color]\n\n" % BODY_COLOR
+    t += "[color=%s]Assemble 4 Iotas + 36 Sparks → 1 Mote.[/color]\n\n" % BODY_COLOR
 
     t += "[color=%s]Grain[/color]\n" % SUBHEAD_COLOR
     t += "[color=%s]Assemble 25 Sparks + 64 Monads + 16 Particles + 4 Motes → 1 Grain.[/color]\n\n" % BODY_COLOR

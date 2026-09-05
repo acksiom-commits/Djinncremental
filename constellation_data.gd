@@ -293,7 +293,7 @@ const BUILT_IN = [
         "bonus_levels": {"stars": 0.5, "lines": 0.25, "art": 0.1},
         "sub_targets": [
             "monad_compress", "tetrad_assemble",
-            "particle_compress", "iota_assemble", "mote_compress",
+            "particle_assemble", "iota_assemble_uonite", "mote_assemble_uonite",
             "grain_assemble", "uonite_create"
         ],
         "spark_cap":      28657,

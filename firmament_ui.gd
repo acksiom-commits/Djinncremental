@@ -1,5 +1,22 @@
 extends VBoxContainer
 
+# ============= MID-GAME MECHANICS FOUNDATION (design spec, not yet built) =============
+# Archai: a new Particle categorization, sorted on two axes: Tetrad Variety and Purity Tier.
+# Permanence: a Particle qualifies for Permanence (can survive an Expansion reset) iff at
+#             least one of its compressed 5 tetrads is a Fundament Tetrad.
+# Primal Archai: Particles whose compressed 5 tetrads are ALL Fundament tetrads.
+# Purity Tiers (Primal Archai only, by split of the 5 Fundament tetrads across Varieties):
+#   Tier 1 (highest): 5 of one Variety            (5)
+#   Tier 2:           4 of one Variety + 1 other   (4-1)
+#   Tier 3:           3 of one Variety + 2 other   (3-2)
+#   Tier 4:           3 of one Variety + 1 of each of the others (3-1-1)
+#   Tier 5 (lowest):  less than 3 of any single Variety (e.g. 2-2-1, 2-1-1-1, 1-1-1-1-1)
+# Phlogiston/Quintessence: an Expansion reset destroys non-Permanent ("early-stage")
+#             materials that don't survive it; that destruction harvests Phlogiston
+#             (existing RESOURCES entry) as a byproduct. Quintessence is Phlogiston's
+#             processed/refined form -- fuel source for Runes, and an ingredient in
+#             Enchanted materials. Phlogiston's own further uses are TBD.
+# See memory: planned_archai_purity_tier_taxonomy
 # ================= FIRMAMENT UI v1.3.0 =================
 # v1.3.0: Wired save_manager's game_loaded/save_load_failed signals, which
 #         were never connected here (unlike root_ui.gd) — clicking Load
@@ -215,7 +232,7 @@ func _on_game_loaded(offline_seconds: float) -> void:
         return
     var minutes := int(results.get("time_simulated", 0)) / 60.0
     var lines   := ["Away for ~%d min. Offline gains:" % minutes]
-    for key in ["sparks", "monad", "tetrad", "particle", "iota", "mote", "grain"]:
+    for key in ["sparks", "monad", "tetrad", "particle", "iota_uonite", "mote_uonite", "grain"]:
         if results.has(key):
             lines.append("  +%s %s" % [results[key], key.capitalize()])
     if archon_dialogue_manager:

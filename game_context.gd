@@ -18,11 +18,13 @@ var tetrad:   Dictionary = {
     "dirt":     BigNum.zero(), "sand":  BigNum.zero(), "haze":   BigNum.zero(),
     "mist":     BigNum.zero(), "ooze":  BigNum.zero(), "foam":   BigNum.zero(),
 }
-var particle: BigNum = BigNum.zero()
-var iota:     BigNum = BigNum.zero()
-var mote:     BigNum = BigNum.zero()
-var grain:    BigNum = BigNum.zero()
-var uonite:   BigNum = BigNum.zero()
+var particle:    BigNum = BigNum.zero()
+var iota_uonite: BigNum = BigNum.zero()
+var mote_uonite: BigNum = BigNum.zero()
+var iota_grains: BigNum = BigNum.zero()
+var mote_grains: BigNum = BigNum.zero()
+var grain:       BigNum = BigNum.zero()
+var uonite:      BigNum = BigNum.zero()
 
 var uonite_name: String = ""
 
@@ -127,8 +129,10 @@ var watermarks: Dictionary = {
     "monad_gas":    BigNum.zero(),
     "tetrad":       BigNum.zero(),
     "particle":     BigNum.zero(),
-    "iota":         BigNum.zero(),
-    "mote":         BigNum.zero(),
+    "iota_uonite":  BigNum.zero(),
+    "mote_uonite":  BigNum.zero(),
+    "iota_grains":  BigNum.zero(),
+    "mote_grains":  BigNum.zero(),
     "grain":        BigNum.zero(),
     "uonite":       BigNum.zero(),
 }
@@ -149,7 +153,8 @@ var totals_created: Dictionary = {
     "mud":      BigNum.zero(), "dust":     BigNum.zero(), "cloud":  BigNum.zero(),
     "dirt":     BigNum.zero(), "sand":     BigNum.zero(), "haze":   BigNum.zero(),
     "mist":     BigNum.zero(), "ooze":     BigNum.zero(), "foam":   BigNum.zero(),
-    "particle": BigNum.zero(), "iota":     BigNum.zero(), "mote":   BigNum.zero(),
+    "particle": BigNum.zero(), "iota_uonite": BigNum.zero(), "mote_uonite": BigNum.zero(),
+    "iota_grains": BigNum.zero(), "mote_grains": BigNum.zero(),
     "grain":    BigNum.zero(), "uonite":   BigNum.zero(),
     "sparks_summoned": BigNum.zero(),
 }
@@ -163,9 +168,11 @@ var rates: Dictionary = {
     "sparks_summon":     BigNum.zero(),
     "monad_compress":    BigNum.zero(),
     "tetrad_assemble":   BigNum.zero(),
-    "particle_compress": BigNum.zero(),
-    "iota_assemble":     BigNum.zero(),
-    "mote_compress":     BigNum.zero(),
+    "particle_assemble":    BigNum.zero(),
+    "iota_assemble_uonite": BigNum.zero(),
+    "mote_assemble_uonite": BigNum.zero(),
+    "iota_assemble_grains": BigNum.zero(),
+    "mote_assemble_grains": BigNum.zero(),
     "grain_assemble":    BigNum.zero(),
 }
 
@@ -181,15 +188,21 @@ var assignments: Dictionary = {
     "tetrad_assemble_uonites":     BigNum.zero(),
     "tetrad_assemble_foci":        0,
     "tetrad_assemble_volitions":   0,
-    "particle_compress_uonites":   BigNum.zero(),
-    "particle_compress_foci":      0,
-    "particle_compress_volitions": 0,
-    "iota_assemble_uonites":       BigNum.zero(),
-    "iota_assemble_foci":          0,
-    "iota_assemble_volitions":     0,
-    "mote_compress_uonites":       BigNum.zero(),
-    "mote_compress_foci":          0,
-    "mote_compress_volitions":     0,
+    "particle_assemble_uonites":      BigNum.zero(),
+    "particle_assemble_foci":         0,
+    "particle_assemble_volitions":    0,
+    "iota_assemble_uonite_uonites":   BigNum.zero(),
+    "iota_assemble_uonite_foci":      0,
+    "iota_assemble_uonite_volitions": 0,
+    "mote_assemble_uonite_uonites":   BigNum.zero(),
+    "mote_assemble_uonite_foci":      0,
+    "mote_assemble_uonite_volitions": 0,
+    "iota_assemble_grains_uonites":   BigNum.zero(),
+    "iota_assemble_grains_foci":      0,
+    "iota_assemble_grains_volitions": 0,
+    "mote_assemble_grains_uonites":   BigNum.zero(),
+    "mote_assemble_grains_foci":      0,
+    "mote_assemble_grains_volitions": 0,
     "grain_assemble_uonites":      BigNum.zero(),
     "grain_assemble_foci":         0,
     "grain_assemble_volitions":    0,
@@ -258,8 +271,10 @@ var locks: Dictionary = {
     "cat_symmetric": false, "cat_medial":    false,
     # Chain resources (1 Volition each)
     "particle":      false,
-    "iota":          false,
-    "mote":          false,
+    "iota_uonite":   false,
+    "mote_uonite":   false,
+    "iota_grains":   false,
+    "mote_grains":   false,
     "grain":         false,
     "uonite":        false,
 }
@@ -430,8 +445,10 @@ func get_storage_total() -> BigNum:
     total = total.add(get_monad_total())
     total = total.add(get_tetrad_total())
     total = total.add(particle)
-    total = total.add(iota)
-    total = total.add(mote)
+    total = total.add(iota_uonite)
+    total = total.add(mote_uonite)
+    total = total.add(iota_grains)
+    total = total.add(mote_grains)
     total = total.add(grain)
     total = total.add(uonite)
     return total
@@ -463,10 +480,12 @@ func get_resource_storage_fraction(resource_key: String) -> float:
     match resource_key:
         "monad":    resource_val = get_monad_total()
         "tetrad":   resource_val = get_tetrad_total()
-        "particle": resource_val = particle
-        "iota":     resource_val = iota
-        "mote":     resource_val = mote
-        "grain":    resource_val = grain
+        "particle":    resource_val = particle
+        "iota_uonite": resource_val = iota_uonite
+        "mote_uonite": resource_val = mote_uonite
+        "iota_grains": resource_val = iota_grains
+        "mote_grains": resource_val = mote_grains
+        "grain":       resource_val = grain
         "uonite":   resource_val = uonite
         _:          return 0.0
     # Same NaN-from-Infinity/Infinity risk as get_storage_fill_fraction()
@@ -488,8 +507,10 @@ func get_resource(key: String) -> BigNum:
     match key:
         "sparks":       return sparks
         "particle":     return particle
-        "iota":         return iota
-        "mote":         return mote
+        "iota_uonite":  return iota_uonite
+        "mote_uonite":  return mote_uonite
+        "iota_grains":  return iota_grains
+        "mote_grains":  return mote_grains
         "grain":        return grain
         "uonite":       return uonite
         "phlogiston":   return phlogiston
@@ -515,8 +536,10 @@ func set_resource(key: String, value: BigNum) -> void:
     match key:
         "sparks":       sparks = value
         "particle":     particle = value
-        "iota":         iota = value
-        "mote":         mote = value
+        "iota_uonite":  iota_uonite = value
+        "mote_uonite":  mote_uonite = value
+        "iota_grains":  iota_grains = value
+        "mote_grains":  mote_grains = value
         "grain":        grain = value
         "uonite":       uonite = value
         "phlogiston":   phlogiston = value
@@ -1175,19 +1198,35 @@ func spend_particle(amount: int) -> bool:
     return true
 
 
-func spend_iota(amount: int) -> bool:
+func spend_iota_uonite(amount: int) -> bool:
     var cost = BigNum.from_int(amount)
-    if is_locked("iota") or iota.is_less_than(cost):
+    if is_locked("iota_uonite") or iota_uonite.is_less_than(cost):
         return false
-    iota = iota.sub(cost)
+    iota_uonite = iota_uonite.sub(cost)
     return true
 
 
-func spend_mote(amount: int) -> bool:
+func spend_mote_uonite(amount: int) -> bool:
     var cost = BigNum.from_int(amount)
-    if is_locked("mote") or mote.is_less_than(cost):
+    if is_locked("mote_uonite") or mote_uonite.is_less_than(cost):
         return false
-    mote = mote.sub(cost)
+    mote_uonite = mote_uonite.sub(cost)
+    return true
+
+
+func spend_iota_grains(amount: int) -> bool:
+    var cost = BigNum.from_int(amount)
+    if is_locked("iota_grains") or iota_grains.is_less_than(cost):
+        return false
+    iota_grains = iota_grains.sub(cost)
+    return true
+
+
+func spend_mote_grains(amount: int) -> bool:
+    var cost = BigNum.from_int(amount)
+    if is_locked("mote_grains") or mote_grains.is_less_than(cost):
+        return false
+    mote_grains = mote_grains.sub(cost)
     return true
 
 
@@ -1234,10 +1273,14 @@ func update_watermarks() -> void:
         watermarks["tetrad"] = tetrad_total.copy()
     if particle.is_greater_than(watermarks["particle"]):
         watermarks["particle"] = particle.copy()
-    if iota.is_greater_than(watermarks["iota"]):
-        watermarks["iota"] = iota.copy()
-    if mote.is_greater_than(watermarks["mote"]):
-        watermarks["mote"] = mote.copy()
+    if iota_uonite.is_greater_than(watermarks["iota_uonite"]):
+        watermarks["iota_uonite"] = iota_uonite.copy()
+    if mote_uonite.is_greater_than(watermarks["mote_uonite"]):
+        watermarks["mote_uonite"] = mote_uonite.copy()
+    if iota_grains.is_greater_than(watermarks["iota_grains"]):
+        watermarks["iota_grains"] = iota_grains.copy()
+    if mote_grains.is_greater_than(watermarks["mote_grains"]):
+        watermarks["mote_grains"] = mote_grains.copy()
     if grain.is_greater_than(watermarks["grain"]):
         watermarks["grain"] = grain.copy()
     if uonite.is_greater_than(watermarks["uonite"]):
@@ -1259,7 +1302,7 @@ func get_save_data() -> Dictionary:
     data["creation_order"]   = creation_order.duplicate()
     for k in tetrad:
         data["tetrad_" + k] = tetrad[k].to_save_string()
-    for key in ["particle", "iota", "mote", "grain", "uonite"]:
+    for key in ["particle", "iota_uonite", "mote_uonite", "iota_grains", "mote_grains", "grain", "uonite"]:
         data[key] = get_resource(key).to_save_string()
     data["archon_foci"]           = archon_foci
     data["volitions"]             = volitions
@@ -1287,7 +1330,8 @@ func get_save_data() -> Dictionary:
     # actively updated by update_watermarks() — this used to hardcode only
     # the 3 monad_* keys instead of looping over the dict like
     # totals_created/locks/ui_unlocks do, so the other 8 (sparks, monad,
-    # tetrad, particle, iota, mote, grain, uonite) silently reset to
+    # tetrad, particle, iota_uonite, mote_uonite, iota_grains, mote_grains,
+    # grain, uonite) silently reset to
     # BigNum.zero() on every reload.
     for wm_key in watermarks:
         data["watermark_" + wm_key] = watermarks[wm_key].to_save_string()
@@ -1483,7 +1527,7 @@ func load_save_data(data: Dictionary) -> void:
 
     for k in tetrad:
         tetrad[k] = BigNum.from_string(data.get("tetrad_" + k, "0:0"))
-    for key in ["particle", "iota", "mote", "grain", "uonite"]:
+    for key in ["particle", "iota_uonite", "mote_uonite", "iota_grains", "mote_grains", "grain", "uonite"]:
         set_resource(key, BigNum.from_string(data.get(key, "0:0")))
 
     # Scrub fractional remnants from all stored resource types
@@ -1491,7 +1535,7 @@ func load_save_data(data: Dictionary) -> void:
         monad[k] = monad[k].floor_to_whole()
     for k in tetrad:
         tetrad[k] = tetrad[k].floor_to_whole()
-    for key in ["particle", "iota", "mote", "grain", "uonite"]:
+    for key in ["particle", "iota_uonite", "mote_uonite", "iota_grains", "mote_grains", "grain", "uonite"]:
         set_resource(key, get_resource(key).floor_to_whole())
 
     archon_foci             = _coerce_int(data.get("archon_foci"), 1)
@@ -1644,10 +1688,12 @@ func do_prestige_reset() -> BigNum:
     sparks = BigNum.zero()
     for k in monad:  monad[k]  = BigNum.zero()
     for k in tetrad: tetrad[k] = BigNum.zero()
-    particle = BigNum.zero()
-    iota     = BigNum.zero()
-    mote     = BigNum.zero()
-    grain    = BigNum.zero()
+    particle    = BigNum.zero()
+    iota_uonite = BigNum.zero()
+    mote_uonite = BigNum.zero()
+    iota_grains = BigNum.zero()
+    mote_grains = BigNum.zero()
+    grain       = BigNum.zero()
     grains_this_cycle = 0
     motes_this_cycle = 0
     uonites_this_cycle = 0

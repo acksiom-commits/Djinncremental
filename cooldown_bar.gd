@@ -153,9 +153,9 @@ func _check_has_stock() -> bool:
         "sparks":   return not _gc.sparks.is_zero()
         "monad":    return not _gc.get_monad_total().is_zero()
         "tetrad":   return not _gc.get_tetrad_total().is_zero()
-        "particle": return not _gc.particle.is_zero()
-        "iota":     return not _gc.iota.is_zero()
-        "mote":     return not _gc.mote.is_zero()
+        "particle":    return not _gc.particle.is_zero()
+        "iota_uonite": return not _gc.iota_uonite.is_zero()
+        "mote_uonite": return not _gc.mote_uonite.is_zero()
         "grain":    return not _gc.grain.is_zero()
         "uonite":   return not _gc.uonite.is_zero()
     return false

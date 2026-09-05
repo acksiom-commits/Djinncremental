@@ -102,39 +102,39 @@ const FLOW_GLIDE_ANGLE_JITTER_DEG: float = 25.0 # +/- degrees randomized off the
 const FLOW_GLIDE_DIST_JITTER_FRAC: float = 0.3  # +/- fraction of FLOW_GLIDE_DISTANCE randomized per icon
 
 const RESOURCE_KEYS = [
-    "monad", "tetrad", "particle", "iota", "mote", "grain", "uonite"
+    "monad", "tetrad", "particle", "iota_uonite", "mote_uonite", "grain", "uonite"
 ]
 
 # Face index per resource (face 0 = exit)
 const RESOURCE_FACE = {
-    "monad":    1,
-    "tetrad":   2,
-    "particle": 3,
-    "iota":     4,
-    "mote":     5,
-    "grain":    6,
-    "uonite":   7,
+    "monad":       1,
+    "tetrad":      2,
+    "particle":    3,
+    "iota_uonite": 4,
+    "mote_uonite": 5,
+    "grain":       6,
+    "uonite":      7,
 }
 
 # Icon size scales with production tier
 const ICON_SIZES = {
-    "monad":    6.0,
-    "tetrad":   8.0,
-    "particle": 10.0,
-    "iota":     12.0,
-    "mote":     14.0,
-    "grain":    16.0,
-    "uonite":   18.0,
+    "monad":       6.0,
+    "tetrad":      8.0,
+    "particle":    10.0,
+    "iota_uonite": 12.0,
+    "mote_uonite": 14.0,
+    "grain":       16.0,
+    "uonite":      18.0,
 }
 
 const RESOURCE_COLORS = {
-    "monad":    Color("#ee4444"),
-    "tetrad":   Color("#ffbb44"),
-    "particle": Color("#eecc00"),
-    "iota":     Color("#55ff88"),
-    "mote":     Color("#55aaff"),
-    "grain":    Color("#9944ee"),
-    "uonite":   Color("#ffdd55"),
+    "monad":       Color("#ee4444"),
+    "tetrad":      Color("#ffbb44"),
+    "particle":    Color("#eecc00"),
+    "iota_uonite": Color("#55ff88"),
+    "mote_uonite": Color("#55aaff"),
+    "grain":       Color("#9944ee"),
+    "uonite":      Color("#ffdd55"),
 }
 
 const EXIT_FACE_COLOR: Color = Color("#ffffff", 0.25)
@@ -345,12 +345,12 @@ func _build_flow_legs() -> void:
         return
 
     _flow_legs = [
-        _make_wedge_leg(_oct_verts[2], _inner_verts[2], "monad",    "tetrad"),   # Monad|Tetrad
-        _make_wedge_leg(_oct_verts[3], _inner_verts[3], "tetrad",   "particle"), # Tetrad|Particle
-        _make_wedge_leg(_oct_verts[4], _inner_verts[4], "particle", "iota"),     # Particle|Iota
-        _make_wedge_leg(_oct_verts[5], _inner_verts[5], "iota",     "mote"),     # Iota|Mote
-        _make_wedge_leg(_oct_verts[6], _inner_verts[6], "mote",     "grain"),    # Mote|Grain
-        _make_settle_leg(_inner_verts[5], _inner_verts[6], "mote", "uonite"),    # Mote's inner edge -> center
+        _make_wedge_leg(_oct_verts[2], _inner_verts[2], "monad",       "tetrad"),      # Monad|Tetrad
+        _make_wedge_leg(_oct_verts[3], _inner_verts[3], "tetrad",      "particle"),    # Tetrad|Particle
+        _make_wedge_leg(_oct_verts[4], _inner_verts[4], "particle",    "iota_uonite"), # Particle|Iota
+        _make_wedge_leg(_oct_verts[5], _inner_verts[5], "iota_uonite", "mote_uonite"), # Iota|Mote
+        _make_wedge_leg(_oct_verts[6], _inner_verts[6], "mote_uonite", "grain"),       # Mote|Grain
+        _make_settle_leg(_inner_verts[5], _inner_verts[6], "mote_uonite", "uonite"),   # Mote's inner edge -> center
     ]
 
 
@@ -396,13 +396,13 @@ func _roll_flow_targets(leg: Dictionary) -> Dictionary:
 
 func _load_textures() -> void:
     var icon_paths = {
-        "monad":    "res://icons/monad.svg",
-        "tetrad":   "res://icons/tetrad.svg",
-        "particle": "res://icons/particle.svg",
-        "iota":     "res://icons/iota.svg",
-        "mote":     "res://icons/mote.svg",
-        "grain":    "res://icons/grain.svg",
-        "uonite":   "res://icons/uonite.svg",
+        "monad":       "res://icons/monad.svg",
+        "tetrad":      "res://icons/tetrad.svg",
+        "particle":    "res://icons/particle.svg",
+        "iota_uonite": "res://icons/iota.svg",
+        "mote_uonite": "res://icons/mote.svg",
+        "grain":       "res://icons/grain.svg",
+        "uonite":      "res://icons/uonite.svg",
     }
     for key in icon_paths:
         if ResourceLoader.exists(icon_paths[key]):
@@ -537,9 +537,9 @@ func _sync_icons() -> void:
         match key:
             "monad":    has_stock = not _gc.get_monad_total().is_zero()
             "tetrad":   has_stock = not _gc.get_tetrad_total().is_zero()
-            "particle": has_stock = not _gc.particle.is_zero()
-            "iota":     has_stock = not _gc.iota.is_zero()
-            "mote":     has_stock = not _gc.mote.is_zero()
+            "particle":    has_stock = not _gc.particle.is_zero()
+            "iota_uonite": has_stock = not _gc.iota_uonite.is_zero()
+            "mote_uonite": has_stock = not _gc.mote_uonite.is_zero()
             "grain":    has_stock = not _gc.grain.is_zero()
             "uonite":   has_stock = not _gc.uonite.is_zero()
         var base = 1 if (has_stock and key != "uonite") else 0
@@ -822,7 +822,7 @@ func _update_center_icons(delta: float) -> void:
 # chain) and Uonite has no entry either, since its leg is "settle", not
 # "wedge" (see SETTLE_LEG_INDEX below).
 const WEDGE_LEG_FOR_RESOURCE: Dictionary = {
-    "tetrad": 0, "particle": 1, "iota": 2, "mote": 3, "grain": 4,
+    "tetrad": 0, "particle": 1, "iota_uonite": 2, "mote_uonite": 3, "grain": 4,
 }
 
 # The Mote->Uonite leg is the one exception to "triggered by _sync_icons()'s

@@ -32,8 +32,8 @@ const RESOURCE_COLORS = {
     "monad":    Color("#ee4444"),
     "tetrad":   Color("#ff9933"),
     "particle": Color("#eecc00"),
-    "iota":     Color("#55ff88"),
-    "mote":     Color("#55aaff"),
+    "iota_uonite": Color("#55ff88"),
+    "mote_uonite": Color("#55aaff"),
     "grain":    Color("#9944ee"),
     "uonite":   Color("#ffdd55")
 }
@@ -1231,7 +1231,7 @@ func _on_game_loaded(offline_seconds: float) -> void:
         return
     var minutes := int(results.get("time_simulated", 0)) / 60.0
     var lines   := ["Away for ~%d min. Offline gains:" % minutes]
-    for key in ["sparks", "monad", "tetrad", "particle", "iota", "mote", "grain"]:
+    for key in ["sparks", "monad", "tetrad", "particle", "iota_uonite", "mote_uonite", "grain"]:
         if results.has(key):
             lines.append("  +%s %s" % [results[key], key.capitalize()])
     if archon_dialogue_manager:
@@ -1341,8 +1341,8 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     # plain notifications, not enqueue_X() calls), so they keep the
     # original gameplay-totals fallback — there's no flag to defer to.
     _first_particle_triggered = archon_dialogue_manager.first_particle_done
-    _first_iota_triggered     = uonite_ever_made or not game_context.totals_created.get("iota",     BigNum.zero()).is_zero()
-    _first_mote_triggered     = uonite_ever_made or not game_context.totals_created.get("mote",     BigNum.zero()).is_zero()
+    _first_iota_triggered     = uonite_ever_made or not game_context.totals_created.get("iota_uonite", BigNum.zero()).is_zero()
+    _first_mote_triggered     = uonite_ever_made or not game_context.totals_created.get("mote_uonite", BigNum.zero()).is_zero()
     _first_mote_dialogue_triggered = archon_dialogue_manager.first_mote_dialogue_done
     if _first_mote_dialogue_triggered:
         _on_first_mote_dialogue_complete()
@@ -1494,10 +1494,10 @@ func _build_simple_triggers() -> void:
         },
         {
             "guard": "_first_particle_triggered",
-            # Volition assignment to particle_compress unlocks as soon as
+            # Volition assignment to particle_assemble unlocks as soon as
             # wheel_full_access opens (all 3 Monad types made — see
             # allocation_wheel_control.gd), far earlier than all_tetrads_done
-            # (all 15 Tetrad varieties). particle_compress only costs 5 of
+            # (all 15 Tetrad varieties). particle_assemble only costs 4 of
             # ANY single unlocked Tetrad type, so automated production can
             # silently create a Particle long before enqueue_all_tetrads()'s
             # "[reveal:particle] Tap it!" line ever queues — without this
@@ -1516,7 +1516,7 @@ func _build_simple_triggers() -> void:
         },
         {
             "guard": "_first_iota_triggered",
-            "condition": func(): return not game_context.iota.is_zero(),
+            "condition": func(): return not game_context.iota_uonite.is_zero(),
             "effect": func():
                 _grant_foci()
                 archon_dialogue_manager.enqueue_notification("First Iota: +1 Focus.")
@@ -1524,14 +1524,14 @@ func _build_simple_triggers() -> void:
         },
         {
             "guard": "_first_mote_triggered",
-            "condition": func(): return not game_context.mote.is_zero(),
+            "condition": func(): return not game_context.mote_uonite.is_zero(),
             "effect": func():
                 archon_dialogue_manager.enqueue_notification("First Mote: +1 Focus.")
                 archon_dialogue_manager.try_show_next_notification(),
         },
         {
             "guard": "_first_mote_dialogue_triggered",
-            "condition": func(): return not game_context.mote.is_zero(),
+            "condition": func(): return not game_context.mote_uonite.is_zero(),
             "effect": func():
                 _grant_foci()
                 archon_dialogue_manager.enqueue_first_mote_dialogue(),
@@ -2292,7 +2292,7 @@ func _on_iota_assemble_pressed() -> void:
         return
     var any_success := false
     for i in _get_click_multiplier():
-        if production_manager.manual_iota_assemble():
+        if production_manager.manual_iota_assemble_uonite():
             any_success = true
     if any_success:
         if bar: bar.notify_clicked()
@@ -2309,7 +2309,7 @@ func _on_mote_compress_pressed() -> void:
         return
     var any_success := false
     for i in _get_click_multiplier():
-        if production_manager.manual_mote_compress():
+        if production_manager.manual_mote_assemble_uonite():
             any_success = true
     if any_success:
         if bar: bar.notify_clicked()
@@ -2326,7 +2326,7 @@ func _on_particle_compress_pressed() -> void:
         return
     var any_success := false
     for i in _get_click_multiplier():
-        if production_manager.manual_particle_compress():
+        if production_manager.manual_particle_assemble():
             any_success = true
     if any_success:
         if bar: bar.notify_clicked()
@@ -2546,9 +2546,9 @@ func _setup_resource_rows() -> void:
             "RowSolidMonadInstance":     row.set_resource_key("monad_solid")
             "RowLiquidMonadInstance":    row.set_resource_key("monad_liquid")
             "RowGasMonadInstance":       row.set_resource_key("monad_gas")
-            "RowIotaInstance":           row.set_resource_key("iota")
+            "RowIotaInstance":           row.set_resource_key("iota_uonite")
             "RowParticleInstance":       row.set_resource_key("particle")
-            "RowMoteInstance":           row.set_resource_key("mote")
+            "RowMoteInstance":           row.set_resource_key("mote_uonite")
             "RowGrainInstance":          row.set_resource_key("grain")
             "RowUonitesInstance":        row.set_resource_key("uonites_wheel")
             "RowFociInstance":           row.set_resource_key("foci_wheel")
@@ -2557,7 +2557,7 @@ func _setup_resource_rows() -> void:
                 row.set_label(row.name)
                 row.set_resource_key(row.name)
 
-    var lockable = ["monad_solid", "monad_liquid", "monad_gas", "iota", "mote", "particle", "grain"]
+    var lockable = ["monad_solid", "monad_liquid", "monad_gas", "iota_uonite", "mote_uonite", "particle", "grain"]
     for row in get_tree().get_nodes_in_group("resource_rows"):
         if row.resource_key in lockable and not row.row_clicked.is_connected(_on_row_clicked):
             row.row_clicked.connect(_on_row_clicked)
@@ -2582,20 +2582,20 @@ func _update_button_tooltips() -> void:
         return
     var op_map: Dictionary = {
         "TetradAssembleButton":   "tetrad_assemble",
-        "ParticleCompressButton": "particle_compress",
-        "IotaAssembleButton":     "iota_assemble",
-        "MoteCompressButton":     "mote_compress",
+        "ParticleCompressButton": "particle_assemble",
+        "IotaAssembleButton":     "iota_assemble_uonite",
+        "MoteCompressButton":     "mote_assemble_uonite",
         "GrainAssembleButton":    "grain_assemble",
         "CreateUoniteButton":     "uonite_assemble",
     }
     var tc: Dictionary = game_context.totals_created
     var total_map: Dictionary = {
         "TetradAssembleButton":   _sum_totals(game_context.tetrad.keys()),
-        "ParticleCompressButton": tc.get("particle", BigNum.zero()),
-        "IotaAssembleButton":     tc.get("iota",     BigNum.zero()),
-        "MoteCompressButton":     tc.get("mote",     BigNum.zero()),
-        "GrainAssembleButton":    tc.get("grain",    BigNum.zero()),
-        "CreateUoniteButton":     tc.get("uonite",   BigNum.zero()),
+        "ParticleCompressButton": tc.get("particle",    BigNum.zero()),
+        "IotaAssembleButton":     tc.get("iota_uonite", BigNum.zero()),
+        "MoteCompressButton":     tc.get("mote_uonite", BigNum.zero()),
+        "GrainAssembleButton":    tc.get("grain",       BigNum.zero()),
+        "CreateUoniteButton":     tc.get("uonite",      BigNum.zero()),
     }
     for btn_name in total_map:
         var node: Control = _tooltip_buttons.get(btn_name)
@@ -2732,19 +2732,19 @@ func _update_counters() -> void:
                     "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
                     _fmt(game_context.particle),
                     " 🔒" if locked else ""])
-            "iota":
-                var locked   = game_context.is_locked("iota")
-                var created  = _ever_created("iota")
+            "iota_uonite":
+                var locked   = game_context.is_locked("iota_uonite")
+                var created  = _ever_created("iota_uonite")
                 row.set_label("[color=%s]Iota: %s%s[/color]" % [
                     "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
-                    _fmt(game_context.iota),
+                    _fmt(game_context.iota_uonite),
                     " 🔒" if locked else ""])
-            "mote":
-                var locked   = game_context.is_locked("mote")
-                var created  = _ever_created("mote")
+            "mote_uonite":
+                var locked   = game_context.is_locked("mote_uonite")
+                var created  = _ever_created("mote_uonite")
                 row.set_label("[color=%s]Mote: %s%s[/color]" % [
                     "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
-                    _fmt(game_context.mote),
+                    _fmt(game_context.mote_uonite),
                     " 🔒" if locked else ""])
             "grain":
                 var locked   = game_context.is_locked("grain")
@@ -2871,8 +2871,8 @@ func _totals_display_name(key: String) -> String:
         if d != "": return d
     match key:
         "particle":         return "Particle"
-        "iota":             return "Iota"
-        "mote":             return "Mote"
+        "iota_uonite":      return "Iota"
+        "mote_uonite":      return "Mote"
         "grain":            return "Grain"
         "uonite":           return "Uonite"
         "monad_all":        return "All Monads"
@@ -2915,11 +2915,17 @@ func _update_tetrad_display() -> void:
 func _setup_bars() -> void:
     bars.clear()
     _bar_smoothed_rates.clear()
-    var resources = ["sparks", "monad", "tetrad", "iota", "mote", "particle", "grain", "uonite"]
+    var resources = ["sparks", "monad", "tetrad", "iota_uonite", "mote_uonite", "particle", "grain", "uonite"]
+    # Scene node names (GenBar/GenLabel) still use the pre-branch-split
+    # "Iota"/"Mote" prefixes -- res.capitalize() would otherwise produce
+    # "Iota Uonite" and miss the node entirely. Fixed once the .tscn nodes
+    # themselves are renamed in the deferred UI-labels pass.
+    var node_prefix_overrides = {"iota_uonite": "Iota", "mote_uonite": "Mote"}
     for res in resources:
-        var gen_bar = find_child(res.capitalize() + "GenBar", true, false)
+        var node_prefix: String = node_prefix_overrides.get(res, res.capitalize())
+        var gen_bar = find_child(node_prefix + "GenBar", true, false)
         if gen_bar:
-            var gen_lbl = _make_or_get_overlay_label(gen_bar, res.capitalize() + "GenLabel")
+            var gen_lbl = _make_or_get_overlay_label(gen_bar, node_prefix + "GenLabel")
             bars[res] = {"gen_bar": gen_bar, "gen_lbl": gen_lbl}
             gen_bar.max_value = 100.0
             gen_bar.min_value = 0.0
@@ -3028,9 +3034,9 @@ func _res_to_op(res: String) -> String:
         "sparks":   return "sparks_summon"
         "monad":    return "monad_compress"
         "tetrad":   return "tetrad_assemble"
-        "particle": return "particle_compress"
-        "iota":     return "iota_assemble"
-        "mote":     return "mote_compress"
+        "particle":    return "particle_assemble"
+        "iota_uonite": return "iota_assemble_uonite"
+        "mote_uonite": return "mote_assemble_uonite"
         "grain":    return "grain_assemble"
     return ""
 

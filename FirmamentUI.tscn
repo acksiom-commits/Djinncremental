@@ -21,6 +21,8 @@
 [ext_resource type="PackedScene" uid="uid://dp4kf7wq1mxn3" path="res://AgesPopout.tscn" id="19_rt0g0"]
 [ext_resource type="PackedScene" uid="uid://ghxpihrmiisr" path="res://ButtonLabel.tscn" id="19_smciy"]
 [ext_resource type="PackedScene" uid="uid://cnj4rti3wfnae" path="res://SettingsPopout.tscn" id="20_rt0g0"]
+[ext_resource type="PackedScene" path="res://ArchaiLatticeViewer.tscn" id="21_lattice"]
+[ext_resource type="PackedScene" path="res://LatticePanel.tscn" id="22_latticepanel"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_q6d5h"]
 shader = ExtResource("1_qk86b")
@@ -616,6 +618,11 @@ custom_minimum_size = Vector2(520, 238)
 layout_mode = 2
 mouse_filter = 1
 bbcode_enabled = true
+
+[node name="ArchaiLatticeViewer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox" unique_id=770000102 instance=ExtResource("21_lattice")]
+layout_mode = 2
+
+[node name="LatticePanel" parent="." instance=ExtResource("22_latticepanel")]
 
 [node name="RightEdgePopoutsVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=22592688]
 custom_minimum_size = Vector2(0, 310)

@@ -1,0 +1,150 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://lattice_panel_overlay.gd" id="1_overlay"]
+[ext_resource type="Script" path="res://archai_lattice.gd" id="2_lattice"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_backdrop"]
+bg_color = Color(0, 0, 0, 0.72)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.06, 0.04, 0.13, 0.98)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.38, 0.26, 0.6, 0.9)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_close_btn"]
+bg_color = Color(0.2, 0.05, 0.05, 0.8)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.6, 0.2, 0.2, 0.7)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_header_sep"]
+bg_color = Color(0.38, 0.26, 0.6, 0.5)
+
+[node name="LatticePanel" type="Control"]
+visible = false
+z_index = 110
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_overlay")
+
+[node name="Backdrop" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_backdrop")
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="PanelContainer" type="PanelContainer" parent="CenterContainer"]
+custom_minimum_size = Vector2(980, 780)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="OuterMargin" type="MarginContainer" parent="CenterContainer/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="OuterVBox" type="VBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HeaderHBox" type="HBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TitleLabel" type="Label" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.92, 0.88, 0.78, 1)
+theme_override_font_sizes/font_size = 23
+text = "Archai Lattice"
+vertical_alignment = 1
+
+[node name="CloseButton" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/HeaderHBox"]
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_override_colors/font_color = Color(1, 0.5, 0.5, 1)
+theme_override_font_sizes/font_size = 19
+theme_override_styles/normal = SubResource("StyleBoxFlat_close_btn")
+text = "✕"
+
+[node name="HeaderSeparator" type="Panel" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox"]
+custom_minimum_size = Vector2(0, 1)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_header_sep")
+
+[node name="ControlsRow" type="HBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PauseToggle" type="CheckButton" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/ControlsRow"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Pause"
+
+[node name="StraightToggle" type="CheckButton" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/ControlsRow"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Straight lines"
+
+[node name="CavityFillToggle" type="CheckButton" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/ControlsRow"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Cavity fill"
+
+[node name="ExtraCentroidToggle" type="CheckButton" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/ControlsRow"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Extra centroid edges"
+
+[node name="ViewportContainer" type="SubViewportContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox"]
+custom_minimum_size = Vector2(940, 680)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+stretch = true
+
+[node name="LatticeViewport" type="SubViewport" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/ViewportContainer"]
+own_world_3d = true
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(940, 680)
+render_target_update_mode = 4
+
+[node name="ArchaiLattice" type="MeshInstance3D" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/ViewportContainer/LatticeViewport"]
+script = ExtResource("2_lattice")
+
+[node name="LatticeCamera" type="Camera3D" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/ViewportContainer/LatticeViewport"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2)

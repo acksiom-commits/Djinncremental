@@ -31,25 +31,25 @@ const ICON_SIZE : float = 36.0
 #         Iota       (6 o'clock)
 
 const RESOURCE_ANGLES = {
-    "sparks":   -90.0,
-    "monad":    -45.0,
-    "tetrad":     0.0,
-    "particle":  45.0,
-    "iota":      90.0,
-    "mote":     135.0,
-    "grain":    180.0,
-    "uonite":   225.0,
+    "sparks":      -90.0,
+    "monad":       -45.0,
+    "tetrad":        0.0,
+    "particle":     45.0,
+    "iota_uonite":  90.0,
+    "mote_uonite": 135.0,
+    "grain":       180.0,
+    "uonite":      225.0,
 }
 
 const RESOURCE_OPERATIONS = {
-    "sparks":   "sparks_summon",
-    "monad":    "monad_compress",
-    "tetrad":   "tetrad_assemble",
-    "particle": "particle_compress",
-    "iota":     "iota_assemble",
-    "mote":     "mote_compress",
-    "grain":    "grain_assemble",
-    "uonite":   "",
+    "sparks":      "sparks_summon",
+    "monad":       "monad_compress",
+    "tetrad":      "tetrad_assemble",
+    "particle":    "particle_assemble",
+    "iota_uonite": "iota_assemble_uonite",
+    "mote_uonite": "mote_assemble_uonite",
+    "grain":       "grain_assemble",
+    "uonite":      "",
 }
 
 const POOL_SUFFIXES = ["uonites", "foci", "volitions"]
@@ -63,7 +63,7 @@ const POOL_SUFFIXES = ["uonites", "foci", "volitions"]
 # actually been produced, well before its own manual button is meaningful.
 # Gated on totals_created instead — the same "ever produced" signal the
 # First Particle/Iota/Mote/Grain triggers themselves already key off of.
-const EVER_PRODUCED_GATED_RESOURCES = ["particle", "iota", "mote", "grain"]
+const EVER_PRODUCED_GATED_RESOURCES = ["particle", "iota_uonite", "mote_uonite", "grain"]
 
 const MULTI_GRID = [
     ["10X",  10],
