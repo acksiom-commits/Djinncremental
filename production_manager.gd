@@ -586,6 +586,7 @@ func _assemble_iota_grains_true_random(count: int, particle_cost: int, tetrad_co
         if gc.particle.is_less_than(BigNum.from_int(particle_cost)):
             break
         # Iota's cavity is 1 group of 8 -- see _draw_compatible_cavity_groups.
+        @warning_ignore("integer_division") # tetrad_cost is always an exact multiple of 8
         var drawn: Dictionary = _draw_compatible_cavity_groups(tetrad_cost / 8)
         if drawn.is_empty():
             break
@@ -644,6 +645,7 @@ func _assemble_mote_grains_true_random(count: int, iota_cost: int, particle_cost
             break
         # Mote's cavity is 6 independent groups of 8 -- see
         # _draw_compatible_cavity_groups.
+        @warning_ignore("integer_division") # tetrad_cost is always an exact multiple of 8
         var drawn: Dictionary = _draw_compatible_cavity_groups(tetrad_cost / 8)
         if drawn.is_empty():
             break
@@ -1708,6 +1710,7 @@ func _try_assemble_iota_grains() -> bool:
 
     # Iota's cavity is 1 group of 8 (see _draw_compatible_cavity_groups) --
     # spends internally on success, nothing left to spend here.
+    @warning_ignore("integer_division") # tetrad_cost is always an exact multiple of 8
     var drawn: Dictionary = _draw_compatible_cavity_groups(tetrad_cost / 8)
     if drawn.is_empty(): return false
 
@@ -1736,6 +1739,7 @@ func _try_assemble_mote_grains() -> bool:
     # Mote's cavity is 6 independent groups of 8 (6 Level-1 branches; its
     # own top-level 8 Particle-scale tetrahedra are the "particle" cost
     # above, not drawn here) -- spends internally on success.
+    @warning_ignore("integer_division") # tetrad_cost is always an exact multiple of 8
     var drawn: Dictionary = _draw_compatible_cavity_groups(tetrad_cost / 8)
     if drawn.is_empty(): return false
 
