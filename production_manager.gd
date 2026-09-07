@@ -1452,26 +1452,32 @@ func _tetrad_supplies(variety: String, needs: Dictionary) -> bool:
 ## Draws exactly 8 Tetrads for one cavity-tetrahedra group -- respects the
 ## real 7-shared-point structure (1 centre shared by all 8, 6 boundary
 ## points shared by 4 each) rather than pairwise-only compatibility.
-## Assigns a random S/L/G type to each of the 7 shared points, then draws
-## one Tetrad per corner whose own composition covers the required COUNT of
-## each type among that corner's own 4 points (centre + its 3 picks -- when
-## two or more of those 4 coincide on the same type, that type is needed
-## more than once from the SAME variety). Spends
-## nothing itself -- pure planning; its only caller,
-## _draw_compatible_cavity_groups(), does its own inline spending (needs to,
-## for correct depletion across multiple groups -- see that function).
-## Retries with a fresh random point-typing up to `attempts` times before
-## giving up (a bad
-## random typing, e.g. all 7 points forced to 3 different types when stock
-## is thin, can dead-end a group that a different typing would satisfy).
+## Assigns an S/L/G type to each of the 7 shared points via the same
+## availability pre-pass as _draw_compatible_tetrads() -- uniformly random
+## among whichever types are actually craftable right now (_monad_type_supply()
+## + _weighted_type_pick()), NOT a blind roll over all 3 types regardless of
+## stock, and NOT weighted by how MUCH of each available type is stocked
+## either (production stays random within what's available; abundance must
+## not skew the pick further toward whatever's already overstocked). Then
+## draws one Tetrad per corner whose own composition covers the required
+## COUNT of each type among that corner's own 4 points (centre + its 3
+## picks -- when two or more of those 4 coincide on the same type, that
+## type is needed more than once from the SAME variety). Spends nothing
+## itself -- pure planning; its only caller, _draw_compatible_cavity_groups(),
+## does its own inline spending (needs to, for correct depletion across
+## multiple groups -- see that function). Retries with a fresh point-typing
+## up to `attempts` times before giving up (even an availability-correct
+## typing can still dead-end a group that a different one would satisfy).
 ## Returns the drawn composition (variety -> count) on success, or an
 ## empty dict on failure.
 func _draw_compatible_cavity_group(attempts: int = 20) -> Dictionary:
+    var type_weights: Dictionary = _monad_type_supply()
+
     for _attempt in attempts:
-        var t_centre: String = _MONAD_TYPES[gc.rng.randi_range(0, 2)]
-        var t_a: Array = [_MONAD_TYPES[gc.rng.randi_range(0, 2)], _MONAD_TYPES[gc.rng.randi_range(0, 2)]]
-        var t_b: Array = [_MONAD_TYPES[gc.rng.randi_range(0, 2)], _MONAD_TYPES[gc.rng.randi_range(0, 2)]]
-        var t_c: Array = [_MONAD_TYPES[gc.rng.randi_range(0, 2)], _MONAD_TYPES[gc.rng.randi_range(0, 2)]]
+        var t_centre: String = _weighted_type_pick(type_weights)
+        var t_a: Array = [_weighted_type_pick(type_weights), _weighted_type_pick(type_weights)]
+        var t_b: Array = [_weighted_type_pick(type_weights), _weighted_type_pick(type_weights)]
+        var t_c: Array = [_weighted_type_pick(type_weights), _weighted_type_pick(type_weights)]
 
         var drawn := {}
         var ok := true
