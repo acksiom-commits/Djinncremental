@@ -30,6 +30,12 @@ extends "res://dev_tests/test_base.gd"
 
 var fails: int = 0
 
+# preload, not the bare global `ArchaiLatticeGeometry.foo()` class_name
+# reference -- confirmed directly (2026-09-06) that the bare reference can
+# fail to compile when the project's global-script-class cache hasn't been
+# refreshed since that file was added. preload() always resolves.
+const ArchaiLatticeGeometry := preload("res://archai_lattice_geometry.gd")
+
 # tier -> [verts, monads, sparks, edges]
 const EXPECT := {
 	1: [5, 4, 1, 10],
@@ -552,15 +558,15 @@ func _check_extra_centroid_edges(inst, tier: int, tier_name: String, outer_pos: 
 ## _check_extra_centroid_edges) -- a full Mote carries both: 4x12=48 from
 ## its embedded Iotas plus 12 from its own Spark = 60 total, not 48 alone.
 func _check_embedded_corner_extra_edges(inst) -> void:
-	var mote_lat: Dictionary = inst._build_tier(4)
+	var mote_lat: Dictionary = ArchaiLatticeGeometry.build_tier(4)
 	var mote_pos: Array = mote_lat["pos"]
 
-	var iota_lat: Dictionary = inst._build_tier(3)
+	var iota_lat: Dictionary = ArchaiLatticeGeometry.build_tier(3)
 	var iota_pos: Array = iota_lat["pos"]
 	var iota_spark_local: Vector3 = iota_pos[iota_pos.size() - 1]
 	var iota_cav_local: Array = inst._cavity_verts(3)
 
-	var mote_corners: Array = inst._tetra_corners(pow(2.0, 3.0))
+	var mote_corners: Array = ArchaiLatticeGeometry.tetra_corners(pow(2.0, 3.0))
 
 	for ci in range(4):
 		var offset: Vector3 = (mote_corners[ci] as Vector3) * 0.5
@@ -618,7 +624,7 @@ func run() -> void:
 	_check_n_way_coalescence()
 
 	for tier in [1, 2, 3, 4]:
-		var lat: Dictionary = inst._build_tier(tier)
+		var lat: Dictionary = ArchaiLatticeGeometry.build_tier(tier)
 		var pos: Array = lat["pos"]
 		var kind: Array = lat["kind"]
 		var edges: Array = lat["edges"]
@@ -708,7 +714,7 @@ func run() -> void:
 	# and 6 edge midpoints of its edge-2 tetrahedron, so exactly 4 of them are
 	# a full edge-length (2.0) from the centroid-most distant pair... simpler
 	# and stronger: every Monad-Monad edge in a Tetrad has length 1.
-	var t1: Dictionary = inst._build_tier(1)
+	var t1: Dictionary = ArchaiLatticeGeometry.build_tier(1)
 	var p1: Array = t1["pos"]
 	for e in t1["edges"]:
 		var a: int = int((e as Vector2i).x)

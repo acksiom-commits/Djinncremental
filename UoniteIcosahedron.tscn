@@ -45,4 +45,4 @@ surface_material_override/0 = SubResource("StandardMaterial3D_sa2ir")
 surface_material_override/1 = SubResource("ShaderMaterial_5quxk")
 script = ExtResource("1")
 radius = 0.66
-current_grains = 9
+current_motes = 9

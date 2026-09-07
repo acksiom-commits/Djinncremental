@@ -28,6 +28,12 @@ extends "res://dev_tests/test_base.gd"
 
 var fails: int = 0
 
+# preload, not the bare global `ArchaiLatticeGeometry.foo()` class_name
+# reference -- confirmed directly (2026-09-06) that the bare reference can
+# fail to compile when the project's global-script-class cache hasn't been
+# refreshed since that file was added. preload() always resolves.
+const ArchaiLatticeGeometry := preload("res://archai_lattice_geometry.gd")
+
 
 func _bad(msg: String) -> void:
 	fails += 1
@@ -52,7 +58,7 @@ func _nearest_k(from: Vector3, pool: Array, k: int, exclude_i: int = -1) -> Arra
 func _analyze(inst, tier: int, tier_name: String, threshold: float) -> void:
 	print("  -- %s (tier %d) --" % [tier_name, tier])
 
-	var lat: Dictionary = inst._build_tier(tier)
+	var lat: Dictionary = ArchaiLatticeGeometry.build_tier(tier)
 	var pos: Array = lat["pos"]
 	var kind: Array = lat["kind"]
 	var tbd: int = int(inst.MONAD_TBD)
@@ -118,7 +124,7 @@ func _analyze(inst, tier: int, tier_name: String, threshold: float) -> void:
 
 
 func _monad_positions(inst, tier: int) -> Array:
-	var lat: Dictionary = inst._build_tier(tier)
+	var lat: Dictionary = ArchaiLatticeGeometry.build_tier(tier)
 	var pos: Array = lat["pos"]
 	var kind: Array = lat["kind"]
 	var tbd: int = int(inst.MONAD_TBD)

@@ -884,7 +884,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_d58y2")
 surface_material_override/1 = SubResource("ShaderMaterial_xasap")
 radius = 1.0
 rotation_speed = 0.1
-current_grains = 16
+current_motes = 16
 
 [node name="UoniteCamera" type="Camera3D" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel/UoniteCreationViewport/UoniteCreationSubViewport" unique_id=999999992]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2)

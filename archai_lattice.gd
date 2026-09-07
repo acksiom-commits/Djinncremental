@@ -32,6 +32,14 @@ extends MeshInstance3D
 # same-type-at-shared-vertices matching rule is satisfied by construction --
 # every lattice this generates is a legal one.
 
+# preload, not the bare global `ArchaiLatticeGeometry.foo()` class_name
+# reference -- confirmed directly (2026-09-06) that the bare reference can
+# fail to compile (can_instantiate() == false, no visible error) when the
+# project's global-script-class cache hasn't been refreshed since that file
+# was added, which a plain `--headless --script` run doesn't reliably force.
+# preload() sidesteps that cache entirely and always resolves.
+const ArchaiLatticeGeometry := preload("res://archai_lattice_geometry.gd")
+
 const MONAD_TBD := -1
 const KIND_SPARK := 0
 const KIND_SOLID := 1
@@ -214,100 +222,11 @@ func _set_extra_centroid(v: bool) -> void:
 # ==================================================
 # LATTICE CONSTRUCTION
 # ==================================================
-## Regular tetrahedron, edge `e`, first corner at the origin. Every component
-## is linear in `e`, which the recursion below relies on: halving the edge is
-## the same as halving the corner vectors.
-func _tetra_corners(e: float) -> Array:
-    return [
-        Vector3(0.0, 0.0, 0.0),
-        Vector3(e, 0.0, 0.0),
-        Vector3(e * 0.5, 0.0, e * sqrt(3.0) * 0.5),
-        Vector3(e * 0.5, e * sqrt(2.0 / 3.0), e * sqrt(3.0) / 6.0),
-    ]
-
-
-func _build_tetrad() -> Dictionary:
-    var corners := _tetra_corners(1.0)
-    var pos: Array = []
-    var kind: Array = []
-    for c in corners:
-        pos.append(c)
-        kind.append(MONAD_TBD)
-    pos.append((corners[0] + corners[1] + corners[2] + corners[3]) / 4.0)
-    kind.append(KIND_SPARK)
-
-    var edges: Array = []
-    for i in range(4):
-        for j in range(i + 1, 4):
-            edges.append(Vector2i(i, j))
-    for i in range(4):
-        edges.append(Vector2i(4, i))
-
-    return {"pos": pos, "kind": kind, "edges": edges, "corners": [0, 1, 2, 3]}
-
-
-## One assembly step: 4 sub-units at the corners of a double-edge tetrahedron,
-## welded at the 6 edge midpoints, plus a Spark at the centre joined to those 6.
-## Welding is done by CORNER IDENTITY, never by comparing float positions --
-## position welding drifts at deeper tiers and silently splits shared Monads.
-func _build_tier(t: int) -> Dictionary:
-    if t <= 1:
-        return _build_tetrad()
-
-    var sub := _build_tier(t - 1)
-    var sub_pos: Array = sub["pos"]
-    var sub_kind: Array = sub["kind"]
-    var sub_corners: Array = sub["corners"]
-
-    var big_edge: float = pow(2.0, float(t - 1))
-    var corners := _tetra_corners(big_edge)
-
-    var pos: Array = []
-    var kind: Array = []
-    var edges: Array = []
-
-    # The 4 outer tips.
-    var corner_idx: Array = []
-    for i in range(4):
-        corner_idx.append(pos.size())
-        pos.append(corners[i])
-        kind.append(MONAD_TBD)
-
-    # The 6 shared Monads, at the big tetrahedron's edge midpoints. These are
-    # also exactly the 6 vertices of the octahedral gap.
-    var mid_idx := {}
-    for i in range(4):
-        for j in range(i + 1, 4):
-            mid_idx[Vector2i(i, j)] = pos.size()
-            pos.append((corners[i] + corners[j]) * 0.5)
-            kind.append(MONAD_TBD)
-
-    for ci in range(4):
-        var offset: Vector3 = corners[ci] * 0.5
-        var idx_remap := {}
-        for j in range(4):
-            var sc: int = sub_corners[j]
-            if j == ci:
-                idx_remap[sc] = corner_idx[ci]
-            else:
-                idx_remap[sc] = mid_idx[Vector2i(mini(ci, j), maxi(ci, j))]
-        for vi in sub_pos.size():
-            if idx_remap.has(vi):
-                continue
-            idx_remap[vi] = pos.size()
-            pos.append((sub_pos[vi] as Vector3) + offset)
-            kind.append(sub_kind[vi])
-        for e in sub["edges"]:
-            edges.append(Vector2i(idx_remap[e.x], idx_remap[e.y]))
-
-    var spark_i := pos.size()
-    pos.append((corners[0] + corners[1] + corners[2] + corners[3]) / 4.0)
-    kind.append(KIND_SPARK)
-    for i in range(4):
-        for j in range(i + 1, 4):
-            edges.append(Vector2i(spark_i, mid_idx[Vector2i(i, j)]))
-
-    return {"pos": pos, "kind": kind, "edges": edges, "corners": corner_idx}
+# _tetra_corners/_build_tetrad/_build_tier used to live here -- moved to
+# ArchaiLatticeGeometry (2026-09-06) so uonite_icosahedron.gd's always-on
+# Uonite display can build the identical Mote/Iota/Particle/Tetrad structure
+# without a second, driftable copy of this recursion. Behavior is byte-for-
+# byte identical; only the call sites below changed.
 
 
 # ==================================================
@@ -394,7 +313,7 @@ func _octa_terminal_pockets(verts: Array, target_edge: float) -> Array:
 ## doesn't need to re-run the whole recursive lattice build.
 func _cavity_verts(for_tier: int) -> Array:
     var big_edge: float = pow(2.0, float(for_tier - 1))
-    var corners := _tetra_corners(big_edge)
+    var corners := ArchaiLatticeGeometry.tetra_corners(big_edge)
     var verts: Array = []
     for i in range(4):
         for j in range(i + 1, 4):
@@ -659,7 +578,7 @@ func _rebuild() -> void:
     if not is_inside_tree():
         return
 
-    var lat := _build_tier(tier)
+    var lat := ArchaiLatticeGeometry.build_tier(tier)
     var pos: Array = lat["pos"]
     var kind: Array = lat["kind"]
     _edges = lat["edges"]

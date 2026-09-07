@@ -146,7 +146,7 @@ const UONITE_NAMES: Array = [
 ]
 
 # === ICOSAHEDRON DISPLAY ===
-var _icosa_grain_display: int = 0
+var _icosa_mote_display: int = 0
 
 # === TETRAD DISPLAY LABELS ===
 var _left_tetrad_label: RichTextLabel = null
@@ -2797,12 +2797,12 @@ func _update_counters() -> void:
                     _fmt(game_context.grain),
                     " 🔒" if locked else ""])
         if _uonite_icosa and game_context.ui_unlocks.get("uonite_creation", false):
-            var grain_target: int = game_context.motes_this_cycle
-            if grain_target < _icosa_grain_display:
-                _icosa_grain_display = grain_target
-            elif grain_target > _icosa_grain_display:
-                _icosa_grain_display += 1
-            _uonite_icosa.current_grains = _icosa_grain_display
+            var mote_target: int = game_context.motes_this_cycle
+            if mote_target < _icosa_mote_display:
+                _icosa_mote_display = mote_target
+            elif mote_target > _icosa_mote_display:
+                _icosa_mote_display += 1
+            _uonite_icosa.current_motes = _icosa_mote_display
 
 
 # ==================================================
