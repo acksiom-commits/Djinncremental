@@ -1293,6 +1293,59 @@ func _tetrad_covers_needs(variety: String, needs: Dictionary) -> bool:
             return false
     return true
 
+## Pre-choice availability pass: which Monad types are craftable AT ALL
+## right now from live/unlocked Tetrad stock -- BINARY presence (1.0 if
+## some unlocked variety in stock supplies that type, 0.0 if none do), NOT
+## weighted by HOW MUCH of each type is stocked. Production stays random
+## among whatever's actually available -- a type that happens to be more
+## abundant must not get picked more often, or the algorithm would
+## reinforce whatever's already overstocked instead of treating every
+## craftable option equally. Feeds _weighted_type_pick(), which with only
+## 0/1 weights reduces to a uniform roll among the available types.
+## Without this pre-pass at all (the bug this fixes), grinding a single
+## Monad type (e.g. all-Solid, so the only stock is Adaemant) starves
+## pure-Fundament Particle output almost completely: a corner needs ALL 3
+## of its incident edges to land on the ONE type Adaemant supplies, which a
+## uniform roll over ALL 3 types (including the two with zero stock) only
+## manages 1-in-27 per corner, ~1-in-729 for all 4 corners to align in the
+## same attempt -- exactly the "not passing nearly as many pure Fundament
+## particles as it should" gap.
+func _monad_type_supply() -> Dictionary:
+    var supply := {"s": 0.0, "l": 0.0, "g": 0.0}
+    for t in gc.tetrad:
+        if gc.is_locked(t):
+            continue
+        if not gc.tetrad[t].is_greater_than(BigNum.zero()):
+            continue
+        var comp: Dictionary = game_data.TETRADS[t]
+        for type in _MONAD_TYPES:
+            if int(comp[type]) > 0:
+                supply[type] = 1.0
+    return supply
+
+
+## Picks among _MONAD_TYPES using `weights` (type -> 0.0/not-available or
+## 1.0/available, from _monad_type_supply()) -- with binary weights this IS
+## a uniform roll among whichever types are actually available, not biased
+## by stock quantity. Falls back to a uniform 1-in-3 roll over ALL 3 types
+## if every weight is ~0 (no relevant stock at all) -- the draw this feeds
+## will fail regardless in that case, so the fallback only avoids a
+## divide-by-zero, it doesn't paper over anything.
+func _weighted_type_pick(weights: Dictionary) -> String:
+    var total: float = 0.0
+    for t in _MONAD_TYPES:
+        total += maxf(float(weights.get(t, 0.0)), 0.0)
+    if total <= 0.0:
+        return _MONAD_TYPES[gc.rng.randi_range(0, 2)]
+    var roll: float = gc.rng.randf() * total
+    var acc: float = 0.0
+    for t in _MONAD_TYPES:
+        acc += maxf(float(weights.get(t, 0.0)), 0.0)
+        if roll < acc:
+            return t
+    return _MONAD_TYPES[_MONAD_TYPES.size() - 1]  # float-rounding fallback
+
+
 ## Draws 4 Tetrads for one Particle's 4 corners, respecting the REAL K4
 ## weld structure verified in archai_lattice.gd's _build_tier -- each
 ## corner has 3 SEPARATE weld points (one per other corner) + 1 free "tip"
@@ -1304,15 +1357,23 @@ func _tetrad_covers_needs(variety: String, needs: Dictionary) -> bool:
 ## simultaneous weld demands at once -- see the worked example in the
 ## conversation that led to this fix.
 ##
-## Assigns a random S/L/G type to each of K4's 6 edges (the weld type
-## between corners i and j), sums each corner's own 3 incident-edge types
+## Assigns an S/L/G type to each of K4's 6 edges (the weld type between
+## corners i and j) via _monad_type_supply() + _weighted_type_pick() --
+## uniformly random among whichever types are actually craftable right now,
+## NOT a blind roll over all 3 types regardless of stock (that starves
+## pure-Fundament output whenever stock is concentrated in one type -- see
+## _monad_type_supply()'s own doc) and NOT weighted by how MUCH of each
+## available type is stocked either (that would keep skewing further
+## toward whatever's already overstocked instead of treating every
+## craftable option equally, which is the whole point of "random within
+## the available resources"). Sums each corner's own 3 incident-edge types
 ## into a required-count dict, then draws one Tetrad per corner whose own
 ## composition covers its own requirement via _tetrad_covers_needs()
 ## (leftover Monads, if any, are free for the tip). Retries with a fresh
-## random edge-typing up to _COMPATIBLE_DRAW_ATTEMPTS times before giving
-## up, since a bad random typing can dead-end a combination that a
-## different one would satisfy. Returns the drawn composition
-## (variety -> count) on success, or an empty dict on failure.
+## edge-typing up to _COMPATIBLE_DRAW_ATTEMPTS times before giving up,
+## since even an availability-correct roll can still dead-end a
+## combination that a different one would satisfy. Returns the drawn
+## composition (variety -> count) on success, or an empty dict on failure.
 ##
 ## `count` must be 4 -- this function IS the K4 structure, not a general
 ## "draw N compatible tetrads" primitive; any other count is a caller bug.
@@ -1321,10 +1382,12 @@ func _draw_compatible_tetrads(count: int) -> Dictionary:
         push_warning("_draw_compatible_tetrads: called with count=%d, only 4 (Particle's corners) is a valid K4 draw" % count)
         return {}
 
+    var type_weights: Dictionary = _monad_type_supply()
+
     for _attempt in _COMPATIBLE_DRAW_ATTEMPTS:
         var edge_type := {}
         for e in _K4_EDGES:
-            edge_type[e] = _MONAD_TYPES[gc.rng.randi_range(0, 2)]
+            edge_type[e] = _weighted_type_pick(type_weights)
 
         var corner_needs: Array = [{}, {}, {}, {}]
         for e in _K4_EDGES:
