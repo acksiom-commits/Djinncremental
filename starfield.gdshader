@@ -1,10 +1,14 @@
 shader_type canvas_item;
 
-// ================= STARFIELD SHADER v1.6.0 =================
+// ================= STARFIELD SHADER v1.7.0 =================
 // Level-2 geodesic (subdivided icosahedron) projection.
 // 320 triangular faces — seams imperceptible at any rotation.
 // Grid-based star placement within each face for performance.
 // Full rotation freedom, no poles, no stretching.
+//
+// v1.7.0: background stars tinted White/Yellow/Red/Blue at 40/30/20/10%,
+// the same 4 colors as the constellation stars (star_color_palette.gd) --
+// see star_tint(). Twinkle (brightness sine wave) already existed.
 //
 // Lookup is hierarchical:
 //   1. Find nearest icosahedron face (20 dot products)
@@ -34,6 +38,21 @@ vec2 hash22(vec2 p) {
 		dot(p, vec2(127.1, 311.7)),
 		dot(p, vec2(269.5, 183.3))
 	)) * 43758.5453123);
+}
+
+// Background-star tint — SAME 4 colors as the constellation stars
+// (Blue/White/Yellow-Orange/Red), see star_color_palette.gd's by_idx array.
+// Keep these literals in sync with that file if it's ever retuned; a
+// shader can't preload a .tres/Resource script directly. Proportions are
+// White 40% / Yellow 30% / Red 20% / Blue 10%, picked via a CDF split on a
+// hash independent of every other per-star property below (brightness,
+// size, twinkle phase/speed) so color doesn't end up correlated with any
+// of them.
+vec3 star_tint(float h) {
+	if (h < 0.40) return vec3(1.00, 1.00, 1.00);  // White  40% -- star_color_palette.gd WHITE
+	if (h < 0.70) return vec3(1.00, 0.80, 0.30);  // Yellow 30% -- YELLOW_ORANGE
+	if (h < 0.90) return vec3(1.00, 0.35, 0.25);  // Red    20% -- RED
+	return vec3(0.45, 0.65, 1.00);                 // Blue   10% -- BLUE
 }
 
 // --- Icosahedron vertices (unit sphere) ---
@@ -219,12 +238,8 @@ void fragment() {
                 float star_size  = 0.0012 + hash11(cell_hash * 5.1) * 0.0018;
                 float star       = smoothstep(star_size, 0.0, angle) * brightness;
 
-                float blue_shift = 0.85 + hash11(cell_hash * 2.3) * 0.15;
-                color += vec3(
-                    star * (0.85 + hash11(cell_hash) * 0.15),
-                    star * (0.90 + hash11(cell_hash * 1.7) * 0.10),
-                    star * blue_shift
-                );
+                vec3 tint = star_tint(hash11(cell_hash * 9.7));
+                color += star * tint;
             }
         }
     }
