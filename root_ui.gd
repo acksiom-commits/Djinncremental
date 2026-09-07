@@ -2798,11 +2798,20 @@ func _update_counters() -> void:
                     " 🔒" if locked else ""])
         if _uonite_icosa and game_context.ui_unlocks.get("uonite_creation", false):
             var mote_target: int = game_context.motes_this_cycle
+            var mote_display_changed := false
             if mote_target < _icosa_mote_display:
                 _icosa_mote_display = mote_target
+                mote_display_changed = true
             elif mote_target > _icosa_mote_display:
                 _icosa_mote_display += 1
-            _uonite_icosa.current_motes = _icosa_mote_display
+                mote_display_changed = true
+            # Only touch current_motes when the displayed count actually
+            # moves -- its setter rebuilds the whole Mote-detail mesh, and
+            # an unconditional every-frame assignment here (harmless when
+            # that rebuild was a few flat triangles) became a real per-frame
+            # cost once it started building full wireframe Mote lattices.
+            if mote_display_changed:
+                _uonite_icosa.current_motes = _icosa_mote_display
 
 
 # ==================================================

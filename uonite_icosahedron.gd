@@ -162,37 +162,39 @@ func _generate_icosahedron() -> void:
         set_surface_override_material(1, mote_mat)
 
 
-## Builds one full tier-4 (Mote) lattice from ArchaiLatticeGeometry, assigns
-## S/L/G types once (stable across rebuilds via MOTE_TYPE_SEED), then stamps
-## a fitted copy of it into each of `count` face slots by an exact affine
-## map from the lattice's own reference tetrahedron onto that face's real
-## (v0, v1, v2, center) tetrahedron. That target tetrahedron is NOT regular
-## (the 3 center-to-vertex edges are the icosahedron's circumradius, the 3
-## face edges are its edge length -- different in general), so the map
-## carries some shear/non-uniform scale; the nested structure still reads
-## clearly since the map is exact at all 4 corners, not an approximation.
-## Returns {"verts": PackedVector3Array, "colors": PackedColorArray} rather
-## than mutating parameters -- Packed*Array args are copy-on-write value
-## types in GDScript, not references like Array/Dictionary, so writing
-## through a parameter would only ever mutate a local copy.
-func _build_mote_lines(count: int, face_list: Array, center: Vector3) -> Dictionary:
-    var out_verts := PackedVector3Array()
-    var out_colors := PackedColorArray()
+## Cache for the tier-4 (Mote) lattice + its resolved S/L/G typing + the
+## reference-tetrahedron basis inverse -- all invariant (they depend on
+## nothing but MOTE_TYPE_SEED and the fixed recursion), so computed ONCE per
+## instance rather than re-derived on every rebuild. Populated lazily by
+## _ensure_mote_lattice_cache(). Was recomputed from scratch on every
+## _generate_icosahedron() call, including the full build_tier(4) recursion
+## -- fine on an actual Mote-count change, wasteful (and, combined with
+## root_ui.gd previously reassigning current_motes unconditionally every
+## frame, a measurable per-frame cost) when nothing about the lattice itself
+## ever changes between calls.
+var _mote_cache_ready: bool = false
+var _mote_cache_pos: Array = []
+var _mote_cache_edges: Array = []
+var _mote_cache_kind: PackedInt32Array = PackedInt32Array()
+var _mote_cache_ref_basis_inv: Basis = Basis()
+
+func _ensure_mote_lattice_cache() -> void:
+    if _mote_cache_ready:
+        return
 
     var base: Dictionary = ArchaiLatticeGeometry.build_tier(4)
-    var base_pos: Array = base["pos"]
+    _mote_cache_pos = base["pos"]
     var base_kind: Array = base["kind"]
-    var base_edges: Array = base["edges"]
+    _mote_cache_edges = base["edges"]
 
-    var resolved_kind := PackedInt32Array()
-    resolved_kind.resize(base_kind.size())
+    _mote_cache_kind.resize(base_kind.size())
     var rng := RandomNumberGenerator.new()
     rng.seed = MOTE_TYPE_SEED
     for i in base_kind.size():
         if int(base_kind[i]) == KIND_SPARK:
-            resolved_kind[i] = KIND_SPARK
+            _mote_cache_kind[i] = KIND_SPARK
         else:
-            resolved_kind[i] = KIND_SOLID + rng.randi_range(0, 2)
+            _mote_cache_kind[i] = KIND_SOLID + rng.randi_range(0, 2)
 
     # build_tier(4)'s OWN outer corners sit at tetra_corners(pow(2.0, 3)) --
     # edge length 8, not 1 (its recursion scales big_edge = 2^(tier-1)
@@ -201,10 +203,31 @@ func _build_mote_lines(count: int, face_list: Array, center: Vector3) -> Diction
     # tetra_corners always puts its first corner at the origin (documented
     # invariant), relied on below rather than re-derived.
     var ref_corners: Array = ArchaiLatticeGeometry.tetra_corners(pow(2.0, 3.0))
-    var r1: Vector3 = ref_corners[1]
-    var r2: Vector3 = ref_corners[2]
-    var r3: Vector3 = ref_corners[3]
-    var ref_basis_inv: Basis = Basis(r1, r2, r3).inverse()
+    _mote_cache_ref_basis_inv = Basis(ref_corners[1], ref_corners[2], ref_corners[3]).inverse()
+
+    _mote_cache_ready = true
+
+
+## Stamps a fitted copy of the cached tier-4 (Mote) lattice into each of
+## `count` face slots by an exact affine map from the lattice's own
+## reference tetrahedron onto that face's real (v0, v1, v2, center)
+## tetrahedron. That target tetrahedron is NOT regular (the 3
+## center-to-vertex edges are the icosahedron's circumradius, the 3 face
+## edges are its edge length -- different in general), so the map carries
+## some shear/non-uniform scale; the nested structure still reads clearly
+## since the map is exact at all 4 corners, not an approximation. Only this
+## per-face transform actually needs to redo work per call -- it depends on
+## `verts`, which can change (radius/rotation setup), unlike the cached
+## lattice itself.
+## Returns {"verts": PackedVector3Array, "colors": PackedColorArray} rather
+## than mutating parameters -- Packed*Array args are copy-on-write value
+## types in GDScript, not references like Array/Dictionary, so writing
+## through a parameter would only ever mutate a local copy.
+func _build_mote_lines(count: int, face_list: Array, center: Vector3) -> Dictionary:
+    _ensure_mote_lattice_cache()
+
+    var out_verts := PackedVector3Array()
+    var out_colors := PackedColorArray()
 
     for i in count:
         var f: PackedInt32Array = face_list[i]
@@ -213,17 +236,17 @@ func _build_mote_lines(count: int, face_list: Array, center: Vector3) -> Diction
         var v2: Vector3 = verts[f[2]]
 
         var target_basis := Basis(v1 - v0, v2 - v0, center - v0)
-        var m: Basis = target_basis * ref_basis_inv
+        var m: Basis = target_basis * _mote_cache_ref_basis_inv
 
-        for e in base_edges:
+        for e in _mote_cache_edges:
             var a: int = (e as Vector2i).x
             var b: int = (e as Vector2i).y
-            var pa: Vector3 = v0 + m * (base_pos[a] as Vector3)
-            var pb: Vector3 = v0 + m * (base_pos[b] as Vector3)
+            var pa: Vector3 = v0 + m * (_mote_cache_pos[a] as Vector3)
+            var pb: Vector3 = v0 + m * (_mote_cache_pos[b] as Vector3)
             out_verts.append(pa)
-            out_colors.append(_kind_color(resolved_kind[a]))
+            out_colors.append(_kind_color(_mote_cache_kind[a]))
             out_verts.append(pb)
-            out_colors.append(_kind_color(resolved_kind[b]))
+            out_colors.append(_kind_color(_mote_cache_kind[b]))
 
     return {"verts": out_verts, "colors": out_colors}
 
