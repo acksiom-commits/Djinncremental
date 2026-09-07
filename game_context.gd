@@ -253,6 +253,13 @@ var ui_unlocks: Dictionary = {
 # ===================== TRIGGER COUNTERS =========================
 var sparks_since_first_prestige: float = 0.0
 var hint_bias_enabled: bool = false
+# Cumulative real playtime across all sessions (wall-clock seconds this
+# process has been running with the game loaded) -- NOT reset by
+# do_prestige_reset(), since Steam's own playtime counter never resets
+# in-game either. Drives the one-shot Steam refund-window warning; see
+# root_ui.gd's _check_refund_warning().
+var total_playtime_seconds: float = 0.0
+var refund_warning_shown: bool = false
 
 
 # ===================== PURITY LOCKS =======================
@@ -1364,6 +1371,8 @@ func get_save_data() -> Dictionary:
     data["uonite_name"]                 = uonite_name
     data["hint_bias_enabled"]           = hint_bias_enabled
     data["sparks_since_first_prestige"] = sparks_since_first_prestige
+    data["total_playtime_seconds"]      = total_playtime_seconds
+    data["refund_warning_shown"]        = refund_warning_shown
     return data
 
 
@@ -1664,6 +1673,8 @@ func load_save_data(data: Dictionary) -> void:
     uonite_name = _coerce_string(data.get("uonite_name"), "")
     sparks_since_first_prestige = _coerce_float(data.get("sparks_since_first_prestige"), 0.0)
     hint_bias_enabled = _coerce_bool(data.get("hint_bias_enabled"), false)
+    total_playtime_seconds = _coerce_float(data.get("total_playtime_seconds"), 0.0)
+    refund_warning_shown   = _coerce_bool(data.get("refund_warning_shown"), false)
     _last_bonus_volition_grant = 0  # Forces re-sync on first accumulate tick after load
 
 

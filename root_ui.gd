@@ -55,6 +55,15 @@ var _archon_tetra:           Node = null
 # === SAVE MANAGEMENT ===
 var _autosave_accum: float = 0.0
 
+# === STEAM REFUND-WINDOW WARNING ===
+# Steam's "any reason" refund policy allows a refund within 2 hours of
+# tracked playtime. Warning 15 minutes early (1h45m = 6300s) so a player on
+# the fence has time to actually decide, rather than finding out the window
+# already closed. Fires once ever, off game_context.total_playtime_seconds
+# (cumulative across sessions, never reset by prestige) -- see
+# _check_refund_warning().
+const REFUND_WARNING_THRESHOLD_SECONDS: float = 105.0 * 60.0
+
 
 # === AGE GATES ===
 var _firmament_threshold_revealed: bool = false
@@ -1892,6 +1901,38 @@ func _check_star_in_view_trigger(delta: float) -> void:
 # 2026-07-26).
 
 
+## Fires once ever, 15 minutes before Steam's 2-hour "any reason" refund
+## window closes. Reads off game_context.total_playtime_seconds rather than
+## a local session timer, since Steam's own refund clock is cumulative
+## across all sessions, not just the current one. Continuously
+## re-evaluated (checked every _process tick against persisted state)
+## rather than a one-time event reaction, so it's self-healing across a
+## save/quit mid-warning per [[archon_dialogue_mid_save_protection_architecture]]'s
+## criterion -- no separate resync entry needed in
+## _sync_trigger_flags_from_loaded_state().
+func _check_refund_warning() -> void:
+    if game_context.refund_warning_shown:
+        return
+    if game_context.total_playtime_seconds < REFUND_WARNING_THRESHOLD_SECONDS:
+        return
+    game_context.refund_warning_shown = true
+    if save_manager:
+        save_manager.save_game()
+    var dlg := AcceptDialog.new()
+    dlg.title = "Heads up"
+    dlg.dialog_text = ("You've been playing for about 1 hour 45 minutes.\n\n"
+        + "Steam's refund policy allows a no-questions-asked refund within "
+        + "2 hours of playtime. If you're still deciding whether this game "
+        + "is for you, that window is about to close.\n\n"
+        + "No hard feelings either way -- thanks for giving it a shot.")
+    dlg.dialog_autowrap = true
+    dlg.min_size = Vector2i(420, 0)
+    add_child(dlg)
+    dlg.popup_centered()
+    dlg.confirmed.connect(dlg.queue_free)
+    dlg.canceled.connect(dlg.queue_free)
+
+
 # ==================================================
 # DEV INPUT
 # ==================================================
@@ -2636,6 +2677,8 @@ func _process(delta: float) -> void:
         _autosave_accum = 0.0
         if save_manager:
             save_manager.save_game()
+    game_context.total_playtime_seconds += delta
+    _check_refund_warning()
 
 # _check_firmament_threshold used to live here — folded into
 # _simple_triggers, see _build_simple_triggers() (refactor-order item #10,
