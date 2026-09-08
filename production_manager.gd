@@ -517,16 +517,25 @@ func _produce_tetrad_assemble(requested: BigNum) -> BigNum:
 ## constraint, not a separate approximation of it. Depletes gc.tetrad/
 ## gc.sparks live across the loop so later Particles in the batch see
 ## earlier ones' consumption. Stops early (produces fewer than `count`) if
-## a compatible foursome can't be found or Sparks run out -- same
-## "silently short a batch rather than partially-spend" behavior the
-## existing monad/tetrad batch assemblers already have.
+## Sparks run out -- genuine, monotonic depletion, so no later iteration
+## could succeed either. A single failed Tetrad draw is NOT that: it's one
+## unlucky roll of _draw_compatible_tetrads()'s internal random search, and
+## the same stock is still there for the next unit's own independent
+## attempt -- treating it as a hard stop (as this used to, matching the
+## OLD "silently short a batch" convention shared with the plain
+## monad/tetrad batch assemblers, which really DO fail on genuine
+## exhaustion) collapsed a whole batch's expected output to roughly the
+## per-draw success rate itself, since a `break` on the first miss abandons
+## every remaining unit too. Skips the unit and keeps trying the rest
+## instead -- confirmed directly this was the dominant cause of Particle
+## output "barely 1 or 2 at a time" even with plenty of compatible stock.
 func _assemble_particles_true_random(count: int, tetrad_cost: int, sparks_cost: int) -> void:
     for _i in count:
         if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)):
             break
         var drawn: Dictionary = _draw_compatible_tetrads(tetrad_cost)
         if drawn.is_empty() and tetrad_cost > 0:
-            break
+            continue
         for key in drawn:
             gc.tetrad[key] = gc.tetrad[key].sub(BigNum.from_int(drawn[key]))
         gc.sparks = gc.sparks.sub(BigNum.from_int(sparks_cost))
@@ -586,10 +595,13 @@ func _assemble_iota_grains_true_random(count: int, particle_cost: int, tetrad_co
         if gc.particle.is_less_than(BigNum.from_int(particle_cost)):
             break
         # Iota's cavity is 1 group of 8 -- see _draw_compatible_cavity_groups.
+        # A failed draw is a probabilistic miss, not resource exhaustion --
+        # skip this unit and keep trying the rest, same reasoning as
+        # _assemble_particles_true_random's identical fix.
         @warning_ignore("integer_division") # tetrad_cost is always an exact multiple of 8
         var drawn: Dictionary = _draw_compatible_cavity_groups(tetrad_cost / 8)
         if drawn.is_empty():
-            break
+            continue
         gc.spend_particle(particle_cost)
         gc.spend_sparks(sparks_cost)
         gc.iota_grains = gc.iota_grains.add(BigNum.one())
@@ -644,11 +656,13 @@ func _assemble_mote_grains_true_random(count: int, iota_cost: int, particle_cost
         if gc.iota_grains.is_less_than(BigNum.from_int(iota_cost)):
             break
         # Mote's cavity is 6 independent groups of 8 -- see
-        # _draw_compatible_cavity_groups.
+        # _draw_compatible_cavity_groups. A failed draw is a probabilistic
+        # miss, not resource exhaustion -- skip this unit and keep trying
+        # the rest, same reasoning as _assemble_particles_true_random's fix.
         @warning_ignore("integer_division") # tetrad_cost is always an exact multiple of 8
         var drawn: Dictionary = _draw_compatible_cavity_groups(tetrad_cost / 8)
         if drawn.is_empty():
-            break
+            continue
         gc.spend_iota_grains(iota_cost)
         gc.spend_particle(particle_cost)
         gc.spend_sparks(sparks_cost)
@@ -1375,6 +1389,41 @@ func _weighted_type_pick(weights: Dictionary) -> String:
 ## combination that a different one would satisfy. Returns the drawn
 ## composition (variety -> count) on success, or an empty dict on failure.
 ##
+## Guaranteed fallback for when a general randomized weld search (K4 corners
+## or a cavity-tetrahedra group) exhausts all its attempts: draws all
+## `count` slots from ONE single variety that has >= count units in
+## live/unlocked stock, picked uniformly among whichever qualifying
+## varieties exist -- NOT weighted by how much of each is stocked, same
+## "random within the available resources" standard as
+## _weighted_type_pick(). This is the ONLY way an all-pure-single-type
+## variety (e.g. all-Adaemant) can ever fill every slot: whatever the real
+## shared-point structure is, it forces every slot to agree with its
+## neighbors on each shared point's type, so mixing two DIFFERENT pure
+## single-type varieties across slots is mathematically impossible (a
+## shared point between an Adaemant slot and an Aquae slot would need to be
+## both Solid and Liquid at once) -- the only valid all-pure-variety
+## configuration is the SAME variety at every slot. Without this, a player
+## concentrating stock in Fundaments (even in all 3 -- Adaemant + Aquae +
+## Aethyr, not just one) still needs EVERY shared point in the general
+## random search to coincidentally land on the SAME one type to succeed,
+## which stays rare even after availability-weighting picks among 3
+## available types instead of a doomed roll over all 3 including
+## unavailable ones -- exactly why Particle output was still "barely 1 or 2
+## at a time" despite "plenty of fundaments" after the first availability
+## fix alone.
+func _draw_pure_single_variety(count: int) -> Dictionary:
+    var qualifying := []
+    for t in gc.tetrad:
+        if gc.is_locked(t):
+            continue
+        if gc.tetrad[t].is_greater_or_equal(BigNum.from_int(count)):
+            qualifying.append(t)
+    if qualifying.is_empty():
+        return {}
+    var key = qualifying[gc.rng.randi_range(0, qualifying.size() - 1)]
+    return {key: count}
+
+
 ## `count` must be 4 -- this function IS the K4 structure, not a general
 ## "draw N compatible tetrads" primitive; any other count is a caller bug.
 func _draw_compatible_tetrads(count: int) -> Dictionary:
@@ -1416,7 +1465,7 @@ func _draw_compatible_tetrads(count: int) -> Dictionary:
             drawn[key] = drawn.get(key, 0) + 1
         if ok:
             return drawn
-    return {}
+    return _draw_pure_single_variety(4)
 
 
 # ==================================================
@@ -1505,7 +1554,7 @@ func _draw_compatible_cavity_group(attempts: int = 20) -> Dictionary:
                     drawn[key] = drawn.get(key, 0) + 1
         if ok:
             return drawn
-    return {}
+    return _draw_pure_single_variety(8)
 
 
 ## Draws `groups` independent cavity-tetrahedra groups of 8 -- Iota needs 1
