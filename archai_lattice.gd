@@ -37,7 +37,11 @@ extends MeshInstance3D
 # fail to compile (can_instantiate() == false, no visible error) when the
 # project's global-script-class cache hasn't been refreshed since that file
 # was added, which a plain `--headless --script` run doesn't reliably force.
-# preload() sidesteps that cache entirely and always resolves.
+# preload() sidesteps that cache entirely and always resolves. The
+# SHADOWED_GLOBAL_IDENTIFIER warning this trips is the intended effect, not
+# a mistake -- reusing the class's own name keeps every existing
+# ArchaiLatticeGeometry.foo() call site working unchanged.
+@warning_ignore("shadowed_global_identifier")
 const ArchaiLatticeGeometry := preload("res://archai_lattice_geometry.gd")
 
 const MONAD_TBD := -1

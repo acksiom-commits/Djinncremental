@@ -31,7 +31,9 @@ var fails: int = 0
 # preload, not the bare global `ArchaiLatticeGeometry.foo()` class_name
 # reference -- confirmed directly (2026-09-06) that the bare reference can
 # fail to compile when the project's global-script-class cache hasn't been
-# refreshed since that file was added. preload() always resolves.
+# refreshed since that file was added. preload() always resolves. The
+# SHADOWED_GLOBAL_IDENTIFIER warning this trips is intended, not a mistake.
+@warning_ignore("shadowed_global_identifier")
 const ArchaiLatticeGeometry := preload("res://archai_lattice_geometry.gd")
 
 
