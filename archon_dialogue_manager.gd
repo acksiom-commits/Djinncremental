@@ -876,8 +876,8 @@ func enqueue_spark_movement() -> void:
     var lines = [
         "Hey Boss? Have you noticed anything odd about how the Sparks are moving?||ODD HOW?",
         "Some of them seem to be...drifting. Like something's pulling them in a specific direction.||PULLING THEM WHERE?",
-        "That's what I'd like to find out! But the effect is so faint I can barely track it. Could you stockpile about three thousand Sparks? I need a bigger sample to pin down the direction.||THREE THOUSAND? THAT'S A LOT OF SPARKS JUST SITTING THERE.",
-        "I know, but I've got a hunch about this, Boss. Something's out there.||...FINE. THREE THOUSAND.",
+        "That's what I'd like to find out! But the effect is so faint I can barely track it. Could you stockpile about two thousand Sparks? I need a bigger sample to pin down the direction.||TWO THOUSAND? THAT'S A LOT OF SPARKS JUST SITTING THERE.",
+        "I know, but I've got a hunch about this, Boss. Something's out there.||...FINE. TWO THOUSAND.",
     ]
     if not dialogue_ended.is_connected(_on_spark_movement_ended):
         dialogue_ended.connect(_on_spark_movement_ended)
@@ -895,7 +895,7 @@ func enqueue_first_constellation() -> void:
         "Yes, Boss. Some of the new unused Sparks are going straight back to where some of the previous ones were resting. As if they're forming a...Constellation, I guess?||HMM. SHOW ME.",
         "Uhhh, well...it's sort of over thataway and a little...how do I put it...um, Boss, we really don't have landmarks yet. We don't even have [i]land[/i] yet. To, er, mark. Or - well, I suppose this thing counts as one?||NOT HELPING, KALEB. \n\nNO, WAIT - YOU SAID SOME SPARKS ARE ATTRACTED TO IT?",
         "Yess...? Oh! That could work! Manually Summon some Sparks and see if they give you a direction?||YES, THAT'S WHAT I'M THINKING.",
-        "And it's some pretty good thinking! Try it, try it! Give it at least a dozen taps!||HERE GOES.",
+        "And it's some pretty good thinking! Try it, try it! Give it at least a dozen taps! And I'll try to kind of, um...herd them? In the right direction.||HERE GOES.",
     ]
     if not dialogue_ended.is_connected(_on_first_constellation_ended):
         dialogue_ended.connect(_on_first_constellation_ended)
