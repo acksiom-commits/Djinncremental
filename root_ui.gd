@@ -907,7 +907,8 @@ func _on_star_chase_complete() -> void:
 
 
 func _on_tier1_archon_complete_complete() -> void:
-    pass
+    if game_context:
+        game_context.ui_unlocks["kaleb_identity_revealed"] = true
 
 
 func _on_first_constellation_complete() -> void:

@@ -922,8 +922,28 @@ func _on_fork_toggle_pressed() -> void:
 # ==================================================
 const SELECTED_CLUE_PLACEHOLDER := "Select a clue below to pin it here."
 
+## True while Constellation 0 (Kaleb, The Archon)'s identity is still
+## hidden from the player -- see constellation_popout.gd's own
+## _kaleb_identity_hidden() for the full reasoning (both check the same
+## game_context.ui_unlocks["kaleb_identity_revealed"] flag, set only once
+## the Tier 1 Archon reveal dialogue has actually been read to completion,
+## not merely enqueued).
+func _kaleb_identity_hidden(constellation_id: int) -> bool:
+    if constellation_id != 0:
+        return false
+    if not _gc:
+        return true
+    return not _gc.ui_unlocks.get("kaleb_identity_revealed", false)
+
+
 func _update_header() -> void:
     if not _cd or _constellation_id < 0:
+        return
+    if _kaleb_identity_hidden(_constellation_id):
+        _title_label.text = "UNKNOWN"
+        _selected_clue_text = ""
+        _selected_clue_tab = -1
+        _selected_clue_display.text = SELECTED_CLUE_PLACEHOLDER
         return
     var def: Dictionary = _cd.get_constellation_def(_constellation_id)
     var name_str: String = _coerce_string(def.get("name"), "Constellation")

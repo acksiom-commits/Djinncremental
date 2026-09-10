@@ -366,9 +366,27 @@ func _refresh_slots() -> void:
         slot.add_theme_stylebox_override("normal", _make_slot_style(tint))
 
 
+## True while Constellation 0 (Kaleb, The Archon)'s identity is still
+## hidden from the player -- its name reads UNKNOWN everywhere in this
+## panel (selector slot label AND the Info panel) until the Tier 1 Archon
+## reveal dialogue ("it's a little me!") has actually been read to
+## completion. Checks game_context.ui_unlocks["kaleb_identity_revealed"],
+## NOT archon_dialogue_manager.tier1_archon_complete_done directly -- that
+## flag goes true the instant the dialogue is ENQUEUED, before the player
+## has read it, which would spoil the reveal.
+func _kaleb_identity_hidden(constellation_id: int) -> bool:
+    if constellation_id != 0:
+        return false
+    if not _gc:
+        return true
+    return not _gc.ui_unlocks.get("kaleb_identity_revealed", false)
+
+
 func _get_slot_label(constellation_id: int) -> String:
     if not _cd or not _cd.unlocked.has(constellation_id):
         return "???"
+    if _kaleb_identity_hidden(constellation_id):
+        return "UNKNOWN"
     var def = _cd.get_constellation_def(constellation_id)
     if def.is_empty():
         return "???"
@@ -690,11 +708,14 @@ func _refresh_info_panel() -> void:
     _info_vbox.visible = true
 
     # ── Name ──
-    var designation: String = _coerce_string(def.get("designation"), "")
-    if designation != "":
-        _info_name_label.text = "%s — %s" % [designation.to_upper(), def.get("name", "Unknown")]
+    if _kaleb_identity_hidden(_selected_slot):
+        _info_name_label.text = "UNKNOWN"
     else:
-        _info_name_label.text = def.get("name", "Unknown")
+        var designation: String = _coerce_string(def.get("designation"), "")
+        if designation != "":
+            _info_name_label.text = "%s — %s" % [designation.to_upper(), def.get("name", "Unknown")]
+        else:
+            _info_name_label.text = def.get("name", "Unknown")
 
     # ── Lore ──
     _info_lore_label.text = ""

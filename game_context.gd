@@ -247,6 +247,13 @@ var ui_unlocks: Dictionary = {
     "manifold":         false,
     "atelier_carousel": false,
     "firmament_viewer": false,
+    # Constellation Popout: Constellation 0's name reads UNKNOWN until the
+    # Tier 1 Archon reveal dialogue ("it's a little me!") has actually been
+    # read to completion -- set by root_ui.gd's
+    # _on_tier1_archon_complete_complete(), NOT by the dialogue's own
+    # tier1_archon_complete_done flag directly (that goes true the instant
+    # the dialogue is enqueued, before the player has read it).
+    "kaleb_identity_revealed": false,
 }
 
 
