@@ -119,6 +119,8 @@ var time: float = 0.0
 var verts: PackedVector3Array
 
 var _mesh: ArrayMesh = null
+var _line_mat: StandardMaterial3D = null
+var _mote_mat: StandardMaterial3D = null
 var _outer_line_arrays: Array = []
 var _mote_shown_count: int = 0
 
@@ -202,18 +204,6 @@ func _generate_icosahedron() -> void:
 
     _rebuild_surfaces()
 
-    # Materials
-    var line_mat := StandardMaterial3D.new()
-    line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-    line_mat.albedo_color = line_color
-    set_surface_override_material(0, line_mat)
-
-    if mesh.get_surface_count() > 1:
-        var mote_mat := StandardMaterial3D.new()
-        mote_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-        mote_mat.vertex_color_use_as_albedo = true
-        set_surface_override_material(1, mote_mat)
-
 
 ## Assembles and uploads both surfaces from whatever's currently cached --
 ## the static outer wireframe (_outer_line_arrays, unchanged since the last
@@ -222,16 +212,37 @@ func _generate_icosahedron() -> void:
 ## freshly deformed animated one (_update_mote_deform(), animate_motes on).
 ## Reuses one persistent ArrayMesh (clear_surfaces() + re-add) rather than
 ## allocating a new one each call -- matches archai_lattice.gd's own
-## _upload() pattern, and means materials (set once in
-## _generate_icosahedron(), never here) stay attached across every
-## per-frame animated rebuild.
+## _upload() pattern.
+##
+## Re-applies both surface material overrides EVERY call, not just once --
+## confirmed this was the actual bug behind animate_motes rendering as just
+## the bare gold icosahedron outline with the Mote detail missing/wrong-
+## colored: set_surface_override_material() was only ever called once, from
+## _generate_icosahedron(), but _mesh.clear_surfaces() (called on every
+## per-frame animated rebuild) drops the mesh to 0 surfaces momentarily
+## before the re-add, and Godot's surface-override array doesn't reliably
+## survive that -- so surface 1's override silently fell back to a default
+## lit material with no lights nearby (reads black) after the very first
+## animated frame. The static (animate_motes off) path never rebuilds after
+## its one initial call, so it never hit this. Materials themselves are
+## still only ever CREATED once (cached in _line_mat/_mote_mat) -- only the
+## override ASSIGNMENT (cheap) repeats.
 func _rebuild_surfaces() -> void:
     if _mesh == null:
         _mesh = ArrayMesh.new()
         mesh = _mesh
+    if _line_mat == null:
+        _line_mat = StandardMaterial3D.new()
+        _line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    if _mote_mat == null:
+        _mote_mat = StandardMaterial3D.new()
+        _mote_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        _mote_mat.vertex_color_use_as_albedo = true
+    _line_mat.albedo_color = line_color
 
     _mesh.clear_surfaces()
     _mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, _outer_line_arrays)
+    set_surface_override_material(0, _line_mat)
 
     if _mote_shown_count > 0:
         var mote_arrays := []
@@ -246,6 +257,7 @@ func _rebuild_surfaces() -> void:
             mote_arrays[Mesh.ARRAY_VERTEX] = mote_lines["verts"]
             mote_arrays[Mesh.ARRAY_COLOR]  = mote_lines["colors"]
         _mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, mote_arrays)
+        set_surface_override_material(1, _mote_mat)
 
 
 ## Cache for the tier-4 (Mote) lattice + its resolved S/L/G typing + the
