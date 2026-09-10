@@ -9,9 +9,22 @@ extends MeshInstance3D
 # narrative existed); now it shows the real thing instead -- a wireframe
 # copy of ArchaiLatticeGeometry's tier-4 (Mote) lattice, fitted into that
 # face's tetrahedral slot, showing the actual Mote/Iota/Particle/Tetrad
-# nesting down to individual Monads. Straight lines only for now (no
-# sine-wave agitation, no per-frame rebuild) -- see archai_lattice.gd for
-# that mode if/when this display grows into it.
+# nesting down to individual Monads.
+#
+# animate_motes (added 2026-09-11): a straight CPU port of archai_lattice.gd's
+# sine-wave agitation, NOT a shader -- deliberately, per the user's own
+# "test it out first, measure it" call, since a naive per-frame full-mesh
+# rebuild across up to 20 SIMULTANEOUS Mote lattices (archai_lattice.gd only
+# ever shows one) is a real risk of reproducing the exact per-frame hitch
+# fixed earlier this session. One optimization is already folded in even at
+# this "straight port" stage, since it costs nothing extra to get right:
+# the expensive trig-heavy deform step runs ONCE per frame (on one cached
+# lattice's worth of curve points), and its result is then just
+# affine-transformed into each shown slot -- not re-deformed per slot,
+# since the underlying wave math is identical for all of them. If this
+# still hitches, the next step is the GPU vertex-shader version discussed
+# but not built (bake wave params as vertex data once, animate on the GPU,
+# zero per-frame CPU rebuild).
 
 # preload, NOT a bare global `ArchaiLatticeGeometry.foo()` reference --
 # confirmed directly (2026-09-06) that the bare class_name reference makes
@@ -44,9 +57,59 @@ const COLOR_GAS    := Color(0.63, 0.50, 0.85)
 ## otherwise flicker the whole display's coloring every time the count ticks.
 const MOTE_TYPE_SEED := 1
 
+# Same agitation-level convention as archai_lattice.gd (Spark 25%, Solid
+# 50%, Liquid 75%, Gas 100% of full wave amplitude/speed).
+const LEVEL_SPARK  := 0.25
+const LEVEL_SOLID  := 0.50
+const LEVEL_LIQUID := 0.75
+const LEVEL_GAS    := 1.00
+
+# Wave tuning -- same shape as archai_lattice.gd's defaults, but
+# MOTE_WAVE_SEGMENTS is deliberately half its 32 default: this display can
+# show up to 20 lattices at once (archai_lattice.gd only ever shows one),
+# so per-lattice point count matters 20x as much here.
+const MOTE_WAVE_AMPLITUDE  := 0.09
+const MOTE_WAVES_PER_EDGE  := 2.5
+const MOTE_WAVE_SPEED      := 0.9
+const MOTE_WAVE_SEGMENTS   := 16
+
+# The 20 icosahedron faces, one per possible shown Mote. Hoisted to a
+# top-level const (was a local literal rebuilt every _generate_icosahedron()
+# call) since animate_motes's per-frame path needs it too and it never
+# actually varies. Plain int-literal sub-arrays, NOT PackedInt32Array(...)
+# constructor calls -- confirmed directly that GDScript's const-folding
+# rejects a const array whose elements are constructor calls (parse error
+# 43, no message text), even though the identical PackedInt32Array(...)
+# literals are fine as a local var inside a function.
+const FACE_LIST := [
+    [0,2,8],   [0,2,10],
+    [0,4,6],   [0,4,8],
+    [0,6,10],  [1,3,9],
+    [1,3,11],  [1,4,6],
+    [1,4,9],   [1,6,11],
+    [2,5,7],   [2,5,8],
+    [2,7,10],  [3,5,7],
+    [3,5,9],   [3,7,11],
+    [4,8,9],   [5,8,9],
+    [6,10,11], [7,10,11],
+]
+
 @export var radius: float = 1.0
 @export var rotation_speed: float = 0.8
 @export var line_color: Color = Color(0.8, 0.6, 0.1, 1.0)
+## Sine-wave agitation on the Mote-detail wireframe, ported from
+## archai_lattice.gd. Off (the shipped default) falls back to the cheap
+## static straight-line render (_build_mote_lines()). Measured directly
+## (2026-09-11): _update_mote_deform() costs ~10ms/frame regardless of how
+## many Motes are shown (1 through 20 all measured about the same) -- the
+## bottleneck is the shared ~13,000-point sine-deform loop itself in
+## GDScript's interpreted per-element loop, not the per-slot replication.
+## That's ~60% of a 60fps frame's entire budget for this one step alone,
+## before the mesh re-upload on top -- too expensive to ship on by default.
+## Left in as an explicit opt-in toggle for testing/further work (a GPU
+## vertex-shader version, discussed but not built, is the likely next step
+## if this gets revisited).
+@export var animate_motes: bool = false
 ## How many of the 20 Motes making up this Uonite have been assembled so
 ## far -- was named current_grains before the Assembly-narrative rework;
 ## renamed since it only ever counted Motes, never Grains.
@@ -55,23 +118,33 @@ const MOTE_TYPE_SEED := 1
 var time: float = 0.0
 var verts: PackedVector3Array
 
+var _mesh: ArrayMesh = null
+var _outer_line_arrays: Array = []
+var _mote_shown_count: int = 0
+
 func _ready() -> void:
     _generate_icosahedron()
 
 func _process(delta: float) -> void:
     time += delta
     rotation.y = time * rotation_speed
+    if animate_motes and _mote_shown_count > 0:
+        _rebuild_surfaces()
 
 func _set_motes(value: int) -> void:
     current_motes = clamp(value, 0, 20)
     _generate_icosahedron()
 
 
+## Rebuilds everything that depends on `radius`/`current_motes` -- the
+## icosahedron's own vertex positions, the static outer-wireframe arrays,
+## and (if any Motes are shown) the per-slot affine transforms + replicated
+## color/index buffers. Does NOT touch animation time -- _process() drives
+## that separately by calling _rebuild_surfaces() every frame while
+## animate_motes is on, reusing everything cached here unchanged.
 func _generate_icosahedron() -> void:
     if not is_inside_tree():
         return
-
-    var mesh_array := ArrayMesh.new()
 
     var PHI := (1.0 + sqrt(5.0)) / 2.0
     var s := radius / sqrt(1.0 + PHI * PHI)
@@ -92,9 +165,8 @@ func _generate_icosahedron() -> void:
     for i in verts.size():
         verts[i] = rotation_basis * verts[i]
 
-    var center := Vector3.ZERO
     var all_vertices := verts.duplicate()
-    all_vertices.append(center)
+    all_vertices.append(Vector3.ZERO)
 
     # Wireframe
     var line_indices := PackedInt32Array()
@@ -118,41 +190,17 @@ func _generate_icosahedron() -> void:
         line_indices.append(i)
         line_indices.append(12)
 
-    var line_arrays := []
-    line_arrays.resize(Mesh.ARRAY_MAX)
-    line_arrays[Mesh.ARRAY_VERTEX] = all_vertices
-    line_arrays[Mesh.ARRAY_INDEX] = line_indices
-    mesh_array.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, line_arrays)
+    _outer_line_arrays = []
+    _outer_line_arrays.resize(Mesh.ARRAY_MAX)
+    _outer_line_arrays[Mesh.ARRAY_VERTEX] = all_vertices
+    _outer_line_arrays[Mesh.ARRAY_INDEX] = line_indices
 
-    # Per-Mote wireframe detail
-    var num_to_show := mini(current_motes, 20)
+    _mote_shown_count = mini(current_motes, 20)
+    if _mote_shown_count > 0:
+        _ensure_mote_lattice_cache()
+        _rebuild_mote_slot_data(_mote_shown_count)
 
-    # Correct 20 faces
-    var face_list := [
-        PackedInt32Array([0,2,8]),  PackedInt32Array([0,2,10]),
-        PackedInt32Array([0,4,6]),  PackedInt32Array([0,4,8]),
-        PackedInt32Array([0,6,10]), PackedInt32Array([1,3,9]),
-        PackedInt32Array([1,3,11]), PackedInt32Array([1,4,6]),
-        PackedInt32Array([1,4,9]),  PackedInt32Array([1,6,11]),
-        PackedInt32Array([2,5,7]),  PackedInt32Array([2,5,8]),
-        PackedInt32Array([2,7,10]), PackedInt32Array([3,5,7]),
-        PackedInt32Array([3,5,9]),  PackedInt32Array([3,7,11]),
-        PackedInt32Array([4,8,9]),  PackedInt32Array([5,8,9]),
-        PackedInt32Array([6,10,11]),PackedInt32Array([7,10,11]),
-    ]
-
-    if num_to_show > 0:
-        var mote_lines: Dictionary = _build_mote_lines(num_to_show, face_list, center)
-        var mote_verts: PackedVector3Array = mote_lines["verts"]
-        var mote_colors: PackedColorArray = mote_lines["colors"]
-        if not mote_verts.is_empty():
-            var mote_arrays := []
-            mote_arrays.resize(Mesh.ARRAY_MAX)
-            mote_arrays[Mesh.ARRAY_VERTEX] = mote_verts
-            mote_arrays[Mesh.ARRAY_COLOR]  = mote_colors
-            mesh_array.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, mote_arrays)
-
-    mesh = mesh_array
+    _rebuild_surfaces()
 
     # Materials
     var line_mat := StandardMaterial3D.new()
@@ -165,6 +213,39 @@ func _generate_icosahedron() -> void:
         mote_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
         mote_mat.vertex_color_use_as_albedo = true
         set_surface_override_material(1, mote_mat)
+
+
+## Assembles and uploads both surfaces from whatever's currently cached --
+## the static outer wireframe (_outer_line_arrays, unchanged since the last
+## _generate_icosahedron()) plus the Mote-detail surface, either the cheap
+## static straight-line build (_build_mote_lines(), animate_motes off) or a
+## freshly deformed animated one (_update_mote_deform(), animate_motes on).
+## Reuses one persistent ArrayMesh (clear_surfaces() + re-add) rather than
+## allocating a new one each call -- matches archai_lattice.gd's own
+## _upload() pattern, and means materials (set once in
+## _generate_icosahedron(), never here) stay attached across every
+## per-frame animated rebuild.
+func _rebuild_surfaces() -> void:
+    if _mesh == null:
+        _mesh = ArrayMesh.new()
+        mesh = _mesh
+
+    _mesh.clear_surfaces()
+    _mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, _outer_line_arrays)
+
+    if _mote_shown_count > 0:
+        var mote_arrays := []
+        mote_arrays.resize(Mesh.ARRAY_MAX)
+        if animate_motes:
+            _update_mote_deform()
+            mote_arrays[Mesh.ARRAY_VERTEX] = _mote_out_positions
+            mote_arrays[Mesh.ARRAY_COLOR]  = _mote_out_colors
+            mote_arrays[Mesh.ARRAY_INDEX]  = _mote_out_indices
+        else:
+            var mote_lines: Dictionary = _build_mote_lines(_mote_shown_count, FACE_LIST, Vector3.ZERO)
+            mote_arrays[Mesh.ARRAY_VERTEX] = mote_lines["verts"]
+            mote_arrays[Mesh.ARRAY_COLOR]  = mote_lines["colors"]
+        _mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, mote_arrays)
 
 
 ## Cache for the tier-4 (Mote) lattice + its resolved S/L/G typing + the
@@ -223,7 +304,8 @@ func _ensure_mote_lattice_cache() -> void:
 ## since the map is exact at all 4 corners, not an approximation. Only this
 ## per-face transform actually needs to redo work per call -- it depends on
 ## `verts`, which can change (radius/rotation setup), unlike the cached
-## lattice itself.
+## lattice itself. STATIC (animate_motes off) path only -- see
+## _update_mote_deform() for the animated equivalent.
 ## Returns {"verts": PackedVector3Array, "colors": PackedColorArray} rather
 ## than mutating parameters -- Packed*Array args are copy-on-write value
 ## types in GDScript, not references like Array/Dictionary, so writing
@@ -235,7 +317,7 @@ func _build_mote_lines(count: int, face_list: Array, center: Vector3) -> Diction
     var out_colors := PackedColorArray()
 
     for i in count:
-        var f: PackedInt32Array = face_list[i]
+        var f: Array = face_list[i]
         var v0: Vector3 = verts[f[0]]
         var v1: Vector3 = verts[f[1]]
         var v2: Vector3 = verts[f[2]]
@@ -262,3 +344,188 @@ func _kind_color(k: int) -> Color:
         KIND_SOLID:  return COLOR_SOLID
         KIND_LIQUID: return COLOR_LIQUID
         _:           return COLOR_GAS
+
+
+# ==================================================
+# ANIMATED MODE (animate_motes) -- ported from archai_lattice.gd
+# ==================================================
+# The straight-line static path above rebuilds a fresh set of transformed
+# points on every ACTUAL Mote-count change (cheap, infrequent). Animated
+# mode needs a wiggling wave visible ALONG each edge, which needs each edge
+# subdivided into MOTE_WAVE_SEGMENTS+1 points -- and it has to redo that
+# every FRAME, for up to 20 simultaneous lattices, so the split below
+# matters: everything that does NOT depend on animation time (the
+# subdivided curve buffers -- base position, tangent basis, amplitude,
+# phase, angular speed, per-edge random offset) is built ONCE, lazily, by
+# _ensure_mote_curve_data(); only the actual per-frame sine evaluation
+# (_update_mote_deform()) and the cheap per-slot affine transform re-run
+# every frame.
+
+func _level_of(k: int) -> float:
+    match k:
+        KIND_SPARK:  return LEVEL_SPARK
+        KIND_SOLID:  return LEVEL_SOLID
+        KIND_LIQUID: return LEVEL_LIQUID
+        _:           return LEVEL_GAS
+
+
+var _mote_curve_ready: bool = false
+var _mote_points_per_lattice: int = 0
+var _mote_c_base:  PackedVector3Array = PackedVector3Array()
+var _mote_c_u:     PackedVector3Array = PackedVector3Array()
+var _mote_c_v:     PackedVector3Array = PackedVector3Array()
+var _mote_c_amp:   PackedFloat32Array = PackedFloat32Array()
+var _mote_c_phase: PackedFloat32Array = PackedFloat32Array()
+var _mote_c_omega: PackedFloat32Array = PackedFloat32Array()
+var _mote_c_off:   PackedFloat32Array = PackedFloat32Array()
+var _mote_c_col:   PackedColorArray   = PackedColorArray()
+var _mote_c_idx:   PackedInt32Array   = PackedInt32Array()
+var _mote_c_deformed: PackedVector3Array = PackedVector3Array()
+
+## Builds the ONE-lattice-worth subdivided curve buffers, in the SAME
+## reference/local space _mote_cache_pos already lives in (i.e. BEFORE any
+## per-slot affine transform) -- every shown slot reuses this exact same
+## data, only differing in which transform gets applied to the deformed
+## result afterward. Lazily built once; MOTE_TYPE_SEED-seeded per-edge
+## random phase offset, same as archai_lattice.gd's own lattice_seed-keyed
+## offset.
+func _ensure_mote_curve_data() -> void:
+    if _mote_curve_ready:
+        return
+    _ensure_mote_lattice_cache()
+
+    var n_edges := _mote_cache_edges.size()
+    var per := MOTE_WAVE_SEGMENTS + 1
+    var total := n_edges * per
+    _mote_points_per_lattice = total
+
+    _mote_c_base.resize(total)
+    _mote_c_u.resize(total)
+    _mote_c_v.resize(total)
+    _mote_c_amp.resize(total)
+    _mote_c_phase.resize(total)
+    _mote_c_omega.resize(total)
+    _mote_c_off.resize(total)
+    _mote_c_col.resize(total)
+    _mote_c_idx.resize(n_edges * MOTE_WAVE_SEGMENTS * 2)
+    _mote_c_deformed.resize(total)
+
+    var rng := RandomNumberGenerator.new()
+    rng.seed = MOTE_TYPE_SEED * 7919 + 13
+
+    var w := 0
+    var ii := 0
+    for ei in n_edges:
+        var e: Vector2i = _mote_cache_edges[ei]
+        var pa: Vector3 = _mote_cache_pos[e.x]
+        var pb: Vector3 = _mote_cache_pos[e.y]
+        var la: float = _level_of(_mote_cache_kind[e.x])
+        var lb: float = _level_of(_mote_cache_kind[e.y])
+        var ca: Color = _kind_color(_mote_cache_kind[e.x])
+        var cb: Color = _kind_color(_mote_cache_kind[e.y])
+
+        var span: Vector3 = pb - pa
+        var elen: float = span.length()
+        var dir: Vector3 = span / maxf(elen, 0.00001)
+
+        var ref := Vector3.UP
+        if absf(dir.dot(ref)) > 0.9:
+            ref = Vector3.RIGHT
+        var u: Vector3 = dir.cross(ref).normalized()
+        var v: Vector3 = dir.cross(u).normalized()
+        var off: float = rng.randf() * TAU
+
+        for k in range(per):
+            var t := float(k) / float(MOTE_WAVE_SEGMENTS)
+            var lev := lerpf(la, lb, t)
+            _mote_c_base[w] = pa + span * t
+            _mote_c_u[w] = u
+            _mote_c_v[w] = v
+            # sin(PI*t) pins the wave to zero at both endpoints so
+            # subdivided edges still meet their real shared vertices.
+            _mote_c_amp[w] = MOTE_WAVE_AMPLITUDE * elen * lev * sin(PI * t)
+            # Integral of a linearly-varying frequency, NOT frequency * t --
+            # same reasoning as archai_lattice.gd's _build_curves().
+            _mote_c_phase[w] = TAU * MOTE_WAVES_PER_EDGE * (la * t + (lb - la) * t * t * 0.5)
+            _mote_c_omega[w] = TAU * MOTE_WAVE_SPEED * lev
+            _mote_c_off[w] = off
+            _mote_c_col[w] = ca.lerp(cb, t)
+            w += 1
+
+        var base_i := ei * per
+        for k in range(MOTE_WAVE_SEGMENTS):
+            _mote_c_idx[ii] = base_i + k
+            ii += 1
+            _mote_c_idx[ii] = base_i + k + 1
+            ii += 1
+
+    _mote_curve_ready = true
+
+
+var _mote_slot_v0: Array = []
+var _mote_slot_m:  Array = []
+var _mote_out_positions: PackedVector3Array = PackedVector3Array()
+var _mote_out_colors:    PackedColorArray   = PackedColorArray()
+var _mote_out_indices:   PackedInt32Array   = PackedInt32Array()
+
+## Rebuilds the per-shown-slot affine transforms (v0, m) plus the
+## replicated color/index buffers -- everything the animated path needs
+## that depends only on `verts` (the icosahedron's own current vertex
+## positions) and `shown_count` (from current_motes), NOT on animation
+## time. Called once per _generate_icosahedron() (a Mote-count change),
+## never per-frame -- _update_mote_deform() reuses all of this every frame
+## unchanged, recomputing only the actual wave positions.
+func _rebuild_mote_slot_data(shown_count: int) -> void:
+    _ensure_mote_curve_data()
+
+    _mote_slot_v0.resize(shown_count)
+    _mote_slot_m.resize(shown_count)
+
+    var ppl := _mote_points_per_lattice
+    var idx_per_lattice := _mote_c_idx.size()
+    _mote_out_positions.resize(shown_count * ppl)
+    _mote_out_colors.resize(shown_count * ppl)
+    _mote_out_indices.resize(shown_count * idx_per_lattice)
+
+    for i in shown_count:
+        var f: Array = FACE_LIST[i]
+        var v0: Vector3 = verts[f[0]]
+        var v1: Vector3 = verts[f[1]]
+        var v2: Vector3 = verts[f[2]]
+        var target_basis := Basis(v1 - v0, v2 - v0, Vector3.ZERO - v0)
+        _mote_slot_v0[i] = v0
+        _mote_slot_m[i] = target_basis * _mote_cache_ref_basis_inv
+
+        var col_base := i * ppl
+        for p in ppl:
+            _mote_out_colors[col_base + p] = _mote_c_col[p]
+
+        var idx_out_base := i * idx_per_lattice
+        var idx_offset := i * ppl
+        for k in idx_per_lattice:
+            _mote_out_indices[idx_out_base + k] = _mote_c_idx[k] + idx_offset
+
+
+## Per-frame: deforms the ONE cached lattice's curve points (the expensive,
+## trig-heavy step) exactly ONCE, then stamps that SAME deformed result
+## through each shown slot's own cached affine transform -- the wave math
+## is identical for every slot (only the final placement differs), so
+## re-deforming per slot would be pure waste. Fills _mote_out_positions,
+## which _rebuild_surfaces() uploads directly.
+func _update_mote_deform() -> void:
+    for i in _mote_c_base.size():
+        var a := _mote_c_amp[i]
+        var ph := _mote_c_phase[i]
+        var om := _mote_c_omega[i]
+        var o := _mote_c_off[i]
+        var s1 := sin(ph + om * time + o)
+        var s2 := sin(ph * 0.7 + om * 0.7 * time + o * 1.7 + 1.3)
+        _mote_c_deformed[i] = _mote_c_base[i] + _mote_c_u[i] * (a * s1) + _mote_c_v[i] * (a * 0.55 * s2)
+
+    var ppl := _mote_points_per_lattice
+    for slot in _mote_shown_count:
+        var v0: Vector3 = _mote_slot_v0[slot]
+        var m: Basis = _mote_slot_m[slot]
+        var base := slot * ppl
+        for p in ppl:
+            _mote_out_positions[base + p] = v0 + m * _mote_c_deformed[p]
