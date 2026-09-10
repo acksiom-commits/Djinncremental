@@ -1,6 +1,6 @@
 shader_type canvas_item;
 
-// ================= STARFIELD SHADER v1.7.0 =================
+// ================= STARFIELD SHADER v1.7.1 =================
 // Level-2 geodesic (subdivided icosahedron) projection.
 // 320 triangular faces — seams imperceptible at any rotation.
 // Grid-based star placement within each face for performance.
@@ -9,6 +9,9 @@ shader_type canvas_item;
 // v1.7.0: background stars tinted White/Yellow/Red/Blue at 40/30/20/10%,
 // the same 4 colors as the constellation stars (star_color_palette.gd) --
 // see star_tint(). Twinkle (brightness sine wave) already existed.
+// v1.7.1: the 3 non-white tints softened toward white (TINT_SOFTEN) --
+// full constellation-palette saturation read too bold/pixelly at
+// background-star scale.
 //
 // Lookup is hierarchical:
 //   1. Find nearest icosahedron face (20 dot products)
@@ -40,19 +43,28 @@ vec2 hash22(vec2 p) {
 	)) * 43758.5453123);
 }
 
-// Background-star tint — SAME 4 colors as the constellation stars
+// Background-star tint — SAME 4 hues as the constellation stars
 // (Blue/White/Yellow-Orange/Red), see star_color_palette.gd's by_idx array.
-// Keep these literals in sync with that file if it's ever retuned; a
+// Keep the base literals in sync with that file if it's ever retuned; a
 // shader can't preload a .tres/Resource script directly. Proportions are
 // White 40% / Yellow 30% / Red 20% / Blue 10%, picked via a CDF split on a
 // hash independent of every other per-star property below (brightness,
 // size, twinkle phase/speed) so color doesn't end up correlated with any
 // of them.
+//
+// The 3 non-white colors are mixed toward white by TINT_SOFTEN -- there's
+// no real per-star alpha in this additive/opaque pass, so "lower alpha" is
+// emulated the way it would look if these were translucent washes over a
+// bright base: blending toward white. White itself is untouched (mixing
+// white toward white is a no-op). Full-saturation constellation-palette
+// colors read too bold/"old-school pixelly" at background-star scale.
+const float TINT_SOFTEN = 0.28;
+
 vec3 star_tint(float h) {
 	if (h < 0.40) return vec3(1.00, 1.00, 1.00);  // White  40% -- star_color_palette.gd WHITE
-	if (h < 0.70) return vec3(1.00, 0.80, 0.30);  // Yellow 30% -- YELLOW_ORANGE
-	if (h < 0.90) return vec3(1.00, 0.35, 0.25);  // Red    20% -- RED
-	return vec3(0.45, 0.65, 1.00);                 // Blue   10% -- BLUE
+	if (h < 0.70) return mix(vec3(1.00, 0.80, 0.30), vec3(1.0), TINT_SOFTEN);  // Yellow 30% -- YELLOW_ORANGE
+	if (h < 0.90) return mix(vec3(1.00, 0.35, 0.25), vec3(1.0), TINT_SOFTEN);  // Red    20% -- RED
+	return mix(vec3(0.45, 0.65, 1.00), vec3(1.0), TINT_SOFTEN);                 // Blue   10% -- BLUE
 }
 
 // --- Icosahedron vertices (unit sphere) ---
