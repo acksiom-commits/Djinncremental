@@ -527,6 +527,17 @@ func _sync_icons() -> void:
                 var dest: String = leg["next"]
                 in_flight_counts[dest] = in_flight_counts.get(dest, 0) + 1
             continue
+        # Cosmetic top-wedge icons (spawn_completed_uonite_icon()) are a
+        # SEPARATE, independently-capped population that happens to share
+        # resource=="uonite" with the ordinary fraction-of-storage uonite
+        # icons at face 7 -- excluded here too, or this fraction-based
+        # accounting (whose target for "uonite" is normally 0 or near it)
+        # would mark them fading and remove them within a frame or two of
+        # spawning, before they were ever really visible. Confirmed
+        # directly: this was the actual bug behind "the mini-icons did not
+        # appear" even though the dim transition on the big display worked.
+        if icon["resource"] == SETTLE_LEG_RESOURCE and icon.get("wedge", -1) == COMPLETED_UONITE_WEDGE:
+            continue
         if not icon["fading"]:
             current_counts[icon["resource"]] += 1
 
@@ -567,7 +578,14 @@ func _sync_icons() -> void:
         var removed = 0
         var i       = _icons.size() - 1
         while i >= 0 and removed < excess:
-            if not _icons[i].get("flow_active", false) \
+            # Cosmetic top-wedge icons are excluded from current_counts
+            # (above), so `excess` itself never reflects them -- but this
+            # sweep still has to skip them explicitly too, or it could
+            # still pick one to fade purely because it shares
+            # resource==key with a genuine excess elsewhere (face 7).
+            var is_cosmetic: bool = _icons[i]["resource"] == SETTLE_LEG_RESOURCE \
+                and _icons[i].get("wedge", -1) == COMPLETED_UONITE_WEDGE
+            if not is_cosmetic and not _icons[i].get("flow_active", false) \
             and _icons[i]["resource"] == key and not _icons[i]["fading"]:
                 _icons[i]["fading"] = true
                 removed += 1
