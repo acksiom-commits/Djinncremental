@@ -146,17 +146,14 @@ const UONITE_NAMES: Array = [
 ]
 
 # === ICOSAHEDRON DISPLAY ===
+## Drives the icosahedron's Mote-fill display -- see _update_counters()'s
+## uonite-icosahedron block. Purely cosmetic (game_context.mote_uonite mod
+## 20, NOT game_context.motes_this_cycle or .expansions -- see that block's
+## own comment for why), so it always starts at 0 regardless of a loaded
+## save's actual stockpile; a completion (the target wrapping back down)
+## can never spuriously fire on the very first frame either, since nothing
+## is ever lower than this starting 0.
 var _icosa_mote_display: int = 0
-## Tracks game_context.uonites_this_cycle across frames so a completed
-## Uonite (the count increasing) can be detected and played as a one-shot
-## dim-out/dim-in on the icosahedron display -- see
-## uonite_icosahedron.gd's play_completion_dim(). _uonites_cycle_primed
-## starts false so the very first frame after load never mistakes a save's
-## already-nonzero count for a completion that "just happened" and plays a
-## spurious dim (same guard shape as storage_display.gd's own
-## _settle_total_primed, which this mirrors).
-var _prev_uonites_this_cycle: int  = 0
-var _uonites_cycle_primed:    bool = false
 
 # === TETRAD DISPLAY LABELS ===
 var _left_tetrad_label: RichTextLabel = null
@@ -2808,11 +2805,34 @@ func _update_counters() -> void:
                     _fmt(game_context.grain),
                     " 🔒" if locked else ""])
         if _uonite_icosa and game_context.ui_unlocks.get("uonite_creation", false):
-            var mote_target: int = game_context.motes_this_cycle
+            # Purely cosmetic construction-cycle display -- driven by the
+            # RAW mote_uonite stockpile wrapping every 20, NOT by
+            # game_context.motes_this_cycle (the real, manually-spent
+            # Uonite mechanic driven by manual_create_uonite()) and NOT
+            # gated on game_context.expansions. uonite_assemble's recipe
+            # cost is exactly 20 mote_uonite (game_data.gd), so spending it
+            # via the real button always moves the stockpile by an exact
+            # multiple of 20 -- this remainder is mathematically untouched
+            # by that spend, keeping the cosmetic cycle and the real
+            # button/expansion mechanic fully independent, per the user's
+            # own explicit call.
+            var mote_chunks: BigNum    = game_context.mote_uonite.div_int_floor(20)
+            var mote_remainder: BigNum = game_context.mote_uonite.sub(mote_chunks.mul_int(20))
+            var mote_target: int       = mote_remainder.to_int()
+
             var mote_display_changed := false
             if mote_target < _icosa_mote_display:
                 _icosa_mote_display = mote_target
                 mote_display_changed = true
+                # Wrapping from a high remainder back down to a low one --
+                # production just crossed one or more multiples of 20.
+                # _icosa_mote_display starts at a literal 0 and only ever
+                # ramps UP from there before any "wrap down" is possible,
+                # so this can never spuriously fire on the very first frame
+                # after a save load (see _icosa_mote_display's own doc).
+                _uonite_icosa.play_completion_dim()
+                if _storage_display:
+                    _storage_display.spawn_completed_uonite_icon()
             elif mote_target > _icosa_mote_display:
                 _icosa_mote_display += 1
                 mote_display_changed = true
@@ -2823,17 +2843,6 @@ func _update_counters() -> void:
             # cost once it started building full wireframe Mote lattices.
             if mote_display_changed:
                 _uonite_icosa.current_motes = _icosa_mote_display
-
-            # Completion dim -- see uonite_icosahedron.gd's
-            # play_completion_dim(). Post-Expansion only, matching
-            # storage_display.gd's top-wedge mini-icon gate (same
-            # "more than one Uonite per cycle is now possible" trigger).
-            var uonites_now: int = game_context.uonites_this_cycle
-            if _uonites_cycle_primed and uonites_now > _prev_uonites_this_cycle \
-            and game_context.expansions >= 1:
-                _uonite_icosa.play_completion_dim()
-            _prev_uonites_this_cycle = uonites_now
-            _uonites_cycle_primed    = true
 
 
 # ==================================================
