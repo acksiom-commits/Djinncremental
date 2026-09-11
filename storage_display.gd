@@ -841,24 +841,90 @@ const SETTLE_LEG_RESOURCE: String = "uonite"
 var _prev_settle_total:   BigNum = BigNum.zero()
 var _settle_total_primed: bool   = false
 
+## Face 0 -- the literal top of the octagon, EXIT's own face, but EXIT never
+## actually spawns icons there (see the v0.9.0 changelog's "no more
+## top-exit ritual" note -- despawning icons just fade in their own wedge
+## now) so it's sat visually empty this whole time. Repurposed 2026-09-10
+## for completed-Uonite mini-icons once Expansion 1+ makes more than one
+## Uonite per cycle possible.
+const COMPLETED_UONITE_WEDGE: int = 0
+
 func _drive_flow_production(_delta: float) -> void:
     if not _gc:
         return
     var current: BigNum = _gc.totals_created.get(SETTLE_LEG_RESOURCE, BigNum.zero())
     if _settle_total_primed and current.is_greater_than(_prev_settle_total):
         var delta_bn: BigNum = current.sub(_prev_settle_total)
-        var burst: int = clampi(
-            int(round(log(1.0 + float(delta_bn.to_int())))), 1, FLOW_BURST_MAX)
-        _start_flow_for_leg(SETTLE_LEG_INDEX, burst)
+        if _gc.expansions >= 1:
+            # Post-Expansion: each completed Uonite fades in as its own
+            # mini-icon in the top wedge instead of drifting into the
+            # central cavity -- one per actual completion (not the other
+            # legs' log-scaled "burst" approximation), since the count
+            # here is always small: Uonite production is already capped at
+            # get_uonite_cycle_cap() per cycle (the same Fibonacci
+            # progression -- 1, 2, 3, 5, 8, 13... -- this display's cap
+            # rides on for free), so this can never legitimately need to
+            # represent a large delta as a few stand-in icons the way
+            # Monad/Tetrad/etc bursts do. The explicit cap check below is
+            # a defensive backstop, not the actual limiting mechanism.
+            var remaining: int = _gc.get_uonite_cycle_cap() - _count_completed_uonite_icons()
+            var to_spawn: int = mini(delta_bn.to_int(), maxi(remaining, 0))
+            for i in to_spawn:
+                _spawn_completed_uonite_icon()
+        else:
+            var burst: int = clampi(
+                int(round(log(1.0 + float(delta_bn.to_int())))), 1, FLOW_BURST_MAX)
+            _start_flow_for_leg(SETTLE_LEG_INDEX, burst)
     _prev_settle_total   = current.copy()
     _settle_total_primed = true
+
+
+func _count_completed_uonite_icons() -> int:
+    var count := 0
+    for icon in _icons:
+        if icon["resource"] == SETTLE_LEG_RESOURCE and icon.get("wedge", -1) == COMPLETED_UONITE_WEDGE:
+            count += 1
+    return count
+
+
+## Fades a new mini-icon directly into the top wedge -- reuses the same
+## spawn/fade-in bookkeeping _spawn_icon() uses for every other resource
+## (spawning=true, spawn_t 0->1 over SPAWN_DURATION), just anchored at
+## COMPLETED_UONITE_WEDGE's own face instead of taking the source
+## resource's face. No glide-across-the-octagon animation -- a completed
+## Uonite construct fading out of the incremental display and reappearing
+## here reads better as a spawn-in-place than a travel animation.
+func _spawn_completed_uonite_icon() -> void:
+    if _face_midpoints.size() <= COMPLETED_UONITE_WEDGE:
+        return
+    var spawn_pos: Vector2 = _face_midpoints[COMPLETED_UONITE_WEDGE]
+    var to_center: Vector2 = (_oct_center - spawn_pos).normalized()
+    var perp: Vector2      = Vector2(-to_center.y, to_center.x)
+    var vel: Vector2       = to_center * DRIFT_SPEED + perp * _rng.randf_range(-RANDOM_VEL, RANDOM_VEL)
+
+    _icons.append({
+        "resource": SETTLE_LEG_RESOURCE,
+        "wedge":    COMPLETED_UONITE_WEDGE,
+        "pos":      spawn_pos,
+        "vel":      vel,
+        "alpha":    0.0,
+        "fading":   false,
+        "spawning": true,
+        "spawn_t":  0.0,
+    })
 
 
 ## Called by root_ui.gd on prestige reset — the whole flow stream
 ## represents pre-Expansion production, so it's cleared immediately rather
 ## than left to drain naturally (matching the resource wipe it visualizes).
+## Also clears the top-wedge completed-Uonite icons (_spawn_completed_uonite_icon())
+## for the same reason -- uonites_this_cycle itself resets to 0 on this same
+## prestige, so the mini-icons representing it need to reset alongside it.
 func clear_flow_icons() -> void:
     _center_icons.clear()
+    for i in range(_icons.size() - 1, -1, -1):
+        if _icons[i]["resource"] == SETTLE_LEG_RESOURCE and _icons[i].get("wedge", -1) == COMPLETED_UONITE_WEDGE:
+            _icons.remove_at(i)
 
 
 func _draw_icon_at(pos: Vector2, key: String, alpha: float) -> void:
