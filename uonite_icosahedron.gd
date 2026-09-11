@@ -55,12 +55,52 @@ const MOTE_TYPE_SEED := 1
 var time: float = 0.0
 var verts: PackedVector3Array
 
+# ==================================================
+# COMPLETION DIM (added 2026-09-11) -- a brief dim-to-black-and-back on the
+# whole display, played via play_completion_dim() when a Uonite completes.
+# Pairs with storage_display.gd's top-wedge mini-icon fade-in (see
+# COMPLETED_UONITE_WEDGE there): the big display dims out right as
+# current_motes snaps back to 0 for the next Uonite (root_ui.gd's ramp
+# logic already does that snap instantly), so by the time the dim reaches
+# black the geometry underneath has already changed -- the viewer only
+# ever sees brightness drop then rise, never the actual swap.
+#
+# Multiplies _dim into the MATERIALS' own colors every frame rather than
+# rebuilding mesh geometry -- vertex_color_use_as_albedo multiplies the
+# Mote surface's per-vertex colors by the material's own albedo_color, so
+# setting that to a grayscale _dim value darkens everything already built
+# without touching _generate_icosahedron()'s (comparatively expensive,
+# only meant to run on an actual Mote-count change) geometry rebuild at all.
+const DIM_OUT_DURATION: float = 0.25
+const DIM_IN_DURATION:  float = 0.35
+var _dim: float = 1.0
+var _dim_tween: Tween = null
+var _line_mat: StandardMaterial3D = null
+var _mote_mat: StandardMaterial3D = null
+
 func _ready() -> void:
     _generate_icosahedron()
 
 func _process(delta: float) -> void:
     time += delta
     rotation.y = time * rotation_speed
+    if _line_mat:
+        _line_mat.albedo_color = Color(line_color.r * _dim, line_color.g * _dim, line_color.b * _dim, line_color.a)
+    if _mote_mat:
+        _mote_mat.albedo_color = Color(_dim, _dim, _dim, 1.0)
+
+
+## Called externally (root_ui.gd, on a detected Uonite completion) -- dims
+## the whole display to black and back up. Safe to call while a previous
+## dim is still running (e.g. two completions land close together): kills
+## and restarts from wherever the tween currently is, rather than queuing
+## or fighting over _dim.
+func play_completion_dim() -> void:
+    if _dim_tween:
+        _dim_tween.kill()
+    _dim_tween = create_tween()
+    _dim_tween.tween_property(self, "_dim", 0.0, DIM_OUT_DURATION).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+    _dim_tween.tween_property(self, "_dim", 1.0, DIM_IN_DURATION).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 
 func _set_motes(value: int) -> void:
     current_motes = clamp(value, 0, 20)
@@ -154,17 +194,20 @@ func _generate_icosahedron() -> void:
 
     mesh = mesh_array
 
-    # Materials
-    var line_mat := StandardMaterial3D.new()
-    line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-    line_mat.albedo_color = line_color
-    set_surface_override_material(0, line_mat)
+    # Materials -- cached and reused (not recreated each rebuild) so
+    # play_completion_dim()'s per-frame _dim multiply in _process() keeps
+    # affecting whatever's actually applied, across every Mote-count change.
+    if _line_mat == null:
+        _line_mat = StandardMaterial3D.new()
+        _line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    set_surface_override_material(0, _line_mat)
 
     if mesh.get_surface_count() > 1:
-        var mote_mat := StandardMaterial3D.new()
-        mote_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-        mote_mat.vertex_color_use_as_albedo = true
-        set_surface_override_material(1, mote_mat)
+        if _mote_mat == null:
+            _mote_mat = StandardMaterial3D.new()
+            _mote_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+            _mote_mat.vertex_color_use_as_albedo = true
+        set_surface_override_material(1, _mote_mat)
 
 
 ## Cache for the tier-4 (Mote) lattice + its resolved S/L/G typing + the

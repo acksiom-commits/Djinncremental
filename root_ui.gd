@@ -147,6 +147,16 @@ const UONITE_NAMES: Array = [
 
 # === ICOSAHEDRON DISPLAY ===
 var _icosa_mote_display: int = 0
+## Tracks game_context.uonites_this_cycle across frames so a completed
+## Uonite (the count increasing) can be detected and played as a one-shot
+## dim-out/dim-in on the icosahedron display -- see
+## uonite_icosahedron.gd's play_completion_dim(). _uonites_cycle_primed
+## starts false so the very first frame after load never mistakes a save's
+## already-nonzero count for a completion that "just happened" and plays a
+## spurious dim (same guard shape as storage_display.gd's own
+## _settle_total_primed, which this mirrors).
+var _prev_uonites_this_cycle: int  = 0
+var _uonites_cycle_primed:    bool = false
 
 # === TETRAD DISPLAY LABELS ===
 var _left_tetrad_label: RichTextLabel = null
@@ -2813,6 +2823,17 @@ func _update_counters() -> void:
             # cost once it started building full wireframe Mote lattices.
             if mote_display_changed:
                 _uonite_icosa.current_motes = _icosa_mote_display
+
+            # Completion dim -- see uonite_icosahedron.gd's
+            # play_completion_dim(). Post-Expansion only, matching
+            # storage_display.gd's top-wedge mini-icon gate (same
+            # "more than one Uonite per cycle is now possible" trigger).
+            var uonites_now: int = game_context.uonites_this_cycle
+            if _uonites_cycle_primed and uonites_now > _prev_uonites_this_cycle \
+            and game_context.expansions >= 1:
+                _uonite_icosa.play_completion_dim()
+            _prev_uonites_this_cycle = uonites_now
+            _uonites_cycle_primed    = true
 
 
 # ==================================================
