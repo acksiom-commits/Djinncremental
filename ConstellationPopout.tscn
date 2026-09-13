@@ -51,6 +51,7 @@ script = ExtResource("1_2nped")
 [node name="ConstellationTabButton" type="Button" parent="." unique_id=891082135]
 z_index = 1
 layout_mode = 0
+offset_top = -65.0
 offset_right = 22.0
 offset_bottom = 380.0
 focus_mode = 0
@@ -79,8 +80,8 @@ S"
 z_index = 1
 clip_contents = true
 layout_mode = 0
-offset_left = -320.0
-offset_bottom = 380.0
+offset_left = -350.0
+offset_bottom = 445.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_constel_panel")
 
 [node name="SelectorMargin" type="MarginContainer" parent="ConstellationSelectorPanel" unique_id=517662895]
@@ -167,6 +168,21 @@ size_flags_horizontal = 4
 theme_override_colors/font_color = Color(0.92156863, 0.88235295, 0.78039217, 1)
 theme_override_font_sizes/font_size = 16
 
+[node name="InfoTierEffectsSeparator" type="HSeparator" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=2023678070]
+visible = false
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_6voa3")
+
+[node name="InfoTierEffectsLabel" type="RichTextLabel" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=2023678071]
+visible = false
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+size_flags_vertical = 1
+theme_override_font_sizes/normal_font_size = 14
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
 [node name="ConstellationAllocationVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=776079631]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -179,30 +195,6 @@ horizontal_alignment = 1
 [node name="FociVolHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=124535324]
 layout_mode = 2
 size_flags_horizontal = 3
-
-[node name="FociLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1107157594]
-custom_minimum_size = Vector2(36, 0)
-layout_mode = 2
-text = "Foci"
-vertical_alignment = 1
-
-[node name="FociMinusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1558482017]
-custom_minimum_size = Vector2(32, 28)
-layout_mode = 2
-text = "-"
-
-[node name="FociValueLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1938319047]
-custom_minimum_size = Vector2(32, 0)
-layout_mode = 2
-size_flags_horizontal = 3
-text = "0"
-horizontal_alignment = 1
-vertical_alignment = 1
-
-[node name="FociPlusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1344612662]
-custom_minimum_size = Vector2(32, 28)
-layout_mode = 2
-text = "+"
 
 [node name="VolLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=567283045]
 custom_minimum_size = Vector2(36, 0)
@@ -224,6 +216,30 @@ horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="VolPlusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=57319347]
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "+"
+
+[node name="FociLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1107157594]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+text = "Foci"
+vertical_alignment = 1
+
+[node name="FociMinusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1558482017]
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "-"
+
+[node name="FociValueLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1938319047]
+custom_minimum_size = Vector2(32, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="FociPlusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1344612662]
 custom_minimum_size = Vector2(32, 28)
 layout_mode = 2
 text = "+"
@@ -258,40 +274,46 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Both"
 
-[node name="RedistributeButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=1600000020]
-custom_minimum_size = Vector2(0, 28)
+[node name="MultiRedistributeHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=1600000021]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "REDISTRIBUTE SPARKS"
 
-[node name="MultiGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=1758693413]
-custom_minimum_size = Vector2(160, 75)
+[node name="MultiGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox" unique_id=1758693413]
+custom_minimum_size = Vector2(0, 75)
 layout_mode = 2
+size_flags_horizontal = 3
 columns = 2
 
-[node name="10XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiGrid" unique_id=967275612]
+[node name="10XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=967275612]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "10X"
 
-[node name="100XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiGrid" unique_id=1920818803]
+[node name="100XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=1920818803]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "100X"
 
-[node name="CSTMButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiGrid" unique_id=783236587]
+[node name="CSTMButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=783236587]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "CSTM"
 
-[node name="ALLButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiGrid" unique_id=806143499]
+[node name="ALLButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=806143499]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "ALL"
+
+[node name="RedistributeButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox" unique_id=1600000020]
+custom_minimum_size = Vector2(0, 75)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "REDISTRIBUTE
+SPARKS"
 
 [node name="NotchCorner" type="Control" parent="." unique_id=947652492]
 visible = false

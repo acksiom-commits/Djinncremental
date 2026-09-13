@@ -15,8 +15,16 @@ extends Control
 # Emits constellation_selected(id) signal.
 # root_ui.gd connects that to constellation_panel.on_constellation_selected().
 
-const PANEL_WIDTH: float = 320.0   # ← must match ConstellationSelectorPanel offset_right
-const ANIM_TIME:   float = 0.22
+const PANEL_WIDTH:  float = 350.0   # ← must match ConstellationSelectorPanel's width (|offset_left|)
+const PANEL_HEIGHT: float = 445.0   # ← must match ConstellationSelectorPanel's height (offset_bottom)
+# Growth from the panel's original 380px height goes entirely to the TOP —
+# the tab strip's own bottom, and everything anchored to it (Foci/Vol,
+# Feed, Redistribute, MultiGrid), must stay exactly where it already is so
+# it never gets pushed further down past the screen's bottom edge. Fixed
+# distance from the tab button's Y to the panel's BOTTOM edge; unlike
+# PANEL_HEIGHT, this does not change as the panel grows taller.
+const PANEL_BOTTOM_OFFSET: float = 380.0
+const ANIM_TIME:    float = 0.22
 
 # Set true when Octant mechanics unlock in mid-game (permanent material resources +
 # pocket dimension placement). Until then, the SpinBox hides and all unlocked
@@ -36,6 +44,14 @@ const TIER_COLORS: Dictionary = {
     "stars": Color(0.65, 0.60, 0.90),
     "lines": Color(0.50, 0.75, 0.95),
     "art":   Color(0.85, 0.70, 0.95),
+}
+
+# Full per-tier breakdown display (InfoTierEffectsLabel) — always lists all
+# four tiers regardless of the constellation's current progress, so the
+# player can see the whole ladder at a glance, not just what's next.
+const TIER_ORDER: Array = ["dark", "stars", "lines", "art"]
+const TIER_DISPLAY_NAMES: Dictionary = {
+    "dark": "Dark", "stars": "Stars", "lines": "Lines", "art": "Art",
 }
 
 const BONUS_DESCRIPTIONS: Dictionary = {
@@ -98,7 +114,7 @@ const INFO_BASE_PATH:       String = PANEL_BASE_PATH + "/ConstellationInfoVBox"
 ## two are mutually-exclusive feed MODES, this is an action, and folding it
 ## into that array would make _refresh_feed_buttons treat it as a third
 ## mode and light it up as "active" whenever mode == 2.
-@onready var _redistribute_btn : Button = get_node(ALLOCATION_BASE_PATH + "/RedistributeButton")
+@onready var _redistribute_btn : Button = get_node(ALLOCATION_BASE_PATH + "/MultiRedistributeHBox/RedistributeButton")
 
 @onready var _info_vbox       : VBoxContainer = get_node(INFO_BASE_PATH)
 @onready var _info_name_label : Label         = get_node(INFO_BASE_PATH + "/InfoNameLabel")
@@ -106,11 +122,14 @@ const INFO_BASE_PATH:       String = PANEL_BASE_PATH + "/ConstellationInfoVBox"
 @onready var _info_bonus_label: Label         = get_node(INFO_BASE_PATH + "/InfoBonusLabel")
 @onready var _info_progress   : ProgressBar   = get_node(INFO_BASE_PATH + "/InfoProgressBar")
 @onready var _info_tier_label : Label         = get_node(INFO_BASE_PATH + "/InfoTierLabel")
+@onready var _info_tier_effects: RichTextLabel = get_node(INFO_BASE_PATH + "/InfoTierEffectsLabel")
+@onready var _info_tier_effects_sep: HSeparator = get_node(INFO_BASE_PATH + "/InfoTierEffectsSeparator")
 @onready var _spark_counter_label : Label     = get_node(ALLOCATION_BASE_PATH + "/SparkCounterLabel")
 @onready var _octant_spin     : SpinBox       = get_node(PANEL_BASE_PATH + "/OctantSpinBox")
 
-@warning_ignore("unused_private_class_variable")
 @onready var _title_label     : Label         = get_node(PANEL_BASE_PATH + "/ConstellationTitleLabel")
+
+const DEFAULT_TITLE_TEXT: String = "The Constellation"
 
 
 func _ready() -> void:
@@ -120,7 +139,10 @@ func _ready() -> void:
     _panel.visible = true
     _panel.top_level = true
     call_deferred("_init_panel_position")
-    _tab_btn.position = Vector2(0.0, 0.0)
+    # Y matches the panel's own top-anchor math (see PANEL_BOTTOM_OFFSET) so
+    # the tab strip spans the exact same vertical range as the panel it
+    # opens, top and bottom both flush.
+    _tab_btn.position = Vector2(0.0, PANEL_BOTTOM_OFFSET - PANEL_HEIGHT)
     _tab_btn.pressed.connect(_on_tab_pressed)
     _foci_minus.pressed.connect(_on_foci_minus)
     _foci_plus.pressed.connect(_on_foci_plus)
@@ -132,7 +154,7 @@ func _ready() -> void:
     _redistribute_btn.pressed.connect(_on_redistribute_pressed)
     _spark_counter_label.mouse_filter = Control.MOUSE_FILTER_STOP
     _spark_counter_label.gui_input.connect(_on_spark_counter_input)
-    var multi_grid = get_node_or_null(ALLOCATION_BASE_PATH + "/MultiGrid")
+    var multi_grid = get_node_or_null(ALLOCATION_BASE_PATH + "/MultiRedistributeHBox/MultiGrid")
     if multi_grid:
         for i in MULTI_GRID.size():
             var amount: int = MULTI_GRID[i][1]
@@ -149,9 +171,13 @@ func _ready() -> void:
         
         
 func _init_panel_position() -> void:
+    # Y is anchored to this CONTROL's own origin, not the tab button's --
+    # the tab button's own position.y now also derives from
+    # PANEL_BOTTOM_OFFSET/PANEL_HEIGHT (see _ready()), so anchoring the
+    # panel to the tab instead would double-apply that shift.
     _panel.global_position = Vector2(
         _tab_btn.global_position.x - PANEL_WIDTH,
-        _tab_btn.global_position.y
+        global_position.y + PANEL_BOTTOM_OFFSET - PANEL_HEIGHT
     )
     _set_panel_input(false)
 
@@ -274,7 +300,12 @@ func _input(event: InputEvent) -> void:
         
 func _has_point(point: Vector2) -> bool:
     if _is_open:
-        var full_rect := Rect2(Vector2.ZERO, Vector2(342, 380))  # panel + tab width, panel height
+        # The panel's top now sits above this control's own local origin
+        # (growth is applied at the top, see PANEL_BOTTOM_OFFSET), so the
+        # hit-test rect's origin has to follow it up rather than starting
+        # at local (0,0).
+        var top_y: float = PANEL_BOTTOM_OFFSET - PANEL_HEIGHT
+        var full_rect := Rect2(Vector2(0.0, top_y), Vector2(PANEL_WIDTH + 22.0, PANEL_HEIGHT))  # panel + tab width, panel height
         return full_rect.has_point(point)
     return Rect2(Vector2.ZERO, size).has_point(point)
 
@@ -380,6 +411,28 @@ func _kaleb_identity_hidden(constellation_id: int) -> bool:
     if not _gc:
         return true
     return not _gc.ui_unlocks.get("kaleb_identity_revealed", false)
+
+
+## Shared by InfoNameLabel and the panel's top ConstellationTitleLabel --
+## a 4th display surface for constellation names, so per the reveal-gating
+## rule this MUST go through _kaleb_identity_hidden() the same as the other
+## three (see kaleb_identity_hidden_until_tier1_reveal memory).
+func _display_name_for(constellation_id: int, def: Dictionary) -> String:
+    if _kaleb_identity_hidden(constellation_id):
+        return "UNKNOWN"
+    var designation: String = _coerce_string(def.get("designation"), "")
+    if designation != "":
+        return "%s — %s" % [designation.to_upper(), def.get("name", "Unknown")]
+    return def.get("name", "Unknown")
+
+
+## Reverts the top title to its pre-selection default -- called whenever
+## _refresh_info_panel() bails out before it can compute a real selection
+## name (nothing selected, bad/missing def, or the grid itself isn't shown
+## yet), so the title never gets stuck showing a stale constellation name.
+func _set_title_default() -> void:
+    if _title_label:
+        _title_label.text = DEFAULT_TITLE_TEXT
 
 
 func _get_slot_label(constellation_id: int) -> String:
@@ -697,25 +750,26 @@ func _refresh_info_panel() -> void:
         return
     if _selected_slot < 0 or not _cd:
         _info_vbox.visible = false
+        _set_title_default()
         return
     var def: Dictionary = _cd.get_constellation_def(_selected_slot)
     if def.is_empty():
         _info_vbox.visible = false
+        _set_title_default()
         return
     if not _slot_grid.visible:
         _info_vbox.visible = false
+        _set_title_default()
         return
     _info_vbox.visible = true
 
-    # ── Name ──
-    if _kaleb_identity_hidden(_selected_slot):
-        _info_name_label.text = "UNKNOWN"
-    else:
-        var designation: String = _coerce_string(def.get("designation"), "")
-        if designation != "":
-            _info_name_label.text = "%s — %s" % [designation.to_upper(), def.get("name", "Unknown")]
-        else:
-            _info_name_label.text = def.get("name", "Unknown")
+    # ── Name ── shared with the panel's top title label, so both surfaces
+    # stay in lockstep with the current selection (and both honor the
+    # Kaleb-identity-hidden gate the same way -- see _kaleb_identity_hidden).
+    var display_name: String = _display_name_for(_selected_slot, def)
+    _info_name_label.text = display_name
+    if _title_label:
+        _title_label.text = display_name
 
     # ── Lore ──
     _info_lore_label.text = ""
@@ -774,6 +828,52 @@ func _refresh_info_panel() -> void:
     _info_tier_label.text = tier_text
     _info_tier_label.add_theme_color_override("font_color",
         TIER_COLORS.get(state, Color.WHITE))
+
+    _refresh_tier_effects_display(def, bonus_key, bonus_desc, state)
+
+
+## Always-visible ladder of this constellation's bonus at all four tiers
+## (Dark/Stars/Lines/Art), with the current tier picked out — separate from
+## InfoBonusLabel above, which only ever shows the CURRENT tier's value.
+## Only meaningful for constellations with a tiered bonus_levels Dictionary
+## (every BUILT_IN one has it); player/patron-authored constellations that
+## fall back to a flat bonus_value have no per-tier ladder to show, so the
+## label is hidden for those, same as it is before any slot is selected.
+func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
+        bonus_desc: String, current_state: String) -> void:
+    if not _info_tier_effects:
+        return
+    if not def.has("bonus_levels") or bonus_key == "":
+        _info_tier_effects.text = ""
+        _info_tier_effects.visible = false
+        if _info_tier_effects_sep:
+            _info_tier_effects_sep.visible = false
+        return
+    _info_tier_effects.visible = true
+    if _info_tier_effects_sep:
+        _info_tier_effects_sep.visible = true
+    var bonus_levels:  Dictionary = _coerce_dict(def.get("bonus_levels"), {})
+    var default_bonus: float      = _coerce_float(def.get("bonus_value"), 1.0)
+    # The other tiers run horizontally in one row; the constellation's
+    # CURRENT tier is pulled out of that row and shown alone on the line
+    # below, still bold/arrow/tier-colored like before -- just no longer
+    # inline with the others, so it reads as "here — of these" rather than
+    # one more item in the same list.
+    var row_parts:    Array  = []
+    var current_line: String = ""
+    for tier in TIER_ORDER:
+        var val: float = _coerce_float(bonus_levels.get(tier), default_bonus) \
+            if bonus_levels.has(tier) else default_bonus
+        var tier_name: String = TIER_DISPLAY_NAMES.get(tier, tier)
+        var row_text:  String = "%s  ×%s" % [tier_name, str(val)]
+        if tier == current_state:
+            var hi_color: Color = TIER_COLORS.get(tier, Color.WHITE)
+            current_line = "[color=#%s][b]▶ %s[/b][/color]" % [hi_color.to_html(false), row_text]
+        else:
+            var dim_color: Color = TIER_COLORS.get(tier, Color.WHITE).darkened(0.35)
+            row_parts.append("[color=#%s]%s[/color]" % [dim_color.to_html(false), row_text])
+    _info_tier_effects.text = "[font_size=13]%s — Effects by Tier:[/font_size]\n%s\n%s" \
+        % [bonus_desc, "    ".join(row_parts), current_line]
 
 
 func _coerce_int(val, default: int) -> int:
