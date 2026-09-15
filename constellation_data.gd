@@ -1,5 +1,23 @@
 extends Node
-# ================= CONSTELLATION DATA v0.3.2 =================
+# ================= CONSTELLATION DATA v0.3.4 =================
+# v0.3.4: Corrected v0.3.3's unlock tiers — The Vessel (id 5) now unlocks at
+#         "achievement:sixth_prestige" (was "fifth_prestige"), The Djinn
+#         (id 6) at "achievement:seventh_prestige" (was "sixth_prestige").
+#         User's actual intent was one tier later than the first guess for
+#         both. root_ui.gd/archon_dialogue_manager.gd wired to match: new
+#         sixth/seventh_prestige placeholder dialogues, fired from
+#         _do_prestige_reset() at expansions 6/7 alongside the achievement.
+# v0.3.3: Added 7th built-in constellation, The Vessel (id 5) — its ability
+#         is to bank a capped pool of Sparks between expansions for later
+#         use endowing constellations (data placeholder only, key
+#         "spark_bank_capacity", not yet read by ProductionManager).
+#         Inserted at id 5, pushing The Djinn to id 6/octant 6 — its old
+#         "achievement:fifth_prestige" unlock (previously a flagged
+#         duplicate of The Bellows') now belongs to The Vessel; The Djinn
+#         moved to "achievement:sixth_prestige", resolving that duplicate.
+#         Puzzle solution intended to be the Tritsch-Tratsch Polka, Op. 214
+#         (Johann Strauss II) — not yet transcribed, see TODO at its entry.
+#         Seven built-ins total now (was six).
 # v0.3.2: Added 6th built-in constellation, The Djinn (id 5) — represents
 #         the Player, themed around the vessel (Ring/Jar/Lamp/etc.) chosen
 #         during the pre-game intro's training-period selection. Bonus key
@@ -55,6 +73,9 @@ extends Node
 #   "purity_lock_slots"       — extra purity lock slots
 #   "cooldown_multiplier"     — tiered cooldown reduction via bonus_levels
 #   "endowment_multiplier"    — reduces Constellation Endowment bottleneck
+#                                (data placeholder; not yet read by ProductionManager)
+#   "spark_bank_capacity"     — banks a capped pool of Sparks across expansions
+#                                for later use endowing constellations
 #                                (data placeholder; not yet read by ProductionManager)
 #
 # MECHANIC UNLOCK KEYS (string keys read by ProductionManager):
@@ -132,6 +153,7 @@ const BUILT_IN = [
         # end up on the +Y (point-down) side after leveling, or the whirl
         # can settle upside-down. See get_canonical_display_basis().
         "snap_orient_check": {"star": 2, "axis": "y", "sign": 1},
+        # DEV: Source melody — "The Liberty Bell" march (John Philip Sousa, 1893).
         "puzzle_sequence": [8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 1, 0, 4, 9],
         "note_durations": [
             0.333, 0.167, 0.333, 0.167,          # Measure 1: F5 E5 D5 C#5
@@ -298,6 +320,9 @@ const BUILT_IN = [
         ],
         "spark_cap":      28657,
         # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
+        # DEV: Source melody — "In the Hall of the Mountain King" (Edvard Grieg,
+        #      Peer Gynt Suite No. 1, Op. 46 No. 4). Same phrase as the global
+        #      PUZZLE_CALL_SEQUENCE (see the "verify against the Grieg score" note there).
         "puzzle_sequence": [0, 1, 2, 4, 6, 2, 6, 5, 1, 4, 3, 7, 4],
         "fixed_star_positions": [
             [-0.0056,  0.0042,  1.0000],  # 0:  center
@@ -528,7 +553,107 @@ const BUILT_IN = [
 
 
 # ==================================================
-# CONSTELLATION 6-6: THE DJINN
+# CONSTELLATION 6-6: THE VESSEL
+# ==================================================
+# A new constellation, NOT the Player's own (that's The Djinn, pushed to id
+# 6/octant 6 below to make room for this one at id 5/octant 5). Ability:
+# banks a capped pool of Sparks between expansions, so a Constellation
+# Endowment push doesn't have to start from zero every single cycle —
+# unspent Sparks above the bank's own cap still fall on the ground as
+# before, only the banked amount survives into the next expansion for
+# endowing.
+#
+# TODO (Boss): full placeholder/outline only —
+#   - designation left empty (undecided — no mononym chosen yet, unlike the
+#     other five built-ins' KALEB/ALZIRO/DRASIN/HANLEE/DAJALA, or The
+#     Djinn's deliberately-placeholder ENIGMA). UI falls back to showing
+#     just "The Vessel" until one is picked.
+#   - star_count (14, matching the designed outline below), bonus_value/
+#     bonus_levels (100/250/500/1000 Spark bank capacity) are placeholder
+#     round numbers, not a balanced design pass — spark_cap reuses the
+#     universal 28657 constant like every other built-in.
+#   - unlock is "achievement:sixth_prestige" (corrected 2026-09-14 — the
+#     first pass at this renumber wrongly gave The Vessel "fifth_prestige"
+#     and pushed The Djinn to "sixth_prestige"; the user's actual design is
+#     Vessel-at-sixth/Djinn-at-seventh, one tier later than that first
+#     guess). This also matches root_ui.gd's own pre-existing
+#     _on_fifth_prestige_complete() comment ("no sixth constellation yet;
+#     add when id 5 is defined") — id 5 pre-generates its puzzle one
+#     prestige tier BEFORE it unlocks, same as every earlier constellation.
+#   - fixed_star_positions / line_pairs ADDED (2026-09-14) — a two-handled
+#     vessel/urn outline supplied directly by the user (14 stars, 16
+#     edges: two 4-edge handle loops at the top corners, a top bar joining
+#     them, two neck edges dropping into the body, two body-side edges,
+#     two lower-curve edges, and a bottom edge). Digitized from a
+#     reference image at native aspect (~319px wide : ~538px tall, i.e.
+#     taller than wide) and rescaled into this file's flat |x|<=0.130 /
+#     |y|<=0.055 display window — like every other built-in's shape, it's
+#     compressed to fit the wide panel, not shown at its "natural" aspect.
+#   - puzzle_sequence / note_freqs still NOT designed — this is the one
+#     remaining gap. get_note_freqs()/get_response_freqs() still fall
+#     through to the legacy PUZZLE_NOTE_FREQS/PUZZLE_RESPONSE_FREQS
+#     defaults (see "PUZZLE FIELDS (optional...)" above) until that's done.
+#   - DEV: intended puzzle solution is the Tritsch-Tratsch Polka, Op. 214
+#     (Johann Strauss II, 1858) — raw MIDI transcription of the theme
+#     lives in POLKA_THEME_NOTES (below the BUILT_IN array closes, main-
+#     theme notes only, 14 note-events including one 2-note harmony) —
+#     still needs reducing into puzzle_sequence/note_freqs against these
+#     same 14 stars. Same idea as The Djinn's Zarathustra note below, one
+#     step further along.
+
+    {
+        "id": 5,
+        "name": "The Vessel",
+        "designation": "",
+        "octant": 5,
+        "star_count": 14,
+        "unlock": "achievement:sixth_prestige",
+        "bonus_key": "spark_bank_capacity",
+        "bonus_value": 100.0,
+        "mechanic_key": "",
+        "bonus_levels": {"stars": 250.0, "lines": 500.0, "art": 1000.0},
+        "spark_cap":      28657,
+
+        # Two-handled vessel/urn outline — see TODO above for how this was
+        # digitized and rescaled. Indices below match line_pairs.
+        "fixed_star_positions": [
+            [-0.120, -0.050, 0.991],  # 0: left handle, outer-top
+            [-0.059, -0.053, 0.997],  # 1: left handle, inner-top (top bar left end)
+            [ 0.061, -0.055, 0.997],  # 2: top bar right end (right handle, inner-top)
+            [ 0.123, -0.053, 0.991],  # 3: right handle, outer-top
+            [-0.130, -0.033, 0.991],  # 4: left handle, outer-bottom
+            [-0.068, -0.030, 0.997],  # 5: left handle, inner-bottom (neck-left top)
+            [ 0.073, -0.032, 0.997],  # 6: right handle, inner-bottom (neck-right top)
+            [ 0.130, -0.037, 0.991],  # 7: right handle, outer-bottom
+            [-0.120,  0.000, 0.993],  # 8: left shoulder
+            [ 0.125, -0.003, 0.992],  # 9: right shoulder
+            [-0.113,  0.029, 0.993],  # 10: left body
+            [ 0.115,  0.029, 0.993],  # 11: right body
+            [-0.055,  0.055, 0.997],  # 12: bottom-left
+            [ 0.079,  0.054, 0.995],  # 13: bottom-right
+        ],
+        # Two 4-edge handle loops (0-1-5-4-0 and 2-3-7-6-2), a top bar
+        # joining the loops' inner-top corners (1-2), two neck edges
+        # dropping from each loop's inner-bottom corner into the body
+        # (5-8, 6-9), two body-side edges (8-10, 9-11), two lower-curve
+        # edges (10-12, 11-13), and a bottom edge closing the outline (12-13).
+        "line_pairs": [
+            0,1,  1,5,  5,4,  4,0,        # left handle loop
+            2,3,  3,7,  7,6,  6,2,        # right handle loop
+            1,2,                          # top bar
+            5,8,  6,9,                    # neck
+            8,10,  9,11,                  # body sides
+            10,12,  11,13,                # lower curves
+            12,13,                        # bottom
+        ],
+
+        # puzzle_sequence / note_freqs: still pending (see TODO above re:
+        # Tritsch-Tratsch Polka / POLKA_THEME_NOTES).
+    },
+
+
+# ==================================================
+# CONSTELLATION 7-7: THE DJINN
 # ==================================================
 # The Player's own constellation. Themed around the vessel (Ring, Jar, Lamp,
 # etc.) the player favored during the pre-game intro's training-period
@@ -538,6 +663,10 @@ const BUILT_IN = [
 # is deliberate: the Djinn's true form is undecided at this stage of design.
 #
 # TODO (Boss): placeholder/incomplete —
+#   Source melody — the "Sunrise" opening of "Also sprach Zarathustra", Op. 30
+#   (Richard Strauss, 1896). See the inline DEV note at puzzle_sequence below:
+#   the first five pitch classes (C-G-C-E-G) match the iconic sunrise fanfare
+#   note-for-note; the tail is an approximate variant.
 #   - puzzle_sequence/note_freqs has only 15 of the 17 note-events star_count
 #     needs; indices 15-16 are unwritten (source melody: C4 G4 C5 E4 G4 C5
 #     C4 E5 G3 G4 C5 D#5 C4 D#4 G3).
@@ -549,18 +678,19 @@ const BUILT_IN = [
 #     (17) is arbitrary/placeholder since no exact count was given.
 #   - fixed_star_positions / line_pairs not yet designed — pending the
 #     per-vessel art choice.
-#   - unlock is "achievement:fifth_prestige", identical to The Bellows (id
-#     4)'s unlock key — confirm whether that's intentional (parallel
-#     unlock, different octant) or should instead key off the intro
-#     vessel-choice event.
+#   - unlock is "achievement:seventh_prestige" (corrected 2026-09-14, see
+#     the matching note at The Vessel's entry above — Djinn is one tier
+#     later than The Vessel, not the same tier as first guessed). This
+#     also resolves the old duplicate-with-The-Bellows note that used to
+#     be here, from when this was still "fifth_prestige".
 
     {
-        "id": 5,
+        "id": 6,
         "name": "The Djinn",
         "designation": "ENIGMA",
-        "octant": 5,
+        "octant": 6,
         "star_count": 17,
-        "unlock": "achievement:fifth_prestige",
+        "unlock": "achievement:seventh_prestige",
         "bonus_key": "endowment_multiplier",
         "bonus_value": 1.0,
         "mechanic_key": "",
@@ -571,6 +701,11 @@ const BUILT_IN = [
 
         # 15 of 17 note-events (see TODO above).
         # C4 G4 C5 E4 G4 C5 C4 E5 G3 G4 C5 D#5 C4 D#4 G3
+        # DEV: Source — the "Sunrise" opening of "Also sprach Zarathustra", Op. 30
+        #      (Richard Strauss, 1896). First five pitch classes (C4 G4 C5 E4 G4 =
+        #      C-G-C-E-G) match the iconic sunrise fanfare note-for-note; the tail
+        #      is an approximate variant (octave-flipped, D#/Eb inflections echoing
+        #      the opening's C-major / C-minor coloring).
         "puzzle_sequence": [0, 1, 2, 3, 1, 2, 0, 4, 5, 1, 2, 6, 0, 7, 5],
         "note_freqs": [
             261.63,  # 0: C4
@@ -598,9 +733,59 @@ const BUILT_IN = [
     },
 
 
-# IDs 6-16: reserved for future built-in constellations
+# IDs 7-16: reserved for future built-in constellations
 ]
- 
+
+# ==================================================
+# THE VESSEL (id 5) — PLACEHOLDER PUZZLE SOURCE MATERIAL
+# ==================================================
+# Raw MIDI transcription of the Tritsch-Tratsch-Polka, Op. 214 (Johann
+# Strauss II) main theme, Bar 3 to Bar 9 Beat 1 — the intended puzzle
+# solution for The Vessel (see the TODO at its BUILT_IN entry above).
+# NOT yet reduced into that entry's "puzzle_sequence"/"note_freqs" fields
+# (star_count is 16, this has 14 note-events, including a two-note harmony
+# at Bar 6 Beat 1, so it still doesn't map 1:1 to a star) — kept here as
+# the literal source to derive that mapping from later.
+#
+# Main-theme notes only: the three lower 32nd-note pickup grace notes
+# (E5-F#5-G#5) leading into each sustained A5 in Bars 3/4/7/8 are cut,
+# keeping just that landing A5 — full 26-note transcription (with those
+# pickups) had four such runs; trimming them is what brings this down to
+# 14. Bars 5, 6, and 9 are unchanged, they were already all melody line.
+#   beat:     quarter-note timestamp relative to Bar 3 Beat 1
+#   midi:     MIDI pitch number
+#   pitch_hz: frequency in Hertz (A4 = 440 Hz)
+#   duration: duration in quarter-note beats
+const POLKA_THEME_NOTES: Array[Dictionary] = [
+    # --- BAR 3 ---
+    {"beat": 1.375, "midi": 81, "pitch_hz": 880.00, "duration": 0.625}, # A5 (dotted 16th)
+
+    # --- BAR 4 ---
+    {"beat": 3.375, "midi": 81, "pitch_hz": 880.00, "duration": 0.625}, # A5 (dotted 16th)
+
+    # --- BAR 5 ---
+    {"beat": 4.0, "midi": 80, "pitch_hz": 830.61, "duration": 0.375}, # G#5 (dotted 16th)
+    {"beat": 4.375, "midi": 81, "pitch_hz": 880.00, "duration": 0.125}, # A5 (32nd)
+    {"beat": 4.5, "midi": 83, "pitch_hz": 987.77, "duration": 0.25},  # B5 (16th)
+    {"beat": 4.75, "midi": 81, "pitch_hz": 880.00, "duration": 0.25},  # A5 (16th)
+    {"beat": 5.0, "midi": 80, "pitch_hz": 830.61, "duration": 0.25},  # G#5 (16th)
+    {"beat": 5.25, "midi": 78, "pitch_hz": 739.99, "duration": 0.25},  # F#5 (16th)
+
+    # --- BAR 6 ---
+    {"beat": 6.0, "midi": 76, "pitch_hz": 659.25, "duration": 0.5},   # E5 (8th, played with C#5)
+    {"beat": 6.0, "midi": 73, "pitch_hz": 554.37, "duration": 0.5},   # C#5
+
+    # --- BAR 7 ---
+    {"beat": 9.375, "midi": 81, "pitch_hz": 880.00, "duration": 0.625}, # A5 (dotted 16th)
+
+    # --- BAR 8 ---
+    {"beat": 11.375, "midi": 81, "pitch_hz": 880.00, "duration": 0.625}, # A5 (dotted 16th)
+
+    # --- BAR 9 (Beat 1 - Pink Zone) ---
+    {"beat": 12.0, "midi": 76, "pitch_hz": 659.25, "duration": 0.25}, # E5 (16th)
+    {"beat": 12.25, "midi": 78, "pitch_hz": 739.99, "duration": 0.25}  # F#5 (16th)
+]
+
 const PATRON_DATA_PATH = "res://data/patron_constellations.json"
  
  

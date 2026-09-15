@@ -422,6 +422,8 @@ func _ready() -> void:
         archon_dialogue_manager.third_prestige_sequence_complete.connect(_on_third_prestige_complete)
         archon_dialogue_manager.fourth_prestige_sequence_complete.connect(_on_fourth_prestige_complete)
         archon_dialogue_manager.fifth_prestige_sequence_complete.connect(_on_fifth_prestige_complete)
+        archon_dialogue_manager.sixth_prestige_sequence_complete.connect(_on_sixth_prestige_complete)
+        archon_dialogue_manager.seventh_prestige_sequence_complete.connect(_on_seventh_prestige_complete)
         archon_dialogue_manager.start_second_prestige_sequence_complete.connect(_on_start_second_prestige_complete)
         archon_dialogue_manager.archon_volition_constellation_sequence_complete.connect(_on_archon_volition_constellation_complete)
         archon_dialogue_manager.no_archon_volition_constellation_sequence_complete.connect(_on_no_archon_volition_constellation_complete)
@@ -888,7 +890,15 @@ func _on_fourth_prestige_complete() -> void:
 
 
 func _on_fifth_prestige_complete() -> void:
-    pass  # no sixth constellation yet; add when id 5 is defined
+    _start_puzzle_generation(5)  # pre-generate The Vessel (id 5)
+
+
+func _on_sixth_prestige_complete() -> void:
+    _start_puzzle_generation(6)  # pre-generate The Djinn (id 6)
+
+
+func _on_seventh_prestige_complete() -> void:
+    pass  # no eighth constellation yet; add when id 7 is defined
 
 
 func _on_start_second_prestige_complete() -> void:
@@ -1412,6 +1422,10 @@ func _sync_trigger_flags_from_loaded_state() -> void:
         archon_dialogue_manager.enqueue_fourth_prestige()
     if game_context.expansions >= 5 and not archon_dialogue_manager.fifth_prestige_done:
         archon_dialogue_manager.enqueue_fifth_prestige()
+    if game_context.expansions >= 6 and not archon_dialogue_manager.sixth_prestige_done:
+        archon_dialogue_manager.enqueue_sixth_prestige()
+    if game_context.expansions >= 7 and not archon_dialogue_manager.seventh_prestige_done:
+        archon_dialogue_manager.enqueue_seventh_prestige()
 
     # _firmament_threshold_revealed had no re-derivation here previously —
     # confirmed gap during the refactor-order item #10 research: it reset
@@ -1778,6 +1792,14 @@ func _do_prestige_reset() -> void:
             cd.on_achievement("fifth_prestige")
             if archon_dialogue_manager:
                 archon_dialogue_manager.enqueue_fifth_prestige()
+        elif game_context.expansions == 6:
+            cd.on_achievement("sixth_prestige")
+            if archon_dialogue_manager:
+                archon_dialogue_manager.enqueue_sixth_prestige()
+        elif game_context.expansions == 7:
+            cd.on_achievement("seventh_prestige")
+            if archon_dialogue_manager:
+                archon_dialogue_manager.enqueue_seventh_prestige()
     # Re-grant volitions earned from lifetime foci after reset wipes them
     _check_volition_grant()
     _update_click_vol_label()

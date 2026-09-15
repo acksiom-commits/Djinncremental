@@ -37,10 +37,14 @@ const BASELINE := {
 	2: [1, 156, 13, 14],   # The Hourglass — fully connected
 	3: [1, 272, 17, 20],   # The Satchel   — fully connected
 	4: [5, 182, 18, 14],   # The Bellows   — 4 isolated singles + one body
+	5: [1, 182, 14, 16],   # The Vessel    — fully connected (two-handled urn outline)
 }
 
 ## Authored but topology-less on purpose; setup() aborts on it.
-const NO_TOPOLOGY_YET := [5]
+## id 6 = The Djinn (pushed up from 5 when The Vessel was inserted at id 5,
+## 2026-09-13) -- still pending fixed_star_positions. id 5 = The Vessel got
+## its outline on 2026-09-14 (see BASELINE below) and no longer belongs here.
+const NO_TOPOLOGY_YET := [6]
 
 var fails: int = 0
 

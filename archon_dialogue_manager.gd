@@ -69,6 +69,8 @@ var second_prestige_done:               bool = false
 var third_prestige_done:                bool = false
 var fourth_prestige_done:               bool = false
 var fifth_prestige_done:                bool = false
+var sixth_prestige_done:                bool = false
+var seventh_prestige_done:              bool = false
 var start_second_prestige_done:         bool = false
 var archon_volition_constellation_done: bool = false
 var no_archon_volition_constellation_done: bool = false
@@ -163,6 +165,8 @@ signal second_prestige_sequence_complete()
 signal third_prestige_sequence_complete()
 signal fourth_prestige_sequence_complete()
 signal fifth_prestige_sequence_complete()
+signal sixth_prestige_sequence_complete()
+signal seventh_prestige_sequence_complete()
 signal start_second_prestige_sequence_complete()
 signal archon_volition_constellation_sequence_complete()
 signal no_archon_volition_constellation_sequence_complete()
@@ -363,6 +367,14 @@ func _on_fourth_prestige_ended() -> void:
 func _on_fifth_prestige_ended() -> void:
     dialogue_ended.disconnect(_on_fifth_prestige_ended)
     emit_signal("fifth_prestige_sequence_complete")
+
+func _on_sixth_prestige_ended() -> void:
+    dialogue_ended.disconnect(_on_sixth_prestige_ended)
+    emit_signal("sixth_prestige_sequence_complete")
+
+func _on_seventh_prestige_ended() -> void:
+    dialogue_ended.disconnect(_on_seventh_prestige_ended)
+    emit_signal("seventh_prestige_sequence_complete")
 
 
 func _on_start_second_prestige_ended() -> void:
@@ -1046,6 +1058,32 @@ func enqueue_fifth_prestige() -> void:
     emit_signal("sequence_complete", "Fifth Prestige", lines)
 
 
+func enqueue_sixth_prestige() -> void:
+    if sixth_prestige_done:
+        return
+    sixth_prestige_done = true
+    var lines = [
+        "Vessel placeholder dialogue",
+    ]
+    if not dialogue_ended.is_connected(_on_sixth_prestige_ended):
+        dialogue_ended.connect(_on_sixth_prestige_ended)
+    enqueue_dialogue(lines, true, "sixth_prestige_done")
+    emit_signal("sequence_complete", "Sixth Prestige", lines)
+
+
+func enqueue_seventh_prestige() -> void:
+    if seventh_prestige_done:
+        return
+    seventh_prestige_done = true
+    var lines = [
+        "Djinn placeholder dialogue",
+    ]
+    if not dialogue_ended.is_connected(_on_seventh_prestige_ended):
+        dialogue_ended.connect(_on_seventh_prestige_ended)
+    enqueue_dialogue(lines, true, "seventh_prestige_done")
+    emit_signal("sequence_complete", "Seventh Prestige", lines)
+
+
 func enqueue_archon_volition_constellation() -> void:
     if archon_volition_constellation_done:
         return
@@ -1167,6 +1205,8 @@ func get_save_data() -> Dictionary:
         "third_prestige_done":                  _persisted_flag("third_prestige_done", third_prestige_done),
         "fourth_prestige_done":                 _persisted_flag("fourth_prestige_done", fourth_prestige_done),
         "fifth_prestige_done":                  _persisted_flag("fifth_prestige_done", fifth_prestige_done),
+        "sixth_prestige_done":                  _persisted_flag("sixth_prestige_done", sixth_prestige_done),
+        "seventh_prestige_done":                _persisted_flag("seventh_prestige_done", seventh_prestige_done),
         "start_second_prestige_done":           _persisted_flag("start_second_prestige_done", start_second_prestige_done),
         "archon_volition_constellation_done":   _persisted_flag("archon_volition_constellation_done", archon_volition_constellation_done),
         "no_archon_volition_constellation_done": _persisted_flag("no_archon_volition_constellation_done", no_archon_volition_constellation_done),
@@ -1223,6 +1263,8 @@ func load_save_data(data: Dictionary) -> void:
     third_prestige_done     = _coerce_bool(data.get("third_prestige_done"),        false)
     fourth_prestige_done    = _coerce_bool(data.get("fourth_prestige_done"),       false)
     fifth_prestige_done     = _coerce_bool(data.get("fifth_prestige_done"),        false)
+    sixth_prestige_done     = _coerce_bool(data.get("sixth_prestige_done"),        false)
+    seventh_prestige_done   = _coerce_bool(data.get("seventh_prestige_done"),      false)
     start_second_prestige_done = _coerce_bool(data.get("start_second_prestige_done"), false)
     archon_volition_constellation_done = _coerce_bool(data.get("archon_volition_constellation_done"), false)
     no_archon_volition_constellation_done = _coerce_bool(data.get("no_archon_volition_constellation_done"), false)
