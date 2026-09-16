@@ -922,24 +922,25 @@ func _on_fork_toggle_pressed() -> void:
 # ==================================================
 const SELECTED_CLUE_PLACEHOLDER := "Select a clue below to pin it here."
 
-## True while Constellation 0 (Kaleb, The Archon)'s identity is still
-## hidden from the player -- see constellation_popout.gd's own
-## _kaleb_identity_hidden() for the full reasoning (both check the same
-## game_context.ui_unlocks["kaleb_identity_revealed"] flag, set only once
-## the Tier 1 Archon reveal dialogue has actually been read to completion,
-## not merely enqueued).
-func _kaleb_identity_hidden(constellation_id: int) -> bool:
-    if constellation_id != 0:
-        return false
+## True while a constellation's identity is still hidden from the player --
+## see constellation_popout.gd's own _constellation_identity_hidden() for
+## the full reasoning (both check the same flags: Kaleb's own
+## game_context.ui_unlocks["kaleb_identity_revealed"] for id 0, or
+## game_context.constellation_identity_revealed[id] for every other
+## constellation -- both set only once their reveal dialogue has actually
+## been read to completion, not merely enqueued).
+func _constellation_identity_hidden(constellation_id: int) -> bool:
     if not _gc:
         return true
-    return not _gc.ui_unlocks.get("kaleb_identity_revealed", false)
+    if constellation_id == 0:
+        return not _gc.ui_unlocks.get("kaleb_identity_revealed", false)
+    return not bool(_gc.constellation_identity_revealed.get(constellation_id, false))
 
 
 func _update_header() -> void:
     if not _cd or _constellation_id < 0:
         return
-    if _kaleb_identity_hidden(_constellation_id):
+    if _constellation_identity_hidden(_constellation_id):
         _title_label.text = "UNKNOWN"
         _selected_clue_text = ""
         _selected_clue_tab = -1

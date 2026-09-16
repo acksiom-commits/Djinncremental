@@ -83,6 +83,16 @@ var open_constellation_panel_done:      bool = false
 var close_constellation_panel_done:     bool = false
 var study_panel_reveal_done:            bool = false
 
+## Per-constellation identity reveal, keyed by constellation_id (int) -> done
+## (bool). Generic/data-driven on purpose, unlike the named X_done vars
+## above -- this is meant to be THE DEFAULT for every constellation going
+## forward (see enqueue_constellation_identity_reveal()), so it can't be a
+## fixed set of hand-added vars the way the closed set of 7 prestige tiers
+## is. Constellation 0 (Kaleb) is NOT tracked here -- he keeps his own
+## pre-existing bespoke reveal (tier1_archon_complete_done /
+## ui_unlocks["kaleb_identity_revealed"]), unrelated to this mechanism.
+var constellation_identity_reveal_done: Dictionary = {}
+
 var _name_entry_pending:     bool = false
 
 var _fade_tween:       			Tween = null
@@ -132,6 +142,18 @@ func _persisted_flag(flag_name: String, live_value: bool) -> bool:
     return false if _pending_dialogue_flags.has(flag_name) else live_value
 
 
+## Same mid-dialogue save protection as _persisted_flag(), applied per-key
+## across the whole constellation_identity_reveal_done dict instead of one
+## named var -- each key's own "constellation_%d_identity_reveal_done" flag
+## name is reconstructed to check against _pending_dialogue_flags.
+func _persisted_constellation_identity_reveals() -> Dictionary:
+    var result: Dictionary = {}
+    for cid in constellation_identity_reveal_done:
+        var flag_name: String = "constellation_%d_identity_reveal_done" % int(cid)
+        result[str(cid)] = _persisted_flag(flag_name, bool(constellation_identity_reveal_done[cid]))
+    return result
+
+
 
 var _category_notified: Dictionary = {
     "fundament": false,
@@ -173,6 +195,7 @@ signal no_archon_volition_constellation_sequence_complete()
 signal spark_movement_sequence_complete()
 signal star_chase_sequence_complete()
 signal tier1_archon_complete_sequence_complete()
+signal constellation_identity_reveal_sequence_complete(constellation_id: int)
 signal uonite_name_requested()
 signal first_constellation_sequence_complete()
 signal constellation_panel_creation_sequence_complete()
@@ -1084,6 +1107,28 @@ func enqueue_seventh_prestige() -> void:
     emit_signal("sequence_complete", "Seventh Prestige", lines)
 
 
+## The default identity-reveal dialogue for every constellation EXCEPT
+## Kaleb (id 0, who keeps his own bespoke tier1_archon_complete reveal --
+## see the constellation_identity_reveal_done doc comment above). Fires
+## once per constellation_id, keyed dynamically rather than through a
+## named X_done var/signal per id, since this needs to keep working for
+## constellations that don't exist yet. constellation_name is passed in
+## rather than looked up here, so this file doesn't need a ConstellationData
+## reference of its own.
+func enqueue_constellation_identity_reveal(constellation_id: int, constellation_name: String) -> void:
+    if constellation_identity_reveal_done.get(constellation_id, false):
+        return
+    constellation_identity_reveal_done[constellation_id] = true
+    var lines = ["%s placeholder dialogue" % constellation_name]
+    var flag_name := "constellation_%d_identity_reveal_done" % constellation_id
+    var cid := constellation_id
+    dialogue_ended.connect(
+        func(): emit_signal("constellation_identity_reveal_sequence_complete", cid),
+        CONNECT_ONE_SHOT)
+    enqueue_dialogue(lines, true, flag_name)
+    emit_signal("sequence_complete", "%s Identity Reveal" % constellation_name, lines)
+
+
 func enqueue_archon_volition_constellation() -> void:
     if archon_volition_constellation_done:
         return
@@ -1217,6 +1262,7 @@ func get_save_data() -> Dictionary:
         "close_constellation_panel_done":       close_constellation_panel_done,
         "star_chase_done":                      _persisted_flag("star_chase_done", star_chase_done),
         "tier1_archon_complete_done":           _persisted_flag("tier1_archon_complete_done", tier1_archon_complete_done),
+        "constellation_identity_reveal_done":   _persisted_constellation_identity_reveals(),
         "study_panel_reveal_done":              _persisted_flag("study_panel_reveal_done", study_panel_reveal_done),
         "monad_panel_done":         _persisted_flag("monad_panel_done", monad_panel_done),
         "monad_random_done":        _persisted_flag("monad_random_done", monad_random_done),
@@ -1271,6 +1317,10 @@ func load_save_data(data: Dictionary) -> void:
     spark_movement_done     = _coerce_bool(data.get("spark_movement_done"),       false)
     star_chase_done         = _coerce_bool(data.get("star_chase_done"),           false)
     tier1_archon_complete_done  = _coerce_bool(data.get("tier1_archon_complete_done"),  false)
+    constellation_identity_reveal_done.clear()
+    var raw_cird: Dictionary = _coerce_dict(data.get("constellation_identity_reveal_done"), {})
+    for key in raw_cird:
+        constellation_identity_reveal_done[int(key)] = _coerce_bool(raw_cird[key], false)
     study_panel_reveal_done     = _coerce_bool(data.get("study_panel_reveal_done"),     false)
     first_constellation_done = _coerce_bool(data.get("first_constellation_done"), false)
     constellation_panel_creation_done = _coerce_bool(data.get("constellation_panel_creation_done"), false)

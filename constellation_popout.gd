@@ -397,28 +397,36 @@ func _refresh_slots() -> void:
         slot.add_theme_stylebox_override("normal", _make_slot_style(tint))
 
 
-## True while Constellation 0 (Kaleb, The Archon)'s identity is still
-## hidden from the player -- its name reads UNKNOWN everywhere in this
-## panel (selector slot label AND the Info panel) until the Tier 1 Archon
-## reveal dialogue ("it's a little me!") has actually been read to
-## completion. Checks game_context.ui_unlocks["kaleb_identity_revealed"],
-## NOT archon_dialogue_manager.tier1_archon_complete_done directly -- that
-## flag goes true the instant the dialogue is ENQUEUED, before the player
-## has read it, which would spoil the reveal.
-func _kaleb_identity_hidden(constellation_id: int) -> bool:
-    if constellation_id != 0:
-        return false
+## True while a constellation's identity is still hidden from the player --
+## its name reads UNKNOWN everywhere in this panel (selector slot label AND
+## the Info panel/title) until its reveal dialogue has actually been read
+## to completion. This is now the DEFAULT for every constellation, not just
+## Kaleb -- generalized from the original Kaleb-only check.
+##
+## Constellation 0 (Kaleb, The Archon) keeps his own pre-existing bespoke
+## mechanism: game_context.ui_unlocks["kaleb_identity_revealed"], set by the
+## Tier 1 Archon reveal dialogue ("it's a little me!"). Every other
+## constellation checks game_context.constellation_identity_revealed[id]
+## instead, set by root_ui.gd's _on_constellation_identity_reveal_complete()
+## once archon_dialogue_manager's generic
+## enqueue_constellation_identity_reveal() dialogue has been read. Both
+## paths check completion, NOT the dialogue manager's own enqueue-time
+## _done flags -- those go true the instant the dialogue is ENQUEUED,
+## before the player has read it, which would spoil the reveal.
+func _constellation_identity_hidden(constellation_id: int) -> bool:
     if not _gc:
         return true
-    return not _gc.ui_unlocks.get("kaleb_identity_revealed", false)
+    if constellation_id == 0:
+        return not _gc.ui_unlocks.get("kaleb_identity_revealed", false)
+    return not bool(_gc.constellation_identity_revealed.get(constellation_id, false))
 
 
 ## Shared by InfoNameLabel and the panel's top ConstellationTitleLabel --
 ## a 4th display surface for constellation names, so per the reveal-gating
-## rule this MUST go through _kaleb_identity_hidden() the same as the other
-## three (see kaleb_identity_hidden_until_tier1_reveal memory).
+## rule this MUST go through _constellation_identity_hidden() the same as
+## the other three (see kaleb_identity_hidden_until_tier1_reveal memory).
 func _display_name_for(constellation_id: int, def: Dictionary) -> String:
-    if _kaleb_identity_hidden(constellation_id):
+    if _constellation_identity_hidden(constellation_id):
         return "UNKNOWN"
     var designation: String = _coerce_string(def.get("designation"), "")
     if designation != "":
@@ -438,7 +446,7 @@ func _set_title_default() -> void:
 func _get_slot_label(constellation_id: int) -> String:
     if not _cd or not _cd.unlocked.has(constellation_id):
         return "???"
-    if _kaleb_identity_hidden(constellation_id):
+    if _constellation_identity_hidden(constellation_id):
         return "UNKNOWN"
     var def = _cd.get_constellation_def(constellation_id)
     if def.is_empty():
@@ -765,7 +773,7 @@ func _refresh_info_panel() -> void:
 
     # ── Name ── shared with the panel's top title label, so both surfaces
     # stay in lockstep with the current selection (and both honor the
-    # Kaleb-identity-hidden gate the same way -- see _kaleb_identity_hidden).
+    # identity-hidden gate the same way -- see _constellation_identity_hidden).
     var display_name: String = _display_name_for(_selected_slot, def)
     _info_name_label.text = display_name
     if _title_label:

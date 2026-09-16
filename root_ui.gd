@@ -175,7 +175,7 @@ const LEFT_LINE_MAP = [
     "aethyr",   "aethyr",
     "cat_medial",
     "dirt",     "dirt",
-    "sand",     "sand",
+    "ooze",     "ooze",
 ]
 
 const MIDDLE_LINE_MAP = [
@@ -184,8 +184,8 @@ const MIDDLE_LINE_MAP = [
     "water",    "water",
     "air",      "air",
     "cat_medial",
+    "sand",     "sand",
     "haze",     "haze",
-    "mist",     "mist",
 ]
 
 const MEDIALS2_LINE_MAP = [
@@ -194,8 +194,8 @@ const MEDIALS2_LINE_MAP = [
     "dust",  "dust",
     "cloud", "cloud",
     "cat_medial",
-    "ooze", "ooze",
     "foam", "foam",
+    "mist", "mist",
 ]
 
 # === BAR NODE REFERENCES ===
@@ -430,6 +430,7 @@ func _ready() -> void:
         archon_dialogue_manager.spark_movement_sequence_complete.connect(_on_spark_movement_complete)
         archon_dialogue_manager.star_chase_sequence_complete.connect(_on_star_chase_complete)
         archon_dialogue_manager.tier1_archon_complete_sequence_complete.connect(_on_tier1_archon_complete_complete)
+        archon_dialogue_manager.constellation_identity_reveal_sequence_complete.connect(_on_constellation_identity_reveal_complete)
         archon_dialogue_manager.uonite_name_requested.connect(_on_uonite_name_requested)
         archon_dialogue_manager.first_constellation_sequence_complete.connect(_on_first_constellation_complete)
         archon_dialogue_manager.constellation_panel_creation_sequence_complete.connect(_on_constellation_panel_created)
@@ -926,6 +927,14 @@ func _on_star_chase_complete() -> void:
 func _on_tier1_archon_complete_complete() -> void:
     if game_context:
         game_context.ui_unlocks["kaleb_identity_revealed"] = true
+
+
+## Same idea as _on_tier1_archon_complete_complete() above, generalized to
+## every constellation except Kaleb -- fires once the identity-reveal
+## dialogue has actually been READ (dialogue_ended), not merely enqueued.
+func _on_constellation_identity_reveal_complete(constellation_id: int) -> void:
+    if game_context:
+        game_context.constellation_identity_revealed[constellation_id] = true
 
 
 func _on_first_constellation_complete() -> void:
@@ -1887,6 +1896,35 @@ func _check_totals_milestones() -> void:
 # _build_simple_triggers() (refactor-order item #10, 2026-07-26).
 
 
+## Default identity-reveal check for every unlocked constellation except
+## Kaleb (id 0, who keeps his own tier1_archon_complete trigger in
+## _simple_triggers -- see the guard skip below). Loops cd.unlocked rather
+## than a fixed id list so this keeps working for constellations that don't
+## exist yet, matching archon_dialogue_manager.gd's
+## constellation_identity_reveal_done doc comment. Condition mirrors
+## Kaleb's own tier1_archon_complete trigger exactly: crossing into the
+## Stars tier (cd.SPARKS_TIER_STARS) is "the first tier" being completed.
+func _check_constellation_identity_reveals() -> void:
+    if not game_context or not archon_dialogue_manager:
+        return
+    var cd := get_node_or_null("/root/ConstellationData")
+    if not cd:
+        return
+    for raw_id in cd.unlocked:
+        var cid: int = int(raw_id)
+        if cid == 0:
+            continue
+        if archon_dialogue_manager.constellation_identity_reveal_done.get(cid, false):
+            continue
+        if cd.get_sparks_invested(cid) < cd.SPARKS_TIER_STARS:
+            continue
+        var def: Dictionary = cd.get_constellation_def(cid)
+        if def.is_empty():
+            continue
+        var cname: String = str(def.get("name", "Constellation %d" % cid))
+        archon_dialogue_manager.enqueue_constellation_identity_reveal(cid, cname)
+
+
 func _check_star_in_view_trigger(delta: float) -> void:
     if _star_in_view_triggered or not game_context or not archon_dialogue_manager:
         return
@@ -2696,6 +2734,7 @@ func _process(delta: float) -> void:
     _update_bars(delta)
     _check_monad_upgrade_trigger()
     _run_simple_triggers()
+    _check_constellation_identity_reveals()
     _check_totals_milestones()
     _check_star_in_view_trigger(delta)
     _tooltip_accum += delta
@@ -2995,20 +3034,20 @@ func _update_tetrad_display() -> void:
     if _left_tetrad_label and _left_tetrad_label is RichTextLabel:
         var txt  = _build_category_header("Fundaments", "cat_fundament") + "\n"
         txt     += _build_tetrad_line(["adaemant", "aquae", "aethyr"]) + "\n\n"
-        txt     += _build_tetrad_line(["dirt", "sand"]) + "\n"
+        txt     += _build_tetrad_line(["dirt", "ooze"]) + "\n"
         _left_tetrad_label.bbcode_enabled = true
         _left_tetrad_label.bbcode_text    = txt
     if _middle_label and _middle_label is RichTextLabel:
         var txt  = _build_category_header("Elements", "cat_element") + "\n"
         txt     += _build_tetrad_line(["earth", "water", "air"]) + "\n"
         txt     += _build_category_header("Medials", "cat_medial") + "\n"
-        txt     += _build_tetrad_line(["haze", "mist"]) + "\n"
+        txt     += _build_tetrad_line(["sand", "haze"]) + "\n"
         _middle_label.bbcode_enabled = true
         _middle_label.bbcode_text    = txt
     if _medials2_label and _medials2_label is RichTextLabel:
         var txt  = _build_category_header("Symmetrics", "cat_symmetric") + "\n"
         txt     += _build_tetrad_line(["mud", "dust", "cloud"]) + "\n\n"
-        txt     += _build_tetrad_line(["ooze", "foam"]) + "\n"
+        txt     += _build_tetrad_line(["foam", "mist"]) + "\n"
         _medials2_label.visible        = true
         _medials2_label.bbcode_enabled = true
         _medials2_label.bbcode_text    = txt

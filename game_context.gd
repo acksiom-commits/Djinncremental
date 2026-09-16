@@ -256,6 +256,20 @@ var ui_unlocks: Dictionary = {
     "kaleb_identity_revealed": false,
 }
 
+# Same idea as "kaleb_identity_revealed" above, generalized to every OTHER
+# constellation (id != 0) -- keyed by constellation_id (int), set true only
+# by root_ui.gd's _on_constellation_identity_reveal_complete(id), which
+# fires on archon_dialogue_manager's constellation_identity_reveal_sequence_
+# complete signal (actually read to completion), never at enqueue time.
+# Deliberately NOT folded into ui_unlocks above: that dict's load path only
+# restores keys already present in its static declaration (see
+# load_save_data() below), which would silently drop any per-constellation
+# key added at runtime -- this is its own dict specifically so dynamically-
+# keyed entries round-trip correctly, and so it keeps working for
+# constellations that don't exist yet (this is meant to be the DEFAULT for
+# every constellation from here on, not a one-off for the current roster).
+var constellation_identity_revealed: Dictionary = {}
+
 
 # ===================== TRIGGER COUNTERS =========================
 var sparks_since_first_prestige: float = 0.0
@@ -719,6 +733,32 @@ func get_total_constellation_points() -> int:
     var total := 0
     for key in constellation_spark_totals:
         total += get_constellation_points(int(key))
+    return total
+
+
+## Sparks/sec REAL constellation endowment is draining right now: mirrors
+## accumulate_constellation_sparks()'s own eligibility check exactly (feed
+## mode must be ENDOW, and the constellation must still have room below its
+## spark cap) so this reports the actual current rate, not a hypothetical.
+## Used by production_manager.gd's get_resource_drain_per_second("sparks")
+## so the Sparks genbar's drain figure includes constellation spending.
+func get_constellation_endowment_drain_per_second() -> float:
+    var cd: Node = get_node_or_null("/root/ConstellationData")
+    var total: float = 0.0
+    for key in constellation_spark_totals:
+        var id: int = int(key)
+        var points: int = get_constellation_points(id)
+        if points <= 0:
+            continue
+        var mode: int = _assignment_int("constellation_%d_feed_mode" % id, 0)
+        if mode == 0:
+            continue
+        if cd:
+            var cap: float = cd.get_spark_cap(id)
+            var current: float = constellation_spark_totals.get(key, 0.0)
+            if current >= cap:
+                continue
+        total += float(points)
     return total
 
 
@@ -1350,6 +1390,10 @@ func get_save_data() -> Dictionary:
     for wm_key in watermarks:
         data["watermark_" + wm_key] = watermarks[wm_key].to_save_string()
     data["ui_unlocks"]                 = ui_unlocks.duplicate()
+    var saved_cir: Dictionary = {}
+    for cid in constellation_identity_revealed:
+        saved_cir[str(cid)] = bool(constellation_identity_revealed[cid])
+    data["constellation_identity_revealed"] = saved_cir
     data["tetrad_milestones"]          = tetrad_milestones.duplicate()
     data["monad_milestones"]           = monad_milestones.duplicate()
     var saved_totals = {}
@@ -1609,6 +1653,10 @@ func load_save_data(data: Dictionary) -> void:
     for key in raw_ui_unlocks:
         if ui_unlocks.has(key):
             ui_unlocks[key] = _coerce_bool(raw_ui_unlocks[key], false)
+    constellation_identity_revealed.clear()
+    var raw_cir: Dictionary = _coerce_dict(data.get("constellation_identity_revealed"), {})
+    for key in raw_cir:
+        constellation_identity_revealed[int(key)] = _coerce_bool(raw_cir[key], false)
     # tetrad_milestones/monad_milestones have no live reader anywhere in the
     # codebase today (the milestone-check mechanic that used to consume them
     # was removed — see root_ui.gd's v3.9.0 changelog comment), but the

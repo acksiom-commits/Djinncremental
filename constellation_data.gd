@@ -563,6 +563,10 @@ const BUILT_IN = [
 # before, only the banked amount survives into the next expansion for
 # endowing.
 #
+# Shape: a pithos (the large two-handled ancient storage jar) — confirmed
+# 2026-09-15 as the correct term for the outline in POLKA_THEME_NOTES's
+# neighboring fixed_star_positions/line_pairs below.
+#
 # TODO (Boss): full placeholder/outline only —
 #   - designation left empty (undecided — no mononym chosen yet, unlike the
 #     other five built-ins' KALEB/ALZIRO/DRASIN/HANLEE/DAJALA, or The
@@ -589,17 +593,24 @@ const BUILT_IN = [
 #     taller than wide) and rescaled into this file's flat |x|<=0.130 /
 #     |y|<=0.055 display window — like every other built-in's shape, it's
 #     compressed to fit the wide panel, not shown at its "natural" aspect.
-#   - puzzle_sequence / note_freqs still NOT designed — this is the one
-#     remaining gap. get_note_freqs()/get_response_freqs() still fall
-#     through to the legacy PUZZLE_NOTE_FREQS/PUZZLE_RESPONSE_FREQS
-#     defaults (see "PUZZLE FIELDS (optional...)" above) until that's done.
-#   - DEV: intended puzzle solution is the Tritsch-Tratsch Polka, Op. 214
-#     (Johann Strauss II, 1858) — raw MIDI transcription of the theme
-#     lives in POLKA_THEME_NOTES (below the BUILT_IN array closes, main-
-#     theme notes only, 14 note-events including one 2-note harmony) —
-#     still needs reducing into puzzle_sequence/note_freqs against these
-#     same 14 stars. Same idea as The Djinn's Zarathustra note below, one
-#     step further along.
+#   - puzzle_sequence / note_freqs ADDED (2026-09-16) — reduced directly
+#     from POLKA_THEME_NOTES (still kept below the BUILT_IN array closes as
+#     the literal source/reference): the Bar 6 two-note harmony
+#     (E5 played with C#5) is unrolled into two SEQUENTIAL stars rather
+#     than a true simultaneous chord, since puzzle_sequence/note_durations
+#     are inherently monophonic lists — this is exactly what makes
+#     POLKA_THEME_NOTES' 14 note-events land 1:1 on the 14 stars with no
+#     further trimming needed.
+#   - response_freqs set equal to note_freqs (the 6 distinct pitches, same
+#     order) rather than a distinct echo phrase — The Spark (id 1) uses
+#     this same "echo the distinct notes" pattern; no separate response
+#     melody was specified for The Vessel, so this is the conservative
+#     default rather than invented content. Revisit if a real one is ever
+#     designed.
+#   - DEV: puzzle solution is the Tritsch-Tratsch Polka, Op. 214 (Johann
+#     Strauss II, 1858), main theme, Bar 3 to Bar 9 Beat 1. Same idea as
+#     The Djinn's Zarathustra note below, now fully wired instead of just
+#     sourced.
 
     {
         "id": 5,
@@ -647,8 +658,27 @@ const BUILT_IN = [
             12,13,                        # bottom
         ],
 
-        # puzzle_sequence / note_freqs: still pending (see TODO above re:
-        # Tritsch-Tratsch Polka / POLKA_THEME_NOTES).
+        # Reduced from POLKA_THEME_NOTES (see TODO above re: the Bar 6
+        # harmony unroll). Sequence order matches POLKA_THEME_NOTES exactly:
+        # A5 A5 G#5 A5 B5 A5 G#5 F#5 E5 C#5 A5 A5 E5 F#5.
+        "puzzle_sequence": [0, 0, 1, 0, 2, 0, 1, 3, 4, 5, 0, 0, 4, 3],
+        "note_freqs": [
+            880.00,  # 0: A5
+            830.61,  # 1: G#5
+            987.77,  # 2: B5
+            739.99,  # 3: F#5
+            659.25,  # 4: E5
+            554.37,  # 5: C#5
+        ],
+        # Quarter-note-beat durations, one per star, straight from
+        # POLKA_THEME_NOTES' own "duration" field in the same order.
+        "note_durations": [
+            0.625, 0.625, 0.375, 0.125, 0.25, 0.25, 0.25, 0.25,
+            0.5, 0.5, 0.625, 0.625, 0.25, 0.25,
+        ],
+        # See TODO above -- no distinct response melody specified, so this
+        # mirrors The Spark's (id 1) "echo the distinct notes" pattern.
+        "response_freqs": [880.00, 830.61, 987.77, 739.99, 659.25, 554.37],
     },
 
 

@@ -2069,30 +2069,43 @@ func get_consumption_network() -> Dictionary:
 
 func get_resource_drain_per_second(resource_key: String) -> float:
     var network = get_consumption_network()
-    if not network.has(resource_key): return 0.0
     var total_drain: float = 0.0
-    for entry in network[resource_key]:
-        var op:   String = entry["op"]
-        var cost: float  = float(entry["cost"])
-        if not gc.rates.has(op): continue
-        var rate: float = gc.rates[op].to_float()
-        if rate <= 0.0: continue
-        total_drain += rate * cost
+    if network.has(resource_key):
+        for entry in network[resource_key]:
+            var op:   String = entry["op"]
+            var cost: float  = float(entry["cost"])
+            if not gc.rates.has(op): continue
+            var rate: float = gc.rates[op].to_float()
+            if rate <= 0.0: continue
+            total_drain += rate * cost
+    # Constellation endowment (the Constellation slideout's ENDOW feed mode)
+    # spends Sparks outside game_data.RECIPES entirely, so it's invisible to
+    # the consumption network above -- added here so the Sparks genbar's
+    # drain figure (and get_workers_needed_for_resource(), which reads this
+    # too) reflects the real cost.
+    if resource_key == "sparks" and gc:
+        total_drain += gc.get_constellation_endowment_drain_per_second()
     return total_drain
 
 
 func get_potential_drain_per_second(resource_key: String) -> float:
     var network = get_consumption_network()
-    if not network.has(resource_key): return 0.0
     var total_drain: float = 0.0
-    for entry in network[resource_key]:
-        var op:   String = entry["op"]
-        var cost: float  = float(entry["cost"])
-        var assigned: BigNum = gc.get_operation_total_bignum(op)
-        if assigned.is_zero(): continue
-        var interval: float       = get_timer_intervals().get(op, 1.0)
-        var potential_rate: float = assigned.to_float() / interval
-        total_drain += potential_rate * cost
+    if network.has(resource_key):
+        for entry in network[resource_key]:
+            var op:   String = entry["op"]
+            var cost: float  = float(entry["cost"])
+            var assigned: BigNum = gc.get_operation_total_bignum(op)
+            if assigned.is_zero(): continue
+            var interval: float       = get_timer_intervals().get(op, 1.0)
+            var potential_rate: float = assigned.to_float() / interval
+            total_drain += potential_rate * cost
+    # See get_resource_drain_per_second() above -- potential ignores
+    # whether ENDOW feed mode is actually toggled on (same way the op loop
+    # above ignores whether a producer is currently blocked), since the
+    # player could flip that toggle at any time.
+    if resource_key == "sparks" and gc:
+        total_drain += float(gc.get_total_constellation_points())
     return total_drain
 
 
