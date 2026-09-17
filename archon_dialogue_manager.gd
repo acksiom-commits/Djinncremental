@@ -117,7 +117,7 @@ var _in_notification:  bool  = false
 
 var monad_panel_done: bool  = false
 var monad_random_done: 			bool  = false
-var first_medial_hundred_done: 	bool  = false
+var first_monad_hundred_done: 	bool  = false
 
 # ==================================================
 # MID-DIALOGUE SAVE PROTECTION
@@ -797,16 +797,16 @@ func enqueue_all_fundaments() -> void:
     emit_signal("sequence_complete", "All Fundaments", lines)
 
 
-func enqueue_first_medial_hundred_dialogue(type_display: String) -> void:
-    if first_medial_hundred_done:
+func enqueue_first_monad_hundred_dialogue(type_display: String) -> void:
+    if first_monad_hundred_done:
         return
-    first_medial_hundred_done = true
+    first_monad_hundred_done = true
     var lines = [
         "Yep, there it is - one hundred %s Monads created, another refinement.||AND SINCE THE REFINEMENT AWARD JUMPED FROM ONE PER MONAD TYPE TO ONE HUNDRED PER MONAD TYPE, WE CAN PROBABLY EXPECT THAT PATTERN TO REPEAT FOR THE OTHER MATERIAL RESOURCES AS WELL." % type_display,
         "Yes, and then from one hundred to ten thousand, and then to one million, and so on.||SOO...WE'LL BE BETTER OFF FOCUSING ON UONITE CREATION RATHER THAN GRINDING REFINEMENTS FROM HERE ON OUT, THEN.",
         "Yes - it's going to take me a lot longer to get to one hundred and twenty-five Foci and another Volition than it will to get us that many Uonites.",
     ]
-    enqueue_dialogue(lines, true, "first_medial_hundred_done")
+    enqueue_dialogue(lines, true, "first_monad_hundred_done")
     emit_signal("sequence_complete", "First Hundred of a Monad Type", lines)
 
 
@@ -1280,7 +1280,7 @@ func get_save_data() -> Dictionary:
         "study_panel_reveal_done":              _persisted_flag("study_panel_reveal_done", study_panel_reveal_done),
         "monad_panel_done":         _persisted_flag("monad_panel_done", monad_panel_done),
         "monad_random_done":        _persisted_flag("monad_random_done", monad_random_done),
-        "first_medial_hundred_done": _persisted_flag("first_medial_hundred_done", first_medial_hundred_done),
+        "first_monad_hundred_done": _persisted_flag("first_monad_hundred_done", first_monad_hundred_done),
         "category_notified":        _category_notified.duplicate(),
         "all_tetrads_notified":     _all_tetrads_notified,
     }
@@ -1345,7 +1345,7 @@ func load_save_data(data: Dictionary) -> void:
 
     monad_panel_done        = _coerce_bool(data.get("monad_panel_done"),          false)
     monad_random_done       = _coerce_bool(data.get("monad_random_done"),         false)
-    first_medial_hundred_done = _coerce_bool(data.get("first_medial_hundred_done"), false)
+    first_monad_hundred_done = _coerce_bool(data.get("first_monad_hundred_done"), false)
     # data.has() only confirms the key is present, not that the value is a
     # Dictionary — a corrupted save with a wrong-typed value there would
     # iterate fine but then hang/crash re-indexing that same value with

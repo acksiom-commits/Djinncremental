@@ -1848,12 +1848,19 @@ func _check_totals_milestones() -> void:
         var total: BigNum = game_context.totals_created[key]
         if total.is_zero():
             continue
+        # "Any Type of Monads" means the raw Monad types (monad_solid/
+        # liquid/gas) -- the game's own literal "Monad type" keys, not the
+        # Medial Tetrad varieties. Checked independently of next_exp/
+        # totals_milestones below: that bookkeeping already advances past
+        # its first 100 threshold on any save where a Monad type crossed
+        # 100 before this dialogue existed, which would permanently hide
+        # this one-shot behind a milestone it has nothing to do with.
+        # first_monad_hundred_done is this dialogue's OWN guard instead.
+        if key.begins_with("monad_") and total.is_greater_or_equal(BigNum.from_int(100)) \
+                and not archon_dialogue_manager.first_monad_hundred_done:
+            archon_dialogue_manager.enqueue_first_monad_hundred_dialogue(key.split("_")[1].capitalize())
         var next_exp: int = game_context.totals_milestones.get(key, 2)
         var threshold := BigNum.from_me(pow(10.0, float(next_exp % 3)), int(next_exp / 3.0))
-        if next_exp == 2 and total.is_greater_or_equal(threshold) \
-                and key in ["dirt", "sand", "haze", "mist", "ooze", "foam"] \
-                and not archon_dialogue_manager.first_medial_hundred_done:
-            archon_dialogue_manager.enqueue_first_medial_hundred_dialogue(_totals_display_name(key))
         while total.is_greater_or_equal(threshold):
             archon_dialogue_manager.enqueue_notification(
                 "%s — %s total created: +1 Focus." % [
