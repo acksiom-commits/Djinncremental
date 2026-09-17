@@ -621,6 +621,7 @@ bbcode_enabled = true
 
 [node name="ArchaiLatticeViewer" parent="FirmRootUI/FirmTopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox" unique_id=770000102 instance=ExtResource("21_lattice")]
 layout_mode = 2
+visible = false
 
 [node name="LatticePanel" parent="." instance=ExtResource("22_latticepanel")]
 

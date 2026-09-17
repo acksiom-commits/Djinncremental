@@ -927,6 +927,7 @@ bbcode_enabled = true
 
 [node name="ArchaiLatticeViewer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox" unique_id=770000101 instance=ExtResource("31_lattice")]
 layout_mode = 2
+visible = false
 
 [node name="NamePickerVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/DialoguePanelContainer/DialogueMargin/DialogueVBox" unique_id=1858191466]
 visible = false
