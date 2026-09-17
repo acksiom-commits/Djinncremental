@@ -806,11 +806,11 @@ func _refresh_info_panel() -> void:
     var state:     String = _cd.get_visual_state(_selected_slot)
     var bonus_desc: String = BONUS_DESCRIPTIONS.get(
         bonus_key, bonus_key.capitalize().replace("_", " "))
+    var solved: bool = false
+    if _gc:
+        var solve_key := "constellation_%d_solve_count" % _selected_slot
+        solved = _gc._assignment_int(solve_key, 0) > 0
     if def.has("bonus_levels"):
-        var solved: bool = false
-        if _gc:
-            var solve_key := "constellation_%d_solve_count" % _selected_slot
-            solved = _gc._assignment_int(solve_key, 0) > 0
         if solved:
             # def["bonus_levels"] is a save-derived field too — a wrong
             # type there would crash calling .get() on it the same way
@@ -826,7 +826,10 @@ func _refresh_info_panel() -> void:
             _info_bonus_label.add_theme_color_override("font_color",
                 TIER_COLORS.get(state, Color.WHITE))
         else:
-            _info_bonus_label.text = "%s (puzzle unsolved)" % bonus_desc
+            # bonus_desc itself is withheld too -- what the constellation's
+            # effect even IS stays a mystery until the puzzle is solved,
+            # not just its amount.
+            _info_bonus_label.text = "??? (puzzle unsolved)"
             _info_bonus_label.add_theme_color_override("font_color",
                 Color(0.45, 0.42, 0.55))
     elif bonus_key != "":
@@ -858,7 +861,7 @@ func _refresh_info_panel() -> void:
     _info_tier_label.add_theme_color_override("font_color",
         TIER_COLORS.get(state, Color.WHITE))
 
-    _refresh_tier_effects_display(def, bonus_key, bonus_desc, state)
+    _refresh_tier_effects_display(def, bonus_key, bonus_desc, state, solved)
 
 
 ## Always-visible ladder of this constellation's bonus at all four tiers
@@ -869,7 +872,7 @@ func _refresh_info_panel() -> void:
 ## fall back to a flat bonus_value have no per-tier ladder to show, so the
 ## label is hidden for those, same as it is before any slot is selected.
 func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
-        bonus_desc: String, current_state: String) -> void:
+        bonus_desc: String, current_state: String, solved: bool) -> void:
     if not _info_tier_effects:
         return
     if not def.has("bonus_levels") or bonus_key == "":
@@ -881,6 +884,14 @@ func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
     _info_tier_effects.visible = true
     if _info_tier_effects_sep:
         _info_tier_effects_sep.visible = true
+    if not solved:
+        # Same "??? (puzzle unsolved)" rule as InfoBonusLabel above --
+        # bonus_desc itself (what the effect IS) is withheld too, not just
+        # the per-tier amounts. Only the fact that a tiered bonus exists
+        # at all is shown.
+        _info_tier_effects.text = "[font_size=13]Effects by Tier:[/font_size]\n[color=#%s]??? (puzzle unsolved)[/color]" \
+            % Color(0.45, 0.42, 0.55).to_html(false)
+        return
     var bonus_levels:  Dictionary = _coerce_dict(def.get("bonus_levels"), {})
     var default_bonus: float      = _coerce_float(def.get("bonus_value"), 1.0)
     # The other tiers run horizontally in one row; the constellation's
