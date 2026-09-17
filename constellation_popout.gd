@@ -63,6 +63,25 @@ const BONUS_DESCRIPTIONS: Dictionary = {
     "purity_lock_slots":    "Purity Lock Slots",
 }
 
+## Every genuinely multiplicative bonus_key in constellation_data.gd's
+## BUILT_IN array is named with this suffix (sparks_multiplier,
+## cooldown_multiplier, storage_multiplier, click_volition_multiplier,
+## endowment_multiplier) -- anything else (bonus_volitions, spark_bank_capacity)
+## is an additive/flat quantity, not a multiplier, and must not be shown
+## with a "×" prefix.
+func _bonus_is_multiplier(bonus_key: String) -> bool:
+    return bonus_key.ends_with("_multiplier")
+
+
+## Additive bonus values (Archon's +1/+2/+3, Vessel's +250/+500/+1000) are
+## whole numbers stored as float -- str() on a whole float prints a
+## trailing ".0" ("+1.0") that doesn't belong in front of the player.
+## Multiplier values keep their real decimals (×1.5, ×0.25).
+func _fmt_bonus_val(val: float) -> String:
+    if val == floor(val):
+        return str(int(val))
+    return str(val)
+
 const FEED_COLORS: Array = [
     Color(0.35, 0.35, 0.35, 1.0),   # off — grey
     Color(0.25, 0.60, 0.90, 1.0),   # on  — blue
@@ -801,7 +820,9 @@ func _refresh_info_panel() -> void:
             var bonus_levels: Dictionary = _coerce_dict(def.get("bonus_levels"), {})
             var default_bonus: float = _coerce_float(def.get("bonus_value"), 1.0)
             var current_val: float = _coerce_float(bonus_levels.get(state, default_bonus), default_bonus)
-            _info_bonus_label.text = "%s: ×%s" % [bonus_desc, str(current_val)]
+            var val_fmt: String = ("×%s" % str(current_val)) if _bonus_is_multiplier(bonus_key) \
+                else ("+%s" % _fmt_bonus_val(current_val))
+            _info_bonus_label.text = "%s: %s" % [bonus_desc, val_fmt]
             _info_bonus_label.add_theme_color_override("font_color",
                 TIER_COLORS.get(state, Color.WHITE))
         else:
@@ -869,11 +890,13 @@ func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
     # one more item in the same list.
     var row_parts:    Array  = []
     var current_line: String = ""
+    var is_multiplier: bool = _bonus_is_multiplier(bonus_key)
     for tier in TIER_ORDER:
         var val: float = _coerce_float(bonus_levels.get(tier), default_bonus) \
             if bonus_levels.has(tier) else default_bonus
         var tier_name: String = TIER_DISPLAY_NAMES.get(tier, tier)
-        var row_text:  String = "%s  ×%s" % [tier_name, str(val)]
+        var row_text:  String = ("%s  ×%s" % [tier_name, str(val)]) if is_multiplier \
+            else ("%s  +%s" % [tier_name, _fmt_bonus_val(val)])
         if tier == current_state:
             var hi_color: Color = TIER_COLORS.get(tier, Color.WHITE)
             current_line = "[color=#%s][b]▶ %s[/b][/color]" % [hi_color.to_html(false), row_text]
