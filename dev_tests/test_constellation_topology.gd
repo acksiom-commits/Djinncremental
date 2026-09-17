@@ -33,7 +33,8 @@ extends "res://dev_tests/test_base.gd"
 ## cid -> [component_count, reachable_ordered_pairs, star_count, edge_count]
 const BASELINE := {
 	0: [4, 48, 15, 15],    # The Archon    — 3 isolated triangles + a 6-cycle
-	1: [1, 240, 16, 15],   # The Spark     — fully connected
+	1: [3, 182, 16, 14],   # The Spark     — reworked 2026-09-16: center hub-to-hub
+	                       # spine replaced with an oval, hubs 0/8 now isolated singles
 	2: [1, 156, 13, 14],   # The Hourglass — fully connected
 	3: [1, 272, 17, 20],   # The Satchel   — fully connected
 	4: [5, 182, 18, 14],   # The Bellows   — 4 isolated singles + one body

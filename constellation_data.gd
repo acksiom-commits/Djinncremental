@@ -286,14 +286,27 @@ const BUILT_IN = [
             [ 0.0497,  0.0523,  0.9974],  # 15: lower-right tip
         ],
 
+        # DEV (2026-09-16): center reworked from a straight hub-to-hub spine
+        # (0,8) into an oval — the 6 near-hub points (1,3,6 left / 9,11,14
+        # right) form a closed loop (1-3-6-14-11-9-1) instead. Hubs 0 and 8
+        # lose every one of their edges (0,1 / 0,3 / 0,6 / 0,8 / 8,9 / 8,11 /
+        # 8,14 all removed, none replaced) and become two isolated,
+        # unconnected points sitting inside the oval — deliberate, not an
+        # oversight. The outer arm tips (2,4-5,7 / 10,12-13,15) are
+        # untouched. Both the left-right mirror (0<->8, 1<->9, 2<->10,
+        # 3<->11, 4<->12, 5<->13, 6<->14, 7<->15) and the up-down mirror
+        # within each hub (1<->6, 2<->7, 9<->14, 10<->15; the 3/4/5 and
+        # 11/12/13 chains and hubs 0/8 sit ON the horizontal axis and mirror
+        # to themselves) still hold — verified directly against the deleted
+        # and added edge sets before shipping, not just asserted.
         "line_pairs": [
-            0,1,  1,2,             # left hub -> upper-left arm
-            0,3,  3,4,  4,5,       # left hub -> left chain
-            0,6,  6,7,             # left hub -> lower-left arm
-            0,8,                   # left hub -> right hub (the connecting spine)
-            8,9,  9,10,            # right hub -> upper-right arm
-            8,11, 11,12, 12,13,    # right hub -> right chain
-            8,14, 14,15,           # right hub -> lower-right arm
+            1,2,                   # upper-left arm tip
+            3,4,  4,5,             # left chain tip
+            6,7,                   # lower-left arm tip
+            9,10,                  # upper-right arm tip
+            11,12, 12,13,          # right chain tip
+            14,15,                 # lower-right arm tip
+            1,3,  3,6,  6,14,  14,11,  11,9,  9,1,   # center oval
         ],
     },
 
