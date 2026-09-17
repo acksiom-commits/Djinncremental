@@ -228,7 +228,6 @@ var _vol_btn_style_off:   StyleBoxFlat = null
 
 # === TUTORIAL PULSE ===
 var _archon_panel:     Node  = null
-var _dialogue_panel:   Node  = null
 var _pulse_tween:      Tween = null
 var _tutorial_pending: bool  = false
 
@@ -402,7 +401,6 @@ func _ready() -> void:
 
 
     _archon_panel   = find_child("ArchonTetrahedronContainer", true, false)
-    _dialogue_panel = find_child("DialoguePanelContainer",     true, false)
     if archon_dialogue_manager:
         
         archon_dialogue_manager.tutorial_dialogue_started.connect(_on_tutorial_started)
@@ -676,16 +674,18 @@ func _start_pulse() -> void:
     var bright = Color(1.6, 1.4, 0.8, 1.0)
     var normal = Color(1.0, 1.0, 1.0, 1.0)
     _pulse_tween = create_tween()
-    _pulse_tween.set_parallel(true)
     _pulse_tween.set_loops()
     _pulse_tween.set_trans(Tween.TRANS_SINE)
     _pulse_tween.set_ease(Tween.EASE_IN_OUT)
     if _archon_panel:
         _pulse_tween.tween_property(_archon_panel,   "modulate", bright, 0.6)
         _pulse_tween.chain().tween_property(_archon_panel,   "modulate", normal, 0.6)
-    if _dialogue_panel:
-        _pulse_tween.tween_property(_dialogue_panel, "modulate", bright, 0.6)
-        _pulse_tween.chain().tween_property(_dialogue_panel, "modulate", normal, 0.6)
+    # DialoguePanelContainer used to warm-tint toward yellow here too, which
+    # read as confusingly close to Player's own cream/yellow dialogue text —
+    # that pulse now lives on the dialogue label itself (blue darker/lighter
+    # + alpha, never warm) via archon_dialogue_manager.start_text_pulse().
+    if archon_dialogue_manager and archon_dialogue_manager.has_method("start_text_pulse"):
+        archon_dialogue_manager.start_text_pulse()
 
 
 func _stop_pulse() -> void:
@@ -694,8 +694,8 @@ func _stop_pulse() -> void:
         _pulse_tween = null
     if _archon_panel:
         _archon_panel.modulate   = Color(1.0, 1.0, 1.0, 1.0)
-    if _dialogue_panel:
-        _dialogue_panel.modulate = Color(1.0, 1.0, 1.0, 1.0)
+    if archon_dialogue_manager and archon_dialogue_manager.has_method("stop_text_pulse"):
+        archon_dialogue_manager.stop_text_pulse()
 
 
 func _is_tutorial_blocking() -> bool:

@@ -42,6 +42,17 @@ extends Node
 const ARCHON_COLOR = "#aaddff"
 var player_color: String = "#fff4dd"
 
+## "Unclicked line" attention pulse, applied to _label.modulate while
+## Kaleb's line is up and awaiting the player's first click. Used to warm-tint
+## the whole DialoguePanelContainer toward yellow (root_ui.gd's _start_pulse),
+## which read as confusingly close to player_color's own cream/yellow —
+## replaced with a pulse confined to this label, cycling its OWN blue
+## darker/lighter with alpha moving the same direction (darkest blue =
+## most opaque, lightest blue = most transparent) instead of ever going warm.
+const TEXT_PULSE_DARK:  Color = Color(0.55, 0.55, 0.78, 1.0)
+const TEXT_PULSE_LIGHT: Color = Color(1.20, 1.20, 1.20, 0.35)
+var _text_pulse_tween: Tween = null
+
 var _label:  RichTextLabel = null
 var _button: Button        = null
 
@@ -244,8 +255,7 @@ func enqueue_dialogue(lines: Array, is_tutorial: bool = false, flag_name: String
     _notify_countdown = false
     _notify_timer     = 0.0
     _in_notification  = false
-    if _label:
-        _label.modulate.a = 1.0
+    stop_text_pulse()
 
     if is_tutorial and not _tutorial_pending and not _tutorial_active:
         _tutorial_active  = true   # ← new guard; never cleared mid-sequence
@@ -257,6 +267,31 @@ func enqueue_dialogue(lines: Array, is_tutorial: bool = false, flag_name: String
     dialogue_queue += lines
     if current_index == -1:
         _advance()
+
+
+## Called by root_ui.gd's _start_pulse()/_stop_pulse() (triggered off the
+## tutorial_dialogue_started/acknowledged/cleared signals, same lifecycle as
+## before) -- this is the "unclicked line" indicator now, confined to this
+## label instead of warm-tinting the whole DialoguePanelContainer.
+func start_text_pulse() -> void:
+    if not _label:
+        return
+    stop_text_pulse()
+    _label.modulate = TEXT_PULSE_DARK
+    _text_pulse_tween = create_tween()
+    _text_pulse_tween.set_loops()
+    _text_pulse_tween.set_trans(Tween.TRANS_SINE)
+    _text_pulse_tween.set_ease(Tween.EASE_IN_OUT)
+    _text_pulse_tween.tween_property(_label, "modulate", TEXT_PULSE_LIGHT, 0.6)
+    _text_pulse_tween.chain().tween_property(_label, "modulate", TEXT_PULSE_DARK, 0.6)
+
+
+func stop_text_pulse() -> void:
+    if _text_pulse_tween:
+        _text_pulse_tween.kill()
+        _text_pulse_tween = null
+    if _label:
+        _label.modulate = Color(1.0, 1.0, 1.0, 1.0)
 
 
 func advance_dialogue() -> void:
@@ -505,6 +540,7 @@ func _clear_dialogue() -> void:
     _tutorial_acknowledged = false
     _name_entry_pending = false
     dialogue_queue.clear()
+    stop_text_pulse()
     if _label:
         _label.set("bbcode_text", "")
         _label.text = ""
