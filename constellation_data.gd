@@ -611,6 +611,14 @@ const BUILT_IN = [
 #     Strauss II, 1858), main theme, Bar 3 to Bar 9 Beat 1. Same idea as
 #     The Djinn's Zarathustra note below, now fully wired instead of just
 #     sourced.
+#   - bonus_rate_levels ADDED (2026-09-16) — the actual spark_bank_capacity
+#     mechanic: get_vessel_spark_bank_amount() reads this per-Uonite Spark
+#     rate for Vessel's current tier, multiplies by live Uonite count, and
+#     clamps to bonus_levels' cap for that same tier ("dark" has no entry
+#     in either dict, so a freshly-unlocked/uninvested Vessel banks
+#     nothing). bonus_value (100.0) is unused by this mechanic — kept as
+#     the flat-bonus fallback the shared get_active_bonus() reads, in case
+#     a non-tiered consumer ever wants it.
 
     {
         "id": 5,
@@ -623,6 +631,7 @@ const BUILT_IN = [
         "bonus_value": 100.0,
         "mechanic_key": "",
         "bonus_levels": {"stars": 250.0, "lines": 500.0, "art": 1000.0},
+        "bonus_rate_levels": {"stars": 1.0, "lines": 5.0, "art": 25.0},
         "spark_cap":      28657,
 
         # Two-handled vessel/urn outline — see TODO above for how this was
@@ -1413,6 +1422,41 @@ func get_active_level_bonus(bonus_key: String) -> float:
     return best
  
  
+# The Vessel's actual spark_bank_capacity mechanic: how many Sparks it would
+# bank from the player's current Uonite count if an Expansion happened right
+# now. Called pre-Expansion (before do_prestige_reset() wipes
+# constellation_spark_totals and reads Vessel's tier back to "dark"), and
+# the result is added to game_context.sparks right after that reset — see
+# root_ui.gd's _do_prestige_reset(). Requires Vessel to be the ACTIVE
+# constellation in its own octant, same "only counts while active" rule
+# get_active_bonus()/get_active_level_bonus() already use for every other
+# constellation bonus.
+func get_vessel_spark_bank_amount() -> BigNum:
+    const VESSEL_ID: int = 5
+    if not _game_context:
+        return BigNum.zero()
+    if not unlocked.has(VESSEL_ID):
+        return BigNum.zero()
+    var def: Dictionary = get_constellation_def(VESSEL_ID)
+    if def.is_empty():
+        return BigNum.zero()
+    var octant: int = _coerce_int(def.get("octant"), -1)
+    if octant < 0 or octant > 7 or active_per_octant[octant] != VESSEL_ID:
+        return BigNum.zero()
+    var tier: String = get_visual_state(VESSEL_ID)
+    var rate_levels: Dictionary = _coerce_dict(def.get("bonus_rate_levels"), {})
+    var rate: float = _coerce_float(rate_levels.get(tier), 0.0)
+    if rate <= 0.0:
+        return BigNum.zero()
+    var cap_levels: Dictionary = _coerce_dict(def.get("bonus_levels"), {})
+    var cap: float = _coerce_float(cap_levels.get(tier), 0.0)
+    var banked: BigNum = _game_context.uonite.mul_float(rate)
+    var cap_bignum: BigNum = BigNum.from_float(cap)
+    if banked.is_greater_than(cap_bignum):
+        banked = cap_bignum
+    return banked
+
+
 func get_bonus_volition_grant() -> int:
     # Returns 0/1/2/3 Bonus Volitions per Normal Volition, sourced from the
     # Archon (id 0) — bonus_volitions is permanently exclusive to the Archon

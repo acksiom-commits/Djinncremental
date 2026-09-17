@@ -1747,7 +1747,16 @@ func _check_tetrad_upgrade_trigger() -> void:
 
 func _do_prestige_reset() -> void:
     var leftover_sparks: BigNum = game_context.sparks.copy()
+    # Read The Vessel's spark bank BEFORE do_prestige_reset() wipes
+    # constellation_spark_totals (which resets its tier to "dark") — see
+    # constellation_data.gd's get_vessel_spark_bank_amount().
+    var vessel_bank: BigNum = BigNum.zero()
+    var _cd_for_bank = get_node_or_null("/root/ConstellationData")
+    if _cd_for_bank and _cd_for_bank.has_method("get_vessel_spark_bank_amount"):
+        vessel_bank = _cd_for_bank.get_vessel_spark_bank_amount()
     var cap_delta: BigNum       = game_context.do_prestige_reset()
+    if not vessel_bank.is_zero():
+        game_context.sparks = game_context.sparks.add(vessel_bank)
     if production_manager:
         production_manager.reset_for_prestige()
     if _storage_display and _storage_display.has_method("clear_flow_icons"):
