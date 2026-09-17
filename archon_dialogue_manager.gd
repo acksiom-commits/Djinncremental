@@ -50,7 +50,7 @@ var player_color: String = "#fff4dd"
 ## darker/lighter with alpha moving the same direction (darkest blue =
 ## most opaque, lightest blue = most transparent) instead of ever going warm.
 const TEXT_PULSE_DARK:  Color = Color(0.55, 0.55, 0.78, 1.0)
-const TEXT_PULSE_LIGHT: Color = Color(1.20, 1.20, 1.20, 0.35)
+const TEXT_PULSE_LIGHT: Color = Color(1.20, 1.20, 1.20, 0.65)
 var _text_pulse_tween: Tween = null
 
 var _label:  RichTextLabel = null
