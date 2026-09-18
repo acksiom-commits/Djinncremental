@@ -3113,8 +3113,10 @@ func _settle_identical_records() -> void:
             # keeps its own star_idx and gains nothing — in particular not a
             # name, which is what _confirmed_name_for_star prints on the
             # star map, and what made the report visible.
-            var i_stub: bool = _record_is_unconfirmed_star_widget_stub(i)
-            var j_stub: bool = _record_is_unconfirmed_star_widget_stub(j)
+            var i_stub: bool = _record_is_unconfirmed_star_widget_stub(i) \
+                and not _record_has_unpromoted_name_claim(i)
+            var j_stub: bool = _record_is_unconfirmed_star_widget_stub(j) \
+                and not _record_has_unpromoted_name_claim(j)
             if i_stub or j_stub:
                 if i_stub != j_stub and _records_provably_identical(i, j):
                     var stub_idx: int = i if i_stub else j
@@ -4934,6 +4936,47 @@ func _record_is_unconfirmed_star_widget_stub(record_idx: int) -> bool:
     # solved on a puzzle that had barely started.
     var r: Dictionary = _match_records[record_idx]
     return int(r.get("star_idx", -1)) >= 0 and str(r.get("name", "")) == ""
+
+
+## True when the player has explicitly confirmed a name for this record
+## via name_states, even though _propagate_name_states_confirmed_same_
+## record refused to promote it into r["name"] because another record
+## already owned that name (see that function's own comment). Used to
+## carve this one case out of _record_is_unconfirmed_star_widget_stub's
+## definition at its ONE call site that matters here — see
+## _settle_identical_records(). Deliberately NOT folded into
+## _record_is_unconfirmed_star_widget_stub itself: that predicate also
+## gates _identity_signature()'s pitch-token generation, and a record can
+## reach here with star_idx set from mere auto-creation (never Listened)
+## — relaxing THAT check too would leak its true pitch through the "P:"
+## token the same way the stub guard exists to prevent. Name is safe to
+## check unconditionally: name_states is only ever written by an actual
+## player click, never by auto-creation.
+##
+## FIXED (real save): "Nyxeai is claimed by 2 entries (an unplaced entry,
+## slot D5 A)", permanently, with no refresh ever clearing it. Sequence:
+## Listen on a star merges its record into that note's blank Sort:Pitch
+## slot (_reconcile_unique_pitch_slot) — the slot survives with a real
+## star_idx but name=="" (nothing had named it yet), so it now satisfies
+## the stub predicate despite no longer being a bare auto-created
+## placeholder. A separately-created name record already owned "Nyxeai"
+## (confirmed via the pitch checklist), so naming the slot the same name
+## correctly wrote name_states but was correctly refused .name promotion
+## — and _settle_identical_records() then PERMANENTLY refused to ever
+## true-merge the slot (its own comment: "Never fold anything into an
+## auto-created star-widget stub on THIS path"), because nothing
+## distinguished "genuinely still untouched" from "touched, just refused
+## a duplicate write." Two records claiming one name, forever, with no
+## code path that could ever reconcile them — reproduced directly via
+## dev_tests/probe_scratch.gd before this fix, confirmed gone after.
+func _record_has_unpromoted_name_claim(record_idx: int) -> bool:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return false
+    var name_states: Dictionary = _match_records[record_idx].get("name_states", {})
+    for k in name_states:
+        if int(name_states[k]) == 1:
+            return true
+    return false
 
 
 func _exclusive_display_lo(inclusive_lo: int, inclusive_hi: int) -> int:
