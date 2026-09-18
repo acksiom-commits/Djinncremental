@@ -736,8 +736,9 @@ func get_total_constellation_points() -> int:
 
 ## Sparks/sec REAL constellation endowment is draining right now: mirrors
 ## accumulate_constellation_sparks()'s own eligibility check exactly (feed
-## mode must be ENDOW, and the constellation must still have room below its
-## spark cap) so this reports the actual current rate, not a hypothetical.
+## mode must be ENDOW, at least one real-or-bonus Volition must be assigned,
+## and the constellation must still have room below its spark cap) so this
+## reports the actual current rate, not a hypothetical.
 ## Used by production_manager.gd's get_resource_drain_per_second("sparks")
 ## so the Sparks genbar's drain figure includes constellation spending.
 func get_constellation_endowment_drain_per_second() -> float:
@@ -747,6 +748,8 @@ func get_constellation_endowment_drain_per_second() -> float:
         var id: int = int(key)
         var points: int = get_constellation_points(id)
         if points <= 0:
+            continue
+        if not has_volition_for_constellation(id):
             continue
         var mode: int = _assignment_int("constellation_%d_feed_mode" % id, 0)
         if mode == 0:
@@ -1184,6 +1187,13 @@ func accumulate_constellation_sparks() -> void:
         var id := int(key)
         var points := get_constellation_points(id)
         if points <= 0:
+            continue
+        # Foci alone (no real-or-bonus Volition) used to be enough to drain
+        # Sparks into a constellation — Foci still set the RATE via `points`
+        # above, but at least one Volition must be assigned before that rate
+        # applies at all. Mirrored in get_constellation_endowment_drain_
+        # per_second(); keep the two in sync.
+        if not has_volition_for_constellation(id):
             continue
         var mode: int = _assignment_int("constellation_%d_feed_mode" % id, 0)
         if mode == 0:
