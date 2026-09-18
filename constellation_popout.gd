@@ -901,7 +901,7 @@ func _refresh_art_achievement_display(constellation_id: int) -> void:
     var bonus_mult: float = _gc.get_constellation_art_tier_bonus(constellation_id)
     var pct: float = (bonus_mult - 1.0) * 100.0
     _info_art_achievement.visible = true
-    _info_art_achievement.text = "[font_size=13]Art-Tier Achievements:[/font_size]\n[color=#ffd27f]%d full-tier crossing%s — Spark Endowment +%.0f%%[/color]" \
+    _info_art_achievement.text = "[font_size=13]Art-Tier Achievements:[/font_size]\n[color=#ffd27f]%d full-tier crossing%s — Spark Endowment +%.1f%%[/color]" \
         % [crossings, "" if crossings == 1 else "s", pct]
 
 

@@ -261,8 +261,8 @@ var constellation_art_tier_counted: Dictionary = {}
 ## kept only so the lookup never runs dry.
 const ART_TIER_FIBONACCI_NUMBERS: Array = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, 4181, 6765, 10946, 17711, 28657]
 
-## +1% Spark Endowment rate per Fibonacci-numbered art-tier crossing earned
-## so far, stacking. Used both to scale the live drain (accumulate_
+## +0.1% Spark Endowment rate per Fibonacci-numbered art-tier crossing
+## earned so far, stacking. Used both to scale the live drain (accumulate_
 ## constellation_sparks()/get_constellation_endowment_drain_per_second())
 ## and to report the bonus value alongside constellation_art_tier_achieved.
 func get_constellation_art_tier_bonus(constellation_id: int) -> float:
@@ -273,7 +273,7 @@ func get_constellation_art_tier_bonus(constellation_id: int) -> float:
             earned += 1
         else:
             break
-    return 1.0 + 0.01 * float(earned)
+    return 1.0 + 0.001 * float(earned)
 
 ## Edge-triggered: fires at most once per art-tier episode. Called from
 ## every site that adds to constellation_spark_totals (automated drain AND

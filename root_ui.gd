@@ -1940,7 +1940,7 @@ func _on_constellation_art_tier_achieved(constellation_id: int, crossing_number:
         var def: Dictionary = cd.get_constellation_def(constellation_id)
         cname = str(def.get("name", cname))
     var pct: float = (bonus_mult - 1.0) * 100.0
-    var msg := "%s reached full tier for the %s time. Spark Endowment +%.0f%% (stacking)." \
+    var msg := "%s reached full tier for the %s time. Spark Endowment +%.1f%% (stacking)." \
         % [cname, _ordinal_suffix(crossing_number), pct]
     archon_dialogue_manager.enqueue_notification(msg)
     archon_dialogue_manager.try_show_next_notification()
