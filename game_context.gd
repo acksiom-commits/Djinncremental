@@ -239,11 +239,16 @@ var constellation_spark_totals: Dictionary = {
 ## Set from constellation_study_overlay.gd's Easy/Hard toggle, which treats
 ## a change exactly like the existing RESET flow (regenerates that one
 ## puzzle via the same reset_requested signal). Missing entry defaults to
-## "hard", matching ConstellationLogicPuzzle's own default.
+## "easy" — the starting difficulty for every constellation a player has
+## never touched the toggle on. ConstellationLogicPuzzle's OWN class-level
+## default stays "hard" deliberately: that field only matters when
+## something builds a puzzle without going through this getter (tests,
+## generator-health probes), and this is the one player-facing entry point
+## root_ui.gd always calls before generation.
 var constellation_difficulty: Dictionary = {}
 
 func get_constellation_difficulty(constellation_id: int) -> String:
-    return str(constellation_difficulty.get(constellation_id, "hard"))
+    return str(constellation_difficulty.get(constellation_id, "easy"))
 
 ## Fibonacci-tier art achievements: constellation_id (int) -> how many times
 ## that constellation has crossed into "art" tier (ConstellationData.
