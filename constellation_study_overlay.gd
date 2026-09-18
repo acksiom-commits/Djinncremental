@@ -324,6 +324,17 @@ func _ready() -> void:
         if _pending_difficulty_change != "" and _gc:
             _gc.constellation_difficulty[_constellation_id] = _pending_difficulty_change
             _pending_difficulty_change = ""
+        # Generation is async and genuinely takes a while (a few real
+        # seconds for a full-size constellation) -- nothing else here
+        # changes the display until root_ui.gd's completion callback calls
+        # show_for_constellation() again, so without this the panel just
+        # sits on the OLD clueset with no sign anything is happening. Easy
+        # to read as "the reset/difficulty change did nothing" even though
+        # generation is correctly running with the new setting.
+        _title_label.text = "Regenerating puzzle…"
+        _reset_btn.disabled = true
+        if _difficulty_btn:
+            _difficulty_btn.disabled = true
         reset_requested.emit(_constellation_id))
     _reset_confirm.canceled.connect(func(): _pending_difficulty_change = "")
     _reset_confirm.get_ok_button().text = "Yes, Reset"
@@ -1034,6 +1045,15 @@ func _build_difficulty_toggle() -> void:
 ## refresh timing as the title) so the label is right after a switch, and
 ## again once reset_requested's regeneration actually lands.
 func _refresh_difficulty_button() -> void:
+    # Re-enables both buttons regardless of whether they were disabled --
+    # this is the "regeneration landed" signal (see _reset_confirm.confirmed
+    # above, the only place that disables them), reached via show_for_
+    # constellation() -> _update_header() every time, including the
+    # completion callback that fires once a reset/difficulty-change
+    # actually finishes generating.
+    _reset_btn.disabled = false
+    if _difficulty_btn:
+        _difficulty_btn.disabled = false
     if not _difficulty_btn or not _gc or _constellation_id < 0:
         return
     var current: String = _gc.get_constellation_difficulty(_constellation_id)
