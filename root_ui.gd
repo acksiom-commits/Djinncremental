@@ -1150,6 +1150,8 @@ func _generate_puzzle(constellation_id: int, cd: Node, def: Dictionary,
     puzzle.setup(star_count, line_pairs, correct_star_sequence,
             puzzle_seed, constellation_id, name_theme,
             star_pitch_index, pitch_freqs, self)
+    if game_context:
+        puzzle.difficulty = game_context.get_constellation_difficulty(constellation_id)
     puzzle.generation_complete.connect(
         func(cid: int): on_complete.call(cid, puzzle))
     puzzle.generate_clues_async.call_deferred()

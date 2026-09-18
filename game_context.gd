@@ -232,6 +232,19 @@ var constellation_spark_totals: Dictionary = {
     "8": 0.0,
 }
 
+## Per-constellation puzzle difficulty ("easy"/"hard"), keyed by
+## constellation_id (int) -> String. Read by root_ui.gd's _generate_puzzle()
+## right before generation and set on ConstellationLogicPuzzle.difficulty —
+## see that class's DIFFICULTY_PROFILES for what each value actually tunes.
+## Set from constellation_study_overlay.gd's Easy/Hard toggle, which treats
+## a change exactly like the existing RESET flow (regenerates that one
+## puzzle via the same reset_requested signal). Missing entry defaults to
+## "hard", matching ConstellationLogicPuzzle's own default.
+var constellation_difficulty: Dictionary = {}
+
+func get_constellation_difficulty(constellation_id: int) -> String:
+    return str(constellation_difficulty.get(constellation_id, "hard"))
+
 
 # ===================== UI UNLOCKS =========================
 # Progressive UI reveal flags. Set true when panel is first shown.
@@ -1401,6 +1414,10 @@ func get_save_data() -> Dictionary:
     for cid in constellation_identity_revealed:
         saved_cir[str(cid)] = bool(constellation_identity_revealed[cid])
     data["constellation_identity_revealed"] = saved_cir
+    var saved_cd: Dictionary = {}
+    for cid in constellation_difficulty:
+        saved_cd[str(cid)] = str(constellation_difficulty[cid])
+    data["constellation_difficulty"] = saved_cd
     data["tetrad_milestones"]          = tetrad_milestones.duplicate()
     data["monad_milestones"]           = monad_milestones.duplicate()
     var saved_totals = {}
@@ -1663,6 +1680,11 @@ func load_save_data(data: Dictionary) -> void:
     var raw_cir: Dictionary = _coerce_dict(data.get("constellation_identity_revealed"), {})
     for key in raw_cir:
         constellation_identity_revealed[int(key)] = _coerce_bool(raw_cir[key], false)
+    constellation_difficulty.clear()
+    var raw_cd: Dictionary = _coerce_dict(data.get("constellation_difficulty"), {})
+    for key in raw_cd:
+        var val: String = str(raw_cd[key])
+        constellation_difficulty[int(key)] = val if val == "easy" else "hard"
     # tetrad_milestones/monad_milestones have no live reader anywhere in the
     # codebase today (the milestone-check mechanic that used to consume them
     # was removed — see root_ui.gd's v3.9.0 changelog comment), but the

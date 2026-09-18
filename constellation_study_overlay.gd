@@ -48,6 +48,17 @@ const MARKERS_BASE_PATH:    String = PANE1_BASE_PATH + "/MarkersVBox"
 @onready var _pitch_listen_btn: Button = get_node(HEADER_BASE_PATH + "/PitchListenButton")
 @onready var _reset_btn: Button = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/ResetButton")
 @onready var _reset_confirm: ConfirmationDialog = get_node("ResetPuzzleConfirmDialog")
+
+## Easy/Hard toggle -- built in code, not the .tscn, same reasoning as
+## _build_contradiction_banner() (a hand-edited scene stays untouched).
+## Reuses ResetPuzzleConfirmDialog rather than a second dialog: changing
+## difficulty regenerates the puzzle exactly like RESET does, so it needs
+## the same "you'll lose your progress" warning. _pending_difficulty_change
+## distinguishes "the difficulty toggle opened this dialog" from a plain
+## RESET press, since both now share one confirmed signal.
+var _difficulty_btn: Button = null
+var _pending_difficulty_change: String = ""
+const _RESET_DIALOG_TEXT := "Generate a brand new arrangement for this constellation?\nStar names, colors, and which star plays which note will all reshuffle. Your clues, deduction notes, and current progress on this constellation will be lost.\nThis cannot be undone."
 @onready var _selected_clue_display: RichTextLabel = get_node(HEADER_BASE_PATH + "/SelectedClueDisplay")
 @onready var _synth:    Node   = get_node_or_null("../RootUI/PuzzleSynths")
 @onready var _star_map_control:    Control = get_node(STAR_MAP_COLUMN_PATH + "/StarMapControl")
@@ -305,12 +316,21 @@ func _ready() -> void:
     # relying on the .tscn's ok_button_text/cancel_button_text alone, to
     # match that established styling (DialogConfirmButton variation on
     # both), not just the wording.
-    _reset_btn.pressed.connect(func(): _reset_confirm.popup_centered())
-    _reset_confirm.confirmed.connect(func(): reset_requested.emit(_constellation_id))
+    _reset_btn.pressed.connect(func():
+        _pending_difficulty_change = ""
+        _reset_confirm.dialog_text = _RESET_DIALOG_TEXT
+        _reset_confirm.popup_centered())
+    _reset_confirm.confirmed.connect(func():
+        if _pending_difficulty_change != "" and _gc:
+            _gc.constellation_difficulty[_constellation_id] = _pending_difficulty_change
+            _pending_difficulty_change = ""
+        reset_requested.emit(_constellation_id))
+    _reset_confirm.canceled.connect(func(): _pending_difficulty_change = "")
     _reset_confirm.get_ok_button().text = "Yes, Reset"
     _reset_confirm.get_cancel_button().text = "Keep Playing"
     _reset_confirm.get_ok_button().theme_type_variation     = "DialogConfirmButton"
     _reset_confirm.get_cancel_button().theme_type_variation = "DialogConfirmButton"
+    _build_difficulty_toggle()
     _pitch_reveal_label = Label.new()
     _pitch_reveal_label.add_theme_font_size_override("font_size", 21)
     _pitch_reveal_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.6, 1.0))
@@ -953,6 +973,9 @@ func _constellation_identity_hidden(constellation_id: int) -> bool:
 func _update_header() -> void:
     if not _cd or _constellation_id < 0:
         return
+    # Difficulty is a meta setting, not spoiler content -- refreshed
+    # regardless of identity-hidden state, unlike everything below.
+    _refresh_difficulty_button()
     if _constellation_identity_hidden(_constellation_id):
         _title_label.text = "UNKNOWN"
         _selected_clue_text = ""
@@ -989,6 +1012,42 @@ func _build_contradiction_banner() -> void:
     # Directly under the header, above the carousel — the one place it is
     # visible from every tab, since a contradiction is not tab-specific.
     vbox.move_child(_contradiction_banner, 1)
+
+
+## Easy/Hard toggle, placed right before RESET in the same tab-bar row —
+## same "add via code" reasoning as _build_contradiction_banner() above.
+func _build_difficulty_toggle() -> void:
+    var bar := get_node_or_null(MARKERS_BASE_PATH + "/MarkerTabBar2")
+    if bar == null or not _reset_btn:
+        return
+    _difficulty_btn = Button.new()
+    _difficulty_btn.focus_mode = Control.FOCUS_NONE
+    _difficulty_btn.add_theme_font_size_override("font_size", 16)
+    _difficulty_btn.pressed.connect(_on_difficulty_btn_pressed)
+    bar.add_child(_difficulty_btn)
+    bar.move_child(_difficulty_btn, _reset_btn.get_index())
+    _refresh_difficulty_button()
+
+
+## Reflects this constellation's CURRENT stored difficulty -- called from
+## show_for_constellation() (via _update_header(), same per-constellation
+## refresh timing as the title) so the label is right after a switch, and
+## again once reset_requested's regeneration actually lands.
+func _refresh_difficulty_button() -> void:
+    if not _difficulty_btn or not _gc or _constellation_id < 0:
+        return
+    var current: String = _gc.get_constellation_difficulty(_constellation_id)
+    _difficulty_btn.text = "EASY" if current == "easy" else "HARD"
+
+
+func _on_difficulty_btn_pressed() -> void:
+    if not _gc or _constellation_id < 0:
+        return
+    var current: String = _gc.get_constellation_difficulty(_constellation_id)
+    _pending_difficulty_change = "hard" if current == "easy" else "easy"
+    _reset_confirm.dialog_text = \
+        ("Switch to %s difficulty?\n" % _pending_difficulty_change.capitalize()) + _RESET_DIALOG_TEXT
+    _reset_confirm.popup_centered()
 
 
 ## Called at the end of every propagation refresh. Takes its text straight
