@@ -1746,7 +1746,6 @@ func _check_tetrad_upgrade_trigger() -> void:
 
 
 func _do_prestige_reset() -> void:
-    var leftover_sparks: BigNum = game_context.sparks.copy()
     # Read The Vessel's spark bank BEFORE do_prestige_reset() wipes
     # constellation_spark_totals (which resets its tier to "dark") — see
     # constellation_data.gd's get_vessel_spark_bank_amount().
@@ -1754,7 +1753,10 @@ func _do_prestige_reset() -> void:
     var _cd_for_bank = get_node_or_null("/root/ConstellationData")
     if _cd_for_bank and _cd_for_bank.has_method("get_vessel_spark_bank_amount"):
         vessel_bank = _cd_for_bank.get_vessel_spark_bank_amount()
-    var cap_delta: BigNum       = game_context.do_prestige_reset()
+    # The Satchel's permanent +5% base storage_cap bump, only when fully
+    # endowed at Tier 3 (art) at this exact moment — see
+    # game_context.gd's has_storage_enhancer()/do_prestige_reset().
+    var storage_bonus_delta: BigNum = game_context.do_prestige_reset()
     if not vessel_bank.is_zero():
         game_context.sparks = game_context.sparks.add(vessel_bank)
     if production_manager:
@@ -1765,26 +1767,22 @@ func _do_prestige_reset() -> void:
     if archon_dialogue_manager and archon_dialogue_manager.all_monads_upgrade_done:
         _tetrad_assembly_ready = true
 
+    var storage_suffix: String = ""
+    if not storage_bonus_delta.is_zero():
+        storage_suffix = " Storage cap permanently +%s (Satchel)." % storage_bonus_delta.to_display_string()
+
     # Foci award at Expansion milestones: 1st, 100th, 10000th, etc. (10^0, 10^2, 10^4...)
     var threshold: int = int(pow(10.0, float(game_context.next_expansion_foci_exp)))
     if game_context.expansions >= threshold:
         _grant_foci()
         game_context.next_expansion_foci_exp += 2
         if archon_dialogue_manager:
-            var msg := "Expansion %d: +1 Focus. %s Sparks → Storage +%s" % [
-                game_context.expansions,
-                leftover_sparks.to_display_string(),
-                cap_delta.to_display_string()
-            ]
+            var msg := "Expansion %d: +1 Focus.%s" % [game_context.expansions, storage_suffix]
             archon_dialogue_manager.enqueue_notification(msg)
             archon_dialogue_manager.try_show_next_notification()
     else:
         if archon_dialogue_manager:
-            var msg := "Expansion %d: %s Sparks → Storage +%s" % [
-                game_context.expansions,
-                leftover_sparks.to_display_string(),
-                cap_delta.to_display_string()
-            ]
+            var msg := "Expansion %d.%s" % [game_context.expansions, storage_suffix]
             archon_dialogue_manager.enqueue_notification(msg)
             archon_dialogue_manager.try_show_next_notification()
     # Fire prestige achievements for constellation unlocks

@@ -80,8 +80,16 @@ var hourglass_target_ops: Array[String] = []
 
 
 # ===================== STORAGE CAP =======================
+# storage_cap no longer grows automatically for everyone on Expansion (that
+# used to happen unconditionally via expand_storage_cap(), removed
+# 2026-09-17). It now only grows two ways, both gated on The Satchel:
+#   - PERMANENTLY, +5% per Expansion, only while Satchel is fully endowed
+#     at Tier 3 (art) at the moment of that Expansion — has_storage_enhancer()
+#     gates this, applied directly to storage_cap in do_prestige_reset().
+#   - TEMPORARILY, a live 2x/3x/3x multiplier (storage_multiplier, reverts
+#     the instant Satchel drops below its current tier) — see
+#     get_effective_storage_cap(), which all gameplay code should read.
 var storage_cap: BigNum = BigNum.from_int(987)
-var storage_cap_at_prestige_start: BigNum = BigNum.from_int(987)
 
 var _archon_foci_value: int = 0
 var archon_foci: int:
@@ -583,25 +591,13 @@ func set_resource(key: String, value: BigNum) -> void:
                 push_warning("GameContext.set_resource: unknown key " + key)
 
 
-func expand_storage_cap(remaining_sparks: BigNum) -> BigNum:
-    var l: float     = remaining_sparks.to_float()
-    var s: float     = storage_cap_at_prestige_start.to_float()
-    if s <= 0.0:
-        return BigNum.zero()
-    var l_eff: float = l / (1.0 + l / s)
-    var ceiling: float = 0.05
-    if has_storage_enhancer():
-        ceiling = 0.15
-    var b: float     = ceiling * (1.0 - exp(-5.0 * l_eff / s))
-    var old_cap      := storage_cap.copy()
-    storage_cap      = storage_cap.mul_float(1.0 + b).floor_to_whole()
-    return storage_cap.sub(old_cap)
-
-
+## Satchel constellation (id 3), Tier 3 (full Spark investment) only.
+## Trinary gate: solved AND volition-assigned AND visual_state == "art".
+## Gates the PERMANENT +5% base storage_cap bump applied on Expansion (see
+## do_prestige_reset()) -- separate from storage_multiplier's own LIVE,
+## tier-reversible multiplier (bonus_levels, applied every frame via
+## get_effective_storage_cap(), unaffected by this gate).
 func has_storage_enhancer() -> bool:
-    # Satchel constellation (id 3), Tier 3 (full Spark investment) only.
-    # Trinary gate: solved AND volition-assigned AND visual_state == "art".
-    # Raises expand_storage_cap's asymptotic ceiling from 5% to 15%.
     const SATCHEL_ID: int = 3
     var cd = get_node_or_null("/root/ConstellationData")
     if not cd:
@@ -618,10 +614,12 @@ func has_storage_enhancer() -> bool:
 
 func get_effective_storage_cap() -> BigNum:
     # Applies the Satchel's storage_multiplier bonus (live, tier-reversible)
-    # on top of the stored base storage_cap. This is the value all gameplay
+    # on top of the fixed base storage_cap. This is the value all gameplay
     # logic (overflow gating, headroom, display) should read — never read
-    # storage_cap directly except inside expand_storage_cap() itself, which
-    # intentionally operates on the permanent base value.
+    # storage_cap directly. The base itself no longer grows automatically
+    # every Expansion (removed 2026-09-17, see storage_cap's own comment);
+    # it only ever grows via has_storage_enhancer()'s PERMANENT +5% bump
+    # in do_prestige_reset(), on top of which this LIVE multiplier applies.
     var cd = get_node_or_null("/root/ConstellationData")
     var mult: float = 1.0
     if cd and cd.has_method("get_active_level_bonus"):
@@ -1379,7 +1377,6 @@ func get_save_data() -> Dictionary:
     data["locks"]                      = locks.duplicate()
     data["constellation_spark_totals"] = constellation_spark_totals.duplicate()
     data["storage_cap"]                = storage_cap.to_save_string()
-    data["storage_cap_at_prestige_start"] = storage_cap_at_prestige_start.to_save_string()
     # watermarks has 11 keys (see its declaration) and every one of them is
     # actively updated by update_watermarks() — this used to hardcode only
     # the 3 monad_* keys instead of looping over the dict like
@@ -1645,7 +1642,6 @@ func load_save_data(data: Dictionary) -> void:
         constellation_spark_totals[key] = _coerce_float(raw_spark_totals[key], 0.0)
     
     storage_cap              = BigNum.from_string(data.get("storage_cap",            "987:0"))
-    storage_cap_at_prestige_start = BigNum.from_string(data.get("storage_cap_at_prestige_start", "987:0"))
     for wm_key in watermarks:
         watermarks[wm_key] = BigNum.from_string(data.get("watermark_" + wm_key, "0:0"))
 
@@ -1734,8 +1730,13 @@ func load_save_data(data: Dictionary) -> void:
 
 
 func do_prestige_reset() -> BigNum:
-    var cap_delta := expand_storage_cap(sparks)
-    storage_cap_at_prestige_start = storage_cap.copy()
+    # Checked BEFORE constellation_spark_totals gets wiped below (which
+    # would otherwise read Satchel back to "dark" and never fire this).
+    var storage_bonus_delta := BigNum.zero()
+    if has_storage_enhancer():
+        var old_cap := storage_cap.copy()
+        storage_cap  = storage_cap.mul_float(1.05).floor_to_whole()
+        storage_bonus_delta = storage_cap.sub(old_cap)
     expansions        += 1
     volitions          = 0
     volitions_spent    = 0
@@ -1797,6 +1798,4 @@ func do_prestige_reset() -> BigNum:
         assignments[k] = _prestige_saved[k]
     for k in constellation_spark_totals:
         constellation_spark_totals[k] = 0.0
-    return cap_delta
-        
-        
+    return storage_bonus_delta

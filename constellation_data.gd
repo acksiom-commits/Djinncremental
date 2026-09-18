@@ -400,6 +400,14 @@ const BUILT_IN = [
         # (trailing right) side after leveling — see the Archon's
         # matching comment and get_canonical_display_basis().
         "snap_orient_check": {"star": 16, "axis": "x", "sign": 1},
+        # bonus_levels is the LIVE, tier-reversible TEMPORARY cap multiplier
+        # only (art == lines, both 3.0 — tier 3 gives nothing extra here).
+        # Tier 3's actual distinguishing bonus is a SEPARATE, PERMANENT +5%
+        # applied to the base storage_cap on Expansion, gated on
+        # game_context.gd's has_storage_enhancer() (same trinary gate: art
+        # tier + solved + Volition assigned) — see do_prestige_reset(). That
+        # permanent bump only survives past the Expansion that grants it;
+        # this multiplier reverts the instant Satchel drops out of art tier.
         "bonus_levels": {"stars": 2.0, "lines": 3.0, "art": 3.0},
         "spark_cap":      28657,
         # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
