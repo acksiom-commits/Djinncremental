@@ -245,6 +245,51 @@ var constellation_difficulty: Dictionary = {}
 func get_constellation_difficulty(constellation_id: int) -> String:
     return str(constellation_difficulty.get(constellation_id, "hard"))
 
+## Fibonacci-tier art achievements: constellation_id (int) -> how many times
+## that constellation has crossed into "art" tier (ConstellationData.
+## get_visual_state(id) == "art"). Spark totals only ever drop via the
+## Expansion reset below, so this only needs to be cleared there, not
+## polled every frame. constellation_art_tier_counted guards against
+## counting the SAME art-tier episode twice (set true on the crossing that
+## increments the counter, cleared alongside the Expansion spark wipe).
+var constellation_art_tier_crossings: Dictionary = {}
+var constellation_art_tier_counted: Dictionary = {}
+
+## Achievement fires only on Fibonacci-numbered crossings (1st, 2nd, 3rd,
+## 5th, 8th, 13th...) so repeated full-tiering is rewarded without a payout
+## on every single one. 28657 is already an absurd number of Expansions;
+## kept only so the lookup never runs dry.
+const ART_TIER_FIBONACCI_NUMBERS: Array = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597, 2584, 4181, 6765, 10946, 17711, 28657]
+
+## +1% Spark Endowment rate per Fibonacci-numbered art-tier crossing earned
+## so far, stacking. Used both to scale the live drain (accumulate_
+## constellation_sparks()/get_constellation_endowment_drain_per_second())
+## and to report the bonus value alongside constellation_art_tier_achieved.
+func get_constellation_art_tier_bonus(constellation_id: int) -> float:
+    var crossings: int = int(constellation_art_tier_crossings.get(constellation_id, 0))
+    var earned: int = 0
+    for f in ART_TIER_FIBONACCI_NUMBERS:
+        if int(f) <= crossings:
+            earned += 1
+        else:
+            break
+    return 1.0 + 0.01 * float(earned)
+
+## Edge-triggered: fires at most once per art-tier episode. Called from
+## every site that adds to constellation_spark_totals (automated drain AND
+## manual endowment) so neither path can miss a crossing or double-count one.
+func _check_art_tier_crossing(constellation_id: int) -> void:
+    var cd: Node = get_node_or_null("/root/ConstellationData")
+    if not cd or cd.get_visual_state(constellation_id) != "art":
+        return
+    if bool(constellation_art_tier_counted.get(constellation_id, false)):
+        return
+    constellation_art_tier_counted[constellation_id] = true
+    var n: int = int(constellation_art_tier_crossings.get(constellation_id, 0)) + 1
+    constellation_art_tier_crossings[constellation_id] = n
+    if ART_TIER_FIBONACCI_NUMBERS.has(n):
+        constellation_art_tier_achieved.emit(constellation_id, n, get_constellation_art_tier_bonus(constellation_id))
+
 
 # ===================== UI UNLOCKS =========================
 # Progressive UI reveal flags. Set true when panel is first shown.
@@ -342,6 +387,7 @@ var rng := RandomNumberGenerator.new()
 signal archon_foci_changed(new_value: int)
 signal lock_state_changed(key: String, locked: bool)
 signal volition_slots_changed()
+signal constellation_art_tier_achieved(constellation_id: int, crossing_number: int, bonus_mult: float)
 
 
 # ===================== CREATION ORDER TRACKING ===========
@@ -772,7 +818,7 @@ func get_constellation_endowment_drain_per_second() -> float:
             var current: float = constellation_spark_totals.get(key, 0.0)
             if current >= cap:
                 continue
-        total += float(points)
+        total += float(points) * get_constellation_art_tier_bonus(id)
     return total
 
 
@@ -1191,6 +1237,7 @@ func endow_constellation_sparks_manual(constellation_id: int) -> float:
 
     sparks = sparks.sub(want)
     constellation_spark_totals[key] = current + want.to_float()
+    _check_art_tier_crossing(constellation_id)
     return want.to_float()
 
 
@@ -1221,19 +1268,21 @@ func accumulate_constellation_sparks() -> void:
                 continue
             # Clamp so we don't overshoot
             var room: float = cap - current
-            var deduct: BigNum = BigNum.from_int(points)
+            var deduct: BigNum = BigNum.from_float(float(points) * get_constellation_art_tier_bonus(id))
             if deduct.to_float() > room:
                 deduct = BigNum.from_float(room)
             if sparks.is_less_than(deduct):
                 deduct = sparks.copy()
             sparks = sparks.sub(deduct)
             constellation_spark_totals[key] = current + deduct.to_float()
+            _check_art_tier_crossing(id)
         else:
-            var deduct: BigNum = BigNum.from_int(points)
+            var deduct: BigNum = BigNum.from_float(float(points) * get_constellation_art_tier_bonus(id))
             if sparks.is_less_than(deduct):
                 deduct = sparks.copy()
             sparks = sparks.sub(deduct)
             constellation_spark_totals[key] = constellation_spark_totals.get(key, 0.0) + deduct.to_float()
+            _check_art_tier_crossing(id)
     # Re-sync bonus children if the Archon's visual state has crossed a tier.
     # get_bonus_volition_grant() reads the live state so we only rebuild when
     # the grant value actually changes — not on every spark tick.
@@ -1247,6 +1296,7 @@ func accumulate_constellation_sparks() -> void:
 func reset_constellation_sparks() -> void:
     for key in constellation_spark_totals:
         constellation_spark_totals[key] = 0.0
+    constellation_art_tier_counted.clear()
 
 
 # ===================== SAFE SPEND HELPERS =================
@@ -1418,6 +1468,14 @@ func get_save_data() -> Dictionary:
     for cid in constellation_difficulty:
         saved_cd[str(cid)] = str(constellation_difficulty[cid])
     data["constellation_difficulty"] = saved_cd
+    var saved_catc: Dictionary = {}
+    for cid in constellation_art_tier_crossings:
+        saved_catc[str(cid)] = int(constellation_art_tier_crossings[cid])
+    data["constellation_art_tier_crossings"] = saved_catc
+    var saved_catco: Dictionary = {}
+    for cid in constellation_art_tier_counted:
+        saved_catco[str(cid)] = bool(constellation_art_tier_counted[cid])
+    data["constellation_art_tier_counted"] = saved_catco
     data["tetrad_milestones"]          = tetrad_milestones.duplicate()
     data["monad_milestones"]           = monad_milestones.duplicate()
     var saved_totals = {}
@@ -1685,6 +1743,14 @@ func load_save_data(data: Dictionary) -> void:
     for key in raw_cd:
         var val: String = str(raw_cd[key])
         constellation_difficulty[int(key)] = val if val == "easy" else "hard"
+    constellation_art_tier_crossings.clear()
+    var raw_catc: Dictionary = _coerce_dict(data.get("constellation_art_tier_crossings"), {})
+    for key in raw_catc:
+        constellation_art_tier_crossings[int(key)] = _coerce_int(raw_catc[key], 0)
+    constellation_art_tier_counted.clear()
+    var raw_catco: Dictionary = _coerce_dict(data.get("constellation_art_tier_counted"), {})
+    for key in raw_catco:
+        constellation_art_tier_counted[int(key)] = _coerce_bool(raw_catco[key], false)
     # tetrad_milestones/monad_milestones have no live reader anywhere in the
     # codebase today (the milestone-check mechanic that used to consume them
     # was removed — see root_ui.gd's v3.9.0 changelog comment), but the
@@ -1830,4 +1896,5 @@ func do_prestige_reset() -> BigNum:
         assignments[k] = _prestige_saved[k]
     for k in constellation_spark_totals:
         constellation_spark_totals[k] = 0.0
+    constellation_art_tier_counted.clear()
     return storage_bonus_delta

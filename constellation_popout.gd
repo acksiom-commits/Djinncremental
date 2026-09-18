@@ -143,6 +143,11 @@ const INFO_BASE_PATH:       String = PANEL_BASE_PATH + "/ConstellationInfoVBox"
 @onready var _info_tier_label : Label         = get_node(INFO_BASE_PATH + "/InfoTierLabel")
 @onready var _info_tier_effects: RichTextLabel = get_node(INFO_BASE_PATH + "/InfoTierEffectsLabel")
 @onready var _info_tier_effects_sep: HSeparator = get_node(INFO_BASE_PATH + "/InfoTierEffectsSeparator")
+
+## Built in code, not the .tscn -- see constellation_study_overlay.gd's Easy/
+## Hard toggle this same session for the same pattern. Appended last under
+## _info_vbox, right after InfoTierEffectsLabel (the last existing child).
+var _info_art_achievement: RichTextLabel = null
 @onready var _spark_counter_label : Label     = get_node(ALLOCATION_BASE_PATH + "/SparkCounterLabel")
 @onready var _octant_spin     : SpinBox       = get_node(PANEL_BASE_PATH + "/OctantSpinBox")
 
@@ -187,8 +192,21 @@ func _ready() -> void:
     get_viewport().size_changed.connect(_init_panel_position)
     if _cd and _cd.has_signal("constellation_unlocked"):
         _cd.constellation_unlocked.connect(func(_id: int): _build_slots())
+    _build_art_achievement_label()
         
         
+func _build_art_achievement_label() -> void:
+    _info_art_achievement = RichTextLabel.new()
+    _info_art_achievement.custom_minimum_size = Vector2(280, 0)
+    _info_art_achievement.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+    _info_art_achievement.add_theme_font_size_override("normal_font_size", 14)
+    _info_art_achievement.bbcode_enabled = true
+    _info_art_achievement.fit_content = true
+    _info_art_achievement.scroll_active = false
+    _info_art_achievement.visible = false
+    _info_vbox.add_child(_info_art_achievement)
+
+
 func _init_panel_position() -> void:
     # Y is anchored to this CONTROL's own origin, not the tab button's --
     # the tab button's own position.y now also derives from
@@ -862,6 +880,29 @@ func _refresh_info_panel() -> void:
         TIER_COLORS.get(state, Color.WHITE))
 
     _refresh_tier_effects_display(def, bonus_key, bonus_desc, state, solved)
+    _refresh_art_achievement_display(_selected_slot)
+
+
+## Fibonacci-tier art achievement readout: how many times this constellation
+## has crossed into "art" tier (game_context.gd's constellation_art_tier_
+## crossings, edge-triggered there) and the resulting stacking Spark
+## Endowment bonus. Hidden entirely at 0 crossings -- nothing earned yet.
+## Not gated on `solved` like the bonus ladder above: this bonus applies
+## uniformly regardless of bonus_key/bonus_levels, so there's no mystery to
+## withhold, and reaching "art" always happens well after the puzzle-
+## independent Stars-tier identity reveal.
+func _refresh_art_achievement_display(constellation_id: int) -> void:
+    if not _info_art_achievement or not _gc:
+        return
+    var crossings: int = int(_gc.constellation_art_tier_crossings.get(constellation_id, 0))
+    if crossings <= 0:
+        _info_art_achievement.visible = false
+        return
+    var bonus_mult: float = _gc.get_constellation_art_tier_bonus(constellation_id)
+    var pct: float = (bonus_mult - 1.0) * 100.0
+    _info_art_achievement.visible = true
+    _info_art_achievement.text = "[font_size=13]Art-Tier Achievements:[/font_size]\n[color=#ffd27f]%d full-tier crossing%s — Spark Endowment +%.0f%%[/color]" \
+        % [crossings, "" if crossings == 1 else "s", pct]
 
 
 ## Always-visible ladder of this constellation's bonus at all four tiers

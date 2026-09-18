@@ -311,6 +311,8 @@ var _expansion_shader_mat:  ShaderMaterial = null
 # ==================================================
 func _ready() -> void:
     game_context            = get_node_or_null("/root/GameContext")
+    if game_context:
+        game_context.constellation_art_tier_achieved.connect(_on_constellation_art_tier_achieved)
     production_manager      = get_node_or_null("/root/ProductionManager")
     save_manager            = get_node_or_null("/root/SaveManager")
     game_data               = get_node_or_null("/root/GameData")
@@ -1924,6 +1926,37 @@ func _check_totals_milestones() -> void:
 ## constellation_identity_reveal_done doc comment. Condition mirrors
 ## Kaleb's own tier1_archon_complete trigger exactly: crossing into the
 ## Stars tier (cd.SPARKS_TIER_STARS) is "the first tier" being completed.
+## Fired by game_context.gd's constellation_art_tier_achieved signal --
+## edge-triggered there, so this handler only ever sees a genuine new
+## Fibonacci-numbered crossing, never a repeat. Identity is guaranteed
+## already revealed by the time this can fire: art tier requires crossing
+## Stars tier first, which is the identity-reveal trigger.
+func _on_constellation_art_tier_achieved(constellation_id: int, crossing_number: int, bonus_mult: float) -> void:
+    if not archon_dialogue_manager:
+        return
+    var cd := get_node_or_null("/root/ConstellationData")
+    var cname: String = "Constellation %d" % constellation_id
+    if cd:
+        var def: Dictionary = cd.get_constellation_def(constellation_id)
+        cname = str(def.get("name", cname))
+    var pct: float = (bonus_mult - 1.0) * 100.0
+    var msg := "%s reached full tier for the %s time. Spark Endowment +%.0f%% (stacking)." \
+        % [cname, _ordinal_suffix(crossing_number), pct]
+    archon_dialogue_manager.enqueue_notification(msg)
+    archon_dialogue_manager.try_show_next_notification()
+
+
+func _ordinal_suffix(n: int) -> String:
+    var m100: int = n % 100
+    if m100 >= 11 and m100 <= 13:
+        return "%dth" % n
+    match n % 10:
+        1: return "%dst" % n
+        2: return "%dnd" % n
+        3: return "%drd" % n
+        _: return "%dth" % n
+
+
 func _check_constellation_identity_reveals() -> void:
     if not game_context or not archon_dialogue_manager:
         return
