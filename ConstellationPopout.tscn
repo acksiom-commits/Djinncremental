@@ -51,7 +51,7 @@ script = ExtResource("1_2nped")
 [node name="ConstellationTabButton" type="Button" parent="." unique_id=891082135]
 z_index = 1
 layout_mode = 0
-offset_top = -65.0
+offset_top = -85.0
 offset_right = 22.0
 offset_bottom = 380.0
 focus_mode = 0
@@ -81,7 +81,7 @@ z_index = 1
 clip_contents = true
 layout_mode = 0
 offset_left = -350.0
-offset_bottom = 445.0
+offset_bottom = 465.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_constel_panel")
 
 [node name="SelectorMargin" type="MarginContainer" parent="ConstellationSelectorPanel" unique_id=517662895]

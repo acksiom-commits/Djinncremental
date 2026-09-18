@@ -16,7 +16,7 @@ extends Control
 # root_ui.gd connects that to constellation_panel.on_constellation_selected().
 
 const PANEL_WIDTH:  float = 350.0   # ← must match ConstellationSelectorPanel's width (|offset_left|)
-const PANEL_HEIGHT: float = 445.0   # ← must match ConstellationSelectorPanel's height (offset_bottom)
+const PANEL_HEIGHT: float = 465.0   # ← must match ConstellationSelectorPanel's height (offset_bottom)
 # Growth from the panel's original 380px height goes entirely to the TOP —
 # the tab strip's own bottom, and everything anchored to it (Foci/Vol,
 # Feed, Redistribute, MultiGrid), must stay exactly where it already is so
