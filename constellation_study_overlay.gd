@@ -425,7 +425,20 @@ func _load_constellation_data() -> void:
     if not _cd or _constellation_id < 0:
         return
 
-    var cache: Dictionary = _cd.get_puzzle_cache(_constellation_id)
+    # Blanked before Stars tier/solved (see _constellation_identity_hidden())
+    # by neutralizing every EXTERNAL data source this function reads, rather
+    # than duplicating its body into a parallel "hidden" branch — everything
+    # below already handles a missing/empty source gracefully (a brand-new,
+    # never-cached constellation goes through this exact path), so an empty
+    # source naturally produces empty star names/colors/clues/pitches with
+    # no separate blanking logic to keep in sync as this function changes.
+    # Star geometry (_compute_star_screen_positions(), called at the end of
+    # this function) is deliberately NOT touched here — the shape/outline
+    # isn't spoiler content the way names/pitches/clues are, and the main
+    # starfield already shows it for any unlocked constellation regardless
+    # of tier.
+    var hidden: bool = _constellation_identity_hidden(_constellation_id)
+    var cache: Dictionary = {} if hidden else _cd.get_puzzle_cache(_constellation_id)
     _puzzle_seed_used = _coerce_int(cache.get("player_seed_used"), 0)
 
     var raw_names = _coerce_array(cache.get("star_names"), [])
@@ -453,7 +466,7 @@ func _load_constellation_data() -> void:
         _name_assignments.append(str(raw_assign[i]) if i < raw_assign.size() else "")
 
     # Puzzle notes.
-    var notes: Dictionary = _cd.get_player_puzzle_notes(_constellation_id)
+    var notes: Dictionary = {} if hidden else _cd.get_player_puzzle_notes(_constellation_id)
 
     # Clues the player right-clicked into Notes (wire key "retired_clues" —
     # see _save_puzzle_notes' comment). Rebuilt from scratch on every
@@ -491,9 +504,9 @@ func _load_constellation_data() -> void:
         _sequence_rank_solution.append(_coerce_int(v, 0))
 
     _star_pitch_index = []
-    for v in _cd.get_note_assignment(_constellation_id):
+    for v in ([] if hidden else _cd.get_note_assignment(_constellation_id)):
         _star_pitch_index.append(_coerce_int(v, 0))
-    _pitch_freqs = _cd.get_note_freqs(_constellation_id)
+    _pitch_freqs = [] if hidden else _cd.get_note_freqs(_constellation_id)
     # Note-name lookups are memoised off exactly these two arrays, so they
     # have to be dropped whenever the arrays are replaced — otherwise a
     # different constellation (or a RESET-reshuffled one) keeps serving the
@@ -945,7 +958,9 @@ func _update_header() -> void:
         _selected_clue_text = ""
         _selected_clue_tab = -1
         _selected_clue_display.text = SELECTED_CLUE_PLACEHOLDER
+        _melody_staff_panel.visible = false
         return
+    _melody_staff_panel.visible = true
     var def: Dictionary = _cd.get_constellation_def(_constellation_id)
     var name_str: String = _coerce_string(def.get("name"), "Constellation")
     var desig: String = _coerce_string(def.get("designation"), "")

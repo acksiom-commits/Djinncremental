@@ -60,6 +60,20 @@ func run() -> void:
 	print("  usable constellations: %s   switching %d -> %d%s"
 		% [str(usable), id_a, id_b, "  (same id — only one generated)" if id_a == id_b else ""])
 
+	# _load_constellation_data() now blanks everything (see
+	# _constellation_identity_hidden()) until a constellation's identity has
+	# been revealed -- unrelated to what this test actually exercises (per-
+	# puzzle STATE isolation across a switch), but host._gc resolves to the
+	# real, freshly-booted GameContext autoload in this headless run (never
+	# populated from the save the way host._cd was above), so both id_a and
+	# id_b would otherwise read as still-hidden and load 0 stars regardless
+	# of the save's real data. Mark both revealed directly.
+	for cid in [id_a, id_b]:
+		if cid == 0:
+			host._gc.ui_unlocks["kaleb_identity_revealed"] = true
+		else:
+			host._gc.constellation_identity_revealed[cid] = true
+
 	host.show_for_constellation(id_a)
 	await process_frame
 	ok(host._star_count > 0, "constellation %d loaded (%d stars)" % [id_a, host._star_count])

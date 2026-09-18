@@ -31,6 +31,7 @@ signal puzzle_star_clicked(star_index: int)
 # ===================== AUTOLOAD REFS =============
 var _cd: Node = null
 var _gc: Node = null
+var _archon_dialogue_manager: Node = null
 
 # ===================== NODE REFS =================
 var _starfield: Node = null
@@ -75,6 +76,7 @@ const HFOV_DEG: float = 75.0
 func _ready() -> void:
     _cd        = get_node_or_null("/root/ConstellationData")
     _gc        = get_node_or_null("/root/GameContext")
+    _archon_dialogue_manager = get_node_or_null("/root/ArchonDialogueManager")
     _starfield = get_node_or_null("../ColorRect")
     if _cd:
         _cd.active_constellation_changed.connect(_on_active_constellation_changed)
@@ -323,6 +325,16 @@ func _unhandled_input(event: InputEvent) -> void:
     # MOUSE_FILTER_STOP backdrop already consumes clicks in the GUI phase
     # before they could reach _unhandled_input. Kept as a cheap explicit guard.
     if _study_overlay and is_instance_valid(_study_overlay) and _study_overlay.visible:
+        return
+    # A pending/active dialogue must block star clicks the same way it
+    # already blocks every manual production button (root_ui.gd's
+    # _is_tutorial_blocking(), checked at every manual_X press) — this
+    # overlay was the one interaction that could still slip in ahead of an
+    # unacknowledged dialogue (e.g. solving a puzzle before clicking through
+    # the identity-reveal dialogue that crossing into Stars tier just
+    # queued, which both fire off the same visual-state threshold).
+    if _archon_dialogue_manager and _archon_dialogue_manager.current_index >= 0 \
+            and _archon_dialogue_manager._tutorial_pending:
         return
     if _engine.state != ClickSequencePuzzleEngine.State.ACTIVE or not _constellations_visible or _engine.replay_active:
         return

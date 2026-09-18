@@ -2035,7 +2035,6 @@ func _load_match_records(data: Array) -> void:
     _match_records.clear()
     _match_records_generation += 1
     _clear_deduction_caches()
-    _reset_derived()
     for entry in data:
         if not entry is Dictionary:
             continue
@@ -2151,6 +2150,14 @@ func _load_match_records(data: Array) -> void:
             "pitch_slot_label": str(e.get("pitch_slot_label", "")),
             "degree_slot_label": str(e.get("degree_slot_label", "")),
         }))
+    # Sized against the now-FULLY-populated _match_records, not the
+    # transiently-empty one right after .clear() above — _reset_derived()
+    # used to run before this loop, so _derived came back sized 0 against
+    # a real non-empty load (masked for years by every test either loading
+    # 0 real records or never asserting the size match at all; see
+    # test_constellation_switch_isolation.gd's "derived layer matches
+    # record count after switch" check, the first to catch it).
+    _reset_derived()
 
 
 func _display_color_for_record(record_idx: int) -> Color:
