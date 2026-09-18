@@ -5975,7 +5975,8 @@ func generate_clues_forms() -> void:
 ## cleared, or the clue's rendered search terms would be wiped.
 func _try_build_and_commit(form_id: int, sequence_solver_facts: Array,
         name_revealed: Array, tier_counts: Dictionary, form_counts: Dictionary,
-        coverage_star: int = -1, coverage_which: int = 0) -> bool:
+        coverage_star: int = -1, coverage_which: int = 0,
+        reject_fn: Callable = Callable()) -> bool:
     var chain: Dictionary = _pick_chain_characteristic()
     # Cleared per ATTEMPT, not per committed clue: a Form that renders
     # labels and then bails still dirtied the accumulator, and those terms
@@ -5984,6 +5985,12 @@ func _try_build_and_commit(form_id: int, sequence_solver_facts: Array,
     var result: Dictionary = _build_name_binding_clue(coverage_star, coverage_which) \
         if coverage_star >= 0 else _build_form(form_id, chain)
     if result.is_empty():
+        return false
+    # Optional veto BEFORE anything is committed or marked used, so a
+    # rejected candidate leaves no trace — same as a plain build failure,
+    # just for a reason the Form itself can't see (see
+    # _anchor_identity_already_linked, its only caller today).
+    if reject_fn.is_valid() and reject_fn.call(result):
         return false
     # Most Forms' templates start with a rendered star label ("the white
     # star...", "a star that plays..."), which is correct mid-sentence but
@@ -6143,6 +6150,73 @@ func _build_name_coverage_clues(sequence_solver_facts: Array, name_revealed: Arr
     return added
 
 
+## Transient state for the opening-anchor pass only: (category,star) nodes
+## already linked to the SAME real star by an Exact Identity anchor
+## committed earlier in THIS pass. Exact Identity's own freshness check is
+## CELL-granular — has THIS (cat_a,cat_b) pair, for this star, been used —
+## so it cannot see that a THIRD category pairing is already pinned down
+## once the other two have each independently linked the same star: e.g.
+## anchor 1 says "the C#5 star is Keriion" (PITCH<->NAME), anchor 2 chains
+## off Keriion to say "Keriion fires 4th" (NAME<->SEQUENCE) — at that
+## point "the star that fires 4th plays C#5" (SEQUENCE<->PITCH) is already
+## fully implied, but that specific cell was never touched, so a third
+## Exact Identity anchor can independently sample it and ship a full
+## A-is-B / B-is-C / C-is-A triangle that teaches nothing. Reported live,
+## screenshot of exactly this three-clue set.
+##
+## Scoped to the anchor pass specifically (not the main generation loop)
+## because anchors sit before protected_clue_count — _prune_redundant_
+## clues never tests them, so this is the one place such a triangle can
+## ship with no safety net downstream. Reset at the start of every
+## _build_opening_anchors() call; empty is a harmless no-op for "hard"
+## (whose one anchor, Mutual Exclusion, never touches this check at all).
+var _anchor_identity_uf: Dictionary = {}
+
+func _anchor_uf_key(cat: int, star: int) -> String:
+    return "%d:%d" % [cat, star]
+
+func _anchor_uf_find(key: String) -> String:
+    var cur: String = key
+    while _anchor_identity_uf.has(cur):
+        cur = str(_anchor_identity_uf[cur])
+    return cur
+
+func _anchor_uf_union(key_a: String, key_b: String) -> void:
+    var ra: String = _anchor_uf_find(key_a)
+    var rb: String = _anchor_uf_find(key_b)
+    if ra != rb:
+        _anchor_identity_uf[ra] = rb
+
+## Passed as _try_build_and_commit's reject_fn for Form 1 (Exact Identity)
+## anchor attempts only. True when the candidate's asserted True cell would
+## just restate what two earlier anchors already established transitively.
+func _anchor_identity_already_linked(result: Dictionary) -> bool:
+    var updates: Array = result.get("grid_updates", [])
+    if updates.size() != 1:
+        return false
+    var cell: Dictionary = updates[0]
+    if not bool(cell.get("is_true", false)):
+        return false
+    var key_a: String = _anchor_uf_key(int(cell["cat_a"]), int(cell["star_a"]))
+    var key_b: String = _anchor_uf_key(int(cell["cat_b"]), int(cell["star_b"]))
+    return _anchor_uf_find(key_a) == _anchor_uf_find(key_b)
+
+## Folds the just-committed anchor's own True cell(s) into the union-find,
+## so the NEXT Exact Identity anchor attempt (this slot's retries, or a
+## later slot) can see the transitive link this one just created.
+func _record_anchor_identity_link() -> void:
+    if chosen_form_clues.is_empty():
+        return
+    var last: Dictionary = chosen_form_clues[chosen_form_clues.size() - 1]
+    for c in (last.get("cells", []) as Array):
+        var cd: Dictionary = c
+        if not bool(cd.get("is_true", false)):
+            continue
+        _anchor_uf_union(
+            _anchor_uf_key(int(cd["cat_a"]), int(cd["star_a"])),
+            _anchor_uf_key(int(cd["cat_b"]), int(cd["star_b"])))
+
+
 ## Difficulty's opening-anchor pass: build the most DIRECT Forms first,
 ## before the main loop's cascade consumes the True cells they depend on.
 ##
@@ -6160,6 +6234,7 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
     var anchors: Array = _profile()["opening_anchors"]
     if anchors.is_empty():
         return
+    _anchor_identity_uf = {}
     # TWO SLOT FORMS, because the original assumption stopped holding:
     #
     #   int          — a positive foothold, sampled from TRUE cells, tried
@@ -6186,16 +6261,20 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
         var tries_max: int = int((slot as Dictionary).get("tries", 3)) if slot is Dictionary else 3
         _prefer_true_cells = bool((slot as Dictionary).get("prefer_true", true)) if slot is Dictionary else true
         _mutex_min_elements = int((slot as Dictionary).get("min_elements", 0)) if slot is Dictionary else 0
+        var reject_fn: Callable = _anchor_identity_already_linked if form_id == 1 else Callable()
         var tries: int = 0
         while tries < tries_max:
             tries += 1
             if _try_build_and_commit(form_id, sequence_solver_facts,
-                    name_revealed, tier_counts, form_counts):
+                    name_revealed, tier_counts, form_counts, -1, 0, reject_fn):
+                if form_id == 1:
+                    _record_anchor_identity_link()
                 break
     # Restored unconditionally — every later Form must see the unbiased
     # sampler and no element floor.
     _prefer_true_cells = false
     _mutex_min_elements = 0
+    _anchor_identity_uf = {}
 
 
 ## The value_fact kinds — everything a clue discloses that is NOT input to
