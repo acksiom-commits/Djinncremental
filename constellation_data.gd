@@ -240,6 +240,18 @@ const BUILT_IN = [
         "snap_horiz_stars": [0, 8],
         "bonus_levels": {"stars": 1.5, "lines": 2.0, "art": 3.0},
         "spark_cap":      28657,
+        # DEV (2026-09-17): first per-constellation name_theme — Russian-
+        # flavored prefix/mid/suffix pools, replacing constellation_star_namer.gd's
+        # shared Greek DEFAULT_THEME for The Spark specifically. Regenerates
+        # every star name for this constellation (generate_names() is seeded
+        # by constellation_id only); any cached puzzle for id 1 needs a
+        # RESET (Study Overlay's own reset flow) to pick the new names up.
+        "name_theme": {
+            "prefixes": ["Vlad", "Svet", "Yaro", "Rad", "Mir", "Bog", "Rost",
+                         "Sviat", "Zlat", "Lyub", "Dobr", "Vsev", "Kaz", "Volk"],
+            "mids":     ["o", "a", "i", "y", "e", "u"],
+            "suffixes": ["slav", "mir", "mila", "ei", "ov", "ina", "an", "im", "osh"],
+        },
         # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
 
         # Hallelujah Chorus (Handel's Messiah) — orchestral introduction,
@@ -411,6 +423,19 @@ const BUILT_IN = [
         "bonus_levels": {"stars": 2.0, "lines": 3.0, "art": 3.0},
         "spark_cap":      28657,
         # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
+        # DEV (2026-09-17): Korean-flavored name_theme, second per-
+        # constellation override after The Spark's Russian one — see
+        # constellation_star_namer.gd's DEFAULT_THEME doc comment for the
+        # prefix/mid/suffix mechanism and the "reset to pick up new names"
+        # caveat. "o" dropped from mids (2026-09-17): five of the fourteen
+        # prefixes (Seo/Soo/Woo/Hyo) already end in "o", so an "o" mid
+        # compounded into double/triple-o names ("Sooo-", "Wooo-").
+        "name_theme": {
+            "prefixes": ["Min", "Jun", "Seo", "Ji", "Hyun", "Soo", "Yeon",
+                         "Eun", "Hae", "Woo", "Kyung", "Sung", "Young", "Hyo"],
+            "mids":     ["a", "i", "u", "ae", "ha"],
+            "suffixes": ["won", "jin", "bin", "ho", "yul", "rin", "chan", "hee", "seok"],
+        },
 
         # Debussy, Clair de Lune — opening 17 notes (events 0-16), the
         # phrase that ends right as it begins echoing itself (F4-G#4
