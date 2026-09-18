@@ -49,6 +49,7 @@ var _expected_rows: int = 0
 @onready var _btn_undo_selects: Button = %BtnUndoSelects
 @onready var _btn_undo_blocks: Button = %BtnUndoBlocks
 @onready var _btn_undo_all: Button = %BtnUndoAll
+@onready var _title_label: Label = %TitleLabel
 
 
 func _ready() -> void:
@@ -73,6 +74,14 @@ func _add_copy_button() -> void:
     btn.tooltip_text = "Write the still-possible values here into the Notes tab"
     btn.pressed.connect(func(): copy_pressed.emit(current_record_idx))
     parent.add_child(btn)
+
+
+## Overrides the scene's static title text (e.g. "SELECT PITCH"). Callers
+## that know WHICH record they're addressing use this so the popup keeps
+## saying so while it's open — see constellation_puzzle_widgets.gd's
+## _open_pitch_checklist_popup() for the Names-tab case this was added for.
+func set_title(text: String) -> void:
+    _title_label.text = text
 
 
 func open(record_idx: int, screen_pos: Vector2) -> void:

@@ -1142,6 +1142,14 @@ func _make_pitch_checklist_row_for_record(record_idx: int) -> HBoxContainer:
 
 
 func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
+    # Names-tab rows always have a confirmed .name (that's what makes the
+    # row exist); other callers (Staff popup reopen) may not, and .name is
+    # the only safe source here — unlike _record_display_name(), it never
+    # falls back to ground truth, so an unconfirmed record just keeps the
+    # scene's plain default title instead of leaking anything.
+    var star_name: String = str(_deduction.record_at(record_idx).get("name", ""))
+    _host._pitch_checklist_popup.set_title(
+        "%s - Select Pitch" % star_name if star_name != "" else "SELECT PITCH")
     _host._pitch_checklist_popup.clear_rows()
     # One row per pitch, so the pitch count IS the total the column-major
     # split needs. After clear_rows(), which resets it.
