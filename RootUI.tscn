@@ -533,7 +533,7 @@ show_percentage = false
 custom_minimum_size = Vector2(20, 24)
 layout_mode = 2
 size_flags_vertical = 4
-operation_key = "particle_compress"
+operation_key = "particle_assemble"
 
 [node name="IotaBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=865147827]
 layout_mode = 2
@@ -573,7 +573,7 @@ show_percentage = false
 custom_minimum_size = Vector2(20, 24)
 layout_mode = 2
 size_flags_vertical = 4
-operation_key = "iota_assemble"
+operation_key = "iota_assemble_uonite"
 
 [node name="MoteBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=1229614725]
 layout_mode = 2
@@ -613,7 +613,7 @@ show_percentage = false
 custom_minimum_size = Vector2(20, 24)
 layout_mode = 2
 size_flags_vertical = 4
-operation_key = "mote_compress"
+operation_key = "mote_assemble_uonite"
 
 [node name="GrainBarVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/GenBarsVBox" unique_id=1221749214]
 layout_mode = 2
