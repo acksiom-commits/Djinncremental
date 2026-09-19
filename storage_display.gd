@@ -84,6 +84,20 @@ const RANDOM_VEL:     float = 8.0
 const DAMPING:        float = 0.98
 const FADE_DURATION:  float = 0.3
 const SPAWN_DURATION: float = 0.5
+
+# Real production adds stock in discrete lumps, not continuously (see
+# production_manager.gd's _accum[op] tick-accumulator) -- with a
+# resource's own tick interval shortened by the Hourglass (see
+# hourglass_toggle_op_name_mismatch memory), those lumps land often
+# enough to read as a visible pulse in lock-step with the timer instead
+# of a smooth climb. get_resource_storage_fraction()/get_storage_fill_
+# fraction() are read fresh every frame from raw stock (never tick- or
+# signal-driven -- confirmed directly), so the fix belongs here, at the
+# display layer: ease the FRACTION used for icon-count targets toward
+# its true instantaneous value at a capped rate/sec, rather than
+# snapping to it the instant a tick lands. Purely cosmetic -- doesn't
+# touch _gc's actual stock, targets, or any real economy value.
+const FRACTION_SMOOTH_RATE: float = 0.6
 const BTN_SIZE:        float = 20.0   # +/- button side length in pixels
 const BTN_INSET:       float = 5.0    # gap from node edge to button — pull in to avoid overlap
 const LABEL_FONT_SIZE: int   = 16     # volition counter and percentage text
@@ -195,6 +209,13 @@ var _icons:         Array = []
 var _center_icons:  Array = []
 var _rng:         RandomNumberGenerator = RandomNumberGenerator.new()
 var _frame_count: int   = 0
+
+# Smoothed copies of get_storage_fill_fraction()/get_resource_storage_
+# fraction() used only for icon-target math in _sync_icons() -- see
+# FRACTION_SMOOTH_RATE above. -1.0 sentinel so the very first real frame
+# snaps straight to the true value instead of easing up from empty.
+var _smoothed_fill: float = -1.0
+var _smoothed_frac: Dictionary = {}
 var _tooltip_accum: float = 0.0
 var _overflow_tri:      PackedVector2Array = PackedVector2Array()
 var _vol_center:        Vector2 = Vector2.ZERO
@@ -416,7 +437,7 @@ func _process(delta: float) -> void:
         queue_redraw()
         return
     _frame_count += 1
-    _sync_icons()
+    _sync_icons(delta)
     _drive_flow_production(delta)
     _update_icons(delta)
     _update_center_icons(delta)
@@ -504,9 +525,13 @@ func _on_vol_minus_pressed() -> void:
     queue_redraw()
 
 
-func _sync_icons() -> void:
-    var fill         = _gc.get_storage_fill_fraction()
-    var target_total = int(fill * MAX_ICONS)
+func _sync_icons(delta: float) -> void:
+    var raw_fill = _gc.get_storage_fill_fraction()
+    if _smoothed_fill < 0.0:
+        _smoothed_fill = raw_fill
+    else:
+        _smoothed_fill = move_toward(_smoothed_fill, raw_fill, FRACTION_SMOOTH_RATE * delta)
+    var target_total = int(_smoothed_fill * MAX_ICONS)
 
     var current_counts: Dictionary = {}
     for key in RESOURCE_KEYS:
@@ -543,7 +568,12 @@ func _sync_icons() -> void:
 
     var targets: Dictionary = {}
     for key in RESOURCE_KEYS:
-        var frac      = _gc.get_resource_storage_fraction(key)
+        var raw_frac = _gc.get_resource_storage_fraction(key)
+        if not _smoothed_frac.has(key):
+            _smoothed_frac[key] = raw_frac
+        else:
+            _smoothed_frac[key] = move_toward(_smoothed_frac[key], raw_frac, FRACTION_SMOOTH_RATE * delta)
+        var frac      = _smoothed_frac[key]
         var has_stock = false
         match key:
             "monad":    has_stock = not _gc.get_monad_total().is_zero()
@@ -940,6 +970,14 @@ func clear_flow_icons() -> void:
     for i in range(_icons.size() - 1, -1, -1):
         if _icons[i]["resource"] == SETTLE_LEG_RESOURCE and _icons[i].get("wedge", -1) == COMPLETED_UONITE_WEDGE:
             _icons.remove_at(i)
+    # Prestige wipes real stock immediately, not gradually -- the smoothed
+    # fractions driving wedge icon targets (FRACTION_SMOOTH_RATE) need to
+    # snap to match, or the wedges would spend the next ~1.5s visually
+    # draining toward zero as if that were real leftover production
+    # instead of a reset. Resetting to the sentinel/empty state re-primes
+    # both on the next _sync_icons() frame, same as a fresh load.
+    _smoothed_fill = -1.0
+    _smoothed_frac.clear()
 
 
 func _draw_icon_at(pos: Vector2, key: String, alpha: float) -> void:
