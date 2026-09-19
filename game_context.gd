@@ -77,6 +77,14 @@ var manifold_total_flows: int = 0
 # Which operation currently receives the Hourglass bonus. "" = idle/dormant.
 var hourglass_target_ops: Array[String] = []
 
+# One-time load-time migration for hourglass_target_ops entries saved under
+# an operation_key that got renamed (commit 8fd2ceb) -- see load_save_data().
+const HOURGLASS_OP_RENAMES: Dictionary = {
+    "particle_compress": "particle_assemble",
+    "iota_assemble":     "iota_assemble_uonite",
+    "mote_compress":     "mote_assemble_uonite",
+}
+
 
 
 # ===================== STORAGE CAP =======================
@@ -1855,9 +1863,24 @@ func load_save_data(data: Dictionary) -> void:
         # fails and returns an empty array - not a crash, but a corrupted
         # save with one bad element would silently wipe every real
         # hourglass target op instead of just dropping the bad one.
+        #
+        # HOURGLASS_OP_RENAMES (below) migrates the three op_keys renamed in
+        # commit 8fd2ceb ("particle_compress"/"iota_assemble"/"mote_compress"
+        # never matched a real production op, see hourglass_toggle_op_name_
+        # mismatch memory) so an already-saved entry becomes the corrected
+        # string instead of sitting orphaned forever. Without this, an old
+        # entry matches no HourglassToggle's operation_key any more (reads
+        # as inactive everywhere) while STILL counting against
+        # current_ops.size() < cap in hourglass_toggle.gd's _gui_input() --
+        # silently eating a Volition-cap slot the player can never see or
+        # free, confirmed on a real save with 6 Volitions assigned but only
+        # 3 of 6 target-op slots actually toggleable.
         for v in _ht:
-            if typeof(v) == TYPE_STRING:
-                hourglass_target_ops.append(v)
+            if typeof(v) != TYPE_STRING:
+                continue
+            var op: String = HOURGLASS_OP_RENAMES.get(v, v)
+            if not hourglass_target_ops.has(op):
+                hourglass_target_ops.append(op)
     archon_poke_count         = _coerce_int(data.get("archon_poke_count"), 0)
     # clampi, not just type coercion: archon_poke_minigame.gd indexes
     # LOCKDOWN_DURATIONS/POST_LOCKDOWN_MESSAGES (6 entries) with this value.
