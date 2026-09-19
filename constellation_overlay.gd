@@ -291,9 +291,17 @@ func _draw() -> void:
 
                 # Modulate alpha by this star's own staggered brightness for
                 # the endowment fade-in (each star ramps independently, see
-                # get_star_brightness()).
+                # get_star_brightness()). Lower bound is 0.0, not the old
+                # 0.3 floor -- that floor was previously unreachable in a
+                # durable state (show_stars used to require ALREADY being
+                # past the Stars tier, where brightness only ever sat at
+                # exactly 0.0 for a single instant before rising), but
+                # show_stars now fires from unlock alone (010cb15), so an
+                # unlocked constellation with zero sparks invested sat at
+                # brightness 0.0 indefinitely -- rendering every star at a
+                # flat, permanently-visible 30% alpha instead of invisible.
                 var brightness: float = _cd.get_star_brightness(id, i, positions.size())
-                base_color.a = lerp(0.3, 0.9, brightness) if show_stars else 0.70
+                base_color.a = lerp(0.0, 0.9, brightness) if show_stars else 0.70
 
                 draw_circle(p, 3.5, base_color)
 
