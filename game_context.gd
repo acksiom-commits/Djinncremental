@@ -296,6 +296,37 @@ func _check_art_tier_crossing(constellation_id: int) -> void:
         constellation_art_tier_achieved.emit(constellation_id, n, get_constellation_art_tier_bonus(constellation_id))
 
 
+## Per-constellation random star-lighting order for the pre-Stars-tier
+## fade-in (see ConstellationData.get_star_brightness()) -- keyed by
+## constellation_id (int) -> Array[int], a permutation of that
+## constellation's own star indices. Regenerated fresh every time that
+## constellation's spark investment resets to 0 (Expansion, or any other
+## reset-to-zero path -- see reset_constellation_sparks()/
+## do_prestige_reset()) so which star lights up first/second/etc. is a
+## new surprise each cycle, per user direction ("re-randomized every time
+## you reset/replay"). A missing or size-mismatched entry (star_count
+## changed, or never generated yet) safely regenerates on next access —
+## see the getter below — rather than needing its own explicit reset call
+## at every unlock site.
+var constellation_star_light_order: Dictionary = {}
+
+## Returns constellation_id's current star-lighting order, generating a
+## fresh random permutation of range(star_count) the first time it's
+## asked for since the last reset (or ever, for a never-before-unlocked
+## constellation) -- and again if star_count itself no longer matches
+## (a def edited between sessions, or a corrupted leftover). Stable
+## across repeated calls otherwise, so a star's position in the lighting
+## sequence doesn't jitter frame to frame.
+func get_constellation_star_light_order(constellation_id: int, star_count: int) -> Array:
+    var existing: Array = constellation_star_light_order.get(constellation_id, [])
+    if existing.size() == star_count:
+        return existing
+    var fresh: Array = range(star_count)
+    fresh.shuffle()
+    constellation_star_light_order[constellation_id] = fresh
+    return fresh
+
+
 # ===================== UI UNLOCKS =========================
 # Progressive UI reveal flags. Set true when panel is first shown.
 # Saved/loaded so UI state persists across sessions.
@@ -1302,6 +1333,7 @@ func reset_constellation_sparks() -> void:
     for key in constellation_spark_totals:
         constellation_spark_totals[key] = 0.0
     constellation_art_tier_counted.clear()
+    constellation_star_light_order.clear()
 
 
 # ===================== SAFE SPEND HELPERS =================
@@ -1481,6 +1513,10 @@ func get_save_data() -> Dictionary:
     for cid in constellation_art_tier_counted:
         saved_catco[str(cid)] = bool(constellation_art_tier_counted[cid])
     data["constellation_art_tier_counted"] = saved_catco
+    var saved_light_order: Dictionary = {}
+    for cid in constellation_star_light_order:
+        saved_light_order[str(cid)] = (constellation_star_light_order[cid] as Array).duplicate()
+    data["constellation_star_light_order"] = saved_light_order
     data["tetrad_milestones"]          = tetrad_milestones.duplicate()
     data["monad_milestones"]           = monad_milestones.duplicate()
     var saved_totals = {}
@@ -1756,6 +1792,16 @@ func load_save_data(data: Dictionary) -> void:
     var raw_catco: Dictionary = _coerce_dict(data.get("constellation_art_tier_counted"), {})
     for key in raw_catco:
         constellation_art_tier_counted[int(key)] = _coerce_bool(raw_catco[key], false)
+    constellation_star_light_order.clear()
+    var raw_light_order: Dictionary = _coerce_dict(data.get("constellation_star_light_order"), {})
+    for key in raw_light_order:
+        var raw_arr = raw_light_order[key]
+        if typeof(raw_arr) != TYPE_ARRAY:
+            continue
+        var int_arr: Array = []
+        for v in (raw_arr as Array):
+            int_arr.append(_coerce_int(v, 0))
+        constellation_star_light_order[int(key)] = int_arr
     # tetrad_milestones/monad_milestones have no live reader anywhere in the
     # codebase today (the milestone-check mechanic that used to consume them
     # was removed — see root_ui.gd's v3.9.0 changelog comment), but the
@@ -1902,4 +1948,5 @@ func do_prestige_reset() -> BigNum:
     for k in constellation_spark_totals:
         constellation_spark_totals[k] = 0.0
     constellation_art_tier_counted.clear()
+    constellation_star_light_order.clear()
     return storage_bonus_delta

@@ -1365,15 +1365,54 @@ func get_visual_state(constellation_id: int) -> String:
     return "stars"
 
 
-func get_star_brightness(constellation_id: int) -> float:
+func get_star_brightness(constellation_id: int, star_index: int, star_count: int) -> float:
+    # Staggered per-star fade across [0, SPARKS_TIER_STARS]: stars light up
+    # one at a time in a random order (persisted per-constellation, re-rolled
+    # on reset — see GameContext.get_constellation_star_light_order()), each
+    # ramping 0→1 over a window D = SPARKS_TIER_STARS / (2*star_count - 1)
+    # wide, with each successive star starting exactly one D after the
+    # previous one. The last star in the order finishes ramping exactly at
+    # SPARKS_TIER_STARS, i.e. (star_count - 1)*D + star_count*D == (2*star_count-1)*D.
+    var invested: float = get_sparks_invested(constellation_id)
+    if invested >= SPARKS_TIER_STARS:
+        return 1.0
+    if invested <= 0.0 or star_count <= 0:
+        return 0.0
+    if not _game_context:
+        return 0.0
+    var order: Array = _game_context.get_constellation_star_light_order(constellation_id, star_count)
+    var position: int = order.find(star_index)
+    if position < 0:
+        return 0.0
+    var d: float = SPARKS_TIER_STARS / float(2 * star_count - 1)
+    if d <= 0.0:
+        return 0.0
+    return clamp((invested - float(position) * d) / (float(star_count) * d), 0.0, 1.0)
+
+
+func get_line_brightness(constellation_id: int) -> float:
     # Ramps from 0.0 at the stars tier up to 1.0 at the lines tier, using
-    # the hardcoded absolute spark tiers (see constants block).
+    # the hardcoded absolute spark tiers (see constants block). Same ramp
+    # shape the old single-arg get_star_brightness() used to apply to
+    # stars; now used for the connecting lines instead, since the star
+    # fade moved to the earlier [0, SPARKS_TIER_STARS] window above.
     var invested: float = get_sparks_invested(constellation_id)
     if invested < SPARKS_TIER_STARS:
         return 0.0
     return clamp(
         (invested - SPARKS_TIER_STARS) / (SPARKS_TIER_LINES - SPARKS_TIER_STARS),
         0.0, 1.0)
+
+
+# Placeholder for the constellation ART fade, once those assets exist.
+# Same ramp shape again, shifted to the next window up:
+# func get_art_brightness(constellation_id: int) -> float:
+#     var invested: float = get_sparks_invested(constellation_id)
+#     if invested < SPARKS_TIER_LINES:
+#         return 0.0
+#     return clamp(
+#         (invested - SPARKS_TIER_LINES) / (SPARKS_TIER_ART - SPARKS_TIER_LINES),
+#         0.0, 1.0)
  
  
 # ==================================================

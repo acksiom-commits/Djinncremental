@@ -191,18 +191,20 @@ func _draw() -> void:
 
         var visual_state: String = _cd.get_visual_state(id)
         var invested:     float  = _cd.get_sparks_invested(id)
-        var draw_lines: bool = (
-            visual_state == "lines" or visual_state == "art"
-        )
+        # Lines start fading in as soon as the stars tier is reached (not
+        # the lines tier) — the star fade itself now owns the earlier
+        # [0, SPARKS_TIER_STARS] window, see get_star_brightness() below.
+        var draw_lines: bool = visual_state != "dark"
 
         if draw_lines:
-            # Line brightness ramps from dim at the lines tier up to bright at
-            # the art tier, using the hardcoded absolute spark tiers. The old
-            # per-def fraction-based "line_threshold" / 0.85 math was removed
-            # with the SPARKS_TIER_* rebalance (see constellation_data.gd).
-            var line_frac: float = clampf(
-                (invested - _cd.SPARKS_TIER_LINES) /
-                (_cd.SPARKS_TIER_ART - _cd.SPARKS_TIER_LINES), 0.0, 1.0)
+            # Ramps dim at the stars tier up to bright at the lines tier —
+            # see ConstellationData.get_line_brightness(). Once figure art
+            # assets exist, an analogous get_art_brightness() fade over
+            # [SPARKS_TIER_LINES, SPARKS_TIER_ART] hooks in here too,
+            # gated on visual_state == "art" the same way draw_lines is
+            # gated here (dev placeholder lives next to get_line_brightness
+            # in constellation_data.gd).
+            var line_frac: float = _cd.get_line_brightness(id)
             var line_color: Color = LINE_COLOR_DIM.lerp(LINE_COLOR_BRIGHT, line_frac)
             var def:   Dictionary = _cd.get_constellation_def(id)
             var pairs: Array      = def.get("line_pairs", [])
@@ -245,9 +247,11 @@ func _draw() -> void:
         var puzzle_star_colors: Array = _cd.get_puzzle_star_colors(id)
         var has_star_colors: bool = puzzle_star_colors.size() == positions.size()
 
-        var show_stars: bool = (
-            visual_state in ["stars", "lines", "art"]
-        )
+        # Stars fade individually across [0, SPARKS_TIER_STARS] (a
+        # staggered per-star ramp, see get_star_brightness()) rather than
+        # waiting for the "stars" tier to pop in all at once — so this is
+        # keyed on unlock, not on visual_state.
+        var show_stars: bool = _cd.unlocked.has(id)
         var puzzle_active: bool = (
             id == _puzzle_target_id and
             _engine.state in [ClickSequencePuzzleEngine.State.ACTIVE, ClickSequencePuzzleEngine.State.SUCCESS]
@@ -275,8 +279,10 @@ func _draw() -> void:
                 else:
                     base_color = Color(1.0, 1.0, 1.0, 1.0)
 
-                # Modulate alpha by star brightness for the endowment fade-in.
-                var brightness: float = _cd.get_star_brightness(id)
+                # Modulate alpha by this star's own staggered brightness for
+                # the endowment fade-in (each star ramps independently, see
+                # get_star_brightness()).
+                var brightness: float = _cd.get_star_brightness(id, i, positions.size())
                 base_color.a = lerp(0.3, 0.9, brightness) if show_stars else 0.70
 
                 draw_circle(p, 3.5, base_color)
