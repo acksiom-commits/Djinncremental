@@ -937,6 +937,15 @@ func _on_tier1_archon_complete_complete() -> void:
 func _on_constellation_identity_reveal_complete(constellation_id: int) -> void:
     if game_context:
         game_context.constellation_identity_revealed[constellation_id] = true
+    # _refresh_slots() only runs from constellation_popout.gd's _process()
+    # while its panel is open, so a reveal completing while the panel is
+    # closed (or the player is elsewhere, e.g. mid-puzzle) leaves the
+    # selector button showing its stale pre-reveal "UNKNOWN" label until
+    # something else forces a repopulate. Push one refresh right here so
+    # the label is correct the moment the panel is next opened, not just
+    # eventually once _process() happens to run while it's already open.
+    if _constellation_popout:
+        _constellation_popout._refresh_slots()
 
 
 func _on_first_constellation_complete() -> void:
