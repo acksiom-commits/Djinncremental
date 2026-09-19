@@ -994,6 +994,23 @@ func _on_constellation_selected_logic_puzzle(constellation_id: int) -> void:
     var cached: Dictionary = cd.get_puzzle_cache(constellation_id)
     if not cached.is_empty():
         var puzzle := ConstellationLogicPuzzle.new()
+        var scn: int = int(cached.get("star_count", 0))
+        if scn > 0:
+            # setup() first so the dump below has real pitch tables and
+            # topology (from_cache_dict() alone leaves both empty — see
+            # debug_dump_clueset()'s own comment), THEN overwrite with the
+            # SAVED solution/clues. Same order as probe_live_clues.gd, and
+            # for the same reason: setup()'s own colour/name/sequence
+            # assignment is seed-derived and would otherwise silently
+            # diverge from what this puzzle actually generated.
+            var cdef: Dictionary = cd.get_constellation_def(constellation_id)
+            var sq: Array = []
+            for i in range(scn):
+                sq.append(i)
+            puzzle.setup(scn, cdef.get("line_pairs", []), sq, cd.player_seed,
+                constellation_id, cdef.get("name_theme", {}),
+                cd.get_note_assignment(constellation_id),
+                cd.get_note_freqs(constellation_id), null)
         if puzzle.from_cache_dict(cached):
             # Dump the ALREADY-generated puzzle too, not just freshly built
             # ones. The generation-time dump never fires for a puzzle that
