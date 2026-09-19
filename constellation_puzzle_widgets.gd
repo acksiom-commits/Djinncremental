@@ -1148,7 +1148,7 @@ func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     # falls back to ground truth, so an unconfirmed record just keeps the
     # scene's plain default title instead of leaking anything.
     var star_name: String = str(_deduction.record_at(record_idx).get("name", ""))
-    _host._pitch_checklist_popup.set_title(
+    _host._pitch_checklist_popup.set_header_text(
         "%s - Select Pitch" % star_name if star_name != "" else "SELECT PITCH")
     _host._pitch_checklist_popup.clear_rows()
     # One row per pitch, so the pitch count IS the total the column-major
@@ -1540,6 +1540,24 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     copy_btn.pressed.connect(func(): _on_staff_copy(ridx, "sequence"))
     row.add_child(copy_btn)
 
+    # UNDO — Sequence is the one axis with no check/X states and so no
+    # Undo trio anywhere else (Colour/Pitch/Name each get one on every
+    # popup that edits them). Clearing this row's boxes by hand used to be
+    # the only way to release an entry, and even that silently failed for
+    # an exact pin (see _undo_sequence_entry) -- an explicit button here
+    # matches how every other axis is undone instead of relying on a typed-
+    # field trick nothing else in this UI teaches the player to try.
+    var undo_btn := Button.new()
+    undo_btn.text = "↺"
+    undo_btn.custom_minimum_size = Vector2(26, 24)
+    undo_btn.focus_mode = Control.FOCUS_NONE
+    undo_btn.tooltip_text = "Undo this sequence entry"
+    var elo := edit_lo
+    var emid := edit_mid
+    var ehi := edit_hi
+    undo_btn.pressed.connect(func(): _undo_sequence_entry(ridx, elo, emid, ehi))
+    row.add_child(undo_btn)
+
     return row
 
 
@@ -1697,13 +1715,39 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEd
     _deduction._full_propagation_refresh()
 
 
+## Releases whatever this record's Sequence row currently holds -- an exact
+## pin (seq_lo==seq_hi) AND/OR a manual candidate list -- and re-renders the
+## row. Shared by the row's own UNDO button and by clearing the centre box
+## to blank (see _commit_sequence_candidates): an exact pin renders THERE
+## as "= N", so clearing that box is the only interaction a player has with
+## it, and it has to release the pin, not just the (usually already-empty)
+## candidate list. Reported live: typed "1" into the sequence entry, could
+## not get it undone from anywhere -- clearing "= N" and submitting used to
+## just redisplay the same "= N" immediately, indistinguishable from the
+## click having done nothing at all.
+func _undo_sequence_entry(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var r: Dictionary = _deduction.record_at(record_idx)
+    var lo: int = int(r.get("seq_lo", 0))
+    var hi: int = int(r.get("seq_hi", 0))
+    var had_candidates: bool = not (r.get("seq_candidates", []) as Array).is_empty()
+    r["seq_candidates"] = []
+    if lo > 0 and lo == hi:
+        r["seq_lo"] = 0
+        r["seq_hi"] = 0
+    _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
+    if (lo > 0 and lo == hi) or had_candidates:
+        _deduction._save_puzzle_notes()
+        _deduction._full_propagation_refresh()
+
+
 func _commit_sequence_candidates(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     var raw: String = mid_edit.text.strip_edges()
     if raw == "":
-        _deduction.record_at(record_idx)["seq_candidates"] = []
-        mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
+        _undo_sequence_entry(record_idx, lo_edit, mid_edit, hi_edit)
         return
 
     var parsed: Array = _deduction._parse_candidate_list(raw)
@@ -2599,8 +2643,36 @@ func _all_star_names_padded() -> Array:
     return names
 
 
+## Releases an exact Sequence pin (seq_lo==seq_hi) and any manual candidate
+## list on `record_idx`, with no LineEdit refresh -- the Staff popup has no
+## Sequence section/boxes of its own to redraw (unlike _undo_sequence_entry,
+## which the Sort:tab Seq. row's own UNDO button uses). Called from the
+## Staff popup's pitch Undo trio because that popup is the ONLY surface a
+## player has for a record once it's showing there, and Sequence has no
+## Undo control of its own anywhere else reachable from it -- reported
+## live: entered "1" on a Pitch-tab slot's sequence entry, could not
+## release it from the Staff popup via any Undo button, "obviously" the
+## Undo buttons already there should have covered it. Runs BEFORE the
+## pitch_revealed guard below (Listen only locks the PITCH axis; a wrong
+## Sequence entry survives Listen and still needs releasing).
+func _clear_sequence_entry(record_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var r: Dictionary = _deduction.record_at(record_idx)
+    var lo: int = int(r.get("seq_lo", 0))
+    var hi: int = int(r.get("seq_hi", 0))
+    if lo > 0 and lo == hi:
+        r["seq_lo"] = 0
+        r["seq_hi"] = 0
+    r["seq_candidates"] = []
+
+
 func _on_staff_pitch_undo_selects(record_idx: int) -> void:
+    _clear_sequence_entry(record_idx)
     if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
+        _deduction._save_puzzle_notes()
+        _deduction._full_propagation_refresh()
+        _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
         return
     _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
     var r: Dictionary = _deduction.record_at(record_idx)
@@ -2612,7 +2684,11 @@ func _on_staff_pitch_undo_selects(record_idx: int) -> void:
 
 
 func _on_staff_pitch_undo_blocks(record_idx: int) -> void:
+    _clear_sequence_entry(record_idx)
     if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
+        _deduction._save_puzzle_notes()
+        _deduction._full_propagation_refresh()
+        _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
         return
     _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
     _deduction._save_puzzle_notes()
@@ -2621,7 +2697,11 @@ func _on_staff_pitch_undo_blocks(record_idx: int) -> void:
 
 
 func _on_staff_pitch_undo_all(record_idx: int) -> void:
+    _clear_sequence_entry(record_idx)
     if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
+        _deduction._save_puzzle_notes()
+        _deduction._full_propagation_refresh()
+        _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
         return
     _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
     _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")

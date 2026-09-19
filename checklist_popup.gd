@@ -76,11 +76,15 @@ func _add_copy_button() -> void:
     parent.add_child(btn)
 
 
-## Overrides the scene's static title text (e.g. "SELECT PITCH"). Callers
-## that know WHICH record they're addressing use this so the popup keeps
-## saying so while it's open — see constellation_puzzle_widgets.gd's
-## _open_pitch_checklist_popup() for the Names-tab case this was added for.
-func set_title(text: String) -> void:
+## Overrides the scene's static header text (e.g. "SELECT PITCH"). Named
+## set_header_text rather than set_title -- PopupPanel extends Window,
+## which already has its own native set_title() (the OS window title bar),
+## and silently shadowing that produced a "won't be called by the engine"
+## warning treated as a build error. Callers that know WHICH record they're
+## addressing use this so the popup keeps saying so while it's open — see
+## constellation_puzzle_widgets.gd's _open_pitch_checklist_popup() for the
+## Names-tab case this was added for.
+func set_header_text(text: String) -> void:
     _title_label.text = text
 
 
