@@ -464,10 +464,14 @@ func _load_constellation_data() -> void:
     # source naturally produces empty star names/colors/clues/pitches with
     # no separate blanking logic to keep in sync as this function changes.
     # Star geometry (_compute_star_screen_positions(), called at the end of
-    # this function) is deliberately NOT touched here — the shape/outline
-    # isn't spoiler content the way names/pitches/clues are, and the main
-    # starfield already shows it for any unlocked constellation regardless
-    # of tier.
+    # this function) is NOT gated here -- it stays computed unconditionally
+    # so _widgets._reposition_star_widgets() and _on_star_map_resized() keep
+    # working the same regardless of reveal state. The actual spoiler --
+    # this map's DRAWING of the shape/lines -- is gated in _draw_star_map()
+    # instead (reported live: The Spark's full layout was visible before
+    # Stars tier). Computing the positions without drawing them is safe:
+    # star widgets are already empty here too, since _star_count is 0 while
+    # hidden (_star_names comes from cache={} below).
     var identity_hidden: bool = _constellation_identity_hidden(_constellation_id)
     var cache: Dictionary = {} if identity_hidden else _cd.get_puzzle_cache(_constellation_id)
     _puzzle_seed_used = _coerce_int(cache.get("player_seed_used"), 0)
@@ -803,6 +807,17 @@ func _on_star_map_resized() -> void:
 # ==================================================
 func _draw_star_map() -> void:
     if _star_screen_pos.is_empty():
+        return
+    # The star/line LAYOUT itself is spoiler content pre-reveal, unlike the
+    # main starfield's own silhouette (constellation_overlay.gd) -- this map
+    # is the Study panel's own detailed view, at a scale that shows exact
+    # topology. _compute_star_screen_positions() and this function's own
+    # line_pairs read both go straight to _cd's static per-constellation
+    # geometry, bypassing _load_constellation_data()'s cache={} blanking
+    # entirely (that only empties the CACHED puzzle content: names/colours/
+    # clues), so the shape rendered here regardless of identity-hidden
+    # state. Reported live on The Spark: fully visible before Stars tier.
+    if _constellation_identity_hidden(_constellation_id):
         return
 
     var def: Dictionary = _cd.get_constellation_def(_constellation_id) if _cd else {}
