@@ -206,6 +206,16 @@ func _draw() -> void:
             # in constellation_data.gd).
             var line_frac: float = _cd.get_line_brightness(id)
             var line_color: Color = LINE_COLOR_DIM.lerp(LINE_COLOR_BRIGHT, line_frac)
+            # LINE_COLOR_DIM's own alpha (0.25) is NOT the fade-in floor —
+            # it's the colour at line_frac==0, and drawing it at that alpha
+            # the instant draw_lines flips true is exactly the abrupt-pop
+            # bug stars used to have, just moved to lines: invisible one
+            # frame, 25%-opaque the next. Scaling alpha by line_frac too
+            # makes the crossing at SPARKS_TIER_STARS continuous with the
+            # "not drawn at all" state just before it (alpha 0 either way),
+            # while still reaching the original DIM/BRIGHT-lerped alpha by
+            # the time line_frac reaches 1.0 at SPARKS_TIER_LINES.
+            line_color.a *= line_frac
             var def:   Dictionary = _cd.get_constellation_def(id)
             var pairs: Array      = def.get("line_pairs", [])
             if pairs.is_empty():
