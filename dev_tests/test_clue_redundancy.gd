@@ -185,13 +185,24 @@ func run() -> void:
 	var opening_big: int = 0
 	var opening_sizes: Dictionary = {}
 	var anchor_misses: Array = []
-	var live_profile: String = P.new().difficulty
-	var anchors: Array = P.DIFFICULTY_PROFILES[live_profile]["opening_anchors"]
-	var anchor_declared: bool = false
-	for slot in anchors:
-		if slot is Dictionary and int(slot["form"]) == 13 \
-				and int(slot.get("min_elements", 0)) >= 4:
-			anchor_declared = true
+	# Every profile in DIFFICULTY_PROFILES, not just "the live one" -- that
+	# was the exact bug found 2026-09-20: this used to read P.new().difficulty
+	# (a compiled-in field default, "hard") while game_context.gd's runtime
+	# default for an unconfigured constellation is "easy" (see
+	# get_constellation_difficulty), so the profile actually shipping to
+	# players was never the one this check looked at. A profile silently
+	# becoming "the live one" must not be a precondition for this catching a
+	# regression in it.
+	var profiles_missing_anchor: Array = []
+	for profile_name in P.DIFFICULTY_PROFILES.keys():
+		var anchors: Array = P.DIFFICULTY_PROFILES[profile_name]["opening_anchors"]
+		var declared: bool = false
+		for slot in anchors:
+			if slot is Dictionary and int(slot["form"]) == 13 \
+					and int(slot.get("min_elements", 0)) >= 4:
+				declared = true
+		if not declared:
+			profiles_missing_anchor.append(profile_name)
 
 	for cid in CONSTELLATIONS:
 		var cdef: Dictionary = cd.get_constellation_def(cid)
@@ -200,7 +211,13 @@ func run() -> void:
 			continue
 		var scn: int = int(cdef["star_count"])
 		for seed in SEEDS:
+			# Alternate "hard"/"easy" across (cid, seed) combos rather than a
+			# second nested loop -- covers both profiles' runtime behaviour
+			# without reshaping this whole block's indentation. Deterministic
+			# on CONSTELLATIONS/SEEDS' fixed order, so a failure reproduces.
+			var dfc: String = "easy" if (CONSTELLATIONS.find(cid) + SEEDS.find(seed)) % 2 == 0 else "hard"
 			var g = P.new()
+			g.difficulty = dfc
 			var sq: Array = []
 			for i in range(scn):
 				sq.append(i)
@@ -218,10 +235,10 @@ func run() -> void:
 			# the axis variant (two chars per participant) while distinct
 			# CATEGORIES under-counts it (participants share an id_cat).
 			if clues.is_empty():
-				anchor_misses.append("c%d seed %d: no clues at all" % [cid, seed])
+				anchor_misses.append("c%d seed %d [%s]: no clues at all" % [cid, seed, dfc])
 			elif int((clues[0] as Dictionary).get("form_id", -1)) != 13:
-				anchor_misses.append("c%d seed %d: opens with [%s]"
-					% [cid, seed, str((clues[0] as Dictionary).get("form_name", "?"))])
+				anchor_misses.append("c%d seed %d [%s]: opens with [%s]"
+					% [cid, seed, dfc, str((clues[0] as Dictionary).get("form_name", "?"))])
 			else:
 				opened_mutex += 1
 				var stars_seen: Dictionary = {}
@@ -232,8 +249,8 @@ func run() -> void:
 				if esz >= 4:
 					opening_big += 1
 				else:
-					anchor_misses.append("c%d seed %d: opening Mutex names only %d stars"
-						% [cid, seed, esz])
+					anchor_misses.append("c%d seed %d [%s]: opening Mutex names only %d stars"
+						% [cid, seed, dfc, esz])
 			for i in clues.size():
 				var c: Dictionary = clues[i]
 				# Bucket by (left descriptor, right category). The Forms
@@ -429,11 +446,11 @@ func run() -> void:
 		% [opened_mutex, puzzles, opening_big, str(opening_sizes)])
 	for am in anchor_misses:
 		print("      ", am)
-	ok(anchor_declared,
-		"the LIVE profile ('%s') declares a Mutex anchor at min_elements>=4 — otherwise the two checks below test nothing"
-			% live_profile)
+	ok(profiles_missing_anchor.is_empty(),
+		"every DIFFICULTY_PROFILES entry declares a Mutex anchor at min_elements>=4 (missing: %s) — otherwise the checks below test nothing for whichever one ships"
+			% str(profiles_missing_anchor))
 	ok(opened_mutex == puzzles,
-		"every puzzle opens with Mutual Exclusion (%d of %d)" % [opened_mutex, puzzles])
+		"every puzzle (both profiles, alternated per combo) opens with Mutual Exclusion (%d of %d)" % [opened_mutex, puzzles])
 	ok(opening_big == puzzles,
 		"and every opening Mutex names at least 4 distinct stars (%d of %d)" % [opening_big, puzzles])
 

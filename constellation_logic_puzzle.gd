@@ -946,7 +946,22 @@ func _validate_count_clues(solution: Array, count_clues: Array[Dictionary]) -> b
     return true
  
  
-func _solve(clues: Array[Dictionary], cap: int = 2, rank_restriction: Array = []) -> Array:
+## The pure constraint-propagation prefix of _solve(), split out
+## 2026-09-20 so an explanation/difficulty-scoring pass can ask "what does
+## propagation ALONE force from this fact set" without the backtracking
+## fallback _solve() falls through to below ever entering the picture — a
+## step justified by "the solver tried star 7 and it worked" is not
+## human-interpretable, so nothing built on this result may read past what
+## propagation itself proved. Behaviour-preserving: this is exactly
+## _solve()'s own pre-backtracking control flow, unchanged, just given a
+## function boundary so it has a name of its own.
+##
+## Returns {"possible", "consistent", "expanded_cmp", "adj_clues",
+## "count_clues"} — "possible" is the grid as far as propagation could
+## take it even when "consistent" is false (a contradiction was found),
+## since a caller diagnosing WHY a candidate fact-set fails may still want
+## to see where it got to.
+func _propagate_only(clues: Array[Dictionary], rank_restriction: Array = []) -> Dictionary:
     var expanded_cmp: Array[Dictionary] = _expand_clues_to_cmp(clues)
     var adj_clues: Array[Dictionary] = []
     var count_clues: Array[Dictionary] = []
@@ -955,22 +970,28 @@ func _solve(clues: Array[Dictionary], cap: int = 2, rank_restriction: Array = []
             adj_clues.append(clue)
         elif clue["kind"] == "ordinal_count_before":
             count_clues.append(clue)
- 
+
     var possible: Array = _init_possibility_grid()
     if not rank_restriction.is_empty():
         for i in star_count:
             for r in star_count:
                 if not rank_restriction[i][r]:
                     possible[i][r] = false
+    var result: Dictionary = {
+        "possible": possible,
+        "consistent": false,
+        "expanded_cmp": expanded_cmp,
+        "adj_clues": adj_clues,
+        "count_clues": count_clues,
+    }
     if not _apply_exact_clues(possible, clues):
-        return []
+        return result
     if not _apply_negative_clues(possible, clues):
-        return []
+        return result
     if not _apply_range_clues(possible, clues):
-        return []
-    var consistent: bool = _propagate(possible, expanded_cmp, adj_clues, count_clues)
-    if not consistent:
-        return []
+        return result
+    if not _propagate(possible, expanded_cmp, adj_clues, count_clues):
+        return result
     # Phase 4: layer naked-subset on top (Sequence is alldiff — sound, see
     # _naked_subset_pass's guard). Can only resolve MORE puzzles via pure
     # propagation than before, reducing how often the backtracking fallback
@@ -978,23 +999,35 @@ func _solve(clues: Array[Dictionary], cap: int = 2, rank_restriction: Array = []
     var nb_changed: bool = true
     while nb_changed:
         nb_changed = false
-        if _naked_subset_pass(possible, star_count, true):
+        if _naked_subset_pass(possible, star_count, true, clues):
             nb_changed = true
             if not _propagate(possible, expanded_cmp, adj_clues, count_clues):
-                return []
+                return result
+    result["consistent"] = true
+    return result
+
+
+func _solve(clues: Array[Dictionary], cap: int = 2, rank_restriction: Array = []) -> Array:
+    var prop: Dictionary = _propagate_only(clues, rank_restriction)
+    if not bool(prop["consistent"]):
+        return []
+    var possible: Array = prop["possible"]
+    var expanded_cmp: Array = prop["expanded_cmp"]
+    var adj_clues: Array = prop["adj_clues"]
+    var count_clues: Array = prop["count_clues"]
 
     if _all_singleton(possible):
         var sol: Array = _extract_singleton_solution(possible)
         if not _validate_count_clues(sol, count_clues):
             return []
         return [sol]
- 
+
     var solutions: Array = []
     var assignment: Array = []
     assignment.resize(star_count)
     for i in star_count:
         assignment[i] = -1
- 
+
     var init_domains: Array = _possible_to_domains(possible)
     _backtrack_nodes_remaining = MAX_BACKTRACK_NODES
     _backtrack_fc(assignment, init_domains, expanded_cmp, adj_clues, count_clues, solutions, cap)
@@ -1111,24 +1144,52 @@ func _forward_check(var_idx: int, val: int, domains: Array,
  
 
 
-func _naked_subset_pass(grid: Array, domain_size: int, alldiff: bool) -> bool:
-    # Naked pair/triple elimination, generalizing the singleton-only
-    # "alldiff claims exclusivity" projection already used elsewhere in this
-    # file (K=1). If exactly K dots' remaining domains are all subsets of
-    # the SAME K-sized value set, those K values are used up by exactly
-    # those K dots and can be eliminated from every other dot's domain.
-    # Bounded to K=2 (pairs) and K=3 (triples) — an exhaustive K=2..N search
-    # is combinatorially expensive for no practical benefit; pairs/triples
-    # catch the overwhelming majority of real cases in logic-grid solving.
-    #
-    # SOUNDNESS REQUIRES alldiff: the "K values are used up by exactly K
-    # dots" argument only holds when each value can be claimed by at most
-    # one dot. For a non-alldiff domain (Pitch, Color, Degree — multiple
-    # dots CAN legitimately share a value), this technique is simply wrong:
-    # a third dot sharing the same pitch as two others is completely valid,
-    # and eliminating it would falsely rule out a real possibility. Guarded
-    # here, not just at the call site, so misuse fails safe rather than
-    # silently over-eliminating.
+## Bounded above K=3 for the reason the original K=2/K=3-only version gave:
+## this runs as a single whole-grid pass (not per backtrack node), so
+## C(star_count, K) for small K is cheap, but letting K grow unbounded
+## degenerates into the same search this function exists to avoid. RAISED
+## from 3 to 5, 2026-09-20: Satchel's Sequence axis produced a genuine
+## naked QUADRUPLE (Sooujin/Sunguho/Younguwon/Junhawon, all four confined
+## to exactly {4,6,12,14}) that stalled propagation at 13/17 stars — see
+## dev_tests/probe_scratch's investigation that day. Pairs/triples had
+## covered every case measured until then; this is the first puzzle found
+## needing K=4, not a hypothetical.
+const MAX_NAKED_SUBSET_K: int = 5
+
+## Bounded separately from MAX_NAKED_SUBSET_K (factorial, not combinatorial,
+## growth) — resolving WITHIN a found group checks K! permutations, which
+## a K this small keeps trivial (6! = 720) while K=8+ would not be.
+const MAX_LOCKED_GROUP_RESOLVE_K: int = 6
+
+## Naked-K-subset elimination, generalizing the singleton-only "alldiff
+## claims exclusivity" projection already used elsewhere in this file
+## (K=1) up through MAX_NAKED_SUBSET_K. If exactly K dots' remaining
+## domains are all subsets of the SAME K-sized value set, those K values
+## are used up by exactly those K dots.
+##
+## Two things happen once such a group is found, not just one:
+##   1. The K values are eliminated from every OTHER dot's domain (the
+##      original pairs/triples behaviour) — a no-op if every other dot is
+##      already singleton, which is exactly what stalled Satchel: nothing
+##      LEFT to eliminate the locked values from.
+##   2. NEW: _resolve_locked_group() attempts to pin the K dots relative
+##      to EACH OTHER, by checking which of the K! internal permutations
+##      survive every comparison/offset/count arc touching a group member
+##      — the same reasoning a human solver does on noticing "these four
+##      must be some arrangement of these four ranks," not a blind
+##      whole-puzzle backtrack. This is the step that actually closes a
+##      group like Satchel's; (1) alone never would have.
+##
+## SOUNDNESS REQUIRES alldiff: the "K values are used up by exactly K
+## dots" argument only holds when each value can be claimed by at most one
+## dot. For a non-alldiff domain (Pitch, Color, Degree — multiple dots CAN
+## legitimately share a value), this technique is simply wrong: a third
+## dot sharing the same pitch as two others is completely valid, and
+## eliminating it would falsely rule out a real possibility. Guarded here,
+## not just at the call site, so misuse fails safe rather than silently
+## over-eliminating.
+func _naked_subset_pass(grid: Array, domain_size: int, alldiff: bool,
+        clues: Array[Dictionary] = []) -> bool:
     if not alldiff:
         return false
     var changed_any: bool = false
@@ -1140,58 +1201,127 @@ func _naked_subset_pass(grid: Array, domain_size: int, alldiff: bool) -> bool:
                 dom.append(v)
         domains.append(dom)
 
-    # Naked pairs: two different dots share the identical 2-value domain.
-    for d1 in star_count:
-        if domains[d1].size() != 2:
-            continue
-        for d2 in range(d1 + 1, star_count):
-            if domains[d2].size() != 2:
-                continue
-            if domains[d1][0] != domains[d2][0] or domains[d1][1] != domains[d2][1]:
-                continue
-            var v1: int = domains[d1][0]
-            var v2: int = domains[d1][1]
-            for d3 in star_count:
-                if d3 == d1 or d3 == d2:
-                    continue
-                if grid[d3][v1]:
-                    grid[d3][v1] = false
-                    domains[d3].erase(v1)
-                    changed_any = true
-                if grid[d3][v2]:
-                    grid[d3][v2] = false
-                    domains[d3].erase(v2)
-                    changed_any = true
-
-    # Naked triples: three dots whose domains (each size 2 or 3) union to
-    # exactly one 3-value set.
-    for d1 in star_count:
-        if domains[d1].size() < 2 or domains[d1].size() > 3:
-            continue
-        for d2 in range(d1 + 1, star_count):
-            if domains[d2].size() < 2 or domains[d2].size() > 3:
-                continue
-            for d3 in range(d2 + 1, star_count):
-                if domains[d3].size() < 2 or domains[d3].size() > 3:
-                    continue
-                var union_vals: Dictionary = {}
-                for v in domains[d1]:
-                    union_vals[v] = true
-                for v in domains[d2]:
-                    union_vals[v] = true
-                for v in domains[d3]:
-                    union_vals[v] = true
-                if union_vals.size() != 3:
-                    continue
-                for d4 in star_count:
-                    if d4 == d1 or d4 == d2 or d4 == d3:
-                        continue
-                    for v in union_vals.keys():
-                        if grid[d4][v]:
-                            grid[d4][v] = false
-                            domains[d4].erase(v)
-                            changed_any = true
+    var max_k: int = mini(MAX_NAKED_SUBSET_K, star_count - 1)
+    for k in range(2, max_k + 1):
+        if _naked_k_subset(grid, domains, k, clues):
+            changed_any = true
     return changed_any
+
+
+## One K-size sweep: every combination of K dots whose domains are each
+## size <= K, checked for a union of exactly K values.
+func _naked_k_subset(grid: Array, domains: Array, k: int, clues: Array[Dictionary]) -> bool:
+    var candidates: Array = []
+    for d in star_count:
+        if domains[d].size() >= 2 and domains[d].size() <= k:
+            candidates.append(d)
+    if candidates.size() < k:
+        return false
+    return _naked_k_subset_search(grid, domains, candidates, k, 0, [], clues)
+
+
+func _naked_k_subset_search(grid: Array, domains: Array, candidates: Array, k: int,
+        start: int, combo: Array, clues: Array[Dictionary]) -> bool:
+    if combo.size() == k:
+        var union_vals: Dictionary = {}
+        for d in combo:
+            for v in domains[d]:
+                union_vals[v] = true
+        if union_vals.size() != k:
+            return false
+        var changed: bool = false
+        var values: Array = union_vals.keys()
+        for d4 in star_count:
+            if combo.has(d4):
+                continue
+            for v in values:
+                if grid[d4][v]:
+                    grid[d4][v] = false
+                    domains[d4].erase(v)
+                    changed = true
+        if _resolve_locked_group(grid, combo, values, clues):
+            for d5 in combo:
+                domains[d5] = []
+                for v5 in values:
+                    if grid[d5][v5]:
+                        domains[d5].append(v5)
+            changed = true
+        return changed
+    var changed_any: bool = false
+    for i in range(start, candidates.size()):
+        combo.append(candidates[i])
+        if _naked_k_subset_search(grid, domains, candidates, k, i + 1, combo, clues):
+            changed_any = true
+        combo.pop_back()
+    return changed_any
+
+
+## Given a locked group (K dots confined to exactly K values), enumerate
+## the K! internal permutations and keep only those consistent with the
+## FULL clue set — checked by re-running _propagate_only itself on a
+## grid restricted so this permutation is the only option for each group
+## member, rather than hand-rolling per-kind consistency logic.
+##
+## REPLACED 2026-09-20 after test_mus_explanation_soundness caught this
+## silently doing nothing for the Name axis: the original version only
+## checked cmp_clues/adj_clues/count_clues (Sequence-only arc types —
+## "X fires before Y," offsets, neighbor counts). _build_name_clues never
+## produces those kinds; it produces value_in_set/value_out_set, so every
+## permutation trivially "survived" and the group never actually
+## resolved. Re-running the general propagator instead of a bespoke
+## per-kind checker means this works for whatever clue vocabulary the
+## caller's axis actually uses, without needing to enumerate every kind
+## by hand — the same reason _seq_target_forced/_name_target_forced
+## (Change C) already delegate to _propagate_only rather than
+## reimplementing constraint semantics.
+func _resolve_locked_group(grid: Array, group: Array, values: Array,
+        clues: Array[Dictionary]) -> bool:
+    if group.size() > MAX_LOCKED_GROUP_RESOLVE_K:
+        return false
+    var surviving: Array = []
+    for perm in _permutations(values):
+        var trial_restriction: Array = []
+        for row in grid:
+            trial_restriction.append((row as Array).duplicate())
+        for i in group.size():
+            var d: int = int(group[i])
+            var target: int = int(perm[i])
+            for v in values:
+                if int(v) != target:
+                    trial_restriction[d][int(v)] = false
+        var prop: Dictionary = _propagate_only(clues, trial_restriction)
+        if bool(prop["consistent"]):
+            surviving.append(perm)
+            if surviving.size() > 1:
+                break
+    if surviving.size() != 1:
+        return false
+    var winner: Array = surviving[0]
+    var changed: bool = false
+    for i2 in group.size():
+        var d2: int = int(group[i2])
+        var target2: int = int(winner[i2])
+        for v2 in values:
+            if int(v2) != target2 and grid[d2][int(v2)]:
+                grid[d2][int(v2)] = false
+                changed = true
+    return changed
+
+
+## Every permutation of `values`, as a list of Arrays. Only ever called
+## with `values.size() <= MAX_LOCKED_GROUP_RESOLVE_K`, so the factorial
+## growth is bounded by construction, not by a guard here.
+func _permutations(values: Array) -> Array:
+    if values.size() <= 1:
+        return [values.duplicate()]
+    var result: Array = []
+    for i in values.size():
+        var rest: Array = values.duplicate()
+        var v = rest[i]
+        rest.remove_at(i)
+        for p in _permutations(rest):
+            result.append([v] + p)
+    return result
 
 
  
@@ -1355,6 +1485,12 @@ func _coerce_array(val, default: Array) -> Array:
     return default
 
 
+func _coerce_dict(val, default: Dictionary) -> Dictionary:
+    if typeof(val) == TYPE_DICTIONARY:
+        return val
+    return default
+
+
 func to_cache_dict() -> Dictionary:
     return {
         "version":             CACHE_VERSION,
@@ -1376,6 +1512,12 @@ func to_cache_dict() -> Dictionary:
         "pitch_count":         pitch_count,
         "pitch_freq_rank":     _pitch_freq_rank.duplicate(),
         "chosen_form_clues":   chosen_form_clues.duplicate(true),
+        # OPTIONAL, no CACHE_VERSION bump (see _difficulty_score's own
+        # header) -- {} by default, same as the field itself, so a save
+        # written before this field existed and one written after it are
+        # indistinguishable on load (from_cache_dict's _coerce_dict reads
+        # a missing key as {} too).
+        "difficulty_score":    _difficulty_score.duplicate(true),
     }
 
 
@@ -1387,6 +1529,7 @@ func from_cache_dict(data: Dictionary) -> bool:
     player_seed_used    = _coerce_int(data.get("player_seed_used"), 0)
     star_count          = _coerce_int(data.get("star_count"), 0)
     _generation_complete = _coerce_bool(data.get("generation_complete"), false)
+    _difficulty_score   = _coerce_dict(data.get("difficulty_score"), {})
 
     star_colors = []
     for v in _coerce_array(data.get("star_colors"), []):
@@ -5837,7 +5980,23 @@ const DIFFICULTY_PROFILES := {
         # Built before the main loop, in this order, while True cells are
         # still unconsumed. Exact Identity ("X is Y") is the strongest
         # foothold in the game; Extreme and Range are the next most direct.
-        "opening_anchors": [1, 1, 1, 11, 8, 1],
+        #
+        # The guaranteed 4-or-5 element Mutual Exclusion (a86b276, "per user
+        # direction") was added ONLY here in "hard" at the time, because
+        # "easy" was believed dead code -- nothing in production selected it.
+        # That premise expired once the study-overlay difficulty toggle
+        # wired game_context.gd's per-constellation default ("easy" for any
+        # constellation without a stored override) to this profile, and
+        # nobody revisited this list when it did. The requirement was never
+        # meant to be hard-only; it just never followed "easy" into being
+        # live. Must stay FIRST, same reason as "hard": after the
+        # all-pairs-fresh rule a distinctness clue is only constructible
+        # while none of its pairings has been stated yet, and it needs
+        # False cells so it cannot collide with the True-cell anchors below.
+        "opening_anchors": [
+            {"form": 13, "prefer_true": false, "min_elements": 4, "tries": 12},
+            1, 1, 1, 11, 8, 1,
+        ],
     },
 }
 
@@ -5921,6 +6080,15 @@ func _forms_in_tier(tier: int, form_counts: Dictionary = {}) -> Array:
 
 var chosen_form_clues: Array[Dictionary] = []
 
+## Change F's output ({} until _compute_difficulty_score() has actually
+## run — absence means "not yet scored," a legitimate, non-misleading
+## state, not a half-populated one, which is why persisting it (see
+## to_cache_dict/from_cache_dict) does NOT need a CACHE_VERSION bump the
+## way distance_hop's ref_cat/target_cat did: a puzzle missing this field
+## behaves exactly as it always has, it just hasn't been measured yet.
+## NOT auto-computed during generation — see COMPUTE_DIFFICULTY_SCORE.
+var _difficulty_score: Dictionary = {}
+
 const MAX_GENERATION_ATTEMPTS := 5
 # A failed uniqueness gate (see _generate_clues_forms_attempt's return)
 # means this specific random draw's clue set didn't happen to pin down
@@ -5930,13 +6098,23 @@ const MAX_GENERATION_ATTEMPTS := 5
 # all but the most structurally constrained cases; 5 attempts matches the
 # same bounded-retry pattern already used elsewhere (TIER_OPPORTUNISTIC_
 # ATTEMPTS, MAX_BACKTRACK_NODES) rather than looping indefinitely.
+## The live ship gate. Until 2026-09-20 this checked `seq_unique and
+## name_unique` only — name_unique is mention-COVERAGE ("was every star's
+## name paired with another characteristic somewhere"), never a proof.
+## `name_unique_closure` (_solve_name_closure with backtracking, already
+## computed by every _generate_clues_forms_attempt() call, just never
+## read here) is the actual proof. Found NOT hypothetical: c3 seed 11
+## shipped with stars 9 and 15 genuinely swappable — full backtracking
+## returns 2 valid Name-axis solutions for the exact same clue set
+## mention-coverage called complete (dev_tests/test_mus_explanation_
+## soundness, same day). See live_gate_is_name_unique_not_closure.md.
 func generate_clues_forms() -> void:
     var result: Dictionary = {}
     var attempt: int = 0
     while attempt < MAX_GENERATION_ATTEMPTS:
         attempt += 1
         result = await _generate_clues_forms_attempt()
-        if bool(result["seq_unique"]) and bool(result["name_unique"]):
+        if bool(result["seq_unique"]) and bool(result["name_unique"]) and bool(result["name_unique_closure"]):
             break
         # Yield a frame before the next attempt instead of blocking straight
         # through up to MAX_GENERATION_ATTEMPTS in one go — see the header
@@ -5944,9 +6122,9 @@ func generate_clues_forms() -> void:
         # behavior) if no host was set at setup() time.
         if _host:
             await _host.get_tree().process_frame
-    if not (bool(result["seq_unique"]) and bool(result["name_unique"])):
-        push_error("ConstellationLogicPuzzle [%d]: STILL NOT UNIQUE after %d generation attempts (sequence_solutions=%d, all_names_revealed=%s) — puzzle unsolvable as configured." % [
-            constellation_id, MAX_GENERATION_ATTEMPTS, int(result["seq_solutions_count"]), str(result["name_unique"])])
+    if not (bool(result["seq_unique"]) and bool(result["name_unique"]) and bool(result["name_unique_closure"])):
+        push_error("ConstellationLogicPuzzle [%d]: STILL NOT UNIQUE after %d generation attempts (sequence_solutions=%d, all_names_revealed=%s, name_solutions=%d) — puzzle unsolvable as configured." % [
+            constellation_id, MAX_GENERATION_ATTEMPTS, int(result["seq_solutions_count"]), str(result["name_unique"]), int(result["name_solutions_count"])])
     _generation_complete = true
     # `_host` is null under the headless test runner, where a full dump per
     # generated puzzle buries the actual results — the suite generates
@@ -6698,14 +6876,32 @@ func _generate_clues_forms_attempt() -> Dictionary:
 ## report exactly 2 and can mistake a capped read for a real 2-fold
 ## symmetry (nearly reported as a finding 2026-08-18). Raise it only for
 ## measurement; every production caller wants the default.
-func _solve_name_closure(seq_solutions: Array, cap: int = 2) -> Array:
+##
+## `source_clues` (added 2026-09-20 for the MUS-extraction step-explainer):
+## null means "use chosen_form_clues", the original hardcoded behaviour —
+## every existing caller (_prune_redundant_clues, the generation gate)
+## passes only 2 args and is unaffected. An explicit array, INCLUDING an
+## empty one, is scanned as-is instead: a MUS search needs to ask "is this
+## Name fact still forced with a specific candidate subset — possibly zero
+## clues" and a fallback-to-full-set on empty would silently answer a
+## different question than the one asked.
+## Everything _solve_name_closure() used to do UP TO calling _solve() —
+## split out 2026-09-20, same reason and same shape as _propagate_only()
+## above, so a caller can get at the Name-axis possibility grid (via
+## _name_propagate_only below) instead of only ever seeing a final solved
+## assignment. Returns {"name_clues", "rank_restriction", "ok"} — "ok" is
+## false only when same-group pre-narrowing itself hit a contradiction
+## (the early `return []` paths this function used to take before ever
+## reaching _solve()).
+func _build_name_clues(seq_solutions: Array, source_clues = null) -> Dictionary:
+    var empty_result: Dictionary = {"name_clues": [], "rank_restriction": [], "ok": false}
     # possible[name_star][candidate_position] — same shape _solve() already
     # uses for possible[star][candidate_rank]. Meaningless before Sequence
     # is unique: a Sequence-anchored name_group fact only resolves to a
     # single position via the one true Sequence solution, so the caller
     # gates this on seq_unique first.
     if seq_solutions.size() != 1:
-        return []
+        return empty_result
     var rank_to_star: Array = []
     rank_to_star.resize(star_count)
     var seq_sol: Array = seq_solutions[0]
@@ -6713,7 +6909,8 @@ func _solve_name_closure(seq_solutions: Array, cap: int = 2) -> Array:
         rank_to_star[int(seq_sol[st])] = st
     var name_clues: Array[Dictionary] = []
     var same_group_pairs: Array = []
-    for clue in chosen_form_clues:
+    var clues_to_scan: Array = chosen_form_clues if source_clues == null else (source_clues as Array)
+    for clue in clues_to_scan:
         for f in (clue.get("disclosures", []) as Array):
             if not (f is Dictionary):
                 continue
@@ -6903,15 +7100,340 @@ func _solve_name_closure(seq_solutions: Array, cap: int = 2) -> Array:
     # OWN clue application/propagation/backtracking then runs as normal on
     # top, name_clues passed again is a harmless no-op re-narrowing.
     if same_group_pairs.is_empty():
-        return _solve(name_clues, cap)
+        return {"name_clues": name_clues, "rank_restriction": [], "ok": true}
     var pre: Array = _init_possibility_grid()
     if not _apply_range_clues(pre, name_clues):
-        return []
+        return empty_result
     if not _apply_negative_clues(pre, name_clues):
-        return []
+        return empty_result
     if not _propagate_same_group(pre, same_group_pairs):
+        return empty_result
+    return {"name_clues": name_clues, "rank_restriction": pre, "ok": true}
+
+
+## `cap` is _solve()'s solution-count ceiling, NOT a count — the solver
+## stops as soon as it has that many, so the default 2 answers "unique or
+## not" as cheaply as possible and can never report a number above 2. That
+## is correct for the gate and misleading for diagnosis: a probe reading
+## name_solutions_count off the default will see every non-closing puzzle
+## report exactly 2 and can mistake a capped read for a real 2-fold
+## symmetry (nearly reported as a finding 2026-08-18). Raise it only for
+## measurement; every production caller wants the default.
+##
+## `source_clues`: null means "use chosen_form_clues", the original
+## hardcoded behaviour — every existing caller (_prune_redundant_clues,
+## the generation gate) passes only 2 args and is unaffected. An explicit
+## array, INCLUDING an empty one, is scanned as-is instead: a MUS search
+## needs to ask "is this Name fact still forced with a specific candidate
+## subset — possibly zero clues" and a fallback-to-full-set on empty would
+## silently answer a different question than the one asked.
+func _solve_name_closure(seq_solutions: Array, cap: int = 2, source_clues = null) -> Array:
+    var built: Dictionary = _build_name_clues(seq_solutions, source_clues)
+    if not bool(built["ok"]):
         return []
-    return _solve(name_clues, cap, pre)
+    var name_clues_final: Array[Dictionary] = built["name_clues"]
+    var rank_restriction_final: Array = built["rank_restriction"]
+    return _solve(name_clues_final, cap, rank_restriction_final)
+
+
+## Name-axis counterpart to _propagate_only(): what does constraint
+## propagation ALONE force about which star a name denotes, without ever
+## falling through to _solve()'s backtracking fallback — see
+## _propagate_only's header for why an explanation/difficulty-scoring pass
+## must never read past pure propagation. Same {"possible", "consistent",
+## ...} shape, over the possible[name_star][candidate_position] grid.
+func _name_propagate_only(seq_solutions: Array, source_clues = null) -> Dictionary:
+    var built: Dictionary = _build_name_clues(seq_solutions, source_clues)
+    if not bool(built["ok"]):
+        return {"possible": [], "consistent": false, "expanded_cmp": [], "adj_clues": [], "count_clues": []}
+    var name_clues_final: Array[Dictionary] = built["name_clues"]
+    var rank_restriction_final: Array = built["rank_restriction"]
+    return _propagate_only(name_clues_final, rank_restriction_final)
+
+
+# ==================================================
+# MUS-EXTRACTION STEP EXPLAINER (Bogaerts/Gamba/Guns, arXiv:2006.06343).
+# Scoped 2026-09-20 — see nifty-chasing-castle plan. Explains/scores only
+# NAME and SEQUENCE: Colour and Pitch are generator-chosen observables the
+# player never solves for (_separate_indistinguishable_positions's own
+# comment, :403-404), so they need no closure and are never a MUS target.
+#
+# Every check here reads _propagate_only()/_name_propagate_only() — never
+# _solve()'s backtracking fallback — because an explanation built on "the
+# solver tried star 7 and it worked" is not human-interpretable, which is
+# the exact problem this framework exists to solve.
+# ==================================================
+
+## Every disclosure atom the Sequence CSP actually consumes (same filter
+## _seq_facts_from_clues() uses), tagged with "_origin_clue": which index
+## into `clues` it came from. The MUS cost function counts DISTINCT clues
+## touched by a support set, not distinct atoms — one clue disclosing
+## several atoms costs remembering one sentence, not several.
+func _seq_facts_from_clues_tagged(clues: Array) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    for i in clues.size():
+        var clue: Dictionary = clues[i]
+        for f in _coerce_array(clue.get("disclosures"), []):
+            if not (f is Dictionary):
+                continue
+            if VALUE_FACT_KINDS.has(str((f as Dictionary).get("kind", ""))):
+                continue
+            var tagged: Dictionary = (f as Dictionary).duplicate()
+            tagged["_origin_clue"] = i
+            out.append(tagged)
+    return out
+
+
+## Name-axis counterpart, tagged the same way. _build_name_clues only ever
+## reads clue.get("disclosures") — never any other field on a "clue" — so
+## tagging happens here, at the RAW atom pool the MUS search actually
+## removes/reinserts from, rather than inside _build_name_clues's own
+## per-kind transformation, which stays untouched and unaware of MUS
+## search entirely.
+func _name_facts_from_clues_tagged(clues: Array) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    for i in clues.size():
+        var clue: Dictionary = clues[i]
+        for f in _coerce_array(clue.get("disclosures"), []):
+            if not (f is Dictionary):
+                continue
+            if not VALUE_FACT_KINDS.has(str((f as Dictionary).get("kind", ""))):
+                continue
+            var tagged: Dictionary = (f as Dictionary).duplicate()
+            tagged["_origin_clue"] = i
+            out.append(tagged)
+    return out
+
+
+## Deletion-based MUS search: given a full atom pool and a `still_forces`
+## predicate, finds A minimal (non-redundant per Definition 7 — not
+## necessarily the smallest possible) subset such that
+## still_forces(subset) holds. Starts from the full pool, removes atoms
+## one at a time, keeps the removal only when the target survives without
+## it. Same remove/recheck/reinsert shape as _prune_redundant_clues
+## (:6478-6511) — that function already asks "does removing this clue
+## still leave the WHOLE puzzle closed"; this generalizes it to an
+## arbitrary caller-supplied target and per-atom (not per-clue)
+## granularity. The equivalence this relies on: a minimal set sufficient
+## to force fact n via propagation is exactly a MUS of {¬n} ∪ I ∪ T, so
+## deletion search over the sufficient direction is sound.
+func _mus_minimal_support(pool: Array, still_forces: Callable) -> Array:
+    var s: Array = pool.duplicate()
+    var i: int = s.size() - 1
+    while i >= 0:
+        var removed = s[i]
+        s.remove_at(i)
+        if not still_forces.call(s):
+            s.insert(i, removed)
+        i -= 1
+    return s
+
+
+## Sequence-axis still-forces check: does propagating ONLY `atoms` still
+## pin possible[star][rank] to `target_value`? An inconsistent candidate
+## set proves nothing about a real target, so it counts as "no" — a
+## contradiction is not an explanation.
+func _seq_target_forced(atoms: Array, star: int, rank: int, target_value: bool) -> bool:
+    var typed_atoms: Array[Dictionary] = []
+    for a in atoms:
+        typed_atoms.append(a)
+    var prop: Dictionary = _propagate_only(typed_atoms)
+    if not bool(prop["consistent"]):
+        return false
+    var possible: Array = prop["possible"]
+    return bool(possible[star][rank]) == target_value
+
+
+## Name-axis still-forces check: does propagating ONLY `atoms` (re-wrapped
+## as singleton pseudo-clues, since _build_name_clues only ever reads
+## clue.get("disclosures")) still pin possible[name_star][position] to
+## `target_value`?
+func _name_target_forced(atoms: Array, seq_solutions: Array, name_star: int, position: int, target_value: bool) -> bool:
+    var pseudo_clues: Array = []
+    for a in atoms:
+        pseudo_clues.append({"disclosures": [a]})
+    var prop: Dictionary = _name_propagate_only(seq_solutions, pseudo_clues)
+    if not bool(prop["consistent"]):
+        return false
+    var possible: Array = prop["possible"]
+    return bool(possible[name_star][position]) == target_value
+
+
+## f(E,S,N) = basecost(S) + |E| + 5|S|, ported from Bogaerts/Gamba/Guns.
+## basecost is re-derived for this game's own atom vocabulary instead of
+## "number of clues in the logic grid's own theory": 0 when S is empty
+## (the cell was forced by bijectivity/alldiff alone off of already-known
+## facts — see _propagate_only's header, T is always free), a small fixed
+## cost when S draws on only one clue (remembering one sentence), else
+## 100 x (distinct clues touched) — the paper's own per-clue weighting,
+## just keyed by this game's "_origin_clue" tag instead of a grid index.
+##
+## `e_count` (facts in E, already-known values this step leaned on) is
+## NOT yet computed by the search above — v1 scores S only, E=0, and this
+## is a known, called-out simplification (see nifty-chasing-castle plan,
+## Change D) pending a pass that traces which prior forced cells a
+## propagate call actually touched. Do not read a v1 score as final.
+const MUS_COST_SINGLE_CLUE_BASECOST: int = 20
+const MUS_COST_PER_CLUE: int = 100
+const MUS_COST_PER_E_FACT: int = 1
+const MUS_COST_PER_S_FACT: int = 5
+
+func _mus_cost(e_count: int, s_atoms: Array) -> int:
+    var distinct_clues: Dictionary = {}
+    for a in s_atoms:
+        distinct_clues[int((a as Dictionary).get("_origin_clue", -1))] = true
+    var basecost: int = 0
+    if distinct_clues.size() == 1:
+        basecost = MUS_COST_SINGLE_CLUE_BASECOST
+    elif distinct_clues.size() > 1:
+        basecost = MUS_COST_PER_CLUE * distinct_clues.size()
+    return basecost + MUS_COST_PER_E_FACT * e_count + MUS_COST_PER_S_FACT * s_atoms.size()
+
+
+## Algorithm 1 (greedy sequence assembly), Sequence axis. Recomputing every
+## remaining cell's TRUE cheapest (E,S) by re-optimizing against every
+## OTHER still-unexplained cell at each step is O(N^2 x pool_size)
+## propagate calls — measured infeasible at this puzzle's scale (272 cells
+## would mean millions of calls). Instead: each cell's S-only MUS (E=0) is
+## computed ONCE up front — exactly what Changes C/D already verified —
+## cells are processed cheapest-S-first, and at each step a cell is
+## re-checked for a now-FREE explanation using ONLY prior explained facts
+## before falling back to its precomputed S-based one. This captures the
+## paper's own reported shape (many steps end up purely structural once
+## enough priors accumulate) without full per-step re-optimization.
+##
+## "Explained" facts re-enter the pool as ordinary ordinal_neg atoms
+## (`_propagate_only` cannot tell a just-explained fact from an originally
+## disclosed one, which is correct — both are equally valid premises for
+## the NEXT step once they're known).
+func _mus_build_sequence_seq(clues: Array) -> Dictionary:
+    var s_pool: Array[Dictionary] = _seq_facts_from_clues_tagged(clues)
+    var full: Dictionary = _propagate_only(s_pool)
+    if not bool(full["consistent"]):
+        return {"sequence": [], "stalled": [], "consistent": false}
+    var possible: Array = full["possible"]
+    var precomputed: Array = []
+    for st in star_count:
+        for r in star_count:
+            if bool(possible[st][r]):
+                continue
+            var still_forces: Callable = Callable(self, "_seq_target_forced").bind(st, r, false)
+            var support: Array = _mus_minimal_support(s_pool, still_forces)
+            precomputed.append({"star": st, "rank": r, "s": support, "cost": _mus_cost(0, support)})
+    precomputed.sort_custom(func(a, b): return int(a["cost"]) < int(b["cost"]))
+
+    var sequence: Array = []
+    var explained: Array[Dictionary] = []
+    for rec in precomputed:
+        var st2: int = int(rec["star"])
+        var r2: int = int(rec["rank"])
+        var free_check: Callable = Callable(self, "_seq_target_forced").bind(st2, r2, false)
+        if free_check.call(explained):
+            var free_support: Array = _mus_minimal_support(explained, free_check)
+            sequence.append({"star": st2, "rank": r2, "e": free_support, "s": [],
+                "cost": _mus_cost(free_support.size(), [])})
+        else:
+            sequence.append({"star": st2, "rank": r2, "e": [], "s": rec["s"], "cost": int(rec["cost"])})
+        explained.append({"kind": "ordinal_neg", "s": st2, "r": r2})
+    return {"sequence": sequence, "stalled": [], "consistent": true}
+
+
+## Name-axis counterpart. "Explained" facts re-enter as name_group_neg
+## disclosure atoms (the SEQUENCE-anchored branch _build_name_clues
+## already handles), wrapped as pseudo-clues by _name_target_forced the
+## same way S-atoms are — no separate mechanism needed.
+func _mus_build_sequence_name(clues: Array, seq_solutions: Array) -> Dictionary:
+    var name_pool: Array[Dictionary] = _name_facts_from_clues_tagged(clues)
+    var full: Dictionary = _name_propagate_only(seq_solutions)
+    if not bool(full["consistent"]):
+        return {"sequence": [], "stalled": [], "consistent": false}
+    var possible: Array = full["possible"]
+    var precomputed: Array = []
+    for ns in star_count:
+        for np2 in star_count:
+            if bool(possible[ns][np2]):
+                continue
+            var still_forces: Callable = Callable(self, "_name_target_forced").bind(seq_solutions, ns, np2, false)
+            var support: Array = _mus_minimal_support(name_pool, still_forces)
+            precomputed.append({"name_star": ns, "position": np2, "s": support, "cost": _mus_cost(0, support)})
+    precomputed.sort_custom(func(a, b): return int(a["cost"]) < int(b["cost"]))
+
+    var sequence: Array = []
+    var explained: Array[Dictionary] = []
+    for rec in precomputed:
+        var ns2: int = int(rec["name_star"])
+        var np3: int = int(rec["position"])
+        var free_check: Callable = Callable(self, "_name_target_forced").bind(seq_solutions, ns2, np3, false)
+        if free_check.call(explained):
+            var free_support: Array = _mus_minimal_support(explained, free_check)
+            sequence.append({"name_star": ns2, "position": np3, "e": free_support, "s": [],
+                "cost": _mus_cost(free_support.size(), [])})
+        else:
+            sequence.append({"name_star": ns2, "position": np3, "e": [], "s": rec["s"], "cost": int(rec["cost"])})
+        explained.append({"kind": "name_group_neg", "name_star": ns2, "cat": Category.SEQUENCE, "group_key": np3})
+    return {"sequence": sequence, "stalled": [], "consistent": true}
+
+
+## Change F — the difficulty metric this whole investigation exists to
+## produce. Aggregates a built sequence (Sequence + Name combined) into
+## the numbers that actually answer "how hard is this puzzle": total cost
+## (the direct per-puzzle difficulty number), a cost histogram (bucketed,
+## mirrors probe_scratch's own TIER MIX reporting), and a hard-step count
+## (steps above HARD_STEP_COST_THRESHOLD) — two puzzles can share a total
+## while differing wildly in whether that's many medium steps or one
+## brutal outlier, and the histogram is what tells them apart.
+const HARD_STEP_COST_THRESHOLD: int = 200
+
+func _mus_difficulty_score(seq_result: Dictionary, name_result: Dictionary) -> Dictionary:
+    var all_steps: Array = []
+    for st in (seq_result.get("sequence", []) as Array):
+        all_steps.append(st)
+    for st2 in (name_result.get("sequence", []) as Array):
+        all_steps.append(st2)
+    var total_cost: int = 0
+    var hard_steps: int = 0
+    var histogram: Dictionary = {}
+    for step in all_steps:
+        var c: int = int((step as Dictionary)["cost"])
+        total_cost += c
+        if c >= HARD_STEP_COST_THRESHOLD:
+            hard_steps += 1
+        var bucket: int = (c / 100) * 100
+        histogram[bucket] = int(histogram.get(bucket, 0)) + 1
+    return {
+        "total_cost": total_cost,
+        "step_count": all_steps.size(),
+        "hard_step_count": hard_steps,
+        "cost_histogram": histogram,
+        "seq_stalled": (seq_result.get("stalled", []) as Array).size(),
+        "name_stalled": (name_result.get("stalled", []) as Array).size(),
+    }
+
+
+## OFF by default, same posture as DEBUG_GEN_TIMING and the difficulty
+## profile system's own staged rollout: measured cost is ~185s for one
+## 17-star puzzle (39s Sequence + 146s Name, dev_tests/probe_scratch
+## 2026-09-20) — nowhere near acceptable to run unconditionally inside
+## live generation until it has its own frame-yielding phase (matching
+## _prune_redundant_clues's pattern) and has been measured across more
+## constellations. Exists now so the capability (compute + cache) is
+## real and testable; wiring it into generate_clues_forms() live is a
+## separate, later decision.
+const COMPUTE_DIFFICULTY_SCORE: bool = false
+
+## Builds both axes' full explanation sequences and returns the aggregate
+## score (Change F) — does NOT check COMPUTE_DIFFICULTY_SCORE itself; that
+## flag only gates whether generation calls this automatically. Callable
+## directly any time (tests, an offline tuning tool, a future opt-in
+## generation phase) against an already-generated, uniquely-solvable
+## puzzle. Returns {} if Sequence isn't unique yet (nothing to score).
+func _compute_difficulty_score() -> Dictionary:
+    var seq_solutions: Array = _solve(_seq_facts_from_clues(), 2)
+    if seq_solutions.size() != 1:
+        return {}
+    var seq_result: Dictionary = _mus_build_sequence_seq(chosen_form_clues)
+    var name_result: Dictionary = _mus_build_sequence_name(chosen_form_clues, seq_solutions)
+    return _mus_difficulty_score(seq_result, name_result)
 
 
 ## Set false to silence the post-generation dump below.
