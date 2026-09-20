@@ -1540,24 +1540,6 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     copy_btn.pressed.connect(func(): _on_staff_copy(ridx, "sequence"))
     row.add_child(copy_btn)
 
-    # UNDO — Sequence is the one axis with no check/X states and so no
-    # Undo trio anywhere else (Colour/Pitch/Name each get one on every
-    # popup that edits them). Clearing this row's boxes by hand used to be
-    # the only way to release an entry, and even that silently failed for
-    # an exact pin (see _undo_sequence_entry) -- an explicit button here
-    # matches how every other axis is undone instead of relying on a typed-
-    # field trick nothing else in this UI teaches the player to try.
-    var undo_btn := Button.new()
-    undo_btn.text = "↺"
-    undo_btn.custom_minimum_size = Vector2(26, 24)
-    undo_btn.focus_mode = Control.FOCUS_NONE
-    undo_btn.tooltip_text = "Undo this sequence entry"
-    var elo := edit_lo
-    var emid := edit_mid
-    var ehi := edit_hi
-    undo_btn.pressed.connect(func(): _undo_sequence_entry(ridx, elo, emid, ehi))
-    row.add_child(undo_btn)
-
     return row
 
 
