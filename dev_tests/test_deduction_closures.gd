@@ -109,6 +109,23 @@ func run() -> void:
     ok(str(d._match_records[by_name]["name"]) == "Alpha",
         "and it still carries its name")
 
+    # FIXED bug (reported live, "Helios is the star that fires 15th note"
+    # / C#5 case): the two checks above only prove the NAME record's own
+    # effective_star_idx resolves correctly. They say nothing about
+    # whether a WIDGET-FACING lookup for "the record for physical star 0"
+    # actually finds that informative record, rather than the empty
+    # star-widget stub _get_or_create_match_record_for_star_idx(0)
+    # created BEFORE identity unification ran (by_star, above) — which
+    # _settle_identical_records deliberately never merges away. The Star
+    # Map popup is built from exactly this lookup
+    # (constellation_puzzle_widgets.gd's _build_star_widgets_impl), so if
+    # it still resolves to the stub, the popup keeps showing an
+    # uncollapsed Sequence range and no name, while the Staff line and
+    # Pitch tab (which read through _effective_*/derived-aware helpers
+    # directly, not this lookup) show the correct, resolved star.
+    ok(d._get_or_create_match_record_for_star_idx(0) == by_name,
+        "the star-idx lookup now resolves to the NAMED record, not the empty stub it used to find")
+
     # Shared note must NOT prove identity.
     d._load_match_records([])
     var n_b: int = d._get_or_create_match_record_for_name("Beta")

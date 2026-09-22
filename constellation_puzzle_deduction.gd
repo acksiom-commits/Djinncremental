@@ -1609,13 +1609,40 @@ func _find_match_record_by_exact_seq(seq: int) -> int:
     return -1
 
 
+## THE SAME MISTAKE _find_match_record_by_exact_seq's own header describes
+## as "still standing here" -- read the raw own field, not
+## _effective_star_idx(). _settle_identical_records() deliberately never
+## merges an unconfirmed star-widget stub into the "real" record it
+## matches (see that function's header: a merge would make the engine's
+## inference unretractable) -- instead it writes the shared star onto the
+## REAL record's DERIVED layer only, leaving the stub's own star_idx
+## field as the sole remaining owner of the raw value. A raw-field-only
+## scan therefore always finds the stub -- the one record that, by
+## definition (_record_is_unconfirmed_star_widget_stub), never gets a
+## name or a collapsed Sequence range -- while the fully-resolved record
+## for the exact same physical star sits right beside it, invisible to
+## this lookup. Reported live: Helios/C#5 correct on the Staff line and
+## the Pitch tab (both read through _effective_*/derived-aware paths),
+## still "4,7,12" on the star's own Star Map popup (built from whatever
+## _get_or_create_match_record_for_star_idx hands it).
+##
+## Fix: scan by _effective_star_idx (own field OR derived fallback), and
+## when more than one record matches the same physical star (a stub AND
+## its now-linked real record both effectively point at it), prefer the
+## non-stub one — the informative record is what a UI lookup wants,
+## while _settle_identical_records's own refusal to merge is untouched.
 func _find_match_record_by_star_idx(star_idx: int) -> int:
     if star_idx < 0:
         return -1
+    var stub_idx: int = -1
     for i in _match_records.size():
-        if int(_match_records[i]["star_idx"]) == star_idx:
+        if _effective_star_idx(i) != star_idx:
+            continue
+        if not _record_is_unconfirmed_star_widget_stub(i):
             return i
-    return -1
+        if stub_idx < 0:
+            stub_idx = i
+    return stub_idx
 
 
 

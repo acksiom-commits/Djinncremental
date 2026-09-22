@@ -32,6 +32,13 @@
 [ext_resource type="PackedScene" uid="uid://cgoxi50xo3g1" path="res://ConstellationStudyOverlay.tscn" id="30_6syo1"]
 [ext_resource type="PackedScene" path="res://ArchaiLatticeViewer.tscn" id="31_lattice"]
 [ext_resource type="PackedScene" path="res://LatticePanel.tscn" id="32_latticepanel"]
+[ext_resource type="PackedScene" path="res://UoniteCycleProgressBar.tscn" id="33_unitestrip"]
+[ext_resource type="Shader" path="res://uonite_bar_rounded_corners.gdshader" id="34_roundedcorners"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_unitebar_round"]
+shader = ExtResource("34_roundedcorners")
+shader_parameter/bar_size = Vector2(140, 6)
+shader_parameter/corner_radius = 2.0
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_hloqn"]
 shader = ExtResource("1_6fk1d")
@@ -852,11 +859,36 @@ offset_right = 140.0
 offset_bottom = 63.0
 resource_key = "uonite"
 
-[node name="UoniteCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=819063763 instance=ExtResource("16_jgph3")]
-custom_minimum_size = Vector2(0, 6)
+[node name="UoniteCooldownBar" type="TextureProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=819063763]
+material = SubResource("ShaderMaterial_unitebar_round")
+custom_minimum_size = Vector2(140, 6)
 layout_mode = 2
-resource_key = "uonite"
-operation_key = "uonite_create"
+fill_mode = 0
+value = 0.0
+
+[node name="UoniteStripViewport" type="SubViewportContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCooldownBar" unique_id=819063764]
+modulate = Color(1, 1, 1, 0)
+mouse_filter = 2
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch = true
+
+[node name="UoniteStripSubViewport" type="SubViewport" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCooldownBar/UoniteStripViewport" unique_id=819063765]
+own_world_3d = true
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(140, 6)
+render_target_update_mode = 4
+
+[node name="UoniteCycleProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCooldownBar/UoniteStripViewport/UoniteStripSubViewport" unique_id=819063766 instance=ExtResource("33_unitestrip")]
+
+[node name="UoniteStripCamera" type="Camera3D" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCooldownBar/UoniteStripViewport/UoniteStripSubViewport" unique_id=819063767]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
+projection = 1
+size = 0.072
 
 [node name="UoniteCreationPanel" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=999999997]
 custom_minimum_size = Vector2(142, 142)

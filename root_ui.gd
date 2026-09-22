@@ -45,6 +45,16 @@ var save_manager:            Node = null
 var game_data:               Node = null
 var archon_dialogue_manager: Node = null
 var _uonite_icosa:           Node = null
+## The repurposed UoniteCooldownBar (now a plain TextureProgressBar, no
+## longer a CooldownBar.tscn instance) and the SubViewport rendering the
+## cropped UoniteIcosahedron slice it reveals — see _update_counters()'s
+## uonite-strip block below, and UoniteCycleProgressBar.tscn (which
+## instances uonite_icosahedron.gd directly, frozen at current_motes=20 /
+## rotation_speed=0, cropped to a thin equatorial band by the strip's own
+## camera — not a from-scratch tile mesh; see git history for that
+## abandoned approach if it's ever worth revisiting).
+var _uonite_strip_bar:       TextureProgressBar = null
+var _uonite_strip_viewport:  SubViewport = null
 var _journal_popout:         Node = null
 var _ages_popout:            Node = null
 var _settings_popout:        Node = null
@@ -215,6 +225,15 @@ const BAR_FLASH_THRESHOLD: float = 1.05
 const BAR_FLASH_SPEED:     float = 4.0
 const BAR_ASYMPTOTE_SCALE: float = 10.0
 
+## Sparks has no storage cap (get_storage_total() excludes it by design --
+## production_manager.gd's own comment says so), so its genbar can't use
+## a "current stock / cap" fullness fraction the way capped resources
+## could. Instead it's an actual runway gauge: 100% = at least this many
+## seconds left before the real pool hits zero at the current net drain
+## rate; 0% = empty now. Tunable -- pick a value that gives a meaningful
+## early warning without flickering on trivial momentary imbalances.
+const SPARKS_RUNWAY_REFERENCE_SECONDS: float = 30.0
+
 # === STORAGE DISPLAY ===
 var _storage_display: Node = null
 
@@ -318,6 +337,10 @@ func _ready() -> void:
     game_data               = get_node_or_null("/root/GameData")
     archon_dialogue_manager = get_node_or_null("/root/ArchonDialogueManager")
     _uonite_icosa           = find_child("UoniteIcosahedron", true, false)
+    _uonite_strip_bar       = find_child("UoniteCooldownBar",     true, false)
+    _uonite_strip_viewport  = find_child("UoniteStripSubViewport", true, false)
+    if _uonite_strip_bar and _uonite_strip_viewport:
+        _uonite_strip_bar.texture_progress = _uonite_strip_viewport.get_texture()
     _storage_display        = find_child("StorageDisplay",    true, false)
     _archon_tetra           = find_child("ArchonTetrahedron", true, false)
     var _archon_panel_node := find_child("ArchonGraphicPanel", true, false)
@@ -2543,17 +2566,18 @@ func _on_create_uonite_pressed() -> void:
     if _is_tutorial_blocking(): return
     if _expansion_anim_active: return
     if not production_manager: return
-    var bar = _get_cooldown_bar("UoniteCooldownBar")
-    if bar and not bar.is_ready():
-        bar.flash_not_ready()
-        return
+    # No click-throttle bar/gate here any more, by design: UoniteCooldownBar
+    # was repurposed into the real Fibonacci-cycle progress strip (see
+    # _update_counters()'s uonite-strip block) and no longer has
+    # is_ready()/flash_not_ready()/notify_clicked() at all -- it's a plain
+    # TextureProgressBar now, not a CooldownBar instance. Safe to drop:
+    # manual_create_uonite() already independently caps batch creation at
+    # get_uonite_cycle_cap() - uonites_this_cycle headroom
+    # (production_manager.gd), so a click past the cap is just a no-op,
+    # never an over-cap creation, regardless of click frequency.
     var any_success: bool = production_manager.manual_create_uonite()
     if any_success:
-        if bar: bar.notify_clicked()
         _play_expansion_animation()
-    else:
-        if bar: bar.flash_not_ready()
-        
 
 func _get_or_create_expansion_overlay() -> ColorRect:
     if _expansion_overlay and is_instance_valid(_expansion_overlay):
@@ -2983,6 +3007,13 @@ func _update_counters() -> void:
             # cost once it started building full wireframe Mote lattices.
             if mote_display_changed:
                 _uonite_icosa.current_motes = _icosa_mote_display
+        if _uonite_strip_bar and game_context.ui_unlocks.get("uonite_creation", false):
+            # Real (non-cosmetic) progress toward whichever Uonite cap is
+            # actually binding this cycle -- see
+            # game_context.get_uonite_cycle_progress().
+            var progress: Vector2i = game_context.get_uonite_cycle_progress()
+            _uonite_strip_bar.max_value = progress.y
+            _uonite_strip_bar.value     = progress.x
 
 
 # ==================================================
@@ -3204,7 +3235,22 @@ func _update_bars(delta: float) -> void:
         var net_drain: float  = actual_drain - prod_per_sec
         var target_pct: float = 100.0
         var potential_net     = potential_drain - prod_per_sec
-        if potential_net > 0.0 and assign_f > 0.0:
+
+        if res == "sparks":
+            # Actual pool depletion, not a workforce-sufficiency warning --
+            # see SPARKS_RUNWAY_REFERENCE_SECONDS. The old formula below
+            # fed a raw Sparks/sec rate directly into a percent-per-second
+            # decay with only a flat /10 divisor, completely disconnected
+            # from game_context.sparks itself -- at any realistic
+            # mid/late-game rate it collapsed the bar to 0% in a fraction
+            # of a second regardless of how full the actual pool was.
+            if net_drain <= 0.0:
+                target_pct = 100.0
+            else:
+                var seconds_left: float = game_context.sparks.to_float() / net_drain
+                target_pct = clamp(
+                    100.0 * seconds_left / SPARKS_RUNWAY_REFERENCE_SECONDS, 0.0, 100.0)
+        elif potential_net > 0.0 and assign_f > 0.0:
             var drain_per_worker = potential_net / assign_f
             var decrease_rate    = drain_per_worker / 10.0
             target_pct = max(0.0, gen_bar.value - decrease_rate * delta * 100.0)

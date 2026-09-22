@@ -190,7 +190,6 @@ func _draw() -> void:
             continue
 
         var visual_state: String = _cd.get_visual_state(id)
-        var invested:     float  = _cd.get_sparks_invested(id)
         # Lines start fading in as soon as the stars tier is reached (not
         # the lines tier) — the star fade itself now owns the earlier
         # [0, SPARKS_TIER_STARS] window, see get_star_brightness() below.

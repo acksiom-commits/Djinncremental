@@ -52,19 +52,9 @@ func _hourglass_unlocked() -> bool:
 
 func _get_hourglass_volition_cap() -> int:
     if not gc: return 0
-    var slots = gc.get("volition_slots")
-    if not slots is Array: return 0
-    var count := 0
-    for slot in (slots as Array):
-        if slot.get("category", "") != "constellation":
-            continue
-        if int(slot.get("target", -1)) == 2:
-            count += 1
-        for child in slot.get("children", []):
-            if child.get("category", "") == "constellation" \
-            and int(child.get("target", -1)) == 2:
-                count += 1
-    return count
+    if gc.has_method("get_volition_count_for_constellation"):
+        return gc.get_volition_count_for_constellation(2)
+    return 0
 
 
 func _process(_delta: float) -> void:

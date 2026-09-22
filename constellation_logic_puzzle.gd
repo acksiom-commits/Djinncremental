@@ -6606,6 +6606,42 @@ const PRUNE_YIELD_INTERVAL: int = 2
 var prune_enabled: bool = true
 
 
+## Tests whether the clue currently at index `idx` can be dropped from
+## chosen_form_clues without breaking Sequence uniqueness, growing the
+## name closure past `baseline`, or unbinding any name `cur_revealed`
+## already has true. Removes it and updates `cur_revealed` to match if
+## so; otherwise puts it straight back and leaves `cur_revealed`
+## untouched. Extracted from _prune_redundant_clues's loop body so
+## _recheck_anchors_for_redundancy can reuse the exact same test without
+## also re-walking (and potentially disturbing) every other clue — see
+## that function's header for why a second full walk isn't safe here.
+func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
+    var removed: Dictionary = chosen_form_clues[idx]
+    chosen_form_clues.remove_at(idx)
+    var trial_seq: Array = _solve(_seq_facts_from_clues(), 2)
+    if trial_seq.size() == 1:
+        if _solve_name_closure(trial_seq, baseline + 1).size() <= baseline:
+            # Third condition, alongside Sequence uniqueness and the
+            # closure: no name that is still bound may lose its binding.
+            # _recompute_name_revealed reads chosen_form_clues, which
+            # has the candidate already removed at this point.
+            var trial_revealed: Array = []
+            for _n2 in cur_revealed.size():
+                trial_revealed.append(false)
+            _recompute_name_revealed(trial_revealed)
+            var unbinds: bool = false
+            for n in cur_revealed.size():
+                if bool(cur_revealed[n]) and not bool(trial_revealed[n]):
+                    unbinds = true
+                    break
+            if not unbinds:
+                for n in cur_revealed.size():
+                    cur_revealed[n] = trial_revealed[n]
+                return true
+    chosen_form_clues.insert(idx, removed)
+    return false
+
+
 func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array[Dictionary]:
     var seq_facts: Array[Dictionary] = _seq_facts_from_clues()
     var seq_sols: Array = _solve(seq_facts, 2)
@@ -6639,30 +6675,7 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
     var since_yield: int = 0
     var i: int = chosen_form_clues.size() - 1
     while i >= protected_count:
-        var removed: Dictionary = chosen_form_clues[i]
-        chosen_form_clues.remove_at(i)
-        var trial_seq: Array = _solve(_seq_facts_from_clues(), 2)
-        var keep: bool = true
-        if trial_seq.size() == 1:
-            if _solve_name_closure(trial_seq, baseline + 1).size() <= baseline:
-                # Third condition, alongside Sequence uniqueness and the
-                # closure: no name that is still bound may lose its binding.
-                # _recompute_name_revealed reads chosen_form_clues, which
-                # has the candidate already removed at this point.
-                var trial_revealed: Array = []
-                for _n2 in name_revealed.size():
-                    trial_revealed.append(false)
-                _recompute_name_revealed(trial_revealed)
-                var unbinds: bool = false
-                for n in cur_revealed.size():
-                    if bool(cur_revealed[n]) and not bool(trial_revealed[n]):
-                        unbinds = true
-                        break
-                if not unbinds:
-                    keep = false
-                    cur_revealed = trial_revealed
-        if keep:
-            chosen_form_clues.insert(i, removed)
+        _try_prune_clue_at(i, baseline, cur_revealed)
         i -= 1
         # Same guard the main loop uses: _host is null under the headless
         # test runner, where suspending would be pointless and the whole
@@ -6673,6 +6686,51 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
             await _host.get_tree().process_frame
     _recompute_name_revealed(name_revealed)
     return _seq_facts_from_clues()
+
+
+## Reconsiders the opening ANCHORS themselves for redundancy, once the
+## rest of the clue set has already been minimized by
+## _prune_redundant_clues above. Reported live: "Heleai is among the
+## last 3" (an opening anchor, Range Form) shipped next to "Heleai is
+## the star that fires 15th note" (another anchor, Exact Identity, same
+## star, rank inside the range's own window) — the range added zero
+## information once the exact rank was known, but anchors sit before
+## protected_clue_count specifically so the pass above never tests them
+## (correctly, for that pass — an anchor drawn early can't yet know
+## whether a LATER anchor will make it redundant). Once every clue has
+## been drawn this is no longer true, and an anchor that turned out
+## redundant is exactly as safe to drop as any other clue.
+##
+## Deliberately NOT a second full walk with protected_count 0: that
+## walk's own order (newest-drawn clues tested first, working backward)
+## can remove a DIFFERENT, non-anchor clue before it ever reaches an
+## anchor — and losing that other clue can make the anchor look
+## necessary again even when it plainly is not against the clue set
+## _prune_redundant_clues actually settled on. Measured directly: a
+## second full pass left the reported redundant anchor in place. Testing
+## each anchor INDIVIDUALLY by its captured text (indices have shifted
+## since the anchors were first committed) against the settled survivor
+## set, touching no non-anchor clue, does remove it.
+func _recheck_anchors_for_redundancy(anchor_texts: Array, name_revealed: Array) -> void:
+    var seq_sols: Array = _solve(_seq_facts_from_clues(), 2)
+    if seq_sols.size() != 1:
+        return
+    var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
+    if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP:
+        return
+    var cur_revealed: Array = []
+    for _n in name_revealed.size():
+        cur_revealed.append(false)
+    _recompute_name_revealed(cur_revealed)
+    for text in anchor_texts:
+        var idx: int = -1
+        for i in chosen_form_clues.size():
+            if str(chosen_form_clues[i].get("text", "")) == str(text):
+                idx = i
+                break
+        if idx >= 0:
+            _try_prune_clue_at(idx, baseline, cur_revealed)
+    _recompute_name_revealed(name_revealed)
 
 
 func _generate_clues_forms_attempt() -> Dictionary:
@@ -6759,6 +6817,28 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # Anchor-sourced clues are the only ones committed so far — this is the
     # boundary _prune_redundant_clues protects them behind.
     var protected_clue_count: int = chosen_form_clues.size()
+    # Captured by TEXT, not index — indices shift as pruning removes
+    # clues below, but each committed clue's text is already guaranteed
+    # unique (duplicate-text drafts are rejected at commit time). Needed
+    # by _recheck_anchors_for_redundancy after the main pruning pass.
+    #
+    # Form 13 (Mutual Exclusion) is EXCLUDED here on purpose. It is not
+    # just informative content that happens to open the puzzle — it is
+    # the guaranteed opening clue itself, present in EVERY difficulty
+    # profile's anchor list specifically so every puzzle teaches this
+    # clue type first (see the profile's own header: "the single
+    # highest-impact Easy lever", and "hard"'s sole anchor). Measured
+    # directly: letting the recheck evaluate it too removed it as
+    # "provably redundant" in about half of a 6-puzzle sample — true by
+    # the same rigorous test that correctly catches a genuinely
+    # redundant Range/Exact pair, but wrong here, because "guaranteed
+    # first clue" is a deliberate design property, not a claim that its
+    # information is otherwise unrecoverable.
+    var anchor_texts: Array = []
+    for c in chosen_form_clues:
+        if int(c.get("form_id", -1)) == 13:
+            continue
+        anchor_texts.append(str(c.get("text", "")))
 
     # Generation-cost instrumentation, off by default — see DEBUG_GEN_TIMING.
     var _t_loop_start: int = Time.get_ticks_msec()
@@ -6813,6 +6893,17 @@ func _generate_clues_forms_attempt() -> Dictionary:
     var _t_loop_end: int = Time.get_ticks_msec()
     if prune_enabled:
         sequence_solver_facts = await _prune_redundant_clues(name_revealed, protected_clue_count)
+        # Phase B2.5 — reconsider the anchors themselves, now that the
+        # rest of the clue set has been minimized. See
+        # _recheck_anchors_for_redundancy's header for the reported bug
+        # (a Range anchor left redundant by a later Exact anchor on the
+        # same star) and why this has to test each anchor individually
+        # against the settled survivor set, rather than a second full
+        # walk from protected_count 0 — a second walk's own removals can
+        # disturb the very support an anchor's redundancy depends on
+        # before the walk ever reaches it.
+        _recheck_anchors_for_redundancy(anchor_texts, name_revealed)
+        sequence_solver_facts = _seq_facts_from_clues()
     var _t_prune_end: int = Time.get_ticks_msec()
     if DEBUG_GEN_TIMING:
         print("      [gen] loop %5.1fs (%d passes, %d attempts) | prune %5.1fs | clues %d | max_stall %d, ended at %d, pool left %d"
@@ -7398,7 +7489,8 @@ func _mus_difficulty_score(seq_result: Dictionary, name_result: Dictionary) -> D
         total_cost += c
         if c >= HARD_STEP_COST_THRESHOLD:
             hard_steps += 1
-        var bucket: int = (c / 100) * 100
+        @warning_ignore("integer_division")
+        var bucket: int = (c / 100) * 100  # intentional: bucket into hundreds
         histogram[bucket] = int(histogram.get(bucket, 0)) + 1
     return {
         "total_cost": total_cost,

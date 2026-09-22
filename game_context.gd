@@ -767,6 +767,62 @@ func get_uonite_cycle_cap() -> int:
     return a
 
 
+# Total cumulative Sparks cost of one Uonite (Monad 5 -> Tetrad 21 ->
+# Particle 85 -> Iota 351 -> Mote 1,440 -> Uonite 28,801), per the
+# uonite_assemble/mote_assemble_uonite/... recipe chain in game_data.gd.
+const UONITE_SPARKS_COST: int = 28801
+
+
+func get_uonite_storage_cap() -> int:
+    # One Uonite's footprint in storage units is UONITE_SPARKS_COST /
+    # storage_cap, so the number that fit is storage_cap / footprint =
+    # storage_cap^2 / UONITE_SPARKS_COST. Uses the raw, permanently-
+    # compounding storage_cap (grown 5%/Expansion by has_storage_enhancer()
+    # in do_prestige_reset()) -- NOT get_effective_storage_cap()'s temporary
+    # multiplier, which has nothing to do with this stockpile ceiling.
+    return storage_cap.mul(storage_cap).div_int_floor(UONITE_SPARKS_COST).to_int()
+
+
+## Progress toward whichever Uonite cap is actually binding THIS cycle,
+## counted in Motes (20 = 1 Uonite) for the Create-Uonite strip bar.
+## Returns Vector2i(current, cap).
+##
+## Two independent ceilings apply to uonites_this_cycle
+## (manual_create_uonite()/_add_resource() in production_manager.gd
+## already gate actual creation on both, via min()): the Fibonacci
+## per-cycle limit (get_uonite_cycle_cap()) and the storage-derived
+## ABSOLUTE limit on the PERSISTENT uonite total (get_uonite_storage_cap(),
+## which — unlike uonites_this_cycle — never resets on Expansion). This
+## bar's cap must be the smaller of the two, or a player whose persistent
+## uonite total is already close to the storage cap sees the bar stall
+## partway (stuck once motes_this_cycle hits its own 0-20 ceiling with no
+## Uonite completing to reset it) while the bar's max still claims the
+## full Fibonacci cap is reachable. Reported live: cap should read 2 (40
+## Motes) after the 1st Expansion, over 100 Motes banked, bar stuck
+## around half.
+func get_uonite_cycle_progress() -> Vector2i:
+    # How much of the storage cap was already spent BEFORE this cycle --
+    # uonite persists across Expansions, uonites_this_cycle does not, so
+    # subtracting this cycle's own contribution reconstructs the
+    # cycle-start stockpile.
+    var uonite_before_cycle: int = maxi(0, uonite.to_int() - uonites_this_cycle)
+    var storage_cap_this_cycle: int = maxi(0, get_uonite_storage_cap() - uonite_before_cycle)
+    var effective_cap: int = mini(get_uonite_cycle_cap(), storage_cap_this_cycle)
+    if effective_cap <= 0:
+        # Nothing more fits this cycle at all -- an empty (not degenerate
+        # max_value=0) bar communicates "maxed out" better than a raw
+        # Mote count that can never actually complete into a Uonite.
+        return Vector2i(0, 1)
+    var completed: int = mini(uonites_this_cycle, effective_cap)
+    # Only show the NEXT Uonite's raw-Mote progress while there's still
+    # room for it to matter -- motes_this_cycle keeps climbing to 20
+    # (raw Mote production isn't itself capped, only the final assemble
+    # step is) even after the cap is reached, which would otherwise show
+    # a full 0-20 climb toward a Uonite that can never actually complete.
+    var partial: int = motes_this_cycle if completed < effective_cap else 0
+    return Vector2i(completed * 20 + partial, effective_cap * 20)
+
+
 func get_total_foci_assigned() -> int:
     var total := 0
     for key in assignments:
@@ -1056,6 +1112,18 @@ func _rebuild_volition_assignments() -> void:
                 child["category"], child["target"])
             if child_key != "":
                 assignments[child_key] = assignments.get(child_key, 0) + 1
+    _trim_hourglass_target_ops_to_cap()
+
+
+func _trim_hourglass_target_ops_to_cap() -> void:
+    # hourglass_target_ops is only checked against the cap when a new op is
+    # added (hourglass_toggle.gd). If a Volition assigned to the Hourglass
+    # (constellation id 2) is later unassigned, trim the stale entries here
+    # so the UI toggle state and the applied effect both stay in sync with
+    # the live cap.
+    var cap: int = get_volition_count_for_constellation(2)
+    if hourglass_target_ops.size() > cap:
+        hourglass_target_ops = hourglass_target_ops.slice(0, cap)
 
 
 func _volition_assignment_key(category: String, target) -> String:
@@ -1178,6 +1246,13 @@ func has_volition_for_constellation(constellation_id: int) -> bool:
     var key = "constellation_%d_volitions" % constellation_id
     var bonus_key = "constellation_%d_bonus_volitions" % constellation_id
     return _assignment_int(key, 0) > 0 or _assignment_int(bonus_key, 0) > 0
+
+
+func get_volition_count_for_constellation(constellation_id: int) -> int:
+    # Parent + Child (bonus) Volitions currently assigned to this constellation.
+    var key = "constellation_%d_volitions" % constellation_id
+    var bonus_key = "constellation_%d_bonus_volitions" % constellation_id
+    return _assignment_int(key, 0) + _assignment_int(bonus_key, 0)
 
 
 func get_constellation_sub_targets(constellation_id: int) -> Array:

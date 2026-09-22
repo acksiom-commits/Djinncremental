@@ -793,8 +793,10 @@ func _add_resource(key: String, amount: BigNum) -> void:
             var grain_delta: BigNum = _bignum_min(amount, BigNum.from_int(maxi(0, 20 - gc.grains_this_cycle)))
             gc.grains_this_cycle = mini(gc.grains_this_cycle + grain_delta.to_int(), 20)
         "uonite":
-            var cap: int = gc.get_uonite_cycle_cap()
-            var headroom: int = maxi(0, cap - gc.uonites_this_cycle)
+            var cycle_cap: int = gc.get_uonite_cycle_cap()
+            var cycle_headroom: int = maxi(0, cycle_cap - gc.uonites_this_cycle)
+            var storage_headroom: int = maxi(0, gc.get_uonite_storage_cap() - gc.uonite.to_int())
+            var headroom: int = mini(cycle_headroom, storage_headroom)
             if headroom <= 0: return
             var capped_amount: BigNum = _bignum_min(amount, BigNum.from_int(headroom))
             gc.uonite = gc.uonite.add(capped_amount)
@@ -1708,18 +1710,27 @@ func dev_inject_ten_grains() -> void:
 
 
 func manual_create_uonite() -> bool:
-    # Guard: need at least mote_cost mote_uonite, sparks_cost sparks, and
-    # headroom in the cycle cap.
+    # Guard: need at least mote_cost mote_uonite, sparks_cost sparks,
+    # headroom in the per-cycle Fibonacci cap, and headroom in the
+    # storage-derived stockpile cap. The two caps are independent: cycle
+    # headroom limits how many can be CREATED this cycle
+    # (uonites_this_cycle, resets on Expansion); storage headroom limits
+    # how many can be HELD at once (gc.uonite, persists across
+    # Expansions -- do_prestige_reset() never zeroes it) -- see
+    # get_uonite_storage_cap().
     var mote_cost:   int = _recipe_cost("uonite_assemble", "mote_uonite")
     var sparks_cost: int = _recipe_cost("uonite_assemble", "sparks")
     if gc.mote_uonite.is_less_than(BigNum.from_int(mote_cost)): return false
     if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)):  return false
-    var headroom: int = gc.get_uonite_cycle_cap() - gc.uonites_this_cycle
-    if headroom <= 0: return false
-    # Batch: create as many uonites as mote_uonite, sparks, and cap headroom allow.
+    var cycle_headroom: int = gc.get_uonite_cycle_cap() - gc.uonites_this_cycle
+    if cycle_headroom <= 0: return false
+    var storage_headroom: int = gc.get_uonite_storage_cap() - gc.uonite.to_int()
+    if storage_headroom <= 0: return false
+    # Batch: create as many uonites as mote_uonite, sparks, and both caps allow.
     var possible_by_mote:   int = gc.mote_uonite.div_int_floor(mote_cost).to_int()
     var possible_by_sparks: int = gc.sparks.div_int_floor(sparks_cost).to_int()
-    var count: int = mini(possible_by_mote, mini(possible_by_sparks, headroom))
+    var count: int = mini(possible_by_mote,
+        mini(possible_by_sparks, mini(cycle_headroom, storage_headroom)))
     if count <= 0: return false
     gc.mote_uonite = gc.mote_uonite.sub(BigNum.from_int(count * mote_cost))
     gc.sparks      = gc.sparks.sub(BigNum.from_int(count * sparks_cost))
@@ -2042,9 +2053,16 @@ func get_timer_intervals() -> Dictionary:
     var mult: float = cd.get_active_level_bonus("cooldown_multiplier")
     if mult >= 1.0:
         return base
+    var cap: int = (target_ops as Array).size()
+    if gc.has_method("get_volition_count_for_constellation"):
+        cap = gc.get_volition_count_for_constellation(2)
+    var applied: int = 0
     for op in (target_ops as Array):
+        if applied >= cap:
+            break
         if base.has(op):
             base[op] = base[op] * mult
+            applied += 1
     return base
 
 

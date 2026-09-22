@@ -1,0 +1,9 @@
+[gd_scene format=4 uid="uid://c8f3k2p9qz4mt"]
+
+[ext_resource type="Script" path="res://uonite_icosahedron.gd" id="1"]
+
+[node name="UoniteCycleProgressBar" type="MeshInstance3D" unique_id=700000001]
+script = ExtResource("1")
+radius = 1.0
+current_motes = 20
+rotation_speed = 0.0
