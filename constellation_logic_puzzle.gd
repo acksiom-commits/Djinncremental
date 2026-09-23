@@ -3945,14 +3945,42 @@ const MUTEX_REPEAT_CATEGORY_WEIGHT := 2.0
 const MUTEX_PITCH_SCARCITY_WEIGHT := 0.5
 
 
-func _mutex_pick_axis() -> int:
-    var roll: float = _rng.randf()
-    var acc: float = 0.0
+## Weighted axis pick, but restricted to axes that can actually seat
+## `min_groups` participants on THIS puzzle's matrix right now — Colour
+## and Pitch only form a group per _category_uniquely_labels'd value, so
+## a puzzle can genuinely have zero viable Colour groups and only one or
+## two viable Pitch groups (verified directly: a 17-star constellation
+## with 0 Colour groups and 2 Pitch groups), permanently below the <3
+## floor _build_form_mutual_exclusion's axis-based branch requires.
+## MUTEX_AXIS_WEIGHTS gives Pitch 45% and Colour 5% — half the weight —
+## with no viability check before the pick, so on a topology like that
+## roughly HALF of every axis-based attempt was wasted picking an axis
+## that could never succeed, before ever reaching the retry loop's real
+## budget. Reported live: the opening Mutex anchor failed OUTRIGHT (no
+## Mutex clue at all, not just a redundant one) for exactly this
+## topology, because that wasted-attempt rate combined with an unlucky
+## heterogeneous-phase run to exhaust both retry budgets.
+## Returns {"axis": int, "groups": Array} for a viable pick, or {} if no
+## axis on this puzzle can currently seat min_groups at all.
+func _mutex_pick_viable_axis(min_groups: int) -> Dictionary:
+    var viable: Dictionary = {}   # cat(int) -> groups(Array)
     for cat in MUTEX_AXIS_WEIGHTS:
+        var groups: Array = _mutex_axis_groups(int(cat))
+        if groups.size() >= min_groups:
+            viable[cat] = groups
+    if viable.is_empty():
+        return {}
+    var total_weight: float = 0.0
+    for cat in viable:
+        total_weight += float(MUTEX_AXIS_WEIGHTS[cat])
+    var roll: float = _rng.randf() * total_weight
+    var acc: float = 0.0
+    for cat in viable:
         acc += float(MUTEX_AXIS_WEIGHTS[cat])
         if roll < acc:
-            return int(cat)
-    return Category.PITCH   # float-rounding fallback, should not be reachable
+            return {"axis": int(cat), "groups": viable[cat]}
+    var last_cat = viable.keys()[viable.size() - 1]
+    return {"axis": int(last_cat), "groups": viable[last_cat]}   # float-rounding fallback
 
 
 ## Stars grouped by raw value on `axis`, shuffled — a direct pick surface
@@ -4291,16 +4319,41 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
     # The heterogeneous distinctness list is the same Form's identity
     # variant, built without an axis so it can span every characteristic —
     # see _mutex_build_distinct_set. Tried first, and only sometimes, so
-    # the axis-based Colour/Pitch variant ("all have different pitches",
-    # genuinely different content) keeps its share.
-    if _rng.randf() < MUTEX_DISTINCT_SET_WEIGHT:
+    # the axis-based Colour/Pitch/Name/Sequence variant ("all have
+    # different pitches" / "none of X, Y, Z plays V") keeps its share.
+    #
+    # _mutex_require_distinct_set is true ONLY for the non-final retries
+    # of _build_opening_anchors()'s Mutex slot (false everywhere else,
+    # including that slot's own LAST retry — see its own comment) — i.e.
+    # this is specifically the guaranteed OPENING clue, which
+    # _mutex_build_distinct_set's own header already documents as needing
+    # the heterogeneous shape ("a floor of 5 asks for every category...
+    # intended for the guaranteed opening clue and nowhere else"). The
+    # axis-based variant identifies several participants via the SAME
+    # category (e.g. three star NAMEs) against one shared axis value —
+    # which a single later Exact Identity clue on that one axis value can
+    # fully subsume, since it already implies every other name is
+    # excluded from it. Reported live: "None of Bogaan, Dobramir, or
+    # Kazeei plays C#5" (the axis-based opener) shipped fully redundant
+    # next to "The star that plays C#5 is Sviatiosh." A heterogeneous
+    # draw doesn't concentrate several same-category identifiers against
+    # one shared value this way, so it doesn't have this failure mode.
+    # Forcing it here for all but the anchor slot's last attempt prevents
+    # the pattern in almost every case; the final attempt still allows
+    # the axis-based fallback so a topology that genuinely cannot supply
+    # 4+ uniquely-labeled categories (observed live on "hard") still gets
+    # SOME opening Mutex clue rather than none at all.
+    if _mutex_require_distinct_set or _rng.randf() < MUTEX_DISTINCT_SET_WEIGHT:
         var ds: Dictionary = _mutex_build_distinct_set()
         if not ds.is_empty():
             return ds
-    var axis: int = _mutex_pick_axis()
-    var groups: Array = _mutex_axis_groups(axis)
-    if groups.size() < 3:
-        return {}   # this puzzle's matrix doesn't support this axis right now — skip, nothing to negotiate
+        if _mutex_require_distinct_set:
+            return {}   # this attempt requires the heterogeneous shape specifically -- let the slot's own retry loop try again
+    var axis_pick: Dictionary = _mutex_pick_viable_axis(maxi(3, _mutex_min_elements))
+    if axis_pick.is_empty():
+        return {}   # no axis on this puzzle can currently seat enough participants — skip, nothing to negotiate
+    var axis: int = int(axis_pick["axis"])
+    var groups: Array = axis_pick["groups"]
     var max_n: int = mini(5, groups.size())
     var n: int = maxi(3, mini(max_n, 3 + _rng.randi_range(0, 2)))
     # An anchor slot's element floor applies to BOTH variants of this Form.
@@ -6031,6 +6084,20 @@ var _prefer_true_cells: bool = false
 ## already dominate the mix.
 var _mutex_min_elements: int = 0
 
+## Forces _build_form_mutual_exclusion to the heterogeneous distinct-set
+## variant only (no fallback to the axis-based one) — see that function's
+## own comment for why the axis-based variant is redundancy-prone as an
+## opening clue. Set true for every retry of the anchor's Mutex slot
+## EXCEPT its last, so a topology that genuinely cannot supply 4+
+## uniquely-labeled categories (a real, observed case on "hard") still
+## gets ONE chance at the axis-based fallback rather than shipping no
+## Mutex clue at all — degrading gracefully is better than failing the
+## opening-clue guarantee outright, but the fallback should be the rare
+## exception, not the ~50/50 coin flip MUTEX_DISTINCT_SET_WEIGHT gave it
+## before. Always false outside the anchor pass, restored unconditionally
+## alongside _mutex_min_elements/_prefer_true_cells.
+var _mutex_require_distinct_set: bool = false
+
 
 func _profile() -> Dictionary:
     return DIFFICULTY_PROFILES.get(difficulty, DIFFICULTY_PROFILES["hard"])
@@ -6440,18 +6507,42 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
         _prefer_true_cells = bool((slot as Dictionary).get("prefer_true", true)) if slot is Dictionary else true
         _mutex_min_elements = int((slot as Dictionary).get("min_elements", 0)) if slot is Dictionary else 0
         var reject_fn: Callable = _anchor_identity_already_linked if form_id == 1 else Callable()
+        var committed: bool = false
         var tries: int = 0
-        while tries < tries_max:
+        # Mutex (13) gets its own heterogeneous-only budget of tries_max
+        # attempts, matching every other slot's shape; only if ALL of
+        # those fail does it get a SEPARATE, equally-sized budget for the
+        # axis-based fallback — see _mutex_require_distinct_set's own
+        # comment for why the fallback exists at all and why it must not
+        # be diluted to a single last-ditch attempt sharing the same
+        # budget: a topology where heterogeneous fails on every try
+        # consumes _rng differently than the old always-probabilistic
+        # code did, so a single shared-budget fallback attempt landed on
+        # different (and, for one real "hard" seed, ALSO failing) axis-
+        # based draws purely from that RNG-sequence drift, not from any
+        # real scarcity — a fresh, undiluted budget is what a normal
+        # anchor slot would get, and is what actually fixed it.
+        while tries < tries_max and not committed:
             tries += 1
+            _mutex_require_distinct_set = (form_id == 13)
             if _try_build_and_commit(form_id, sequence_solver_facts,
                     name_revealed, tier_counts, form_counts, -1, 0, reject_fn):
+                committed = true
                 if form_id == 1:
                     _record_anchor_identity_link()
-                break
+        if form_id == 13 and not committed:
+            _mutex_require_distinct_set = false
+            var fallback_tries: int = 0
+            while fallback_tries < tries_max and not committed:
+                fallback_tries += 1
+                if _try_build_and_commit(form_id, sequence_solver_facts,
+                        name_revealed, tier_counts, form_counts, -1, 0, reject_fn):
+                    committed = true
     # Restored unconditionally — every later Form must see the unbiased
     # sampler and no element floor.
     _prefer_true_cells = false
     _mutex_min_elements = 0
+    _mutex_require_distinct_set = false
     _anchor_identity_uf = {}
 
 
@@ -6733,6 +6824,49 @@ func _recheck_anchors_for_redundancy(anchor_texts: Array, name_revealed: Array) 
     _recompute_name_revealed(name_revealed)
 
 
+## Final whole-clue-set safety net, run after BOTH _prune_redundant_clues
+## (the main-loop tail, indices >= protected_count) and
+## _recheck_anchors_for_redundancy (the former-anchor prefix) have each
+## done their part. Neither of those two passes can see a clue made
+## redundant by a change the OTHER one made afterward — dropping a
+## formerly-redundant anchor could, in principle, leave some main-loop
+## clue newly redundant too, or vice versa, and neither pass re-examines
+## the other's territory. This re-tests EVERY surviving clue except the
+## guaranteed opening Mutex (form_id 13, protected here for the exact
+## same reason _recheck_anchors_for_redundancy protects it — see that
+## function's header) against the fully-settled set in one more pass.
+##
+## Reuses _try_prune_clue_at unchanged — the same removability test
+## already verified against both of today's real bugs and a 60-puzzle
+## sweep that found zero false removals among clues it was asked about.
+## This closes a COVERAGE/ORDERING gap between two existing correct
+## passes; it is not new deduction logic, and it is deliberately NOT a
+## general per-cell propagation cascade (see game history 2026-09-22 for
+## why that would be a separate, larger, disclosure-only rebuild).
+func _final_redundancy_safety_net(name_revealed: Array) -> void:
+    var seq_sols: Array = _solve(_seq_facts_from_clues(), 2)
+    if seq_sols.size() != 1:
+        return
+    var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
+    if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP:
+        return
+    var cur_revealed: Array = []
+    for _n in name_revealed.size():
+        cur_revealed.append(false)
+    _recompute_name_revealed(cur_revealed)
+    var since_yield: int = 0
+    var i: int = chosen_form_clues.size() - 1
+    while i >= 0:
+        if int(chosen_form_clues[i].get("form_id", -1)) != 13:
+            _try_prune_clue_at(i, baseline, cur_revealed)
+        i -= 1
+        since_yield += 1
+        if _host and since_yield >= PRUNE_YIELD_INTERVAL:
+            since_yield = 0
+            await _host.get_tree().process_frame
+    _recompute_name_revealed(name_revealed)
+
+
 func _generate_clues_forms_attempt() -> Dictionary:
     _build_record_array()
     _build_matrix()
@@ -6903,6 +7037,11 @@ func _generate_clues_forms_attempt() -> Dictionary:
         # disturb the very support an anchor's redundancy depends on
         # before the walk ever reaches it.
         _recheck_anchors_for_redundancy(anchor_texts, name_revealed)
+        # Phase B2.6 — whole-clue-set safety net. Neither the pass above
+        # nor the main one before it can see a clue made redundant by a
+        # change the OTHER made — see _final_redundancy_safety_net's own
+        # header.
+        await _final_redundancy_safety_net(name_revealed)
         sequence_solver_facts = _seq_facts_from_clues()
     var _t_prune_end: int = Time.get_ticks_msec()
     if DEBUG_GEN_TIMING:

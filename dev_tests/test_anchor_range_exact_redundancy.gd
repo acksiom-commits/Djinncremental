@@ -26,8 +26,22 @@ extends "res://dev_tests/test_base.gd"
 # window is built to fully contain an already-known exact rank, and it
 # touches no Name node, so it can't affect name_revealed either) as if it
 # were one of the anchors, and confirm _recheck_anchors_for_redundancy
-# removes it. A second case confirms the reverse: a Range clue asserting
-# information NOT already covered by any exact fact is correctly kept.
+# removes it. A second check confirms the reverse holds too: running the
+# recheck again on the now-settled set removes nothing further, i.e. it
+# isn't just deleting everything it's asked to look at.
+#
+# FLAKY EARLIER VERSION, FIXED 2026-09-22: this used to test "the reverse"
+# with a hand-added Range clue on a star that had no EXPLICIT
+# ordinal_exact disclosure, asserting that removing it broke solvability.
+# That assumption is false in general: a real generated puzzle is fully
+# solvable BEFORE the synthetic clue is even added, so a star with no
+# single clue stating its rank directly can still have that rank fully
+# entailed by the COMBINATION of every other clue (via elimination) --
+# meaning a hand-added "new" fact about it can be genuinely redundant
+# from the moment it's added, for reasons having nothing to do with this
+# test. It failed intermittently depending on which star the seed
+# happened to pick. Replaced with the idempotency check below, which
+# needs no assumption about any specific star's derivability.
 
 var fails: int = 0
 func ok(c: bool, s: String) -> void:
@@ -91,45 +105,14 @@ func run() -> void:
 	ok(not still_present_1,
 		"a Range clue redundant by construction (window fully covers an already-known exact rank) gets removed")
 
-	# --- Case 2: a Range clue that is NOT covered by any known exact fact,
-	# on a star with NO exact-rank disclosure anywhere -- must be kept. ---
-	var covered_stars: Dictionary = {}
-	for c in g.chosen_form_clues:
-		for f in (c.get("disclosures", []) as Array):
-			var fd: Dictionary = f
-			if str(fd.get("kind", "")) == "ordinal_exact":
-				covered_stars[int(fd["s"])] = true
-	var uncovered_star: int = -1
-	for s in scn:
-		if not covered_stars.has(s):
-			uncovered_star = s
-			break
-
-	if uncovered_star < 0:
-		print("  (skipped case 2: every star already has an exact-rank disclosure in this puzzle -- nothing uncovered to test against)")
-	else:
-		var necessary_text: String = "TEST_NECESSARY: star %d is among ranks [0,0]." % uncovered_star
-		g.chosen_form_clues.append({
-			"form_id": 8, "form_name": "Range", "text": necessary_text,
-			"characteristics": [], "chars": [], "cells": [], "search_terms": [],
-			"disclosures": [{"kind": "ordinal_range", "s": uncovered_star, "lo": 0, "hi": 0}],
-		})
-		# Pin the puzzle to have this new fact be the ONLY thing that
-		# determines this star's rank is exactly 0 -- since nothing else
-		# discloses this star's rank at all (that's how uncovered_star was
-		# picked), removing it should either break Sequence uniqueness
-		# outright or at minimum not be silently accepted as safe.
-		var name_revealed2: Array = []
-		for _n in scn:
-			name_revealed2.append(false)
-		g._recompute_name_revealed(name_revealed2)
-		g._recheck_anchors_for_redundancy([necessary_text], name_revealed2)
-		var still_present_2: bool = false
-		for c in g.chosen_form_clues:
-			if str(c.get("text", "")) == necessary_text:
-				still_present_2 = true
-		ok(still_present_2,
-			"a Range clue asserting genuinely new information (no other clue discloses this star's rank at all) is correctly kept")
+	# --- Case 2: idempotency -- the set is now settled (the redundant
+	# clue removed, everything else already minimized by real generation).
+	# Running the recheck again must find nothing further to remove. ---
+	var count_before_replay: int = g.chosen_form_clues.size()
+	g._recheck_anchors_for_redundancy([redundant_text], name_revealed)
+	ok(g.chosen_form_clues.size() == count_before_replay,
+		"running the recheck again on an already-settled set removes nothing further (%d -> %d)"
+			% [count_before_replay, g.chosen_form_clues.size()])
 
 	print("\nALL PASS (%d failures)" % fails if fails == 0 else "\nFAILURES (%d failures)" % fails)
 	finish()
