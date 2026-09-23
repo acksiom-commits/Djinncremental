@@ -4041,10 +4041,14 @@ func _mutex_build_distinct_set() -> Dictionary:
         Category.PITCH, Category.DISTANCE]
     _shuffle_array(cats)
     # 3, 4 or 5 elements, unless an anchor slot demanded a floor (see
-    # _mutex_min_elements). Five categories exist, so a floor of 5 asks for
-    # every one of them and leaves the draw no freedom — that is intended
-    # for the guaranteed opening clue and nowhere else.
+    # _mutex_min_elements) and/or a ceiling (see _mutex_max_elements — an
+    # anchor wanting an EXACT count sets both to the same value). Five
+    # categories exist, so a floor of 5 asks for every one of them and
+    # leaves the draw no freedom — that is intended for a guaranteed
+    # opening clue and nowhere else.
     var want: int = maxi(_mutex_min_elements, 3 + _rng.randi_range(0, 2))
+    if _mutex_max_elements > 0:
+        want = mini(want, _mutex_max_elements)
     cats = cats.slice(0, mini(want, cats.size()))
 
     var chosen: Array = []          # {cat, star, members:Array, ref, hops}
@@ -5102,6 +5106,107 @@ func _build_form_betweenness(chain: Dictionary) -> Dictionary:
         return {}   # Pitch ranks can genuinely tie (unlike Sequence, which never does) —
                      # a tied pair can't support a strict betweenness claim.
 
+    return _betweenness_render_triple([a, b, c], axis)
+
+
+## Eligibility-pool entries for a Betweenness (Form 17) participant on
+## `axis` right now: one entry per star that has SOME other category
+## uniquely labeling it (never `axis` itself) whose (id_cat,axis) TRUE
+## cell isn't already claimed. One entry per STAR, not per (star,
+## category) pair — a triple needs three distinct stars, and offering the
+## same star under two categories would waste pool slots without adding a
+## real option. Order is shuffled, both across stars and across each
+## star's own candidate categories (for label variety), so callers can
+## just walk the list.
+func _betweenness_eligible_pool(axis: int) -> Array:
+    var cats: Array = [Category.NAME, Category.SEQUENCE, Category.COLOR, Category.PITCH]
+    var out: Array = []
+    for s in star_count:
+        var shuffled_cats: Array = cats.duplicate()
+        _shuffle_array(shuffled_cats)
+        for cat in shuffled_cats:
+            var id_cat: int = int(cat)
+            if id_cat == axis or not _category_uniquely_labels(id_cat, s):
+                continue
+            var id_val: int = int(_cat_star_to_value[id_cat][s])
+            var axis_val: int = int(_cat_star_to_value[axis][s])
+            if bool(_matrix_cell(id_cat, id_val, axis, axis_val)["used"]):
+                continue
+            out.append({"id_cat": id_cat, "id_val": id_val, "axis_val": axis_val,
+                "star": s, "rank": _order_value(axis, s)})
+            break
+    _shuffle_array(out)
+    return out
+
+
+## Deterministically finds TWO disjoint (no shared star), internally
+## rank-distinct triples of Betweenness participants on `axis` — built for
+## the "easy" opening-anchor pair that guarantees 2 Sequence-axis and 2
+## Pitch-axis chain clues (DIFFICULTY_PROFILES). Replaces an earlier
+## random-resample design (two independent calls into
+## _build_form_betweenness with a forced axis): measured directly, the
+## SECOND same-axis draw could be, and often was, starved by whichever
+## stars the FIRST one happened to consume — only ~38% of puzzles got the
+## full 2-and-2 even at a 20-try retry budget per slot, because
+## back-to-back independent draws have no way to see each other's picks
+## in advance. Selecting both triples up front from ONE shared
+## eligibility pool means the second clue can never be blocked by the
+## first succeeding.
+##
+## A single greedy pass over one shuffle order is not a maximum-matching
+## solver and can occasionally fail even when a valid pairing exists
+## (rare — Sequence ranks never tie, and NAME alone already makes most
+## stars eligible on every axis), so this retries with a fresh shuffle a
+## few times before genuinely giving up. Returns [] only if the topology
+## really cannot supply two disjoint triples (e.g. too few distinct Pitch
+## ranks on a small constellation) — the caller skips the slot, same
+## graceful-degradation spirit as every other anchor.
+const BETWEENNESS_PAIR_ATTEMPTS: int = 6
+
+func _betweenness_two_disjoint_triples(axis: int) -> Array:
+    for _attempt in BETWEENNESS_PAIR_ATTEMPTS:
+        var pool: Array = _betweenness_eligible_pool(axis)
+        var triples: Array = []
+        var used_stars: Dictionary = {}
+        var ok: bool = true
+        for _t in 2:
+            var triple: Array = []
+            var ranks_seen: Dictionary = {}
+            for entry in pool:
+                var star: int = int(entry["star"])
+                if used_stars.has(star):
+                    continue
+                var rank: int = int(entry["rank"])
+                if ranks_seen.has(rank):
+                    continue
+                triple.append(entry)
+                ranks_seen[rank] = true
+                if triple.size() == 3:
+                    break
+            if triple.size() < 3:
+                ok = false
+                break
+            for entry in triple:
+                used_stars[int(entry["star"])] = true
+            triples.append(triple)
+        if ok:
+            return triples
+    return []
+
+
+## Shared render tail for Form 17: given three participant infos
+## (unordered, each {id_cat,id_val,axis_val,star}) with pairwise-distinct
+## ranks on `axis`, sorts them lo/mid/hi and builds the
+## {chars,text,grid_updates,solver_facts} shape both _build_form_
+## betweenness (single random draw) and _betweenness_two_disjoint_triples'
+## anchor pass (deterministic pairing) commit through.
+func _betweenness_render_triple(participants: Array, axis: int) -> Dictionary:
+    var a: Dictionary = participants[0]
+    var b: Dictionary = participants[1]
+    var c: Dictionary = participants[2]
+    var s1: int = int(a["star"])
+    var s2: int = int(b["star"])
+    var s3: int = int(c["star"])
     var stars_info: Dictionary = {s1: a, s2: b, s3: c}
     var ranked: Array = [s1, s2, s3]
     ranked.sort_custom(func(x, y): return _order_value(axis, x) < _order_value(axis, y))
@@ -6046,8 +6151,35 @@ const DIFFICULTY_PROFILES := {
         # all-pairs-fresh rule a distinctness clue is only constructible
         # while none of its pairings has been stated yet, and it needs
         # False cells so it cannot collide with the True-cell anchors below.
+        #
+        # A SECOND Mutex slot follows immediately, same reasoning — both
+        # are entirely False cells and both need the all-pairs-fresh
+        # guarantee, so neither can wait behind anything else. Both now
+        # pin an EXACT count (min==max) rather than the old floor-only
+        # "4-or-5" shape: per user direction, one guaranteed 4-category
+        # clue and one guaranteed 3-category clue, visibly distinct sizes,
+        # not two draws that could both land on 5 and never actually ship
+        # a "4-axis" one.
+        #
+        # The two Betweenness (17) "paired" slots after them each commit
+        # TWO chain clues at once — 2 Sequence-axis, 2 Pitch-axis,
+        # guaranteed, not left to chance. Per user direction: reducing
+        # difficulty further by guaranteeing these clues early rather than
+        # by capping the total clue count. A "paired" slot bypasses the
+        # normal sample-and-retry loop entirely; see
+        # _betweenness_two_disjoint_triples's header for why an ordinary
+        # retry loop could not reliably deliver this (measured: two
+        # independent forced-axis draws only got the full 2-and-2 about
+        # 38% of the time, because the second draw had no way to avoid
+        # being starved by whichever stars the first one happened to take)
+        # and place them before the more easily satisfied Exact Identity/
+        # Extreme/Range anchors below, same "hardest-to-satisfy Form runs
+        # while the matrix is least consumed" reason as the Mutex pair.
         "opening_anchors": [
-            {"form": 13, "prefer_true": false, "min_elements": 4, "tries": 12},
+            {"form": 13, "prefer_true": false, "min_elements": 4, "max_elements": 4, "tries": 12},
+            {"form": 13, "prefer_true": false, "min_elements": 3, "max_elements": 3, "tries": 12},
+            {"form": 17, "axis": Category.SEQUENCE, "paired": true},
+            {"form": 17, "axis": Category.PITCH, "paired": true},
             1, 1, 1, 11, 8, 1,
         ],
     },
@@ -6083,6 +6215,17 @@ var _prefer_true_cells: bool = false
 ## 3-element one is a weaker statement than the Group Negation clues that
 ## already dominate the mix.
 var _mutex_min_elements: int = 0
+
+## Ceiling on Mutual Exclusion's element count, set ONLY for the duration
+## of an anchor slot that asked for one, and 0 (no ceiling) everywhere
+## else — same transient-override shape as _mutex_min_elements. Exists so
+## an anchor can demand an EXACT count (min==max) rather than just a
+## floor: a floor-only "3-axis Mutex" anchor could still legitimately draw
+## 4 or 5 categories (the random want=3..5 already clears a floor of 3),
+## which would silently ship as the wrong slot's clue when a puzzle wants
+## one guaranteed 3-category AND one guaranteed 4-category Mutex as two
+## visibly distinct opening clues.
+var _mutex_max_elements: int = 0
 
 ## Forces _build_form_mutual_exclusion to the heterogeneous distinct-set
 ## variant only (no fallback to the axis-based one) — see that function's
@@ -6236,6 +6379,22 @@ func _try_build_and_commit(form_id: int, sequence_solver_facts: Array,
     # just for a reason the Form itself can't see (see
     # _anchor_identity_already_linked, its only caller today).
     if reject_fn.is_valid() and reject_fn.call(result):
+        return false
+    return _commit_clue_result(form_id, result, sequence_solver_facts, name_revealed, tier_counts, form_counts)
+
+
+## Commit tail shared by every path that has already produced a `result`
+## dict ({chars,text,grid_updates,solver_facts[,value_facts]}) from SOME
+## Form builder — factored out of _try_build_and_commit so the
+## Betweenness anchor pair (which builds two results directly via
+## _betweenness_two_disjoint_triples/_betweenness_render_triple, bypassing
+## the single-attempt retry loop) commits through the exact same
+## bookkeeping as every other clue, rather than a second, driftable copy
+## of it. Returns false (no-op) for an empty or duplicate-text result,
+## same early-outs _try_build_and_commit always had.
+func _commit_clue_result(form_id: int, result: Dictionary, sequence_solver_facts: Array,
+        name_revealed: Array, tier_counts: Dictionary, form_counts: Dictionary) -> bool:
+    if result.is_empty():
         return false
     # Most Forms' templates start with a rendered star label ("the white
     # star...", "a star that plays..."), which is correct mid-sentence but
@@ -6485,8 +6644,14 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
     #   int          — a positive foothold, sampled from TRUE cells, tried
     #                  3 times. Exactly the old behaviour, so "easy"'s
     #                  existing [1,1,1,11,8,1] is unchanged by this.
-    #   Dictionary   — {form, prefer_true, min_elements, tries}, for a slot
-    #                  the true-cell assumption does not fit.
+    #   Dictionary   — {form, prefer_true, min_elements, max_elements,
+    #                  tries}, for a slot the true-cell assumption does not
+    #                  fit. max_elements is read by Form 13; a slot that
+    #                  doesn't set it gets the unconstrained default (0).
+    #                  {form:17, axis, paired:true} is a THIRD shape,
+    #                  handled separately below — see that branch's own
+    #                  comment for why Betweenness needs a fundamentally
+    #                  different mechanism than "sample and retry".
     #
     # The old header said "a negation Form listed here would be
     # self-defeating — it needs a False cell and would find none," and that
@@ -6503,9 +6668,26 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
     # Forms that either fit the sampled cell or do not.
     for slot in anchors:
         var form_id: int = int(slot["form"]) if slot is Dictionary else int(slot)
+        # Betweenness's guaranteed axis-pair slot: two disjoint triples are
+        # picked from ONE shared eligibility pool up front (see
+        # _betweenness_two_disjoint_triples's own header for why this
+        # replaced a sample-and-retry design), so it does not fit the
+        # per-attempt retry loop below at all — commit both clues (or
+        # neither, if the topology can't supply two disjoint triples) and
+        # move on to the next slot.
+        if form_id == 17 and slot is Dictionary and bool(slot.get("paired", false)):
+            var b_axis: int = int(slot.get("axis", Category.SEQUENCE))
+            var b_triples: Array = _betweenness_two_disjoint_triples(b_axis)
+            for b_triple in b_triples:
+                _rendered_terms = {}
+                var b_result: Dictionary = _betweenness_render_triple(b_triple, b_axis)
+                _commit_clue_result(17, b_result, sequence_solver_facts,
+                    name_revealed, tier_counts, form_counts)
+            continue
         var tries_max: int = int((slot as Dictionary).get("tries", 3)) if slot is Dictionary else 3
         _prefer_true_cells = bool((slot as Dictionary).get("prefer_true", true)) if slot is Dictionary else true
         _mutex_min_elements = int((slot as Dictionary).get("min_elements", 0)) if slot is Dictionary else 0
+        _mutex_max_elements = int((slot as Dictionary).get("max_elements", 0)) if slot is Dictionary else 0
         var reject_fn: Callable = _anchor_identity_already_linked if form_id == 1 else Callable()
         var committed: bool = false
         var tries: int = 0
@@ -6539,9 +6721,10 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
                         name_revealed, tier_counts, form_counts, -1, 0, reject_fn):
                     committed = true
     # Restored unconditionally — every later Form must see the unbiased
-    # sampler and no element floor.
+    # sampler and no element floor/ceiling.
     _prefer_true_cells = false
     _mutex_min_elements = 0
+    _mutex_max_elements = 0
     _mutex_require_distinct_set = false
     _anchor_identity_uf = {}
 
@@ -6824,6 +7007,30 @@ func _recheck_anchors_for_redundancy(anchor_texts: Array, name_revealed: Array) 
     _recompute_name_revealed(name_revealed)
 
 
+## Forms that are a deliberate GUARANTEE, not a claim their information is
+## otherwise unrecoverable, and so are exempt from every redundancy pass
+## below (never candidates for _try_prune_clue_at, however the rest of
+## the puzzle shapes up):
+##
+##   13 (Mutual Exclusion) — the guaranteed opening clue, every profile.
+##   17 (Betweenness) — the "easy" profile's guaranteed Sequence-axis and
+##       Pitch-axis chain pair (DIFFICULTY_PROFILES' "paired" anchor
+##       slots). Measured directly, 2026-09-22: without this exemption,
+##       one of the two guaranteed-and-successfully-committed chain
+##       clues per axis was found genuinely redundant, by this SAME
+##       rigorous test, about as often as not — correct in isolation
+##       (its information really was recoverable from the rest of the
+##       finished puzzle), but it silently broke the "2 each" guarantee
+##       the deterministic pairing in _betweenness_two_disjoint_triples
+##       exists to provide. Exempting the whole form, not just the
+##       anchor-committed instances, matches Mutex's own precedent — a
+##       later main-loop-drawn Betweenness clue keeping company it
+##       didn't strictly need is a smaller cost than the pair sometimes
+##       silently becoming a single.
+func _is_redundancy_exempt_form(form_id: int) -> bool:
+    return form_id == 13 or form_id == 17
+
+
 ## Final whole-clue-set safety net, run after BOTH _prune_redundant_clues
 ## (the main-loop tail, indices >= protected_count) and
 ## _recheck_anchors_for_redundancy (the former-anchor prefix) have each
@@ -6832,9 +7039,11 @@ func _recheck_anchors_for_redundancy(anchor_texts: Array, name_revealed: Array) 
 ## formerly-redundant anchor could, in principle, leave some main-loop
 ## clue newly redundant too, or vice versa, and neither pass re-examines
 ## the other's territory. This re-tests EVERY surviving clue except the
-## guaranteed opening Mutex (form_id 13, protected here for the exact
-## same reason _recheck_anchors_for_redundancy protects it — see that
-## function's header) against the fully-settled set in one more pass.
+## exempt Forms (_is_redundancy_exempt_form — the guaranteed opening
+## Mutex and the guaranteed Betweenness chain pair, protected here for
+## the exact same reason _recheck_anchors_for_redundancy protects them —
+## see that function's header) against the fully-settled set in one more
+## pass.
 ##
 ## Reuses _try_prune_clue_at unchanged — the same removability test
 ## already verified against both of today's real bugs and a 60-puzzle
@@ -6857,7 +7066,7 @@ func _final_redundancy_safety_net(name_revealed: Array) -> void:
     var since_yield: int = 0
     var i: int = chosen_form_clues.size() - 1
     while i >= 0:
-        if int(chosen_form_clues[i].get("form_id", -1)) != 13:
+        if not _is_redundancy_exempt_form(int(chosen_form_clues[i].get("form_id", -1))):
             _try_prune_clue_at(i, baseline, cur_revealed)
         i -= 1
         since_yield += 1
@@ -6956,21 +7165,23 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # unique (duplicate-text drafts are rejected at commit time). Needed
     # by _recheck_anchors_for_redundancy after the main pruning pass.
     #
-    # Form 13 (Mutual Exclusion) is EXCLUDED here on purpose. It is not
-    # just informative content that happens to open the puzzle — it is
-    # the guaranteed opening clue itself, present in EVERY difficulty
-    # profile's anchor list specifically so every puzzle teaches this
-    # clue type first (see the profile's own header: "the single
-    # highest-impact Easy lever", and "hard"'s sole anchor). Measured
-    # directly: letting the recheck evaluate it too removed it as
-    # "provably redundant" in about half of a 6-puzzle sample — true by
-    # the same rigorous test that correctly catches a genuinely
-    # redundant Range/Exact pair, but wrong here, because "guaranteed
-    # first clue" is a deliberate design property, not a claim that its
-    # information is otherwise unrecoverable.
+    # Forms 13/17 are EXCLUDED here on purpose — see
+    # _is_redundancy_exempt_form's own header. Neither is just
+    # informative content that happens to open the puzzle; both are
+    # deliberate GUARANTEES (the opening Mutex, and "easy"'s guaranteed
+    # Sequence/Pitch chain pair), not a claim their information is
+    # otherwise unrecoverable. Measured directly for Mutex: letting the
+    # recheck evaluate it too removed it as "provably redundant" in about
+    # half of a 6-puzzle sample — true by the same rigorous test that
+    # correctly catches a genuinely redundant Range/Exact pair, but wrong
+    # here. Measured directly for Betweenness too: without this
+    # exclusion, one of the two guaranteed-and-successfully-committed
+    # chain clues per axis was routinely found "redundant" by this same
+    # test once the rest of the puzzle was in place, silently breaking
+    # the "2 each" guarantee.
     var anchor_texts: Array = []
     for c in chosen_form_clues:
-        if int(c.get("form_id", -1)) == 13:
+        if _is_redundancy_exempt_form(int(c.get("form_id", -1))):
             continue
         anchor_texts.append(str(c.get("text", "")))
 
