@@ -31,13 +31,16 @@ extends "res://dev_tests/test_base.gd"
 # is the point — that is the moment to look at its reachability.
 
 ## cid -> [component_count, reachable_ordered_pairs, star_count, edge_count]
+## The Bellows and The Satchel swapped ids (3 <-> 4) 2026-09-23 — see
+## constellation_data.gd v0.3.6 — so their rows below swapped keys too;
+## the VALUES describe the same shapes as before, just under the other id.
 const BASELINE := {
 	0: [4, 48, 15, 15],    # The Archon    — 3 isolated triangles + a 6-cycle
 	1: [1, 240, 16, 21],   # The Spark     — fully connected; a center oval was
 	                       # added 2026-09-16 alongside the original spine/spokes
 	2: [1, 156, 13, 14],   # The Hourglass — fully connected
-	3: [1, 272, 17, 20],   # The Satchel   — fully connected
-	4: [5, 182, 18, 14],   # The Bellows   — 4 isolated singles + one body
+	3: [5, 182, 18, 14],   # The Bellows   — 4 isolated singles + one body
+	4: [1, 272, 17, 20],   # The Satchel   — fully connected
 	5: [1, 182, 14, 16],   # The Vessel    — fully connected (two-handled urn outline)
 }
 

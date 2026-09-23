@@ -908,16 +908,16 @@ func _on_second_prestige_complete() -> void:
 
 
 func _on_third_prestige_complete() -> void:
-    # Bellows (id 4) now unlocks at fourth_prestige (swapped with Satchel,
-    # user direction 2026-09-23 — see constellation_data.gd v0.3.5), so its
-    # pre-generation moved here, one prestige ahead of its own unlock, same
-    # as every other constellation's pattern.
-    _start_puzzle_generation(4)  # pre-generate Bellows (id 4)
+    # Bellows (now id 3, swapped with Satchel — see constellation_data.gd
+    # v0.3.6) unlocks at fourth_prestige, so its pre-generation happens
+    # here, one prestige ahead of its own unlock, same as every other
+    # constellation's pattern.
+    _start_puzzle_generation(3)  # pre-generate Bellows (id 3)
 
 
 func _on_fourth_prestige_complete() -> void:
-    # Satchel (id 3) now unlocks at fifth_prestige — see the swap note above.
-    _start_puzzle_generation(3)  # pre-generate Satchel (id 3)
+    # Satchel (now id 4) unlocks at fifth_prestige — see the swap note above.
+    _start_puzzle_generation(4)  # pre-generate Satchel (id 4)
 
 
 func _on_fifth_prestige_complete() -> void:

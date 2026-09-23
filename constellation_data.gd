@@ -1,5 +1,19 @@
 extends Node
-# ================= CONSTELLATION DATA v0.3.5 =================
+# ================= CONSTELLATION DATA v0.3.6 =================
+# v0.3.6: Swapped The Bellows and The Satchel's numeric identities too —
+#         Bellows is now id 3/octant 3, Satchel id 4/octant 4 (was the
+#         reverse), so ascending id order matches the v0.3.5 unlock order
+#         again, per user direction ("keep the code tidy... prevent
+#         misunderstandings, miscounts... farther along in development").
+#         Names/geometry/puzzle/bonus data stayed with their own
+#         constellation; only id+octant moved. Updated everywhere an id
+#         literal meant one of these two specifically: game_context.gd's
+#         SATCHEL_ID (3 -> 4), root_ui.gd's third/fourth-prestige-complete
+#         pre-generation calls, dev_tests/test_constellation_topology.gd's
+#         BASELINE table (values swapped to the new keys), and
+#         dev_tests/test_mus_explanation_soundness.gd's CONSTELLATIONS
+#         constant (was hardcoded to exercise Satchel via id 3). No save
+#         migration needed — user confirmed starting a fresh save.
 # v0.3.5: Swapped The Satchel (id 3) and The Bellows (id 4) in the
 #         progression order, per user direction after playing through the
 #         sequence several times — Satchel now unlocks at
@@ -402,122 +416,19 @@ const BUILT_IN = [
     
     
 # ==================================================
-# CONSTELLATION 4-4: THE SATCHEL
+# CONSTELLATION 4-4: DAJALA, THE BELLOWS
 # ==================================================
+# id/octant swapped with The Satchel (was id 4/octant 4) per user
+# direction 2026-09-23, on top of the earlier unlock-timing swap — see
+# the top-of-file v0.3.6 history entry. Everything else (name, shape,
+# puzzle, bonus data) is unchanged; only the numeric identity moved.
 
     {
         "id": 3,
-        "name": "The Satchel",
-        "designation": "HANLEE",
-        "octant": 3,
-        "star_count": 17,
-        # Swapped with The Bellows (id 4) per user direction 2026-09-23:
-        # Bellows now unlocks first (fourth_prestige), Satchel second
-        # (fifth_prestige). id/octant/star data untouched — only unlock
-        # TIMING moved. root_ui.gd's pre-generation calls and
-        # archon_dialogue_manager.gd's fourth/fifth_prestige placeholder
-        # dialogue were updated to match.
-        "unlock": "achievement:fifth_prestige",
-        "bonus_key": "storage_multiplier",
-        "bonus_value": 1.0,
-        "mechanic_key": "",
-        "snap_horiz_stars": [10, 15],
-        # Star 16 (the strap chain's far end) must end up on the +X
-        # (trailing right) side after leveling — see the Archon's
-        # matching comment and get_canonical_display_basis().
-        "snap_orient_check": {"star": 16, "axis": "x", "sign": 1},
-        # bonus_levels is the LIVE, tier-reversible TEMPORARY cap multiplier
-        # only (art == lines, both 3.0 — tier 3 gives nothing extra here).
-        # Tier 3's actual distinguishing bonus is a SEPARATE, PERMANENT +5%
-        # applied to the base storage_cap on Expansion, gated on
-        # game_context.gd's has_storage_enhancer() (same trinary gate: art
-        # tier + solved + Volition assigned) — see do_prestige_reset(). That
-        # permanent bump only survives past the Expansion that grants it;
-        # this multiplier reverts the instant Satchel drops out of art tier.
-        "bonus_levels": {"stars": 2.0, "lines": 3.0, "art": 3.0},
-        "spark_cap":      28657,
-        # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
-        # DEV (2026-09-17): Korean-flavored name_theme, second per-
-        # constellation override after The Spark's Russian one — see
-        # constellation_star_namer.gd's DEFAULT_THEME doc comment for the
-        # prefix/mid/suffix mechanism and the "reset to pick up new names"
-        # caveat. "o" dropped from mids (2026-09-17): five of the fourteen
-        # prefixes (Seo/Soo/Woo/Hyo) already end in "o", so an "o" mid
-        # compounded into double/triple-o names ("Sooo-", "Wooo-").
-        "name_theme": {
-            "prefixes": ["Min", "Jun", "Seo", "Ji", "Hyun", "Soo", "Yeon",
-                         "Eun", "Hae", "Woo", "Kyung", "Sung", "Young", "Hyo"],
-            "mids":     ["a", "i", "u", "ae", "ha"],
-            "suffixes": ["won", "jin", "bin", "ho", "yul", "rin", "chan", "hee", "seok"],
-        },
-
-        # Debussy, Clair de Lune — opening 17 notes (events 0-16), the
-        # phrase that ends right as it begins echoing itself (F4-G#4
-        # recurs at event 16, then diverges). 7 distinct pitch classes.
-        "puzzle_sequence": [0, 1, 0, 1, 0, 1, 2, 0, 3, 4, 5, 6, 2, 0, 5, 6, 0],
-        "note_freqs": [
-            349.23,  # 0: F4
-            415.30,  # 1: G#4
-            554.37,  # 2: C#5
-            369.99,  # 3: F#4
-            440.00,  # 4: A4
-            523.25,  # 5: C5
-            622.25,  # 6: D#5
-        ],
-        # Response phrase: events 17-32, the material between the first
-        # echo of the opening and the next full cycle point.
-        "response_freqs": [
-            415.30, 466.16, 554.37, 523.25, 622.25, 554.37, 466.16,
-            698.46, 554.37, 311.13, 369.99, 415.30, 523.25, 466.16,
-            554.37, 523.25,
-        ],
-        # TODO (Boss): note_durations not yet designed — placeholder below.
-        "note_durations": [
-            0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25,
-            0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25,
-        ],
-
-        "fixed_star_positions": [
-            [ 0.0286,  0.0460, 0.9985],  # 0
-            [-0.1106,  0.0460, 0.9928],  # 1
-            [-0.1250,  0.0004, 0.9922],  # 2
-            [ 0.0286, -0.0020, 0.9996],  # 3
-            [ 0.0782,  0.0400, 0.9961],  # 4
-            [-0.0090, -0.0272, 0.9996],  # 5
-            [-0.0790, -0.0240, 0.9966],  # 6
-            [ 0.0730, -0.0560, 0.9958],  # 7
-            [-0.0510, -0.0011, 0.9987],  # 8
-            [-0.0690,  0.0460, 0.9966],  # 9
-            [-0.1010, -0.0440, 0.9939],  # 10
-            [-0.0738, -0.0508, 0.9960],  # 11
-            [-0.0310, -0.0528, 0.9981],  # 12
-            [ 0.0230, -0.0508, 0.9984],  # 13
-            [ 0.0730, -0.0200, 0.9971],  # 14
-            [ 0.1090, -0.0240, 0.9938],  # 15
-            [ 0.1250,  0.0100, 0.9921],  # 16
-        ],
-
-        "line_pairs": [
-            1,2, 2,8, 8,3, 3,0, 0,9, 9,1,
-            2,6, 6,5, 5,14, 14,3,
-            4,0, 14,4,
-            6,10, 10,11, 11,12, 12,13, 13,7, 7,15, 15,16, 16,14,
-        ],
-    },
-
-
-# ==================================================
-# CONSTELLATION 5-5: DAJALA, THE BELLOWS
-# ==================================================
-
-    {
-        "id": 4,
         "name": "The Bellows",
         "designation": "DAJALA",
-        "octant": 4,
+        "octant": 3,
         "star_count": 18,
-        # Swapped with The Satchel (id 3) per user direction 2026-09-23 —
-        # see that entry's comment.
         "unlock": "achievement:fourth_prestige",
         "bonus_key": "click_volition_multiplier",
         "bonus_value": 1.0,
@@ -611,6 +522,107 @@ const BUILT_IN = [
             9,13,  13,11,               # top edge continues: valve→pleat-tip1→handle
             10,17, 17,12,               # bottom edge continues: valve→pleat-tip3→handle
             13,14, 14,15, 15,16, 16,17, # pleat interior zigzag
+        ],
+    },
+
+
+# ==================================================
+# CONSTELLATION 5-5: THE SATCHEL
+# ==================================================
+# id/octant swapped with The Bellows (was id 3/octant 3) — see that
+# entry's comment above.
+
+    {
+        "id": 4,
+        "name": "The Satchel",
+        "designation": "HANLEE",
+        "octant": 4,
+        "star_count": 17,
+        "unlock": "achievement:fifth_prestige",
+        "bonus_key": "storage_multiplier",
+        "bonus_value": 1.0,
+        "mechanic_key": "",
+        "snap_horiz_stars": [10, 15],
+        # Star 16 (the strap chain's far end) must end up on the +X
+        # (trailing right) side after leveling — see the Archon's
+        # matching comment and get_canonical_display_basis().
+        "snap_orient_check": {"star": 16, "axis": "x", "sign": 1},
+        # bonus_levels is the LIVE, tier-reversible TEMPORARY cap multiplier
+        # only (art == lines, both 3.0 — tier 3 gives nothing extra here).
+        # Tier 3's actual distinguishing bonus is a SEPARATE, PERMANENT +5%
+        # applied to the base storage_cap on Expansion, gated on
+        # game_context.gd's has_storage_enhancer() (same trinary gate: art
+        # tier + solved + Volition assigned) — see do_prestige_reset(). That
+        # permanent bump only survives past the Expansion that grants it;
+        # this multiplier reverts the instant Satchel drops out of art tier.
+        "bonus_levels": {"stars": 2.0, "lines": 3.0, "art": 3.0},
+        "spark_cap":      28657,
+        # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
+        # DEV (2026-09-17): Korean-flavored name_theme, second per-
+        # constellation override after The Spark's Russian one — see
+        # constellation_star_namer.gd's DEFAULT_THEME doc comment for the
+        # prefix/mid/suffix mechanism and the "reset to pick up new names"
+        # caveat. "o" dropped from mids (2026-09-17): five of the fourteen
+        # prefixes (Seo/Soo/Woo/Hyo) already end in "o", so an "o" mid
+        # compounded into double/triple-o names ("Sooo-", "Wooo-").
+        "name_theme": {
+            "prefixes": ["Min", "Jun", "Seo", "Ji", "Hyun", "Soo", "Yeon",
+                         "Eun", "Hae", "Woo", "Kyung", "Sung", "Young", "Hyo"],
+            "mids":     ["a", "i", "u", "ae", "ha"],
+            "suffixes": ["won", "jin", "bin", "ho", "yul", "rin", "chan", "hee", "seok"],
+        },
+
+        # Debussy, Clair de Lune — opening 17 notes (events 0-16), the
+        # phrase that ends right as it begins echoing itself (F4-G#4
+        # recurs at event 16, then diverges). 7 distinct pitch classes.
+        "puzzle_sequence": [0, 1, 0, 1, 0, 1, 2, 0, 3, 4, 5, 6, 2, 0, 5, 6, 0],
+        "note_freqs": [
+            349.23,  # 0: F4
+            415.30,  # 1: G#4
+            554.37,  # 2: C#5
+            369.99,  # 3: F#4
+            440.00,  # 4: A4
+            523.25,  # 5: C5
+            622.25,  # 6: D#5
+        ],
+        # Response phrase: events 17-32, the material between the first
+        # echo of the opening and the next full cycle point.
+        "response_freqs": [
+            415.30, 466.16, 554.37, 523.25, 622.25, 554.37, 466.16,
+            698.46, 554.37, 311.13, 369.99, 415.30, 523.25, 466.16,
+            554.37, 523.25,
+        ],
+        # TODO (Boss): note_durations not yet designed — placeholder below.
+        "note_durations": [
+            0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25,
+            0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25,
+        ],
+
+        "fixed_star_positions": [
+            [ 0.0286,  0.0460, 0.9985],  # 0
+            [-0.1106,  0.0460, 0.9928],  # 1
+            [-0.1250,  0.0004, 0.9922],  # 2
+            [ 0.0286, -0.0020, 0.9996],  # 3
+            [ 0.0782,  0.0400, 0.9961],  # 4
+            [-0.0090, -0.0272, 0.9996],  # 5
+            [-0.0790, -0.0240, 0.9966],  # 6
+            [ 0.0730, -0.0560, 0.9958],  # 7
+            [-0.0510, -0.0011, 0.9987],  # 8
+            [-0.0690,  0.0460, 0.9966],  # 9
+            [-0.1010, -0.0440, 0.9939],  # 10
+            [-0.0738, -0.0508, 0.9960],  # 11
+            [-0.0310, -0.0528, 0.9981],  # 12
+            [ 0.0230, -0.0508, 0.9984],  # 13
+            [ 0.0730, -0.0200, 0.9971],  # 14
+            [ 0.1090, -0.0240, 0.9938],  # 15
+            [ 0.1250,  0.0100, 0.9921],  # 16
+        ],
+
+        "line_pairs": [
+            1,2, 2,8, 8,3, 3,0, 0,9, 9,1,
+            2,6, 6,5, 5,14, 14,3,
+            4,0, 14,4,
+            6,10, 10,11, 11,12, 12,13, 13,7, 7,15, 15,16, 16,14,
         ],
     },
 

@@ -694,14 +694,15 @@ func set_resource(key: String, value: BigNum) -> void:
                 push_warning("GameContext.set_resource: unknown key " + key)
 
 
-## Satchel constellation (id 3), Tier 3 (full Spark investment) only.
+## Satchel constellation (id 4, swapped with The Bellows 2026-09-23 — see
+## constellation_data.gd v0.3.6), Tier 3 (full Spark investment) only.
 ## Trinary gate: solved AND volition-assigned AND visual_state == "art".
 ## Gates the PERMANENT +5% base storage_cap bump applied on Expansion (see
 ## do_prestige_reset()) -- separate from storage_multiplier's own LIVE,
 ## tier-reversible multiplier (bonus_levels, applied every frame via
 ## get_effective_storage_cap(), unaffected by this gate).
 func has_storage_enhancer() -> bool:
-    const SATCHEL_ID: int = 3
+    const SATCHEL_ID: int = 4
     var cd = get_node_or_null("/root/ConstellationData")
     if not cd:
         return false
