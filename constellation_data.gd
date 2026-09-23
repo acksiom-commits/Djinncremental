@@ -1,5 +1,13 @@
 extends Node
-# ================= CONSTELLATION DATA v0.3.4 =================
+# ================= CONSTELLATION DATA v0.3.5 =================
+# v0.3.5: Swapped The Satchel (id 3) and The Bellows (id 4) in the
+#         progression order, per user direction after playing through the
+#         sequence several times — Satchel now unlocks at
+#         "achievement:fifth_prestige", Bellows at "fourth_prestige" (was
+#         the reverse). id/octant/star data/names untouched. root_ui.gd's
+#         _on_third_prestige_complete()/_on_fourth_prestige_complete()
+#         pre-generation calls and archon_dialogue_manager.gd's
+#         fourth/fifth_prestige placeholder dialogue swapped to match.
 # v0.3.4: Corrected v0.3.3's unlock tiers — The Vessel (id 5) now unlocks at
 #         "achievement:sixth_prestige" (was "fifth_prestige"), The Djinn
 #         (id 6) at "achievement:seventh_prestige" (was "sixth_prestige").
@@ -403,7 +411,13 @@ const BUILT_IN = [
         "designation": "HANLEE",
         "octant": 3,
         "star_count": 17,
-        "unlock": "achievement:fourth_prestige",
+        # Swapped with The Bellows (id 4) per user direction 2026-09-23:
+        # Bellows now unlocks first (fourth_prestige), Satchel second
+        # (fifth_prestige). id/octant/star data untouched — only unlock
+        # TIMING moved. root_ui.gd's pre-generation calls and
+        # archon_dialogue_manager.gd's fourth/fifth_prestige placeholder
+        # dialogue were updated to match.
+        "unlock": "achievement:fifth_prestige",
         "bonus_key": "storage_multiplier",
         "bonus_value": 1.0,
         "mechanic_key": "",
@@ -502,7 +516,9 @@ const BUILT_IN = [
         "designation": "DAJALA",
         "octant": 4,
         "star_count": 18,
-        "unlock": "achievement:fifth_prestige",
+        # Swapped with The Satchel (id 3) per user direction 2026-09-23 —
+        # see that entry's comment.
+        "unlock": "achievement:fourth_prestige",
         "bonus_key": "click_volition_multiplier",
         "bonus_value": 1.0,
         "mechanic_key": "",

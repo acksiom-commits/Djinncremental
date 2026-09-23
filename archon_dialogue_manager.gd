@@ -1109,8 +1109,10 @@ func enqueue_fourth_prestige() -> void:
     if fourth_prestige_done:
         return
     fourth_prestige_done = true
+    # Bellows ("Stoker") now unlocks at fourth_prestige, swapped with
+    # Satchel per user direction 2026-09-23 — see constellation_data.gd v0.3.5.
     var lines = [
-        "Satchel placeholder dialogue",
+        "Stoker placeholder dialogue",
     ]
     if not dialogue_ended.is_connected(_on_fourth_prestige_ended):
         dialogue_ended.connect(_on_fourth_prestige_ended)
@@ -1122,8 +1124,9 @@ func enqueue_fifth_prestige() -> void:
     if fifth_prestige_done:
         return
     fifth_prestige_done = true
+    # Satchel now unlocks at fifth_prestige — see the swap note above.
     var lines = [
-        "Stoker placeholder dialogue",
+        "Satchel placeholder dialogue",
     ]
     if not dialogue_ended.is_connected(_on_fifth_prestige_ended):
         dialogue_ended.connect(_on_fifth_prestige_ended)
