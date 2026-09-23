@@ -1083,8 +1083,8 @@ func enqueue_start_second_prestige() -> void:
     start_second_prestige_done = true
     var lines = [
         "Squishy! That didn't wrinkle me, did I? Can you see any wrinkles?||NO, KALEB, YOU DON'T HAVE ANY WRINKLES. MORE IMPORTANTLY, DO WE HAVE ANY NEW CONSTELLATIONS?",
-        "It will take a little while to find out, Boss. We'll need some free Sparks roaming around first. I'm about twice as good at tracking and herding them now, so say...fifteen hundred stocked up this time?||GOOD IMPROVEMENT. \n\nALL RIGHTY, THEN; GIT YERSELF A' WRANGLIN', SPARKBOY.",
-        "... \n\nReally? \n\nFine. I shall go now and yee my haw. Whoopee.",
+        "It will take a little while to find out, Boss. We'll need some free Sparks roaming around first. I think I'm about...maybe a fourth better at tracking and herding them now? So, say...fifteen hundred stocked up this time?||GOOD IMPROVEMENT. \n\nALL RIGHTY, THEN; GIT YERSELF A' WRANGLIN', SPARKBOY.",
+        "... \n\nReally? \n\nFine. \n\nI shall go now and yee my haw. Whoopee.",
     ]
     if not dialogue_ended.is_connected(_on_start_second_prestige_ended):
         dialogue_ended.connect(_on_start_second_prestige_ended)
