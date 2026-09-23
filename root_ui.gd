@@ -286,40 +286,10 @@ var _ui_minimal_active: bool  = false
 var _ui_minimal_hidden: Array = []
 
 # === EXPANSION ANIMATION ===
-const _EXPANSION_SHADER_SRC := """
-shader_type canvas_item;
-
-uniform float distortion_strength : hint_range(0.0, 3.0) = 0.0;
-uniform float white_amount        : hint_range(0.0, 1.0) = 0.0;
-
-uniform sampler2D SCREEN_TEXTURE : hint_screen_texture, repeat_disable, filter_linear;
-
-void fragment() {
-    vec2  center = vec2(0.5, 0.5);
-    vec2  offset = SCREEN_UV - center;
-    float r      = length(offset);
-
-    // Barrel distortion: sample UV is pulled toward center.
-    // Output pixels at the edges show content from near-center,
-    // so the center content appears to rush outward — toward the player.
-    float warp_scale = 1.0 / (1.0 + distortion_strength * r * r * 3.0);
-    vec2  sample_uv  = center + offset * warp_scale;
-
-    // Radial vignette: white blooms inward from the screen boundary
-    // as distortion grows, completing the enveloping sensation.
-    // At distortion_strength = 0 the threshold sits beyond the screen
-    // corners (~0.707) so no white is visible at rest.
-    float inner     = 0.75 - distortion_strength * 0.65;
-    float outer     = inner + 0.14;
-    float edge_white = smoothstep(inner, outer, r);
-
-    vec4 screen_col = texture(SCREEN_TEXTURE, sample_uv);
-
-    // edge_white closes in from outside; white_amount takes everything
-    // to full white at the peak regardless of remaining distortion.
-    COLOR = mix(screen_col, vec4(1.0), max(white_amount, edge_white));
-}
-"""
+## Extracted to expansion_transition.gdshader 2026-09-23 so intro_screen.gd's
+## vessel-selection sequence can reuse the exact same "universe compresses
+## toward a point of light" transition instead of duplicating the source.
+const _EXPANSION_TRANSITION_SHADER: Shader = preload("res://expansion_transition.gdshader")
 
 var _expansion_anim_active: bool           = false
 var _expansion_overlay:     ColorRect      = null
@@ -921,7 +891,7 @@ func _on_fourth_prestige_complete() -> void:
 
 
 func _on_fifth_prestige_complete() -> void:
-    _start_puzzle_generation(5)  # pre-generate The Vessel (id 5)
+    _start_puzzle_generation(5)  # pre-generate The Phial (id 5)
 
 
 func _on_sixth_prestige_complete() -> void:
@@ -1804,19 +1774,19 @@ func _check_tetrad_upgrade_trigger() -> void:
 
 
 func _do_prestige_reset() -> void:
-    # Read The Vessel's spark bank BEFORE do_prestige_reset() wipes
+    # Read The Phial's spark bank BEFORE do_prestige_reset() wipes
     # constellation_spark_totals (which resets its tier to "dark") — see
-    # constellation_data.gd's get_vessel_spark_bank_amount().
-    var vessel_bank: BigNum = BigNum.zero()
+    # constellation_data.gd's get_phial_spark_bank_amount().
+    var phial_bank: BigNum = BigNum.zero()
     var _cd_for_bank = get_node_or_null("/root/ConstellationData")
-    if _cd_for_bank and _cd_for_bank.has_method("get_vessel_spark_bank_amount"):
-        vessel_bank = _cd_for_bank.get_vessel_spark_bank_amount()
+    if _cd_for_bank and _cd_for_bank.has_method("get_phial_spark_bank_amount"):
+        phial_bank = _cd_for_bank.get_phial_spark_bank_amount()
     # The Satchel's permanent +5% base storage_cap bump, only when fully
     # endowed at Tier 3 (art) at this exact moment — see
     # game_context.gd's has_storage_enhancer()/do_prestige_reset().
     var storage_bonus_delta: BigNum = game_context.do_prestige_reset()
-    if not vessel_bank.is_zero():
-        game_context.sparks = game_context.sparks.add(vessel_bank)
+    if not phial_bank.is_zero():
+        game_context.sparks = game_context.sparks.add(phial_bank)
     if production_manager:
         production_manager.reset_for_prestige()
     if _storage_display and _storage_display.has_method("clear_flow_icons"):
@@ -2593,10 +2563,8 @@ func _get_or_create_expansion_overlay() -> ColorRect:
     if _expansion_overlay and is_instance_valid(_expansion_overlay):
         return _expansion_overlay
 
-    var shader := Shader.new()
-    shader.code = _EXPANSION_SHADER_SRC
     _expansion_shader_mat = ShaderMaterial.new()
-    _expansion_shader_mat.shader = shader
+    _expansion_shader_mat.shader = _EXPANSION_TRANSITION_SHADER
 
     _expansion_overlay = ColorRect.new()
     _expansion_overlay.color        = Color(1.0, 1.0, 1.0, 1.0)

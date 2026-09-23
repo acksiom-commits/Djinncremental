@@ -1,5 +1,13 @@
 extends Node
-# ================= CONSTELLATION DATA v0.3.6 =================
+# ================= CONSTELLATION DATA v0.3.7 =================
+# v0.3.7: Renamed "The Vessel" (id 5, the Spark-bank constellation) to
+#         "The Phial" — per user direction, "Vessel" is reserved going
+#         forward for The Djinn (id 6, the Player's own constellation),
+#         to avoid a naming collision once the Djinn's vessel-selection
+#         intro screen exists (Ring/Jar/Lamp/etc., see its entry below).
+#         id/octant/star data/mechanic untouched, name only.
+#         get_vessel_spark_bank_amount() -> get_phial_spark_bank_amount()
+#         in this file; root_ui.gd's caller and local var updated to match.
 # v0.3.6: Swapped The Bellows and The Satchel's numeric identities too —
 #         Bellows is now id 3/octant 3, Satchel id 4/octant 4 (was the
 #         reverse), so ascending id order matches the v0.3.5 unlock order
@@ -628,8 +636,13 @@ const BUILT_IN = [
 
 
 # ==================================================
-# CONSTELLATION 6-6: THE VESSEL
+# CONSTELLATION 6-6: THE PHIAL
 # ==================================================
+# Renamed from "The Vessel" 2026-09-23 (see the top-of-file v0.3.7 history
+# entry) — "Vessel" is reserved going forward for The Djinn, the Player's
+# own constellation (see its entry below), to avoid the two constellations
+# sharing a name once the Djinn's vessel-selection intro screen exists.
+#
 # A new constellation, NOT the Player's own (that's The Djinn, pushed to id
 # 6/octant 6 below to make room for this one at id 5/octant 5). Ability:
 # banks a capped pool of Sparks between expansions, so a Constellation
@@ -646,21 +659,21 @@ const BUILT_IN = [
 #   - designation left empty (undecided — no mononym chosen yet, unlike the
 #     other five built-ins' KALEB/ALZIRO/DRASIN/HANLEE/DAJALA, or The
 #     Djinn's deliberately-placeholder ENIGMA). UI falls back to showing
-#     just "The Vessel" until one is picked.
+#     just "The Phial" until one is picked.
 #   - star_count (14, matching the designed outline below), bonus_value/
 #     bonus_levels (100/250/500/1000 Spark bank capacity) are placeholder
 #     round numbers, not a balanced design pass — spark_cap reuses the
 #     universal 28657 constant like every other built-in.
 #   - unlock is "achievement:sixth_prestige" (corrected 2026-09-14 — the
-#     first pass at this renumber wrongly gave The Vessel "fifth_prestige"
+#     first pass at this renumber wrongly gave The Phial "fifth_prestige"
 #     and pushed The Djinn to "sixth_prestige"; the user's actual design is
-#     Vessel-at-sixth/Djinn-at-seventh, one tier later than that first
+#     Phial-at-sixth/Djinn-at-seventh, one tier later than that first
 #     guess). This also matches root_ui.gd's own pre-existing
 #     _on_fifth_prestige_complete() comment ("no sixth constellation yet;
 #     add when id 5 is defined") — id 5 pre-generates its puzzle one
 #     prestige tier BEFORE it unlocks, same as every earlier constellation.
 #   - fixed_star_positions / line_pairs ADDED (2026-09-14) — a two-handled
-#     vessel/urn outline supplied directly by the user (14 stars, 16
+#     urn outline supplied directly by the user (14 stars, 16
 #     edges: two 4-edge handle loops at the top corners, a top bar joining
 #     them, two neck edges dropping into the body, two body-side edges,
 #     two lower-curve edges, and a bottom edge). Digitized from a
@@ -679,7 +692,7 @@ const BUILT_IN = [
 #   - response_freqs set equal to note_freqs (the 6 distinct pitches, same
 #     order) rather than a distinct echo phrase — The Spark (id 1) uses
 #     this same "echo the distinct notes" pattern; no separate response
-#     melody was specified for The Vessel, so this is the conservative
+#     melody was specified for The Phial, so this is the conservative
 #     default rather than invented content. Revisit if a real one is ever
 #     designed.
 #   - DEV: puzzle solution is the Tritsch-Tratsch Polka, Op. 214 (Johann
@@ -687,17 +700,17 @@ const BUILT_IN = [
 #     The Djinn's Zarathustra note below, now fully wired instead of just
 #     sourced.
 #   - bonus_rate_levels ADDED (2026-09-16) — the actual spark_bank_capacity
-#     mechanic: get_vessel_spark_bank_amount() reads this per-Uonite Spark
-#     rate for Vessel's current tier, multiplies by live Uonite count, and
+#     mechanic: get_phial_spark_bank_amount() reads this per-Uonite Spark
+#     rate for Phial's current tier, multiplies by live Uonite count, and
 #     clamps to bonus_levels' cap for that same tier ("dark" has no entry
-#     in either dict, so a freshly-unlocked/uninvested Vessel banks
+#     in either dict, so a freshly-unlocked/uninvested Phial banks
 #     nothing). bonus_value (100.0) is unused by this mechanic — kept as
 #     the flat-bonus fallback the shared get_active_bonus() reads, in case
 #     a non-tiered consumer ever wants it.
 
     {
         "id": 5,
-        "name": "The Vessel",
+        "name": "The Phial",
         "designation": "",
         "octant": 5,
         "star_count": 14,
@@ -709,7 +722,7 @@ const BUILT_IN = [
         "bonus_rate_levels": {"stars": 1.0, "lines": 5.0, "art": 25.0},
         "spark_cap":      28657,
 
-        # Two-handled vessel/urn outline — see TODO above for how this was
+        # Two-handled urn outline — see TODO above for how this was
         # digitized and rescaled. Indices below match line_pairs.
         "fixed_star_positions": [
             [-0.120, -0.050, 0.991],  # 0: left handle, outer-top
@@ -793,8 +806,8 @@ const BUILT_IN = [
 #   - fixed_star_positions / line_pairs not yet designed — pending the
 #     per-vessel art choice.
 #   - unlock is "achievement:seventh_prestige" (corrected 2026-09-14, see
-#     the matching note at The Vessel's entry above — Djinn is one tier
-#     later than The Vessel, not the same tier as first guessed). This
+#     the matching note at The Phial's entry above — Djinn is one tier
+#     later than The Phial, not the same tier as first guessed). This
 #     also resolves the old duplicate-with-The-Bellows note that used to
 #     be here, from when this was still "fifth_prestige".
 
@@ -851,11 +864,11 @@ const BUILT_IN = [
 ]
 
 # ==================================================
-# THE VESSEL (id 5) — PLACEHOLDER PUZZLE SOURCE MATERIAL
+# THE PHIAL (id 5) — PLACEHOLDER PUZZLE SOURCE MATERIAL
 # ==================================================
 # Raw MIDI transcription of the Tritsch-Tratsch-Polka, Op. 214 (Johann
 # Strauss II) main theme, Bar 3 to Bar 9 Beat 1 — the intended puzzle
-# solution for The Vessel (see the TODO at its BUILT_IN entry above).
+# solution for The Phial (see the TODO at its BUILT_IN entry above).
 # NOT yet reduced into that entry's "puzzle_sequence"/"note_freqs" fields
 # (star_count is 16, this has 14 note-events, including a two-note harmony
 # at Bar 6 Beat 1, so it still doesn't map 1:1 to a star) — kept here as
@@ -1536,28 +1549,28 @@ func get_active_level_bonus(bonus_key: String) -> float:
     return best
  
  
-# The Vessel's actual spark_bank_capacity mechanic: how many Sparks it would
+# The Phial's actual spark_bank_capacity mechanic: how many Sparks it would
 # bank from the player's current Uonite count if an Expansion happened right
 # now. Called pre-Expansion (before do_prestige_reset() wipes
-# constellation_spark_totals and reads Vessel's tier back to "dark"), and
+# constellation_spark_totals and reads Phial's tier back to "dark"), and
 # the result is added to game_context.sparks right after that reset — see
-# root_ui.gd's _do_prestige_reset(). Requires Vessel to be the ACTIVE
+# root_ui.gd's _do_prestige_reset(). Requires Phial to be the ACTIVE
 # constellation in its own octant, same "only counts while active" rule
 # get_active_bonus()/get_active_level_bonus() already use for every other
 # constellation bonus.
-func get_vessel_spark_bank_amount() -> BigNum:
-    const VESSEL_ID: int = 5
+func get_phial_spark_bank_amount() -> BigNum:
+    const PHIAL_ID: int = 5
     if not _game_context:
         return BigNum.zero()
-    if not unlocked.has(VESSEL_ID):
+    if not unlocked.has(PHIAL_ID):
         return BigNum.zero()
-    var def: Dictionary = get_constellation_def(VESSEL_ID)
+    var def: Dictionary = get_constellation_def(PHIAL_ID)
     if def.is_empty():
         return BigNum.zero()
     var octant: int = _coerce_int(def.get("octant"), -1)
-    if octant < 0 or octant > 7 or active_per_octant[octant] != VESSEL_ID:
+    if octant < 0 or octant > 7 or active_per_octant[octant] != PHIAL_ID:
         return BigNum.zero()
-    var tier: String = get_visual_state(VESSEL_ID)
+    var tier: String = get_visual_state(PHIAL_ID)
     var rate_levels: Dictionary = _coerce_dict(def.get("bonus_rate_levels"), {})
     var rate: float = _coerce_float(rate_levels.get(tier), 0.0)
     if rate <= 0.0:

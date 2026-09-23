@@ -44,12 +44,13 @@ func run() -> void:
 		if def.is_empty():
 			continue
 		var sc: int = int(def["star_count"])
-		# The Djinn (id 6, pushed up from 5 when The Vessel was inserted at
-		# id 5) is still an unfinished placeholder — its def carries
-		# star_count and note data but NO line_pairs, and setup() aborts on
-		# it. Skip rather than fail: a topology test cannot say anything
-		# about a constellation with no topology yet. The Vessel (id 5) got
-		# its outline on 2026-09-14 and is checked normally below.
+		# The Djinn (id 6, pushed up from 5 when The Phial [then named "The
+		# Vessel"] was inserted at id 5) is still an unfinished placeholder
+		# — its def carries star_count and note data but NO line_pairs, and
+		# setup() aborts on it. Skip rather than fail: a topology test
+		# cannot say anything about a constellation with no topology yet.
+		# The Phial (id 5) got its outline on 2026-09-14 and is checked
+		# normally below.
 		var raw_pairs: Array = def.get("line_pairs") if def.get("line_pairs") is Array else []
 		if raw_pairs.is_empty():
 			print("  -- cid %d (%s): no line_pairs yet, skipping" % [cid, str(def.get("name", "?"))])

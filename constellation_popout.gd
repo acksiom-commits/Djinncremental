@@ -73,7 +73,7 @@ func _bonus_is_multiplier(bonus_key: String) -> bool:
     return bonus_key.ends_with("_multiplier")
 
 
-## Additive bonus values (Archon's +1/+2/+3, Vessel's +250/+500/+1000) are
+## Additive bonus values (Archon's +1/+2/+3, Phial's +250/+500/+1000) are
 ## whole numbers stored as float -- str() on a whole float prints a
 ## trailing ".0" ("+1.0") that doesn't belong in front of the player.
 ## Multiplier values keep their real decimals (×1.5, ×0.25).
