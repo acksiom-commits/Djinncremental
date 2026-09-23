@@ -715,7 +715,6 @@ func _refresh_spark_counter() -> void:
                                     str(_selected_slot), 0.0) if _gc else 0.0
     var fraction:       float = _cd.get_spark_fraction(_selected_slot)
     var state:          String = _cd.get_visual_state(_selected_slot)
-    var toggle_unlocked: bool = _is_numeric_toggle_unlocked()
     var counter_text: String
 
     if _show_sparks_numeric:
@@ -751,16 +750,7 @@ func _refresh_spark_counter() -> void:
                 counter_text = ""
 
     _spark_counter_label.text = counter_text
-    _spark_counter_label.mouse_default_cursor_shape = \
-        Control.CURSOR_POINTING_HAND if toggle_unlocked else Control.CURSOR_ARROW
-
-
-func _is_numeric_toggle_unlocked() -> bool:
-    if not _gc:
-        return false
-    var c0_solved: bool = _gc._assignment_int("constellation_0_solve_count", 0) > 0
-    var c2_solved: bool = _gc._assignment_int("constellation_2_solve_count", 0) > 0
-    return c0_solved and c2_solved
+    _spark_counter_label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
 
 func _on_spark_counter_input(event: InputEvent) -> void:
@@ -768,9 +758,8 @@ func _on_spark_counter_input(event: InputEvent) -> void:
         return
     if not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
         return
-    if not _is_numeric_toggle_unlocked():
-        return
     _show_sparks_numeric = not _show_sparks_numeric
+    _refresh_spark_counter()
 
 
 func _fmt_sparks(amount: float) -> String:
