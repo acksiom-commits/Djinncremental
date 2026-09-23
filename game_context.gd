@@ -787,40 +787,37 @@ func get_uonite_storage_cap() -> int:
 ## counted in Motes (20 = 1 Uonite) for the Create-Uonite strip bar.
 ## Returns Vector2i(current, cap).
 ##
-## Two independent ceilings apply to uonites_this_cycle
-## (manual_create_uonite()/_add_resource() in production_manager.gd
-## already gate actual creation on both, via min()): the Fibonacci
-## per-cycle limit (get_uonite_cycle_cap()) and the storage-derived
-## ABSOLUTE limit on the PERSISTENT uonite total (get_uonite_storage_cap(),
-## which — unlike uonites_this_cycle — never resets on Expansion). This
-## bar's cap must be the smaller of the two, or a player whose persistent
-## uonite total is already close to the storage cap sees the bar stall
-## partway (stuck once motes_this_cycle hits its own 0-20 ceiling with no
-## Uonite completing to reset it) while the bar's max still claims the
-## full Fibonacci cap is reachable. Reported live: cap should read 2 (40
-## Motes) after the 1st Expansion, over 100 Motes banked, bar stuck
-## around half.
+## There is no partial Expansion: clicking Create Uonite batch-converts
+## banked mote_uonite into as many Uonites as the cap allows, and that
+## SAME click's success immediately triggers the Expansion/prestige reset
+## (root_ui.gd's _on_create_uonite_pressed() -> _play_expansion_animation()
+## -> _do_prestige_reset() -> do_prestige_reset(), unconditional on every
+## successful creation). So uonites_this_cycle is never observed nonzero
+## except for the animation's own brief in-flight window, and
+## motes_this_cycle -- capped to [0,20], reset on each Uonite completion --
+## can never reflect a raw stockpile bigger than one Uonite's worth. The
+## bar has to read the raw mote_uonite stockpile directly instead, the
+## same source uonite_icosahedron.gd's cosmetic display already uses
+## (mote_uonite mod 20) for its own progressive reveal.
+##
+## Two independent ceilings apply to how many Uonites that stockpile could
+## convert into: the Fibonacci per-cycle limit (get_uonite_cycle_cap())
+## and the storage-derived ABSOLUTE limit on the PERSISTENT uonite total
+## (get_uonite_storage_cap(), which never resets on Expansion). The bar's
+## cap must be the smaller of the two, or a player whose persistent uonite
+## total is already close to the storage cap sees the bar claim more room
+## than a click could actually convert.
 func get_uonite_cycle_progress() -> Vector2i:
-    # How much of the storage cap was already spent BEFORE this cycle --
-    # uonite persists across Expansions, uonites_this_cycle does not, so
-    # subtracting this cycle's own contribution reconstructs the
-    # cycle-start stockpile.
-    var uonite_before_cycle: int = maxi(0, uonite.to_int() - uonites_this_cycle)
-    var storage_cap_this_cycle: int = maxi(0, get_uonite_storage_cap() - uonite_before_cycle)
-    var effective_cap: int = mini(get_uonite_cycle_cap(), storage_cap_this_cycle)
+    var storage_headroom: int = maxi(0, get_uonite_storage_cap() - uonite.to_int())
+    var effective_cap: int = mini(get_uonite_cycle_cap(), storage_headroom)
     if effective_cap <= 0:
-        # Nothing more fits this cycle at all -- an empty (not degenerate
+        # Nothing more fits at all -- an empty (not degenerate
         # max_value=0) bar communicates "maxed out" better than a raw
         # Mote count that can never actually complete into a Uonite.
         return Vector2i(0, 1)
-    var completed: int = mini(uonites_this_cycle, effective_cap)
-    # Only show the NEXT Uonite's raw-Mote progress while there's still
-    # room for it to matter -- motes_this_cycle keeps climbing to 20
-    # (raw Mote production isn't itself capped, only the final assemble
-    # step is) even after the cap is reached, which would otherwise show
-    # a full 0-20 climb toward a Uonite that can never actually complete.
-    var partial: int = motes_this_cycle if completed < effective_cap else 0
-    return Vector2i(completed * 20 + partial, effective_cap * 20)
+    var cap_motes: int = effective_cap * 20
+    var current: int = mini(mote_uonite.to_int(), cap_motes)
+    return Vector2i(current, cap_motes)
 
 
 func get_total_foci_assigned() -> int:

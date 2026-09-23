@@ -2575,6 +2575,11 @@ func _on_create_uonite_pressed() -> void:
     # get_uonite_cycle_cap() - uonites_this_cycle headroom
     # (production_manager.gd), so a click past the cap is just a no-op,
     # never an over-cap creation, regardless of click frequency.
+    # There is no partial Expansion: a successful click here batch-converts
+    # banked Motes into as many Uonites as the cap allows AND immediately
+    # triggers a full Expansion via _play_expansion_animation() below --
+    # see the "Peak white" callback in that function. "Create Uonite" and
+    # "Expand" are the same action, not two related ones.
     var any_success: bool = production_manager.manual_create_uonite()
     if any_success:
         _play_expansion_animation()
@@ -2631,6 +2636,10 @@ func _play_expansion_animation() -> void:
         .set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 
     # ── Peak white: invisible moment — fire the actual prestige reset ────
+    # Unconditional: this is the ONLY caller of this function, and every
+    # call comes from a successful Create Uonite click
+    # (_on_create_uonite_pressed()). There is no "just create Uonites,
+    # don't Expand" path -- the two are one atomic action.
     tween.set_parallel(false)
     tween.tween_callback(func(): _do_prestige_reset())
     tween.tween_interval(1.5)
