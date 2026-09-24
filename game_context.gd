@@ -107,6 +107,13 @@ var archon_foci: int:
         _archon_foci_value = value
         emit_signal("archon_foci_changed", value)
 
+## Vessel picked on intro_screen.gd's opening screen ("lamp"/"ring"/"jar",
+## "" before any pick is made) — becomes The Djinn's (constellation id 6)
+## eventual art/lore variant; see that constellation's own TODO comment
+## in constellation_data.gd. Persistent across Expansions (not touched by
+## do_prestige_reset()), same as every other one-time character-creation
+## choice.
+var chosen_vessel:        String = ""
 var volitions:             int = 0
 var refinements_completed: int = 0
 var expansions:            int = 0
@@ -1533,6 +1540,7 @@ func update_watermarks() -> void:
 # ===================== SAVE / LOAD ========================
 func get_save_data() -> Dictionary:
     var data = {}
+    data["chosen_vessel"] = chosen_vessel
     data["sparks"]       = sparks.to_save_string()
     # Looped rather than hardcoded per-key (monad_solid/liquid/gas) like
     # tetrad below already is — the hardcoded-triplet shape is exactly what
@@ -1779,6 +1787,7 @@ func _coerce_string(val, default: String) -> String:
 
 
 func load_save_data(data: Dictionary) -> void:
+    chosen_vessel   = _coerce_string(data.get("chosen_vessel"), "")
     sparks          = BigNum.from_string(data.get("sparks",        "0:0"))
     for k in monad:
         monad[k] = BigNum.from_string(data.get("monad_" + k, "0:0"))
