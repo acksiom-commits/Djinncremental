@@ -434,8 +434,9 @@ func _ready() -> void:
     _setup_panel_nodes()
     _hide_all_panels()
     _apply_unlock_visibility()
-    
-    
+    _play_boot_reveal_if_pending()
+
+
 # ==================================================
 # PROGRESSIVE UI REVEAL
 # ==================================================
@@ -2558,6 +2559,36 @@ func _on_create_uonite_pressed() -> void:
     var any_success: bool = production_manager.manual_create_uonite()
     if any_success:
         _play_expansion_animation()
+
+
+## intro_screen.gd's vessel-selection sequence plays Phase 1 (warp to
+## white) of the shared expansion_overlay.gd transition, then calls
+## change_scene_to_file() to reach this scene -- at which point that
+## overlay node (parented under get_tree().root, a SIBLING of this scene
+## rather than a child of the one that just got freed, specifically so it
+## survives the swap) is still sitting fully white over everything. This
+## finds it and plays Phase 2 (recede, revealing the Main UI) on it,
+## instead of leaving the player looking at a static white screen forever
+## -- reported: without this, the swap showed a bare cut instead of the
+## normal pullback reveal every other Expansion already has.
+##
+## Two frames of margin before receding, not zero: _ready() runs before
+## this scene has actually drawn anything, and revealing "whatever's
+## underneath" before it exists would flash unstyled/unpositioned content
+## for a frame instead of the settled UI the pullback is supposed to show.
+func _play_boot_reveal_if_pending() -> void:
+    # Literal string, not a preload(...).PENDING_REVEAL_GROUP reference --
+    # a GDScript Script RESOURCE doesn't expose its own top-level consts as
+    # readable properties (only an INSTANCE does), so that reference does
+    # not compile. Keep this in sync with expansion_overlay.gd's own const
+    # by hand if that ever changes.
+    var overlay = get_tree().get_first_node_in_group("pending_reveal_overlay")
+    if overlay == null:
+        return
+    await get_tree().process_frame
+    await get_tree().process_frame
+    overlay.recede_and_free(1.8)
+
 
 func _get_or_create_expansion_overlay() -> ColorRect:
     if _expansion_overlay and is_instance_valid(_expansion_overlay):

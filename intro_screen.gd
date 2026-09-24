@@ -85,10 +85,6 @@ var _bg_color: Color = Color.WHITE
 var _label: Label = null
 var _bg_elapsed: float = 0.0
 
-var _expansion_overlay: ColorRect = null
-var _expansion_shader_mat: ShaderMaterial = null
-const _EXPANSION_TRANSITION_SHADER: Shader = preload("res://expansion_transition.gdshader")
-
 
 func _ready() -> void:
     set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -221,40 +217,20 @@ func _confirm_vessel(vessel_key: String) -> void:
     _play_transition_and_continue()
 
 
-func _get_or_create_expansion_overlay() -> ColorRect:
-    if _expansion_overlay and is_instance_valid(_expansion_overlay):
-        return _expansion_overlay
-    _expansion_shader_mat = ShaderMaterial.new()
-    _expansion_shader_mat.shader = _EXPANSION_TRANSITION_SHADER
-    _expansion_overlay = ColorRect.new()
-    _expansion_overlay.color        = Color(1.0, 1.0, 1.0, 1.0)
-    _expansion_overlay.material     = _expansion_shader_mat
-    _expansion_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    _expansion_overlay.z_index      = 4096
-    _expansion_overlay.visible      = false
-    _expansion_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
-    add_child(_expansion_overlay)
-    return _expansion_overlay
-
-
-## Same shape as root_ui.gd's _play_expansion_animation() (Phase 1 only —
-## there is no "phase 2 recede" here, since the scene change itself is
-## the payoff): warp toward white, then switch scenes at the white peak.
+## Phase 1 (warp to white) plays here; Phase 2 (recede, revealing the Main
+## UI) has to play AFTER change_scene_to_file() swaps in RootUI.tscn, at
+## which point THIS node and this whole scene are already freed — so the
+## overlay itself can't be a child of this node (see expansion_overlay.gd's
+## own header for why get_tree().root, not `self`, is what survives a
+## scene change). root_ui.gd's _ready() finds this same overlay via
+## ExpansionOverlay.PENDING_REVEAL_GROUP and plays Phase 2 on it once the
+## new scene has had a frame to settle.
 func _play_transition_and_continue() -> void:
-    var overlay := _get_or_create_expansion_overlay()
-    _expansion_shader_mat.set_shader_parameter("distortion_strength", 0.0)
-    _expansion_shader_mat.set_shader_parameter("white_amount",        0.0)
-    overlay.visible = true
-
-    var tween := create_tween()
-    tween.set_parallel(true)
-    tween.tween_method(
-        func(v: float): _expansion_shader_mat.set_shader_parameter("distortion_strength", v),
-        0.0, 1.5, 1.8
-    ).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-    tween.tween_method(
-        func(v: float): _expansion_shader_mat.set_shader_parameter("white_amount", v),
-        0.0, 1.0, 1.8
-    ).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-    tween.set_parallel(false)
-    tween.tween_callback(func(): get_tree().change_scene_to_file("res://RootUI.tscn"))
+    # preload(), not a class_name reference -- this project's own
+    # headless-run gotcha: bare class_name lookups are flaky outside the
+    # editor (godot_global_class_name_cache_flaky_use_preload).
+    var overlay = preload("res://expansion_overlay.gd").new()
+    get_tree().root.add_child(overlay)
+    overlay.setup()
+    await overlay.warp_to_white(1.8)
+    get_tree().change_scene_to_file("res://RootUI.tscn")
