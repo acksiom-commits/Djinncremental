@@ -42,39 +42,32 @@ func setup() -> void:
     add_to_group(PENDING_REVEAL_GROUP)
 
 
-func _set_distortion_debug(v: float) -> void:
-    _shader_mat.set_shader_parameter("distortion_strength", v)
-    print("DEBUG overlay: distortion_strength=", v)
-
-
 func warp_to_white(duration: float = 1.8) -> void:
     visible = true
-    print("DEBUG overlay: warp_to_white start, in_tree=", is_inside_tree(), " mat=", material)
     var tween := create_tween()
-    print("DEBUG overlay: tween created=", tween, " valid=", (tween.is_valid() if tween else "N/A"))
     tween.set_parallel(true)
-    tween.tween_method(_set_distortion_debug, 0.0, 1.5, duration) \
-        .set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+    tween.tween_method(
+        func(v: float): _shader_mat.set_shader_parameter("distortion_strength", v),
+        0.0, 1.5, duration
+    ).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
     tween.tween_method(
         func(v: float): _shader_mat.set_shader_parameter("white_amount", v),
         0.0, 1.0, duration
     ).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
     await tween.finished
-    print("DEBUG overlay: warp_to_white tween.finished fired")
 
 
 func recede_and_free(duration: float = 1.8) -> void:
-    print("DEBUG overlay: recede_and_free start, in_tree=", is_inside_tree(), " visible=", visible)
     remove_from_group(PENDING_REVEAL_GROUP)
     var tween := create_tween()
-    print("DEBUG overlay: recede tween created=", tween, " valid=", (tween.is_valid() if tween else "N/A"))
     tween.set_parallel(true)
-    tween.tween_method(_set_distortion_debug, 1.5, 0.0, duration) \
-        .set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+    tween.tween_method(
+        func(v: float): _shader_mat.set_shader_parameter("distortion_strength", v),
+        1.5, 0.0, duration
+    ).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
     tween.tween_method(
         func(v: float): _shader_mat.set_shader_parameter("white_amount", v),
         1.0, 0.0, duration
     ).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
     await tween.finished
-    print("DEBUG overlay: recede tween.finished fired, freeing")
     queue_free()
