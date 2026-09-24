@@ -157,6 +157,19 @@ func save_game() -> void:
         emit_signal("save_failed")
 
 
+## Whether a playthrough already exists on disk — either file is enough
+## (see save_game()'s own rotation comment: at least one of the two is
+## always a complete, valid save). Doesn't attempt to READ or PARSE
+## either file, just checks presence, so it can't itself throw the
+## corrupt-save signal load_game() does; a genuinely corrupt-but-present
+## save still counts as "existing" here; load_game() is what surfaces
+## the corruption once actually loading is attempted. Used by
+## intro_screen.gd to skip the vessel-selection sequence for a returning
+## player instead of replaying it on every single launch.
+func has_existing_save() -> bool:
+    return FileAccess.file_exists(SAVE_PATH) or FileAccess.file_exists(BAK_PATH)
+
+
 func load_game() -> void:
     var gc:      Node = get_node_or_null("/root/GameContext")
     var cd:      Node = get_node_or_null("/root/ConstellationData")

@@ -87,6 +87,17 @@ var _bg_elapsed: float = 0.0
 
 
 func _ready() -> void:
+    # Once per PLAYTHROUGH, not once per LAUNCH: a returning player with an
+    # existing save has already picked a vessel (or never will, for saves
+    # that predate this screen), and re-running "memories cleared" on every
+    # single boot would be a re-triggered ritual, not a one-time one. Skip
+    # straight to the Main UI, no transition ceremony -- that belongs to
+    # the fresh-start moment specifically, not to ordinary continued play.
+    var save_manager = get_node_or_null("/root/SaveManager")
+    if save_manager and save_manager.has_existing_save():
+        get_tree().change_scene_to_file("res://RootUI.tscn")
+        return
+
     set_anchors_preset(Control.PRESET_FULL_RECT)
     mouse_filter = Control.MOUSE_FILTER_STOP
 
