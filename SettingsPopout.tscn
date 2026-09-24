@@ -102,7 +102,6 @@ offset_right = 22.0
 offset_bottom = 274.0
 tooltip_text = "Menu"
 focus_mode = 0
-theme_override_colors/font_color = Color(0.68, 0.55, 0.88, 1)
 theme_override_colors/font_pressed_color = Color(1, 0.88, 0.4, 1)
 theme_override_colors/font_hover_color = Color(0.82, 0.68, 1, 1)
 theme_override_font_sizes/font_size = 13
