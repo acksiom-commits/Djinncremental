@@ -196,37 +196,22 @@ func _draw() -> void:
         var draw_lines: bool = visual_state != "dark"
 
         if draw_lines:
-            # Ramps dim at the stars tier up to bright at the lines tier —
-            # see ConstellationData.get_line_brightness(). Once figure art
-            # assets exist, an analogous get_art_brightness() fade over
+            # Each line ramps on its OWN, staggered by whichever endpoint
+            # star lit up earlier during the Stars tier — see
+            # ConstellationData.get_line_pair_progress() for the shape
+            # (same staggered ramp get_star_brightness() uses, remapped
+            # onto this window). Once figure art assets exist, an
+            # analogous get_art_brightness() fade over
             # [SPARKS_TIER_LINES, SPARKS_TIER_ART] hooks in here too,
             # gated on visual_state == "art" the same way draw_lines is
-            # gated here (dev placeholder lives next to get_line_brightness
-            # in constellation_data.gd).
-            var line_frac: float = _cd.get_line_brightness(id)
-            var line_color: Color = LINE_COLOR_DIM.lerp(LINE_COLOR_BRIGHT, line_frac)
-            # LINE_COLOR_DIM's own alpha (0.25) is NOT the fade-in floor —
-            # it's the colour at line_frac==0, and drawing it at that alpha
-            # the instant draw_lines flips true is exactly the abrupt-pop
-            # bug stars used to have, just moved to lines: invisible one
-            # frame, 25%-opaque the next. Scaling alpha by line_frac too
-            # makes the crossing at SPARKS_TIER_STARS continuous with the
-            # "not drawn at all" state just before it (alpha 0 either way),
-            # while still reaching the original DIM/BRIGHT-lerped alpha by
-            # the time line_frac reaches 1.0 at SPARKS_TIER_LINES.
-            line_color.a *= line_frac
+            # gated here (dev placeholder lives next to
+            # get_line_pair_progress in constellation_data.gd).
             var def:   Dictionary = _cd.get_constellation_def(id)
             var pairs: Array      = def.get("line_pairs", [])
+            var star_count: int = positions.size()
             if pairs.is_empty():
                 for i in positions.size() - 1:
-                    var a: Vector2 = positions[i]
-                    var b: Vector2 = positions[i + 1]
-                    if a.x < -500.0 or b.x < -500.0:
-                        continue
-                    if a.x < 0 or a.x > vp_size.x or a.y < 0 or a.y > vp_size.y:
-                        if b.x < 0 or b.x > vp_size.x or b.y < 0 or b.y > vp_size.y:
-                            continue
-                    draw_line(a, b, line_color, 1.5, true)
+                    _draw_gradient_line(id, i, i + 1, positions, star_count, vp_size)
             else:
                 for k in range(0, pairs.size(), 2):
                     # line_pairs is developer-authored constant data for
@@ -243,14 +228,7 @@ func _draw() -> void:
                     var bi: int = int(raw_bi)
                     if ai < 0 or bi < 0 or ai >= positions.size() or bi >= positions.size():
                         continue
-                    var a: Vector2 = positions[ai]
-                    var b: Vector2 = positions[bi]
-                    if a.x < -500.0 or b.x < -500.0:
-                        continue
-                    if a.x < 0 or a.x > vp_size.x or a.y < 0 or a.y > vp_size.y:
-                        if b.x < 0 or b.x > vp_size.x or b.y < 0 or b.y > vp_size.y:
-                            continue
-                    draw_line(a, b, line_color, 1.5, true)
+                    _draw_gradient_line(id, ai, bi, positions, star_count, vp_size)
 
         # Fetch per-star colors from puzzle cache if available.
         var puzzle_star_colors: Array = _cd.get_puzzle_star_colors(id)
@@ -320,6 +298,40 @@ func _draw() -> void:
                 if i == _engine.fanfare_lit_star and _engine.state == ClickSequencePuzzleEngine.State.SUCCESS:
                     draw_circle(p, HIT_RADIUS * 1.6, Color(1.0, 0.9, 0.3, 0.50))
                     draw_circle(p, 7.0,               Color(1.0, 0.95, 0.5, 1.00))
+
+
+## One line's on-screen draw, with a real two-color gradient along its
+## length instead of a single flat color — per user direction 2026-09-24,
+## "brightening from closer to the earlier source star to the other
+## connected stars." get_line_pair_progress() gives this line's own
+## envelope (0-1, staggered by whichever endpoint lit up earlier — see
+## its own header) and which endpoint is that earlier ("source") one.
+## The gradient itself is a simple two-stage sweep: the source end alone
+## brightens over progress [0, 0.5], then the far end catches up over
+## [0.5, 1.0] — so at progress==1 both ends read identically to the old
+## uniform full brightness, and at every point in between the source end
+## reads brighter than the far end, exactly matching the ask.
+func _draw_gradient_line(constellation_id: int, ai: int, bi: int, positions: Array,
+        star_count: int, vp_size: Vector2) -> void:
+    var a: Vector2 = positions[ai]
+    var b: Vector2 = positions[bi]
+    if a.x < -500.0 or b.x < -500.0:
+        return
+    if a.x < 0 or a.x > vp_size.x or a.y < 0 or a.y > vp_size.y:
+        if b.x < 0 or b.x > vp_size.x or b.y < 0 or b.y > vp_size.y:
+            return
+    var info: Dictionary = _cd.get_line_pair_progress(constellation_id, ai, bi, star_count)
+    var progress: float = float(info.get("progress", 0.0))
+    var source_is_a: bool = bool(info.get("source_is_a", true))
+    var source_frac: float = clampf(progress * 2.0, 0.0, 1.0)
+    var far_frac:    float = clampf(progress * 2.0 - 1.0, 0.0, 1.0)
+    var source_color: Color = LINE_COLOR_DIM.lerp(LINE_COLOR_BRIGHT, source_frac)
+    source_color.a *= source_frac
+    var far_color: Color = LINE_COLOR_DIM.lerp(LINE_COLOR_BRIGHT, far_frac)
+    far_color.a *= far_frac
+    var color_a: Color = source_color if source_is_a else far_color
+    var color_b: Color = far_color if source_is_a else source_color
+    draw_polyline_colors(PackedVector2Array([a, b]), PackedColorArray([color_a, color_b]), 1.5, true)
 
 
 # ==================================================

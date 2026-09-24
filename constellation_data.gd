@@ -1431,18 +1431,49 @@ func get_star_brightness(constellation_id: int, star_index: int, star_count: int
     return clamp((invested - float(position) * d) / (float(star_count) * d), 0.0, 1.0)
 
 
-func get_line_brightness(constellation_id: int) -> float:
-    # Ramps from 0.0 at the stars tier up to 1.0 at the lines tier, using
-    # the hardcoded absolute spark tiers (see constants block). Same ramp
-    # shape the old single-arg get_star_brightness() used to apply to
-    # stars; now used for the connecting lines instead, since the star
-    # fade moved to the earlier [0, SPARKS_TIER_STARS] window above.
+## Per-LINE analog of get_star_brightness(), for the Stars->Lines window.
+## Per user direction 2026-09-24: rather than every line ramping together
+## at the same uniform rate (the old get_line_brightness(), now replaced
+## by this), each line should fill in following the SAME sequence the
+## stars themselves lit up in, brightening from whichever endpoint lit up
+## EARLIER (that star's position in the persisted light order) toward the
+## other end -- "using the same increase function as the brightening of
+## the stars themselves." This reuses get_star_brightness()'s exact
+## staggered-window shape (a D-wide linear 0->1 ramp per sequence
+## position), just remapped onto the [SPARKS_TIER_STARS, SPARKS_TIER_LINES]
+## window and keyed by the line's own source-star position instead of a
+## single star's position.
+##
+## Returns {"progress": float in [0,1], "source_is_a": bool}. `progress`
+## is the line's own envelope (0 = not started, 1 = both ends fully lit).
+## `source_is_a` says which endpoint is the earlier-lit ("source") one --
+## the caller (constellation_overlay.gd) uses it to draw an actual two-
+## color gradient along the line's length, brighter near the source end
+## while progress < 1, rather than a single flat color for the whole line.
+func get_line_pair_progress(constellation_id: int, star_a: int, star_b: int, star_count: int) -> Dictionary:
+    if star_count <= 0 or not _game_context:
+        return {"progress": 0.0, "source_is_a": true}
+    var order: Array = _game_context.get_constellation_star_light_order(constellation_id, star_count)
+    var pos_a: int = order.find(star_a)
+    var pos_b: int = order.find(star_b)
+    # Earlier sequence position == lit up sooner. A position of -1 means
+    # "not found" (defensive only -- get_star_brightness treats the same
+    # case as "never lit"), so it never wins the "earlier" comparison.
+    var source_is_a: bool = pos_b < 0 or (pos_a >= 0 and pos_a <= pos_b)
+    var source_pos: int = pos_a if source_is_a else pos_b
     var invested: float = get_sparks_invested(constellation_id)
-    if invested < SPARKS_TIER_STARS:
-        return 0.0
-    return clamp(
-        (invested - SPARKS_TIER_STARS) / (SPARKS_TIER_LINES - SPARKS_TIER_STARS),
+    if invested < SPARKS_TIER_STARS or source_pos < 0:
+        return {"progress": 0.0, "source_is_a": source_is_a}
+    var window: float = SPARKS_TIER_LINES - SPARKS_TIER_STARS
+    if window <= 0.0:
+        return {"progress": 1.0, "source_is_a": source_is_a}
+    var d: float = window / float(2 * star_count - 1)
+    if d <= 0.0:
+        return {"progress": 0.0, "source_is_a": source_is_a}
+    var progress: float = clamp(
+        (invested - SPARKS_TIER_STARS - float(source_pos) * d) / (float(star_count) * d),
         0.0, 1.0)
+    return {"progress": progress, "source_is_a": source_is_a}
 
 
 # Placeholder for the constellation ART fade, once those assets exist.
