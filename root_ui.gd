@@ -2582,11 +2582,14 @@ func _play_boot_reveal_if_pending() -> void:
     # readable properties (only an INSTANCE does), so that reference does
     # not compile. Keep this in sync with expansion_overlay.gd's own const
     # by hand if that ever changes.
+    print("DEBUG root_ui: checking for pending reveal overlay")
     var overlay = get_tree().get_first_node_in_group("pending_reveal_overlay")
+    print("DEBUG root_ui: overlay found=", overlay)
     if overlay == null:
         return
     await get_tree().process_frame
     await get_tree().process_frame
+    print("DEBUG root_ui: calling recede_and_free")
     overlay.recede_and_free(1.8)
 
 

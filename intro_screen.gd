@@ -229,8 +229,14 @@ func _play_transition_and_continue() -> void:
     # preload(), not a class_name reference -- this project's own
     # headless-run gotcha: bare class_name lookups are flaky outside the
     # editor (godot_global_class_name_cache_flaky_use_preload).
+    print("DEBUG intro: building overlay")
     var overlay = preload("res://expansion_overlay.gd").new()
     get_tree().root.add_child(overlay)
+    print("DEBUG intro: overlay in tree=", overlay.is_inside_tree(), " parent=", overlay.get_parent())
     overlay.setup()
+    print("DEBUG intro: starting warp_to_white")
     await overlay.warp_to_white(1.8)
+    print("DEBUG intro: warp_to_white finished, overlay still valid=", is_instance_valid(overlay),
+        " visible=", overlay.visible if is_instance_valid(overlay) else "N/A")
     get_tree().change_scene_to_file("res://RootUI.tscn")
+    print("DEBUG intro: change_scene_to_file called")
