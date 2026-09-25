@@ -47,9 +47,13 @@ extends RefCounted
 #      attempt). The consumer must check gate_passed: root_ui does not cache a
 #      refused puzzle and the Study panel shows "not ready" until a retry passes.
 #   7. AFTER THE MAIN LOOP, per attempt: name-coverage clues
-#      (_build_name_coverage_clues), redundancy pruning (_prune_redundant_clues),
-#      an anchor recheck (_recheck_anchors_for_redundancy) and a whole-set
-#      safety net (_final_redundancy_safety_net).
+#      (_build_name_coverage_clues), then the DISAMBIGUATING-CLUE FALLBACK
+#      (_repair_uniqueness: if Sequence or the Name closure still has a second
+#      solution, add the true clue that rules it out -- a pin by default -- so a
+#      failing attempt is repaired instead of redrawn), then redundancy pruning
+#      (_prune_redundant_clues), an anchor recheck
+#      (_recheck_anchors_for_redundancy) and a whole-set safety net
+#      (_final_redundancy_safety_net).
 #
 # THE SOLVER
 #   One solver, _solve (propagation in _propagate_only, then forward-checking
@@ -3119,6 +3123,13 @@ func _build_form_exact_identity(chain: Dictionary) -> Dictionary:
     var cell: Dictionary = _sample_grid_cell_maybe_chained(chain, true)
     if cell.is_empty() or not bool(cell["is_true"]):
         return {}
+    return _identity_result_for_cell(cell)
+
+
+## The clue "A is B" for one specific TRUE cell, with its solver and value
+## facts. Split out of _build_form_exact_identity so the uniqueness repair
+## (_repair_uniqueness) can pin a name to its star deliberately.
+func _identity_result_for_cell(cell: Dictionary) -> Dictionary:
     var ch_a: Dictionary = {"cat": int(cell["cat_a"]), "star": int(cell["star_a"])}
     var ch_b: Dictionary = {"cat": int(cell["cat_b"]), "star": int(cell["star_b"])}
     var text: String = "%s is %s." % [_characteristic_label(ch_a), _characteristic_label(ch_b)]
@@ -3133,6 +3144,14 @@ func _build_form_single_negation(chain: Dictionary) -> Dictionary:
     var cell: Dictionary = _sample_grid_cell_maybe_chained(chain, true)
     if cell.is_empty() or bool(cell["is_true"]):
         return {}
+    return _negation_result_for_cell(cell)
+
+
+## The clue "A is not B" for one specific FALSE cell, with its solver and
+## value facts. Split out of _build_form_single_negation so the uniqueness
+## repair (_repair_uniqueness) builds the identical clue for a cell it chose
+## deliberately instead of one the sampler landed on.
+func _negation_result_for_cell(cell: Dictionary) -> Dictionary:
     var ch_a: Dictionary = {"cat": int(cell["cat_a"]), "star": int(cell["star_a"])}
     var ch_b: Dictionary = {"cat": int(cell["cat_b"]), "star": int(cell["star_b"])}
     var text: String = "%s is not %s." % [_characteristic_label(ch_a), _characteristic_label(ch_b)]
@@ -6608,6 +6627,145 @@ func _build_name_coverage_clues(sequence_solver_facts: Array, name_revealed: Arr
     return added
 
 
+## Most repair clues one attempt may add. Each removes at least one competing
+## solution, so a handful is plenty; the cap is only a backstop so a bug can
+## never loop forever.
+const REPAIR_MAX_CLUES: int = 10
+
+## How many NEGATIONS a repair tries before it switches to PINS; 0 = pins only.
+##
+## A negation ("<Name> is not the star that fires <Nth>") is the gentler clue
+## but rules out only the one wrong answer it names. A pin ("<Name> is the star
+## that fires <Nth>", the ordinary Exact Identity clue) removes EVERY wrong
+## answer for that name at once and pins its rank. MEASURED 2026-09-25 on the
+## 23 uniqueness-breaking single-clue removals of a real 29-clue, 15-star puzzle
+## (dev_tests/test_disambiguation_repair.gd):
+##
+##     negations only          20 of 23 repaired   92 clues added   10 at most
+##     negations, then pins    23 of 23 repaired   59 clues added    7 at most
+##     pins only               23 of 23 repaired   32 clues added    3 at most
+##
+## Negations are also the ones that can exhaust REPAIR_MAX_CLUES: a puzzle with
+## hundreds of competing solutions needs ten or more. So the default is pins
+## only, trading a stronger clue for far fewer of them. Raise it to try gentler
+## repairs; the test reports all three policies.
+const REPAIR_NEGATIONS_BEFORE_PIN: int = 0
+var repair_negations_before_pin: int = REPAIR_NEGATIONS_BEFORE_PIN
+
+## Repair clues committed over this puzzle's whole generation (a measurement:
+## how often the fallback is what made an attempt pass).
+var repair_clues_added: int = 0
+## Off only to MEASURE what the fallback buys (first-attempt gate pass rate with
+## and without it); generation always runs with it on.
+var repair_enabled: bool = true
+
+## DISAMBIGUATING-CLUE FALLBACK. When the clue set leaves the puzzle with more
+## than one solution, add the clue that rules the wrong one out, instead of
+## throwing the whole attempt away and redrawing.
+##
+## Both failures use the same two existing clue shapes, and both are TRUE by
+## construction (they are built from the ground truth):
+##   - SEQUENCE not unique. _solve returns two solutions; one is the truth, the
+##     other puts some star s at a wrong rank r. The NEGATION "s is not the star
+##     that fires r" kills exactly that solution (an ordinal_neg fact); the PIN
+##     "s is the star that fires its true rank" kills every wrong rank for s.
+##   - NAME closure not unique. The wrong solution maps a name to the wrong
+##     star p. The negation "the name is not the star that fires p's true rank"
+##     excludes it (a name_group_neg fact); the pin binds the name to its star.
+## The clue goes through _commit_clue_result like every other clue, so its
+## facts, cells and text are recorded identically. Runs after the name-coverage
+## pass and BEFORE pruning, so pruning then protects what this establishes (or
+## removes a repair clue that turned out to be redundant).
+##
+## An INCONCLUSIVE solve (node budget hit) is never repaired: there is no
+## trustworthy second solution to aim at. Returns how many clues it added.
+func _repair_uniqueness(sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> int:
+    var added: int = 0
+    while added < REPAIR_MAX_CLUES:
+        var targets: Array = _repair_targets(sequence_solver_facts)
+        if targets.is_empty():
+            break   # unique already, unfinished search, or nothing to aim at
+        var pin: bool = added >= repair_negations_before_pin
+        var committed: bool = false
+        for t in targets:
+            if _commit_repair_clue(int(t["star"]), int(t["rank"]), pin,
+                    sequence_solver_facts, name_revealed, tier_counts, form_counts):
+                committed = true
+                added += 1
+                break
+        if not committed:
+            break   # every candidate was a duplicate or not a true statement
+    repair_clues_added += added
+    return added
+
+
+## Candidate (star, rank) pairs, each "star is not the star that fires rank" and
+## each true, that would eliminate the competing solution. Empty when the puzzle
+## is already unique and conclusive, or cannot be repaired this way.
+func _repair_targets(sequence_solver_facts: Array) -> Array:
+    var out: Array = []
+    var seq_sols: Array = _solve(sequence_solver_facts, 2)
+    if _last_solve_inconclusive or seq_sols.is_empty():
+        return out
+    if seq_sols.size() >= 2:
+        var alt: Array = _assignment_other_than(seq_sols, sequence_rank_solution)
+        if alt.is_empty():
+            return out   # neither differs from the truth: inconsistent facts
+        for s in star_count:
+            if int(alt[s]) != int(sequence_rank_solution[s]):
+                out.append({"star": s, "rank": int(alt[s])})
+        return out
+    var name_sols: Array = _solve_name_closure(seq_sols, 2)
+    if _last_solve_inconclusive or name_sols.size() < 2:
+        return out
+    var identity: Array = []
+    for i in star_count:
+        identity.append(i)   # a name's true star is its own
+    var alt_names: Array = _assignment_other_than(name_sols, identity)
+    if alt_names.is_empty():
+        return out
+    for ns in star_count:
+        if int(alt_names[ns]) != ns:
+            out.append({"star": ns, "rank": int(sequence_rank_solution[int(alt_names[ns])])})
+    return out
+
+
+## The first of `solutions` that differs from `truth`, or [] if none does.
+func _assignment_other_than(solutions: Array, truth: Array) -> Array:
+    for sol in solutions:
+        var same: bool = true
+        for i in truth.size():
+            if int(sol[i]) != int(truth[i]):
+                same = false
+                break
+        if not same:
+            return sol
+    return []
+
+
+## Commits one repair clue about `star`'s Name. With `pin` false it is the
+## negation "<Name> is not the star that fires <rank>"; with `pin` true it is
+## the identity "<Name> is the star that fires <its true rank>" (`rank` is
+## ignored). Refuses (returns false) if the statement would not be TRUE or its
+## text already exists.
+func _commit_repair_clue(star: int, rank: int, pin: bool, sequence_solver_facts: Array,
+        name_revealed: Array, tier_counts: Dictionary, form_counts: Dictionary) -> bool:
+    var use_rank: int = int(sequence_rank_solution[star]) if pin else rank
+    var other: int = int(_cat_value_to_star[Category.SEQUENCE][use_rank])
+    if pin != (other == star):
+        return false   # a pin needs the TRUE cell, a negation the FALSE one
+    var cell: Dictionary = {
+        "cat_a": Category.NAME, "val_a": int(_cat_star_to_value[Category.NAME][star]), "star_a": star,
+        "cat_b": Category.SEQUENCE, "val_b": use_rank, "star_b": other,
+        "is_true": pin,
+    }
+    _rendered_terms = {}
+    var result: Dictionary = _identity_result_for_cell(cell) if pin else _negation_result_for_cell(cell)
+    return _commit_clue_result(1 if pin else 2, result,
+        sequence_solver_facts, name_revealed, tier_counts, form_counts)
+
+
 ## Transient state for the opening-anchor pass only: (category,star) nodes
 ## already linked to the SAME real star by an Exact Identity anchor
 ## committed earlier in THIS pass. Exact Identity's own freshness check is
@@ -7297,6 +7455,13 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # with no extra bookkeeping here.
     _build_name_coverage_clues(sequence_solver_facts, name_revealed,
         tier_counts, form_counts)
+
+    # Phase B1.6 — disambiguating-clue fallback. If the clue set still leaves
+    # more than one Sequence or Name solution, add the clue that rules the
+    # wrong one out (see _repair_uniqueness) instead of redrawing the whole
+    # attempt. Before pruning, so pruning protects what this establishes.
+    if repair_enabled:
+        _repair_uniqueness(sequence_solver_facts, name_revealed, tier_counts, form_counts)
 
     # Phase B2 — minimize. _prune_redundant_clues drops clues the main
     # loop's over-generation left redundant, protecting the opening
