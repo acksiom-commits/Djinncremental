@@ -109,11 +109,14 @@ var _gc: Node = null
 var _is_open:       bool  = false
 var _tween:         Tween = null
 var _selected_slot: int   = -1
+var _slot_buttons: Dictionary = {}   # constellation id -> its selector Button (created once, kept)
 var _selected_octant: int = 0
 var _feed_buttons:  Array = []
 var _selected_multiplier: int  = 1
 var _multi_buttons:       Array = []
 var _show_sparks_numeric:   bool = true
+
+const SlotBorderFx = preload("res://slot_border_fx.gd")
 
 const PANEL_BASE_PATH:      String = "ConstellationSelectorPanel/SelectorMargin/SelectorVBox"
 const ALLOCATION_BASE_PATH: String = PANEL_BASE_PATH + "/ConstellationAllocationVBox"
@@ -225,7 +228,10 @@ func _set_panel_input(enabled: bool) -> void:
 
 
 func _set_subtree_mouse_filter(node: Node, filter: int) -> void:
-    if node is Control:
+    # Paint-only overlays (slot_border_fx.gd) carry this meta and must stay
+    # MOUSE_FILTER_IGNORE always: forced to STOP they sit on top of their
+    # button and swallow its clicks.
+    if node is Control and not node.has_meta("paint_only"):
         node.mouse_filter = filter
     for child in node.get_children():
         _set_subtree_mouse_filter(child, filter)
@@ -350,12 +356,8 @@ func _has_point(point: Vector2) -> bool:
 # ==================================================
 # SLOT CONSTRUCTION
 # ==================================================
-func _build_slots() -> void:
-    if not _slot_grid or not _cd:
-        return
-    for child in _slot_grid.get_children():
-        child.queue_free()
-    _slot_grid.columns = 4
+## The constellations the selector should list right now.
+func _slot_defs() -> Array:
     var defs: Array
     if _octant_gating_enabled:
         defs = _cd.get_constellations_in_octant(_selected_octant)
@@ -379,46 +381,89 @@ func _build_slots() -> void:
             if c is Dictionary and c.get("approved", false) \
                     and _cd.unlocked.has(_coerce_int(c.get("id"), -1)):
                 defs.append(c)
+    return defs
+
+
+## One button per constellation, created the first time it is listed and
+## then KEPT. Callers (unlock, show, octant change) only change WHICH buttons
+## are shown and in what order -- nothing is torn down and remade.
+##
+## This used to clear the grid and rebuild every button. queue_free() leaves
+## the old buttons in the tree until frame end, so the replacements collided
+## with them by name and were renamed "@Button@N"; the by-name lookup in
+## _refresh_slots() then found nothing, so tints, labels and border effects
+## silently stopped updating. Keeping the buttons removes the whole class:
+## there is no window in which two buttons share a name.
+func _build_slots() -> void:
+    if not _slot_grid or not _cd:
+        return
+    _slot_grid.columns = 4
+    var defs: Array = _slot_defs()
+    var listed: Dictionary = {}
     for def in defs:
         var id: int = def["id"]
-        var slot := Button.new()
-        slot.name                = "Slot%d" % id
-        slot.custom_minimum_size = Vector2(80, 56)
-        slot.add_theme_font_size_override("font_size", 11)
-        slot.mouse_filter        = Control.MOUSE_FILTER_STOP
-        slot.text                = _get_slot_label(id)
-        slot.pressed.connect(_on_slot_pressed.bind(id))
-        _slot_grid.add_child(slot)
+        listed[id] = true
+        if not _slot_buttons.has(id):
+            _slot_buttons[id] = _make_slot_button(id)
+    var order: int = 0
+    for def in defs:
+        var btn: Button = _slot_buttons[int(def["id"])]
+        btn.visible = true
+        _slot_grid.move_child(btn, order)
+        order += 1
+    # A constellation not listed right now (another octant) keeps its button
+    # but hides it; a hidden Control takes no space in a GridContainer.
+    for id in _slot_buttons:
+        if not listed.has(id):
+            (_slot_buttons[id] as Button).visible = false
+
+
+func _make_slot_button(id: int) -> Button:
+    var slot := Button.new()
+    slot.name                = "Slot%d" % id
+    slot.custom_minimum_size = Vector2(80, 56)
+    slot.add_theme_font_size_override("font_size", 11)
+    slot.mouse_filter        = Control.MOUSE_FILTER_STOP
+    slot.text                = _get_slot_label(id)
+    slot.pressed.connect(_on_slot_pressed.bind(id))
+    var fx := Control.new()
+    fx.name = "BorderFx"
+    fx.set_script(SlotBorderFx)
+    slot.add_child(fx)
+    _slot_grid.add_child(slot)
+    return slot
+
+
+## TEMPORARY (2026-09-24): prints what the selector-button border effects are
+## being told to the editor Output, to confirm they now show in play.
+## Printed only when the readout CHANGES, so it does not flood the log.
+## Remove this const, _debug_lines, _debug_last, _show_debug_lines() and the
+## DEBUG_SLOT_FX blocks in _refresh_slots() once that is confirmed.
+const DEBUG_SLOT_FX: bool = true
+var _debug_lines: Array[String] = []
+var _debug_last: String = ""
+
+
+func _show_debug_lines() -> void:
+    var text: String = "[SLOT FX DEBUG] open=%s gc=%s buttons=%d vol_slots=%s\n%s" % [
+        str(_is_open), str(_gc != null), _slot_buttons.size(),
+        str(_gc.volition_slots) if _gc else "-", "\n".join(_debug_lines)]
+    if text != _debug_last:
+        _debug_last = text
+        print(text)
 
 
 func _refresh_slots() -> void:
+    _debug_lines.clear()
     if not _slot_grid or not _cd:
         return
-    var defs: Array
-    if _octant_gating_enabled:
-        defs = _cd.get_constellations_in_octant(_selected_octant)
-    else:
-        defs = []
-        for c in _cd.BUILT_IN:
-            if _cd.unlocked.has(c["id"]):
-                defs.append(c)
-        # player_constellations/patron_constellations round-trip through
-        # save data (constellation_data.gd's load_save_data() only checks
-        # the outer Array's type) — an element that isn't a Dictionary
-        # crashes outright on bracket-indexing (confirmed: c["id"] on a
-        # non-Dictionary Variant exits the process, no catchable error),
-        # so guard the type before ever touching "id".
-        for c in _cd.player_constellations:
-            if c is Dictionary and _cd.unlocked.has(_coerce_int(c.get("id"), -1)):
-                defs.append(c)
-        for c in _cd.patron_constellations:
-            if c is Dictionary and c.get("approved", false) \
-                    and _cd.unlocked.has(_coerce_int(c.get("id"), -1)):
-                defs.append(c)
-    for def in defs:
+    for def in _slot_defs():
         var id: int = def["id"]
-        var slot = _slot_grid.get_node_or_null("Slot%d" % id)
+        var slot: Button = _slot_buttons.get(id)
         if not slot:
+            # Not built yet (refresh can run before the first _build_slots).
+            if DEBUG_SLOT_FX:
+                _debug_lines.append("S%d: NO BUTTON YET" % id)
             continue
         slot.text = _get_slot_label(id)
         var state: String = _cd.get_visual_state(id)
@@ -432,6 +477,22 @@ func _refresh_slots() -> void:
                 "art":   tint = SLOT_ART
                 _:       tint = SLOT_DARK
         slot.add_theme_stylebox_override("normal", _make_slot_style(tint))
+        var fx = slot.get_node_or_null("BorderFx")
+        if fx and _gc:
+            fx.set_effects(
+                _gc.has_parent_volition_for_constellation(id),
+                _gc._assignment_int("constellation_%d_foci" % id, 0) > 0)
+        if DEBUG_SLOT_FX:
+            _debug_lines.append("S%d parent=%s foci=%d fx=%s %s gold=%s arc=%s" % [
+                id,
+                str(_gc.has_parent_volition_for_constellation(id)) if _gc else "no-gc",
+                _gc._assignment_int("constellation_%d_foci" % id, 0) if _gc else -1,
+                str(fx != null),
+                str(fx.size) if fx else "-",
+                str(fx.parent_gold) if fx else "-",
+                str(fx.foci_arc) if fx else "-"])
+    if DEBUG_SLOT_FX:
+        _show_debug_lines()
 
 
 ## True while a constellation's identity is still hidden from the player --
