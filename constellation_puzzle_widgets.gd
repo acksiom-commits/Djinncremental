@@ -1162,6 +1162,32 @@ func _on_slot_name_protect(record_idx: int, star_name: String) -> void:
     _open_name_checklist_popup(record_idx, _host._name_checklist_popup.position)
 
 
+## The note a record's pitch is KNOWN to be, in a way the player has earned
+## — "" when it isn't. Three sources, none of which leak:
+##  - the record's own confirm or a derived confirm (_record_effective_state,
+##    the raw + derived tiers, deliberately WITHOUT the star_idx ground-truth
+##    shortcut), and
+##  - a Listen-revealed pitch (pitch_revealed): only then is reading the
+##    star-anchored effective state honest.
+## Reported 2026-09-24: a Sort:Name slot whose star had its pitch Listened
+## still read "Select Pitch", because the trigger looked only at the raw
+## pitch_states — which a Listen never writes — while the checklist popup it
+## opens (via _effective_pitch_state) already showed the note as confirmed.
+## Ungated _effective_pitch_state here would show every identity-confirmed
+## star's true pitch before the player had earned it.
+func _earned_pitch_for_record(record_idx: int) -> String:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return ""
+    var revealed: bool = bool(_deduction.record_at(record_idx).get("pitch_revealed", false))
+    for f in _host._pitch_freqs:
+        var n: String = ConstellationLogicPuzzle.note_name_for_freq(f)
+        if _deduction._record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", n) == 1:
+            return n
+        if revealed and _deduction._effective_pitch_state(record_idx, n, false) == 1:
+            return n
+    return ""
+
+
 func _make_pitch_checklist_trigger_button(record_idx: int) -> Button:
     # Same trigger-button/shared-popup pattern as
     # _make_name_checklist_trigger_button — see its comment for why
@@ -1170,13 +1196,7 @@ func _make_pitch_checklist_trigger_button(record_idx: int) -> Button:
     btn.custom_minimum_size = Vector2(110, 0)
     btn.add_theme_font_size_override("font_size", 16)
     btn.focus_mode = Control.FOCUS_NONE
-    var confirmed_note: String = ""
-    var pitch_states: Dictionary = _deduction.record_at(record_idx).get("pitch_states", {})
-    for f in _host._pitch_freqs:
-        var n: String = ConstellationLogicPuzzle.note_name_for_freq(f)
-        if int(pitch_states.get(n, 0)) == 1:
-            confirmed_note = n
-            break
+    var confirmed_note: String = _earned_pitch_for_record(record_idx)
     btn.text = confirmed_note if confirmed_note != "" else "Select Pitch"
     var ridx := record_idx
     var btn_ref := btn
