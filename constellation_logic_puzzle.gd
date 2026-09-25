@@ -41,8 +41,11 @@ extends RefCounted
 #   6. GATE: generate_clues_forms accepts an attempt only when seq_unique,
 #      name_unique (mention coverage: every name paired with another
 #      characteristic) and name_unique_closure (a real proof) all hold.
-#      After MAX_GENERATION_ATTEMPTS it logs push_error and SHIPS THE LAST
-#      ATTEMPT ANYWAY -- nothing downstream refuses a non-unique puzzle.
+#      It tries MAX_GENERATION_ATTEMPTS, then up to EXTRA_GENERATION_ROUNDS more
+#      rounds of the same size. If none passes, gate_passed stays false and the
+#      puzzle is REFUSED (changed 2026-09-25; it used to log and ship the last
+#      attempt). The consumer must check gate_passed: root_ui does not cache a
+#      refused puzzle and the Study panel shows "not ready" until a retry passes.
 #   7. AFTER THE MAIN LOOP, per attempt: name-coverage clues
 #      (_build_name_coverage_clues), redundancy pruning (_prune_redundant_clues),
 #      an anchor recheck (_recheck_anchors_for_redundancy) and a whole-set
@@ -232,6 +235,7 @@ func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
     _host            = p_host
     player_seed_used = p_player_seed
     _generation_complete = false
+    gate_passed = false
     _final_clues.clear()
 
     # Offset seed so color assignment never shares RNG stream with
@@ -6303,6 +6307,19 @@ const MAX_GENERATION_ATTEMPTS := 5
 # all but the most structurally constrained cases; 5 attempts matches the
 # same bounded-retry pattern already used elsewhere (TIER_OPPORTUNISTIC_
 # ATTEMPTS, MAX_BACKTRACK_NODES) rather than looping indefinitely.
+## Further rounds of MAX_GENERATION_ATTEMPTS after the first fails the gate,
+## so at most MAX_GENERATION_ATTEMPTS * (1 + EXTRA_GENERATION_ROUNDS) attempts.
+## Only ever paid by a puzzle that has already failed a whole round.
+const EXTRA_GENERATION_ROUNDS := 3
+## Did the FINAL attempt pass the ship gate (seq_unique, name_unique,
+## name_unique_closure)? False means the puzzle is not safe to present and
+## consumers must refuse it -- generate_clues_forms used to log an error and
+## ship it anyway. _generation_complete only says generation FINISHED.
+## Describes a generation RUN: meaningful right after generate_clues_forms(),
+## and left false on a puzzle restored by from_cache_dict() (which is only
+## ever restored from a cache the game accepted).
+var gate_passed: bool = false
+
 ## The live ship gate. Until 2026-09-20 this checked `seq_unique and
 ## name_unique` only — name_unique is mention-COVERAGE ("was every star's
 ## name paired with another characteristic somewhere"), never a proof.
@@ -6316,26 +6333,49 @@ const MAX_GENERATION_ATTEMPTS := 5
 func generate_clues_forms() -> void:
     var result: Dictionary = {}
     var attempt: int = 0
-    while attempt < MAX_GENERATION_ATTEMPTS:
+    var total_attempts: int = MAX_GENERATION_ATTEMPTS * (1 + EXTRA_GENERATION_ROUNDS)
+    gate_passed = false
+    while attempt < total_attempts:
         attempt += 1
         result = await _generate_clues_forms_attempt()
-        if bool(result["seq_unique"]) and bool(result["name_unique"]) and bool(result["name_unique_closure"]):
+        if _gate_result_passes(result):
+            gate_passed = true
             break
+        # A round is MAX_GENERATION_ATTEMPTS attempts. The _rng stream has
+        # advanced through every failed attempt, so each further round is a
+        # genuinely different set of draws over the SAME ground truth (names,
+        # colours, order): only the clues change, never the constellation.
+        if attempt % MAX_GENERATION_ATTEMPTS == 0 and attempt < total_attempts:
+            push_warning("ConstellationLogicPuzzle [%d]: %d attempts failed the uniqueness gate, retrying (round %d of %d)." % [
+                constellation_id, attempt, attempt / MAX_GENERATION_ATTEMPTS + 1, 1 + EXTRA_GENERATION_ROUNDS])
         # Yield a frame before the next attempt instead of blocking straight
-        # through up to MAX_GENERATION_ATTEMPTS in one go — see the header
+        # through every attempt in one go — see the header
         # comment above generation_complete for why. No-op (old synchronous
         # behavior) if no host was set at setup() time.
         if _host:
             await _host.get_tree().process_frame
-    if not (bool(result["seq_unique"]) and bool(result["name_unique"]) and bool(result["name_unique_closure"])):
-        push_error("ConstellationLogicPuzzle [%d]: STILL NOT UNIQUE after %d generation attempts (sequence_solutions=%d, all_names_revealed=%s, name_solutions=%d) — puzzle unsolvable as configured." % [
-            constellation_id, MAX_GENERATION_ATTEMPTS, int(result["seq_solutions_count"]), str(result["name_unique"]), int(result["name_solutions_count"])])
+    if not gate_passed:
+        # Nothing here can repair the puzzle, and it is NOT safe to present:
+        # it has more than one valid solution, or a name no clue pins down.
+        # gate_passed stays false and every consumer must refuse it (root_ui
+        # does not cache it and the Study panel says "not ready"). The clues
+        # are left in place so a dev can read what failed.
+        push_error("ConstellationLogicPuzzle [%d]: STILL NOT UNIQUE after %d generation attempts (sequence_solutions=%d, all_names_revealed=%s, name_solutions=%d) — puzzle REFUSED, not shipped." % [
+            constellation_id, attempt, int(result["seq_solutions_count"]), str(result["name_unique"]), int(result["name_solutions_count"])])
     _generation_complete = true
     # `_host` is null under the headless test runner, where a full dump per
     # generated puzzle buries the actual results — the suite generates
     # dozens. Same guard the yield sites use: in-game only.
     if DEBUG_DUMP_CLUES and _host:
         debug_dump_clueset("generated in %d attempt(s)" % attempt)
+
+
+## The ship gate: Sequence unique, every name bound, and the Name closure a
+## proof. Named so generate_clues_forms and the tests read one definition.
+func _gate_result_passes(result: Dictionary) -> bool:
+    return bool(result.get("seq_unique", false)) \
+        and bool(result.get("name_unique", false)) \
+        and bool(result.get("name_unique_closure", false))
 
 
 ## Builds `form_id` once and, if it produced a non-duplicate clue, commits

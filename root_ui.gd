@@ -1043,12 +1043,29 @@ func _start_puzzle_generation(constellation_id: int) -> void:
         func(cid: int, puzzle: ConstellationLogicPuzzle): _on_puzzle_generation_complete(cid, puzzle))
 
 
+## The ONE place a finished generation becomes a cached puzzle. A puzzle that
+## failed the uniqueness gate on every attempt (puzzle.gate_passed == false) is
+## REFUSED: it is not cached, so nothing unsolvable is ever shown, and the
+## constellation is marked failed so the Study panel says "not ready".
+## Selecting the constellation again finds no cache and regenerates.
+## Returns whether the puzzle was accepted.
+static func _accept_generated_puzzle(cd: Node, constellation_id: int,
+        puzzle: ConstellationLogicPuzzle) -> bool:
+    if not puzzle.gate_passed:
+        push_warning("RootUI: constellation %d puzzle failed the uniqueness gate on every attempt -- refused, not cached." % constellation_id)
+        cd.puzzle_generation_failed[constellation_id] = true
+        return false
+    cd.puzzle_generation_failed.erase(constellation_id)
+    cd.set_puzzle_cache(constellation_id, puzzle.to_cache_dict())
+    return true
+
+
 func _on_puzzle_generation_complete(constellation_id: int,
         puzzle: ConstellationLogicPuzzle) -> void:
     var cd = get_node_or_null("/root/ConstellationData")
     if not cd:
         return
-    cd.set_puzzle_cache(constellation_id, puzzle.to_cache_dict())
+    _accept_generated_puzzle(cd, constellation_id, puzzle)
     if _study_overlay and _study_overlay.visible and _study_overlay.has_method("show_for_constellation") \
             and _study_overlay.has_method("get_current_constellation_id") \
             and _study_overlay.get_current_constellation_id() == constellation_id:
@@ -1070,8 +1087,8 @@ func _dev_recompute_puzzle(constellation_id: int) -> void:
     _generate_puzzle(constellation_id, cd, def, dev_seed,
         "puzzle recompute",
         func(cid: int, puzzle: ConstellationLogicPuzzle):
-            cd.set_puzzle_cache(cid, puzzle.to_cache_dict())
-            print("[DEV] Constellation %d puzzle recomputed, seed=%d" % [cid, dev_seed])
+            var accepted: bool = _accept_generated_puzzle(cd, cid, puzzle)
+            print("[DEV] Constellation %d puzzle %s, seed=%d" % [cid, "recomputed" if accepted else "REFUSED (failed the uniqueness gate)", dev_seed])
             if _study_overlay and _study_overlay.visible and _study_overlay.has_method("show_for_constellation"):
                 _study_overlay.show_for_constellation(cid))
 
@@ -1121,7 +1138,7 @@ func reset_constellation_puzzle(constellation_id: int) -> void:
     _generate_puzzle(constellation_id, cd, def, new_seed,
         "puzzle reset",
         func(cid: int, puzzle: ConstellationLogicPuzzle):
-            cd.set_puzzle_cache(cid, puzzle.to_cache_dict())
+            _accept_generated_puzzle(cd, cid, puzzle)
             if _study_overlay and _study_overlay.visible and _study_overlay.has_method("show_for_constellation"):
                 _study_overlay.show_for_constellation(cid))
 

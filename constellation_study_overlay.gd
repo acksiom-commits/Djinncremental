@@ -1017,6 +1017,11 @@ func _update_header() -> void:
     var name_str: String = _coerce_string(def.get("name"), "Constellation")
     var desig: String = _coerce_string(def.get("designation"), "")
     _title_label.text = "%s  •  %s" % [name_str, desig] if desig != "" else name_str
+    # A refused generation (failed the uniqueness gate on every attempt) leaves
+    # no cache, so the panel would just sit empty with no explanation.
+    if bool(_cd.puzzle_generation_failed.get(_constellation_id, false)) \
+            and _cd.get_puzzle_cache(_constellation_id).is_empty():
+        _title_label.text += "  •  puzzle not ready, select it again to retry"
     _selected_clue_text = ""
     _selected_clue_tab = -1
     _selected_clue_display.text = SELECTED_CLUE_PLACEHOLDER

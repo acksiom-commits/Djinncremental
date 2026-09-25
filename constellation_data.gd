@@ -1025,6 +1025,11 @@ var _star_positions_cache:  Dictionary = {}
 var _game_context:          Node       = null
 var _last_selected_id:      int        = -1
 var _puzzle_cache:          Dictionary = {}   # keyed by constellation_id string -> cache dict
+## constellation_id -> true while its last generation was REFUSED (failed the
+## uniqueness gate on every attempt). Deliberately NOT saved: it only means
+## "no puzzle yet, a retry is due", and selecting the constellation again
+## regenerates. Cleared when a generation is accepted.
+var puzzle_generation_failed: Dictionary = {}
 var _stat_unlock_accum:     float      = 0.0
 
  
