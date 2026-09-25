@@ -5,7 +5,7 @@ extends Control
 # On its side = not targeted (low alpha, rotated 90°).
 # Clicking toggles this operation in/out of the target set, subject to
 # the cap of assigned Child Volitions on the Hourglass constellation slot.
-# Invisible until Hourglass is unlocked.
+# Invisible until the Hourglass puzzle has been solved.
 # v0.4: Added _game_loaded flag to prevent drawing stale state before load.
 
 @export var operation_key: String = ""
@@ -27,6 +27,7 @@ func _ready() -> void:
     var sm: Node = get_node_or_null("/root/SaveManager")
     mouse_filter = Control.MOUSE_FILTER_STOP
     tooltip_text = "Direct Hourglass here"
+    visible = false
     if sm and sm.has_signal("game_loaded"):
         sm.game_loaded.connect(_on_game_loaded)
 
@@ -45,9 +46,10 @@ func _is_targeted() -> bool:
 
 
 func _hourglass_unlocked() -> bool:
-    if not cd: return false
-    var frac: float = cd.get_spark_fraction(2) if cd.has_method("get_spark_fraction") else 0.0
-    return frac > 0.0
+    # Shown only once the Hourglass puzzle (constellation 2) has been solved,
+    # not merely once Sparks have been invested in it.
+    if not gc or not gc.has_method("_assignment_int"): return false
+    return gc._assignment_int("constellation_2_solve_count", 0) >= 1
 
 
 func _get_hourglass_volition_cap() -> int:
