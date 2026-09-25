@@ -53,7 +53,9 @@ extends RefCounted
 #
 # THE SOLVER
 #   One solver, _solve (propagation in _propagate_only, then forward-checking
-#   backtracking bounded by MAX_BACKTRACK_NODES), used twice:
+#   backtracking bounded by MAX_BACKTRACK_NODES), used twice. A search that hits
+#   the budget sets _last_solve_inconclusive and is NEVER read as "unique" (the
+#   gate and every pruning pass check it; inconclusive_solves counts them):
 #     - SEQUENCE: over the clues' solver_facts.
 #     - NAME closure: _solve_name_closure runs the same _solve over the Name
 #       facts _build_name_clues derives, restricted by the one Sequence
@@ -117,19 +119,28 @@ const FRAME_BUDGET_MSEC     := 2       # max ms of work per frame during async g
 # clue set can drive backtracking through an exponential number of partial
 # assignments and hang the main thread.
 #
-# WARNING -- exhaustion is NOT reported to callers. When the budget runs out
-# the search just stops (with a push_warning) and _solve returns whatever it
-# had found. That is fewer than `cap` solutions, and the gate reads:
-#     0 found  -> "no solution"      (fails the attempt: safe, wasted retry)
-#     1 found  -> "UNIQUE"           (WRONG: the search never finished, so a
-#                                     second solution may exist -- a false
-#                                     positive that ships as proven)
-# The old comment here said callers treat a budget abort "the same as
-# genuinely-not-unique-yet". That is true only of the 0-found case. The fix is
-# a tri-state result (unique / not unique / inconclusive); until then, treat any
-# "backtracking node budget exhausted" warning as a possible false-unique.
+# EXHAUSTION IS INCONCLUSIVE, not "not unique". When the budget runs out the
+# search stops with whatever it had found. Found 0 -> fails the attempt (safe).
+# Found 1 -> looks UNIQUE, but the search never finished, so a second solution
+# may exist. Until 2026-09-25 the gate read that as unique and shipped it as
+# proven. _solve now sets _last_solve_inconclusive (budget hit AND fewer than
+# `cap` found), and every place that concludes "unique" -- the ship gate and
+# all four pruning passes -- requires it to be false. inconclusive_solves counts
+# how often it happens, since nothing measured that before.
 const MAX_BACKTRACK_NODES := 50000
 var _backtrack_nodes_remaining: int = 0
+## Per-instance budget, MAX_BACKTRACK_NODES unless a test lowers it to force an
+## exhausted search.
+var backtrack_node_budget: int = MAX_BACKTRACK_NODES
+## Set by _backtrack_fc when the node budget runs out during the current solve.
+var _backtrack_budget_hit: bool = false
+## The verdict on the LAST _solve() call: true means its search was cut short
+## before it could rule out further solutions, so a result of exactly one
+## solution is NOT proof of uniqueness. Read it IMMEDIATELY after the solve.
+var _last_solve_inconclusive: bool = false
+## Running count of inconclusive solves for this puzzle -- a measurement, and
+## reported in the gate result.
+var inconclusive_solves: int = 0
 const NOTE_LETTER_NAMES: Array[String] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
 ]
@@ -1007,6 +1018,7 @@ func _propagate_only(clues: Array[Dictionary], rank_restriction: Array = []) -> 
 
 
 func _solve(clues: Array[Dictionary], cap: int = 2, rank_restriction: Array = []) -> Array:
+    _last_solve_inconclusive = false
     var prop: Dictionary = _propagate_only(clues, rank_restriction)
     if not bool(prop["consistent"]):
         return []
@@ -1028,8 +1040,14 @@ func _solve(clues: Array[Dictionary], cap: int = 2, rank_restriction: Array = []
         assignment[i] = -1
 
     var init_domains: Array = _possible_to_domains(possible)
-    _backtrack_nodes_remaining = MAX_BACKTRACK_NODES
+    _backtrack_nodes_remaining = backtrack_node_budget
+    _backtrack_budget_hit = false
     _backtrack_fc(assignment, init_domains, expanded_cmp, adj_clues, count_clues, solutions, cap)
+    # The search only proves "no more than N solutions" if it FINISHED. If the
+    # budget ran out with fewer than `cap` found, more may exist unseen.
+    _last_solve_inconclusive = _backtrack_budget_hit and solutions.size() < cap
+    if _last_solve_inconclusive:
+        inconclusive_solves += 1
     return solutions
  
  
@@ -1041,8 +1059,9 @@ func _backtrack_fc(assignment: Array, domains: Array,
     _backtrack_nodes_remaining -= 1
     if _backtrack_nodes_remaining <= 0:
         if _backtrack_nodes_remaining == 0:
-            push_warning("ConstellationLogicPuzzle [%d]: backtracking node budget exhausted (sequence) — aborting search early." % constellation_id)
+            push_warning("ConstellationLogicPuzzle [%d]: backtracking node budget exhausted — aborting search early (result INCONCLUSIVE unless the solution cap was already reached)." % constellation_id)
             _backtrack_nodes_remaining -= 1
+        _backtrack_budget_hit = true
         return
  
     var var_idx: int = -1
@@ -6939,8 +6958,11 @@ func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
     var removed: Dictionary = chosen_form_clues[idx]
     chosen_form_clues.remove_at(idx)
     var trial_seq: Array = _solve(_seq_facts_from_clues(), 2)
-    if trial_seq.size() == 1:
-        if _solve_name_closure(trial_seq, baseline + 1).size() <= baseline:
+    # An INCONCLUSIVE solve (node budget hit) is not proof of uniqueness, so
+    # it must never license a removal: keep the clue.
+    if trial_seq.size() == 1 and not _last_solve_inconclusive:
+        var trial_closure: Array = _solve_name_closure(trial_seq, baseline + 1)
+        if trial_closure.size() <= baseline and not _last_solve_inconclusive:
             # Third condition, alongside Sequence uniqueness and the
             # closure: no name that is still bound may lose its binding.
             # _recompute_name_revealed reads chosen_form_clues, which
@@ -6965,10 +6987,10 @@ func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
 func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array[Dictionary]:
     var seq_facts: Array[Dictionary] = _seq_facts_from_clues()
     var seq_sols: Array = _solve(seq_facts, 2)
-    if seq_sols.size() != 1:
-        return seq_facts   # not uniquely solvable on Sequence — nothing safe to prune against
+    if seq_sols.size() != 1 or _last_solve_inconclusive:
+        return seq_facts   # not (provably) uniquely solvable on Sequence — nothing safe to prune against
     var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
-    if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP:
+    if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP or _last_solve_inconclusive:
         return seq_facts
     # THE GATE'S OWN PROPERTY, tracked as pruning proceeds.
     #
@@ -7033,10 +7055,10 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
 ## set, touching no non-anchor clue, does remove it.
 func _recheck_anchors_for_redundancy(anchor_texts: Array, name_revealed: Array) -> void:
     var seq_sols: Array = _solve(_seq_facts_from_clues(), 2)
-    if seq_sols.size() != 1:
+    if seq_sols.size() != 1 or _last_solve_inconclusive:
         return
     var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
-    if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP:
+    if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP or _last_solve_inconclusive:
         return
     var cur_revealed: Array = []
     for _n in name_revealed.size():
@@ -7100,10 +7122,10 @@ func _is_redundancy_exempt_form(form_id: int) -> bool:
 ## why that would be a separate, larger, disclosure-only rebuild).
 func _final_redundancy_safety_net(name_revealed: Array) -> void:
     var seq_sols: Array = _solve(_seq_facts_from_clues(), 2)
-    if seq_sols.size() != 1:
+    if seq_sols.size() != 1 or _last_solve_inconclusive:
         return
     var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
-    if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP:
+    if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP or _last_solve_inconclusive:
         return
     var cur_revealed: Array = []
     for _n in name_revealed.size():
@@ -7315,7 +7337,11 @@ func _generate_clues_forms_attempt() -> Dictionary:
         if violation != "":
             push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT SEQUENCE FACT — %s" % [constellation_id, violation])
     var seq_solutions: Array = _solve(sequence_solver_facts, 2)
-    var seq_unique: bool = seq_solutions.size() == 1
+    # "Unique" needs the search to have FINISHED: exactly one solution found
+    # by a search cut off at the node budget proves nothing (see
+    # MAX_BACKTRACK_NODES).
+    var seq_inconclusive: bool = _last_solve_inconclusive
+    var seq_unique: bool = seq_solutions.size() == 1 and not seq_inconclusive
     var name_unique: bool = true
     for revealed in name_revealed:
         if not revealed:
@@ -7340,14 +7366,22 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # separate, load-bearing gate condition.
     var name_unique_closure: bool = false
     var name_solutions_count: int = -1   # -1 = not attempted (seq not unique yet)
+    var name_inconclusive: bool = false
     if seq_unique:
         var name_solutions: Array = _solve_name_closure(seq_solutions)
-        name_unique_closure = name_solutions.size() == 1
+        name_inconclusive = _last_solve_inconclusive
+        name_unique_closure = name_solutions.size() == 1 and not name_inconclusive
         name_solutions_count = name_solutions.size()
     return {
         "seq_unique": seq_unique,
         "name_unique": name_unique,
         "name_unique_closure": name_unique_closure,
+        # True when that solve hit the node budget with fewer than `cap` found:
+        # the "unique" reading above was withheld because the search never
+        # finished. Diagnostics only; the gate already treats it as a failure.
+        "seq_inconclusive": seq_inconclusive,
+        "name_inconclusive": name_inconclusive,
+        "inconclusive_solves": inconclusive_solves,
         "name_solutions_count": name_solutions_count,
         "seq_solutions_count": seq_solutions.size(),
         # The solutions themselves, not just the count — already computed
@@ -7620,6 +7654,9 @@ func _build_name_clues(seq_solutions: Array, source_clues = null) -> Dictionary:
 ## subset — possibly zero clues" and a fallback-to-full-set on empty would
 ## silently answer a different question than the one asked.
 func _solve_name_closure(seq_solutions: Array, cap: int = 2, source_clues = null) -> Array:
+    # The early return below never reaches _solve(), so without this a caller
+    # reading _last_solve_inconclusive would see the PREVIOUS solve's verdict.
+    _last_solve_inconclusive = false
     var built: Dictionary = _build_name_clues(seq_solutions, source_clues)
     if not bool(built["ok"]):
         return []
@@ -7922,7 +7959,7 @@ const COMPUTE_DIFFICULTY_SCORE: bool = false
 ## puzzle. Returns {} if Sequence isn't unique yet (nothing to score).
 func _compute_difficulty_score() -> Dictionary:
     var seq_solutions: Array = _solve(_seq_facts_from_clues(), 2)
-    if seq_solutions.size() != 1:
+    if seq_solutions.size() != 1 or _last_solve_inconclusive:
         return {}
     var seq_result: Dictionary = _mus_build_sequence_seq(chosen_form_clues)
     var name_result: Dictionary = _mus_build_sequence_name(chosen_form_clues, seq_solutions)
