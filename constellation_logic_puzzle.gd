@@ -1,102 +1,88 @@
 ﻿class_name ConstellationLogicPuzzle
 extends RefCounted
-# ============== CONSTELLATION LOGIC PUZZLE — FORMS/CELLS ARCHITECTURE ==============
-# Ground-up replacement generator for constellation_logic_puzzle.gd's clue
-# generation layer, built on the corrected three-tier model (2026-07-20):
+# ============== CONSTELLATION LOGIC PUZZLE — FORMS/CELLS GENERATOR ==============
+# Header rewritten 2026-09-25 to describe the code as it IS. The 2026-07-20
+# planning text it replaced (22 unbuilt Forms, a propagation-driven "ZebraTutor
+# pass" marking cells used, Name-axis solving "not ported") described a design,
+# not this file; it is in git history if the original intent is wanted.
 #
-#   1. RECORD ARRAY (upstream of everything, produced by ground-truth
-#      generation below): every pair of two specific Star Characteristics
-#      (Name/Sequence/Color/Pitch/Distance value-tuples, including Color/
-#      Pitch sub-ranks so grouped values behave as a nested mini zebra-grid)
-#      is a CELL, graded True or False depending on whether both actually
-#      co-occur on the same star. Every cell starts "unused."
-#   2. FORMS (22 abstract templates, structural shells with typed Star-
-#      Characteristic node slots — NOT yet built in this file, pending the
-#      finalized form table). A Form's nodes are filled by WEIGHTED RANDOM
-#      CELL SAMPLING: biased toward True cells over False (more information
-#      per cell, though False cells are never "decorative" — they still
-#      carry real, sound, single-referent constraint, just non-cascading),
-#      and CHAIN-CONSTRAINED so exactly one node's cell must be "used"
-#      already (linking to the previous clue — skipped only for the very
-#      first clue), with every other node drawn from "unused" cells.
-#   3. KIND is DERIVED, never assigned upstream: once a Form's nodes are
-#      filled with actual cell content, "kind" is just a label describing
-#      which categories ended up in which nodes — consumed only by grammar
-#      formation (phrasing template selection). Kind is never a dispatch
-#      key generation branches on to decide what to sample.
-#   4. CLUE is a filled Form run through grammar formation/checking to
-#      produce correct English text for the player.
+# WHAT THIS FILE DOES
+#   Builds one uniquely-solvable clue set for one constellation, hands it to the
+#   Study panel as text plus machine-readable disclosures, and (de)serializes
+#   it for the save cache. The player solves for two things: the firing order
+#   (SEQUENCE) and which star each NAME denotes. Colour and Pitch are
+#   observables the player can read (Listen for pitch), so they carry NO
+#   uniqueness requirement and have no solver.
 #
-# BLOAT CONTROL (two methods, per user direction 2026-07-20):
-#   (1) ZebraTutor pass: after each committed clue, run the propagation
-#       engine below and flip every cell that becomes DERIVABLE (not merely
-#       directly sampled) from "unused" to "used" — this is what makes
-#       exhausting the unused-cell pool converge with actual solvability,
-#       rather than "coverage" and "sufficiency" being unrelated properties.
-#       This is why the propagation engine survives wholesale from the old
-#       file: it graduates from "downstream verifier" to the literal engine
-#       driving what counts as used/unused.
-#   (2) (reserved — second bloat-control method not yet specified)
+# THE PIPELINE, in order (see generate_clues_forms / _generate_clues_forms_attempt)
+#   1. GROUND TRUTH (below): stars, names, colours, pitches, firing order
+#      (sequence_rank_solution) and map hop distances.
+#   2. MATRIX / CELLS: every pair of star characteristics is a cell graded true
+#      or false (_matrix_cell). Cells are marked "used" when a clue consumes
+#      them (_apply_grid_cell_result / _commit_characteristics) -- ONLY there.
+#      Nothing marks a cell used because it became derivable; that propagation
+#      driven marking was planned in July and never built.
+#      Consequence: ~74% of COLOR:PITCH cells are unreachable except as
+#      bookkeeping, so _unused_pool_size() > 0 is permanently true and the main
+#      loop always ends on its max_stall counter, not on the pool draining.
+#   3. FORMS: 24 clue templates (FORM_NAMES), each built by _build_form from
+#      cells drawn by weighted random sampling (biased toward true cells),
+#      chained so a clue links to an already-used characteristic
+#      (_pick_chain_characteristic). Forms are grouped into three tiers
+#      (FORM_TIER) mixed toward TIER_TARGET_RATIO, and DIFFICULTY_PROFILES can
+#      exclude or cap Forms. An anchor pass first guarantees specific clues
+#      (opening Mutual Exclusion, easy-mode Mutex and Betweenness chains).
+#   4. RENDERING: _characteristic_label and the form builders write the English
+#      text and record what it VISIBLY states in search_terms.
+#   5. DISCLOSURES: each clue also stores typed facts -- solver_facts for the
+#      Sequence CSP and value_facts for the Name axis and the deduction engine
+#      (VALUE_FACT_KINDS lists the value kinds). The disclosures, not the text
+#      or the cells, are what every gate and the player-side coverage read.
+#   6. GATE: generate_clues_forms accepts an attempt only when seq_unique,
+#      name_unique (mention coverage: every name paired with another
+#      characteristic) and name_unique_closure (a real proof) all hold.
+#      After MAX_GENERATION_ATTEMPTS it logs push_error and SHIPS THE LAST
+#      ATTEMPT ANYWAY -- nothing downstream refuses a non-unique puzzle.
+#   7. AFTER THE MAIN LOOP, per attempt: name-coverage clues
+#      (_build_name_coverage_clues), redundancy pruning (_prune_redundant_clues),
+#      an anchor recheck (_recheck_anchors_for_redundancy) and a whole-set
+#      safety net (_final_redundancy_safety_net).
 #
-# WHAT'S PORTED FROM constellation_logic_puzzle.gd, VERBATIM OR NEAR-VERBATIM:
-#   - Ground-truth generation (stars/colors/pitches/distances/names/sub-ranks)
-#   - Sequence-axis propagation/solving engine (arc-consistency, forward-
-#     checking backtrack) — the kind-string matches inside it are STRUCTURAL
-#     dispatch (exact/negative/comparison shape), not per-kind bespoke logic,
-#     so it ported cleanly; it's the live Phase C uniqueness gate today
-#     (_solve(), called from _generate_clues_forms_attempt()).
-#   - Generic helpers: shuffle, pick-from-domain/pick-star, alphabetical-rank,
-#     note-name-for-frequency.
+# THE SOLVER
+#   One solver, _solve (propagation in _propagate_only, then forward-checking
+#   backtracking bounded by MAX_BACKTRACK_NODES), used twice:
+#     - SEQUENCE: over the clues' solver_facts.
+#     - NAME closure: _solve_name_closure runs the same _solve over the Name
+#       facts _build_name_clues derives, restricted by the one Sequence
+#       solution. It reads name_group / name_group_neg / name_precedes_group /
+#       name_follows_group / name_extreme_in_group / name_same_group, the
+#       position-predicate kinds (name_rank_range / name_nbr_count /
+#       name_nbr_extreme), either-or and distance_hop.
+#       NOT read by it: values_same (Equality Pair) and values_all_different
+#       (Mutual Exclusion). Those two are scored only by the player-side
+#       deduction engine.
+#   There is no Pitch solver (removed 2026-07-25) and Category.POSITION exists
+#   as an enum name only, for the lint and future work; there is no matrix
+#   position axis.
 #
-# REMOVED, 2026-07-25 (confirmed dead, not pending work): the ported
-# Pitch-axis solving engine (_solve_pitch and its ~15 supporting functions)
-# and the Sequence-side possibility-grid front-end + four domain-min/max/
-# forced-value/any-in-range helpers. None had any caller in the live Forms
-# pipeline — every Form builder that uses Pitch as a content/labeling axis
-# explicitly skips emitting a solver fact for it, because Pitch carries no
-# uniqueness requirement (fully recoverable via Listen — see
-# constellation_puzzle_category_facts_CHECK_FIRST memory, and the comment
-# above _seq_fact_for_label further down this file). This was true even in
-# the pre-Forms version of this file; the Pitch solver was carried along
-# during the port because it happened to port cleanly, not because the
-# Forms model needs it. Building Pitch-clue solving out would be a
-# regression to the old per-axis-solver architecture this rewrite replaced.
-#   - Public API shape (setup/is_generation_complete/generate_clues_async/
-#     get_form_clue_texts/check_solution) and the cache-serialization OUTER
-#     shell.
+# OTHER MACHINERY IN THIS FILE
+#   - MUS-extraction step explainer and difficulty score (_mus_*,
+#     _compute_difficulty_score): built and tested but DORMANT
+#     (COMPUTE_DIFFICULTY_SCORE is false); minutes per puzzle, Sequence and
+#     Name only.
+#   - Cache: to_cache_dict / from_cache_dict, versioned by CACHE_VERSION.
+#   - Public API: setup, generate_clues_forms / generate_clues_async,
+#     is_generation_complete, get_form_clue_texts, check_solution.
 #
-# DELIBERATELY NOT PORTED, PENDING WORK:
-#   - Name-axis solving (_apply_one_name_filter/_apply_name_single_dot_
-#     filters/_name_arcs_from_clues/_name_arc_predicate/_name_arc_consistency/
-#     _possibility_grid_for_name_clues/_solve_names/_backtrack_fc_names in the
-#     old file): this is ~560 lines entirely keyed on the OLD per-kind kind-
-#     strings with bespoke logic per kind (unlike the Sequence/Pitch engine's
-#     structural-only dispatch) — it cannot be separated from the old kind
-#     system, so it needs a genuine rewrite once the new Kind field-shapes
-#     are known from the finalized Forms table, not a mechanical port.
-#   - The entire kind-string-keyed generation apparatus (_sample_and_build
-#     and ~40 per-kind bodies, _category_kinds/PRIMER_ELIGIBLE_KINDS/
-#     STRUCTURAL_KINDS, _primer_category_min/_attempts_for_category/
-#     _force_primer_coverage, _try_pick_for_category, generate_clues_by_
-#     primer_type's Phase A/B loop): superseded outright by the Forms/Cells
-#     pipeline; no port, no adaptation.
-#   - _score_clue_difficulty: repurposed per user direction as a data-
-#     collection hook for future per-Form player-enjoyment tracking, not a
-#     trim-ordering key (there is no trim pass anymore) — not yet rebuilt.
-#   - The 22 Forms themselves, the record-array/cell data structure, the
-#     weighted+chained sampling loop, and grammar formation are NEW and not
-#     yet written — blocked on the finalized Forms table (names only are
-#     confirmed so far: Exact Identity, Single Negation, Dual Negation,
-#     Disjunction, Pairwise Order, Exact Offset, Adjacency, Range, Group
-#     Order, Count, Extreme, Equality Pair, Mutual Exclusion, Group
-#     Comparison, Distance Existential, Distance Extreme, Betweenness,
-#     Degree Fact, Non-Adjacency, Cross-Domain Bridge, Pseudo-True Pair
-#     Aligned, Pseudo-True Pair Staggered).
+# WHERE A FACT LIVES (one clue is stored several ways -- see the deduction engine's
+# notes before reading any of them): the TEXT is what the player reads, the
+# DISCLOSURES are what gates and coverage read, the CELLS are matrix bookkeeping,
+# and chars / search_terms feed search and the deduction engine.
 # ========================================================================
 
 
 # ==================================================
-# GROUND TRUTH GENERATION — ported verbatim, upstream of all three tiers
+# GROUND TRUTH GENERATION — ported verbatim, upstream of everything below
 # ==================================================
 enum StarColor { BLUE, WHITE, YELLOW_ORANGE, RED }
 enum Category { NAME, SEQUENCE, COLOR, PITCH, DISTANCE, POSITION }
@@ -122,15 +108,24 @@ const COLOR_NAMES           := ["Blue", "White", "Yellow", "Red"]
 const SEQ_WORD_EARLIER      := "earlier"
 const SEQ_WORD_LATER        := "later"
 const FRAME_BUDGET_MSEC     := 2       # max ms of work per frame during async gen
-const MAX_BACKTRACK_NODES := 50000   # hard ceiling on recursive nodes explored per
-                                       # solve() call, shared across all three solvers.
-                                       # Without this, a hard-to-disambiguate clue set
-                                       # can make backtracking explore an exponential
-                                       # number of partial assignments and hang the main
-                                       # thread. This converts that failure mode into
-                                       # "solve() returns fewer than cap solutions,"
-                                       # which every caller already treats the same way
-                                       # as genuinely-not-unique-yet.
+# Hard ceiling on recursive nodes explored per _solve() call. _solve serves both
+# the Sequence gate and the Name closure (_solve_name_closure runs the same
+# solver), so this budget applies to both. Without it a hard-to-disambiguate
+# clue set can drive backtracking through an exponential number of partial
+# assignments and hang the main thread.
+#
+# WARNING -- exhaustion is NOT reported to callers. When the budget runs out
+# the search just stops (with a push_warning) and _solve returns whatever it
+# had found. That is fewer than `cap` solutions, and the gate reads:
+#     0 found  -> "no solution"      (fails the attempt: safe, wasted retry)
+#     1 found  -> "UNIQUE"           (WRONG: the search never finished, so a
+#                                     second solution may exist -- a false
+#                                     positive that ships as proven)
+# The old comment here said callers treat a budget abort "the same as
+# genuinely-not-unique-yet". That is true only of the 0-found case. The fix is
+# a tri-state result (unique / not unique / inconclusive); until then, treat any
+# "backtracking node budget exhausted" warning as a possible false-unique.
+const MAX_BACKTRACK_NODES := 50000
 var _backtrack_nodes_remaining: int = 0
 const NOTE_LETTER_NAMES: Array[String] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
@@ -6668,6 +6663,17 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
     # Forms that either fit the sampled cell or do not.
     for slot in anchors:
         var form_id: int = int(slot["form"]) if slot is Dictionary else int(slot)
+        # Start every slot from the defaults. The four transient overrides are
+        # otherwise set only AFTER the paired-Betweenness branch below, which
+        # `continue`s past that code -- so it would render under the PREVIOUS
+        # slot's values (found in review 2026-09-25; harmless today because
+        # that path never reaches the samplers that read them, but one
+        # refactor from not being). The reset after this loop stays as the
+        # exit-path guard.
+        _prefer_true_cells = false
+        _mutex_min_elements = 0
+        _mutex_max_elements = 0
+        _mutex_require_distinct_set = false
         # Betweenness's guaranteed axis-pair slot: two disjoint triples are
         # picked from ONE shared eligibility pool up front (see
         # _betweenness_two_disjoint_triples's own header for why this
@@ -7275,18 +7281,23 @@ func _generate_clues_forms_attempt() -> Dictionary:
         if not revealed:
             name_unique = false
             break
-    # NAME CLOSURE (Phase 2 of the position-axis migration, first slice,
-    # 2026-08-16) — a genuine uniqueness PROOF over POSITION x NAME,
-    # replacing the mention-coverage flag above wherever it eventually
-    # takes over. NOT the live gate yet: only Exact Identity and Single
-    # Negation are wired to emit name_group facts so far, and BOTH are
-    # structurally unable to carry Colour — the shared cell sampler
-    # requires _category_uniquely_labels on both sides, and Colour's group
-    # size is never 1 (measured). So this is a KNOWN undercount, reported
-    # for measurement (see probe_scratch.gd), not enforced. Swapping it in
-    # as the real gate before more Forms are wired would starve
-    # generation, since almost no puzzle would close on Sequence+Pitch
-    # facts alone.
+    # NAME CLOSURE -- a genuine uniqueness PROOF over POSITION x NAME
+    # (started 2026-08-16 as "Phase 2 of the position-axis migration"; it has
+    # been half of the LIVE gate since 2026-09-20, see generate_clues_forms).
+    # It runs only once Sequence is unique, because a rank-keyed name fact
+    # resolves to a position through the one true Sequence solution.
+    #
+    # The comment that stood here until 2026-09-25 said only Exact Identity
+    # and Single Negation emitted name facts and that the closure was a known
+    # undercount kept out of the gate. Both were true in August and stale by
+    # September: it now reads name_group / name_group_neg, precedes / follows /
+    # extreme-in-group, same_group, the position predicates (Range, Count,
+    # Extreme), either-or and distance_hop (see the header's THE SOLVER).
+    # The two kinds it is KNOWN not to read are values_same (Equality Pair)
+    # and values_all_different (Mutual Exclusion). Whether every other Form's
+    # facts are fully covered has not been audited. Until the closure is
+    # trusted to cover everything, name_unique (mention coverage) stays a
+    # separate, load-bearing gate condition.
     var name_unique_closure: bool = false
     var name_solutions_count: int = -1   # -1 = not attempted (seq not unique yet)
     if seq_unique:
