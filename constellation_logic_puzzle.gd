@@ -23,8 +23,11 @@ extends RefCounted
 #      Nothing marks a cell used because it became derivable; that propagation
 #      driven marking was planned in July and never built.
 #      Consequence: ~74% of COLOR:PITCH cells are unreachable except as
-#      bookkeeping, so _unused_pool_size() > 0 is permanently true and the main
-#      loop always ends on its max_stall counter, not on the pool draining.
+#      bookkeeping, so the main loop cannot terminate on the pool draining
+#      (that check was removed 2026-09-25; it was never actually true) and
+#      ends on MAX_STALL_PASSES of no progress instead, or the rarer real
+#      case where every Form is capped/excluded. form_exhaustion_report()
+#      gives the real per-Form picture the pool count never could.
 #   3. FORMS: 24 clue templates (FORM_NAMES), each built by _build_form from
 #      cells drawn by weighted random sampling (biased toward true cells),
 #      chained so a clue links to an already-used characteristic
@@ -6066,6 +6069,13 @@ const FORM_TIER := {
 const TIER_TARGET_RATIO := {1: 0.25, 2: 0.45, 3: 0.30}
 const TIER_OPPORTUNISTIC_ATTEMPTS := 4
 
+## Consecutive main-loop passes with zero commits before generation concludes
+## nothing more is constructible. A class const (not a local) so
+## form_exhaustion_report()'s per-Form threshold can reuse the same value --
+## see that function's header. SIZED FROM OBSERVED BEHAVIOUR, see its use
+## in _generate_clues_forms_attempt for the measurement.
+const MAX_STALL_PASSES := 300
+
 
 # ==================================================
 # DIFFICULTY PROFILES
@@ -6326,6 +6336,48 @@ func _forms_in_tier(tier: int, form_counts: Dictionary = {}) -> Array:
 # ==================================================
 
 var chosen_form_clues: Array[Dictionary] = []
+
+## form_id -> consecutive FAILED _try_build_and_commit calls for that Form
+## since its last success, reset to {} at the start of every attempt
+## (_generate_clues_forms_attempt). This is the real, per-Form measurement
+## the pool-based termination check never was — see form_exhaustion_report().
+var _form_fail_streak: Dictionary = {}
+
+## A Form is reported EXHAUSTED once it has failed this many attempts in a
+## row without a single success. Reuses MAX_STALL_PASSES rather than a second
+## tuned constant: that value is already "this many consecutive non-progress
+## PASSES means the whole puzzle is done," and one Form failing that many
+## times in a row (out of every pass's several build attempts across every
+## tier) is strictly stronger evidence than that. Diagnostic only -- does not
+## gate the loop; see the "no eligible Form left" break for the one case
+## that does.
+func _form_exhaustion_threshold() -> int:
+    return MAX_STALL_PASSES
+
+
+## Per-Form exhaustion at the moment this is called (normally right after
+## the main loop, before pruning). Diagnostic, not a gameplay input: shows
+## which Forms had genuinely run dry versus which were merely unlucky on
+## their last few draws, replacing "the pool never drains" with real
+## per-Form evidence. `eligible` is every Form the CURRENT difficulty
+## profile and its caps still permit -- a capped-out or excluded Form
+## isn't "exhausted," it was never in the running this attempt.
+func form_exhaustion_report(form_counts: Dictionary = {}) -> Dictionary:
+    var threshold: int = _form_exhaustion_threshold()
+    var eligible: Array = []
+    for tier in [1, 2, 3]:
+        for form_id in _forms_in_tier(tier, form_counts):
+            eligible.append(int(form_id))
+    var exhausted: Array = []
+    for form_id in eligible:
+        if int(_form_fail_streak.get(form_id, 0)) >= threshold:
+            exhausted.append(form_id)
+    return {
+        "eligible_count": eligible.size(),
+        "exhausted_count": exhausted.size(),
+        "exhausted_forms": exhausted,
+        "fail_streaks": _form_fail_streak.duplicate(),
+    }
 
 ## Change F's output ({} until _compute_difficulty_score() has actually
 ## run — absence means "not yet scored," a legitimate, non-misleading
@@ -7308,6 +7360,7 @@ func _generate_clues_forms_attempt() -> Dictionary:
     _used_characteristics = {}
     _last_clue_nodes = []
     chosen_form_clues = []
+    _form_fail_streak = {}
     # Phase C — uniqueness verification inputs, accumulated alongside the
     # clue set itself (not persisted to cache; only needed transiently
     # here). sequence_solver_facts feeds the already-correct, already-
@@ -7340,11 +7393,20 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # That expression sized the stall budget against the POOL, on the
     # assumption that the loop ends by draining it. It does not: the pool
     # is unreachable by construction (~74% of COLOR:PITCH can only ever be
-    # touched by bookkeeping), so `_unused_pool_size() > 0` is permanently
-    # true and generation ALWAYS terminates on this counter instead —
+    # touched by bookkeeping), so `_unused_pool_size() > 0` was permanently
+    # true and generation ALWAYS terminated on this counter instead —
     # measured, ending at exactly max_stall every time with 164-338 cells
     # still unused. The final ~2730 stalled passes, some 33,000 build
-    # attempts, produced zero clues on every generation ever run.
+    # attempts, produced zero clues on every generation ever run. Removed
+    # from the loop condition 2026-09-25 (see form_exhaustion_report()
+    # below): pool_size only ever DECREASES within one attempt (cells flip
+    # Unused -> Used and never back), so if it is > 0 at the moment
+    # stall_count reaches max_stall it was > 0 at every earlier moment too
+    # — the clause was never once the reason the loop kept running. Its
+    # removal cannot change when generation stops; it only stops the code
+    # from claiming a reason that was never true. See
+    # dev_tests/test_form_exhaustion.gd for the measurement that justifies
+    # this and for what DOES track real per-Form exhaustion.
     #
     # Measured at 300, 18 puzzles across three constellations:
     #
@@ -7359,7 +7421,7 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # counts ever look thin, RAISE this and measure — but check first
     # whether the Forms have simply run out of constructible draws, which
     # is what a long stall run actually means.
-    var max_stall: int = 300
+    var max_stall: int = MAX_STALL_PASSES
     # Yields a frame every YIELD_INTERVAL passes through this outer loop —
     # see the FIXED 2026-07-27 note above generation_complete. This is the
     # loop that can run into the hundreds of iterations building up a
@@ -7416,14 +7478,16 @@ func _generate_clues_forms_attempt() -> Dictionary:
     var _loop_passes: int = 0
     var _build_attempts: int = 0
 
-    while _unused_pool_size() > 0 and stall_count < max_stall:
+    while stall_count < max_stall:
         _loop_passes += 1
         var tier_order: Array = _tiers_by_underrepresentation(tier_counts)
         var committed: bool = false
+        var any_eligible_form: bool = false
         for tier in tier_order:
             var tier_forms: Array = _forms_in_tier(int(tier), form_counts)
             if tier_forms.is_empty():
                 continue
+            any_eligible_form = true
             _shuffle_array(tier_forms)
             var tier_attempts: int = 0
             var succeeded: bool = false
@@ -7433,17 +7497,32 @@ func _generate_clues_forms_attempt() -> Dictionary:
                 _build_attempts += 1
                 succeeded = _try_build_and_commit(form_id, sequence_solver_facts,
                     name_revealed, tier_counts, form_counts)
+                if succeeded:
+                    _form_fail_streak[form_id] = 0
+                else:
+                    _form_fail_streak[form_id] = int(_form_fail_streak.get(form_id, 0)) + 1
             if succeeded:
                 committed = true
                 break
         if committed:
             stall_count = 0
+        elif not any_eligible_form:
+            # Every Form is excluded or capped by the current difficulty
+            # profile — there is nothing left this puzzle could ever draw,
+            # a REAL (not statistical) exhaustion. No point burning the rest
+            # of the stall budget confirming it max_stall more times.
+            break
         else:
             stall_count += 1
         _since_yield += 1
         if _host and _since_yield >= YIELD_INTERVAL:
             _since_yield = 0
             await _host.get_tree().process_frame
+
+    # Snapshot for form_exhaustion_report(): form_counts keeps changing below
+    # (name-coverage and repair clues can commit Forms 1/2), and this report
+    # is about what the MAIN LOOP itself ran out of, not the whole attempt.
+    var _main_loop_form_counts: Dictionary = form_counts.duplicate()
 
     # Phase B1.5 — guarantee the live gate's own property. The main loop
     # binds names only as a side effect of which Forms happened to fire,
@@ -7489,10 +7568,12 @@ func _generate_clues_forms_attempt() -> Dictionary:
         sequence_solver_facts = _seq_facts_from_clues()
     var _t_prune_end: int = Time.get_ticks_msec()
     if DEBUG_GEN_TIMING:
-        print("      [gen] loop %5.1fs (%d passes, %d attempts) | prune %5.1fs | clues %d | max_stall %d, ended at %d, pool left %d"
+        var _exh: Dictionary = form_exhaustion_report(_main_loop_form_counts)
+        print("      [gen] loop %5.1fs (%d passes, %d attempts) | prune %5.1fs | clues %d | max_stall %d, ended at %d | Forms exhausted %d/%d (>= %d failures in a row): %s"
             % [float(_t_loop_end - _t_loop_start) / 1000.0, _loop_passes, _build_attempts,
                 float(_t_prune_end - _t_loop_end) / 1000.0, chosen_form_clues.size(),
-                max_stall, stall_count, _unused_pool_size()])
+                max_stall, stall_count, _exh["exhausted_count"], _exh["eligible_count"],
+                _form_exhaustion_threshold(), str(_exh["exhausted_forms"])])
 
     # Phase C — uniqueness gate for THIS attempt. Whether a failure here
     # gets retried with a fresh draw (rather than shipped as-is) is decided
