@@ -96,7 +96,8 @@ const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres"
 @onready var _tab_notes:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabNotes")
 @onready var _tab_guide:           Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabGuide")
 @onready var _tab_search:          Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabSearch")
-@onready var _tab_hint:            Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabHint")
+@onready var _tab_explain:         Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar/TabExplain")
+@onready var _tab_hint:          Button        = get_node(MARKERS_BASE_PATH + "/MarkerTabBar2/TabHint")
 # The Notes entry box is a PERSISTENT scene node, deliberately never rebuilt
 # by _populate_markers_panel() the way clue rows are — that rebuild fires
 # from _full_propagation_refresh() (constellation_puzzle_deduction.gd),
@@ -250,6 +251,8 @@ func _ready() -> void:
         _widgets._set_marker_tab(_widgets.TAB_SEARCH)
         _widgets._open_search_popup())
     _tab_hint.pressed.connect(func(): _widgets._set_marker_tab(_widgets.TAB_HINT))
+    _tab_explain.visible = _widgets.SHOW_EXPLAIN_TAB
+    _tab_explain.pressed.connect(func(): _widgets._set_marker_tab(_widgets.TAB_EXPLAIN))
 
     _star_map_control.draw.connect(_draw_star_map)
     _star_map_control.gui_input.connect(_on_map_input)

@@ -112,6 +112,11 @@ const TAB_NOTES: int = 1
 const TAB_GUIDE: int = 2
 const TAB_SEARCH: int = 3
 const TAB_HINT: int = 4
+const TAB_EXPLAIN: int = 5
+
+## DEV/PLAYTEST: the EXPLAIN tab lists what the pinned clue still has to
+## give. Flip to false to hide it for release.
+const SHOW_EXPLAIN_TAB: bool = true
 
 
 func _set_marker_tab(tab_idx: int) -> void:
@@ -126,6 +131,8 @@ func _set_marker_tab(tab_idx: int) -> void:
         _host._sb_tab_active if tab_idx == TAB_SEARCH else _host._sb_tab_inactive)
     _host._tab_hint.add_theme_stylebox_override("normal",
         _host._sb_tab_active if tab_idx == TAB_HINT else _host._sb_tab_inactive)
+    _host._tab_explain.add_theme_stylebox_override("normal",
+        _host._sb_tab_active if tab_idx == TAB_EXPLAIN else _host._sb_tab_inactive)
     _populate_markers_panel()
 
 
@@ -160,7 +167,8 @@ func _populate_markers_panel() -> void:
         TAB_GUIDE:   _populate_guide_markers()
         TAB_SEARCH:  _populate_search_markers()
         TAB_HINT:    _populate_hint_markers()
-        _:           _populate_name_markers()
+        TAB_EXPLAIN: _populate_explain_markers()
+        _:         _populate_name_markers()
 
 
 func _coerce_int(val, default: int) -> int:
@@ -203,7 +211,36 @@ func _all_final_clues_for_tabs() -> Array[Dictionary]:
             "search_terms": terms,
             "disclosures": discs,
         })
-    return result
+    return _presentation_shuffled(result)
+
+
+## The generator emits clues in the order it built them, which leaks how the
+## puzzle was assembled (anchors first, the opening Mutex, and so on). Players
+## see a scrambled list instead.
+##
+## The order must be FIXED for a given puzzle -- clue numbers are handles two
+## people use to talk about the same clue, and this runs on every repaint -- so
+## it is derived only from the clue TEXTS: sort them into a canonical order,
+## seed an RNG from their joined hash, Fisher-Yates. Same puzzle, same order,
+## regardless of how the cache happens to be stored or reloaded. The number a
+## clue carries (see _clue_number_for_text) is its position in THIS order, so
+## it no longer matches the debug_dump_clueset() numbering.
+func _presentation_shuffled(clues: Array[Dictionary]) -> Array[Dictionary]:
+    if clues.size() < 2:
+        return clues
+    var out: Array[Dictionary] = clues.duplicate()
+    out.sort_custom(func(a, b): return str(a["text"]) < str(b["text"]))
+    var texts: PackedStringArray = PackedStringArray()
+    for c in out:
+        texts.append(str(c["text"]))
+    var rng := RandomNumberGenerator.new()
+    rng.seed = "\n".join(texts).hash()
+    for i in range(out.size() - 1, 0, -1):
+        var j: int = rng.randi_range(0, i)
+        var tmp: Dictionary = out[i]
+        out[i] = out[j]
+        out[j] = tmp
+    return out
 
 
 # ==================================================
@@ -465,13 +502,185 @@ func _on_notes_add_pressed() -> void:
 ## clue that currently yields new information WITHOUT saying what it yields —
 ## preserving the deduction and removing only the search. Deliberately not
 ## built during the current testing cycle.
-func _populate_hint_markers() -> void:
+# ============================================================================
+# HINT TAB — tiers 1 and 2 of the ZebraTutor hint ladder (2026-09-24)
+#
+#   tier 1  "is anything waiting?"        a yes/no on whether ANY clue still
+#                                         has something to give
+#   tier 2  "point me to a clue"          one such clue, and nothing more —
+#                                         it does not say what the clue
+#                                         helps with (that is tier 3, which
+#                                         needs the explanation engine)
+#
+# "Something to give" is _deduction.clue_indices_with_something_to_give — the
+# clue's content is not yet reflected on the player's own board. Read that
+# function's header for what it does and does not promise.
+#
+# COST HOOK. Every hint goes through _try_pay_hint(tier), the ONE place a
+# price will be set. Prices are 0 for now on purpose: the economy is
+# undecided (the design note says Spark endowments), and inventing one would
+# just be something to rip out. Set hint_cost_sparks to charge; a nonzero
+# price is taken from the liquid Sparks pool as a placeholder source, not a
+# decision.
+# ============================================================================
+var hint_cost_sparks: Dictionary = {1: 0, 2: 0}
+
+## What the tab is currently showing. Session-only: a hint is a pointer at
+## the board as it is NOW, and is re-validated every repaint below rather
+## than saved.
+const HINT_NONE: int = 0
+const HINT_WAITING: int = 1       # tier 1 answered: something is waiting
+const HINT_NOTHING: int = 2       # tier 1/2 answered: nothing has anything to give
+const HINT_POINTED: int = 3       # tier 2 answered: _hint_clue_index is set
+var _hint_state: int = HINT_NONE
+var _hint_clue_index: int = -1    # 0-based index into _all_final_clues_for_tabs()
+var _hint_constellation_id: int = -1
+
+
+func _hint_cost(tier: int) -> int:
+    return int(hint_cost_sparks.get(tier, 0))
+
+
+## True when the player may take this hint (and has been charged, if a price
+## is set). Free hints always pass.
+func _try_pay_hint(tier: int) -> bool:
+    var cost: int = _hint_cost(tier)
+    if cost <= 0:
+        return true
+    var gc = _host.get_node_or_null("/root/GameContext")
+    if gc == null:
+        return false
+    var price: BigNum = BigNum.from_int(cost)
+    if not gc.sparks.is_greater_or_equal(price):
+        return false
+    gc.sparks = gc.sparks.sub(price)
+    return true
+
+
+func _on_hint_tier1_pressed() -> void:
+    if not _try_pay_hint(1):
+        return
+    var candidates: Array[int] = _deduction.clue_indices_with_something_to_give(_all_final_clues_for_tabs())
+    _hint_state = HINT_WAITING if not candidates.is_empty() else HINT_NOTHING
+    _hint_clue_index = -1
+    request_markers_rebuild()
+
+
+func _on_hint_tier2_pressed() -> void:
+    if not _try_pay_hint(2):
+        return
+    var candidates: Array[int] = _deduction.clue_indices_with_something_to_give(_all_final_clues_for_tabs())
+    if candidates.is_empty():
+        _hint_state = HINT_NOTHING
+        _hint_clue_index = -1
+    else:
+        # Lowest index: the clue list is in generation order, which puts the
+        # direct anchor clues first — a deterministic, unsurprising pick.
+        _hint_state = HINT_POINTED
+        _hint_clue_index = candidates[0]
+    request_markers_rebuild()
+
+
+func _make_hint_button(text: String, tier: int, handler: Callable) -> Button:
+    var btn := Button.new()
+    var cost: int = _hint_cost(tier)
+    btn.text = text if cost <= 0 else "%s  (%d Sparks)" % [text, cost]
+    btn.add_theme_font_size_override("font_size", 16)
+    btn.focus_mode = Control.FOCUS_NONE
+    btn.pressed.connect(handler)
+    return btn
+
+
+func _make_hint_message(text: String) -> Label:
     var lbl := Label.new()
-    lbl.text = "Hints are not available yet.\n\nLater: spend Spark endowments to charge a hint, and a charge will point out a clue that still has something to give — without telling you what."
+    lbl.text = text
     lbl.add_theme_color_override("font_color", Color(0.50, 0.42, 0.65, 1))
     lbl.add_theme_font_size_override("font_size", 16)
     lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    _host._markers_content.add_child(lbl)
+    return lbl
+
+
+## DEV EXPLAIN tab: what the pinned clue still has to give. The pinned clue is
+## the one the player last clicked in any clue list (_selected_clue_text).
+func _populate_explain_markers() -> void:
+    var text: String = _host._selected_clue_text
+    if text == "":
+        _host._markers_content.add_child(_make_hint_message(
+            "Select a clue to see what it still has to give."))
+        return
+    var clue: Dictionary = {}
+    var number: int = 0
+    var all_clues: Array[Dictionary] = _all_final_clues_for_tabs()
+    for i in all_clues.size():
+        if str(all_clues[i].get("text", "")) == text:
+            clue = all_clues[i]
+            number = i + 1
+            break
+    if clue.is_empty():
+        _host._markers_content.add_child(_make_hint_message(
+            "The selected clue is no longer in this puzzle's clue list."))
+        return
+    _host._markers_content.add_child(_make_clue_label(
+        text, _clue_state_color(clue, _deduction.player_marked_terms()), number))
+    var lines: Array[String] = _deduction.explain_unrecorded_assertions(clue)
+    if lines.is_empty():
+        _host._markers_content.add_child(_make_hint_message(
+            "This clue asserts nothing the notes can score, so there is nothing to track for it."))
+        return
+    if lines.size() == 1:
+        _host._markers_content.add_child(_make_hint_message(
+            "Everything this clue says is already on your board. (" + lines[0] + ")"))
+        return
+    _host._markers_content.add_child(_make_hint_message(lines[0] + "  (dev view: names shown are the true ones)"))
+    for i in range(1, lines.size()):
+        var row := Label.new()
+        row.text = "- " + lines[i]
+        row.add_theme_font_size_override("font_size", 16)
+        row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        _host._markers_content.add_child(row)
+
+
+func _populate_hint_markers() -> void:
+    # A hint belongs to one puzzle; never carry a pointer across a switch.
+    if _hint_constellation_id != _host._constellation_id:
+        _hint_constellation_id = _host._constellation_id
+        _hint_state = HINT_NONE
+        _hint_clue_index = -1
+
+    _host._markers_content.add_child(_make_hint_message(
+        "A hint tells you where to look, never what to conclude."))
+    _host._markers_content.add_child(_make_hint_button(
+        "Is anything waiting?", 1, _on_hint_tier1_pressed))
+    _host._markers_content.add_child(_make_hint_button(
+        "Point me to a clue", 2, _on_hint_tier2_pressed))
+
+    var clues: Array[Dictionary] = _all_final_clues_for_tabs()
+    match _hint_state:
+        HINT_WAITING:
+            _host._markers_content.add_child(_make_hint_message(
+                "Yes — at least one clue still has something to give."))
+        HINT_NOTHING:
+            _host._markers_content.add_child(_make_hint_message(
+                "Nothing is waiting: every clue is already reflected on your board."))
+        HINT_POINTED:
+            # Re-validate against the board AS IT IS NOW: the player may have
+            # used the clue since pointing at it, and a stale pointer to a
+            # spent clue would be a hint that lies.
+            var live: Array[int] = _deduction.clue_indices_with_something_to_give(clues)
+            if _hint_clue_index < 0 or _hint_clue_index >= clues.size() \
+                    or not live.has(_hint_clue_index):
+                _hint_state = HINT_NONE
+                _hint_clue_index = -1
+                _host._markers_content.add_child(_make_hint_message(
+                    "That clue has nothing left to give. Ask again for another."))
+            else:
+                _host._markers_content.add_child(_make_hint_message(
+                    "This clue still has something to give:"))
+                var clue: Dictionary = clues[_hint_clue_index]
+                _host._markers_content.add_child(_make_clue_label(
+                    str(clue.get("text", "")),
+                    _clue_state_color(clue, _deduction.player_marked_terms()),
+                    _hint_clue_index + 1))
 
 
 func _populate_search_markers() -> void:
@@ -1907,7 +2116,8 @@ func _bbcode_for_clue_text(text: String) -> String:
 
 
 ## The clue's canonical 1-based number: its index in the puzzle's own saved
-## clue order (_form_clues_cache), NOT its position in whichever tab is
+## presentation order (_all_final_clues_for_tabs -- shuffled per puzzle, see
+## _presentation_shuffled), NOT its position in whichever tab is
 ## showing it.
 ##
 ## This distinction is the whole point of the feature. The number exists so
@@ -1917,7 +2127,8 @@ func _bbcode_for_clue_text(text: String) -> String:
 ## give the same clue a different number in each tab, and would renumber
 ## the entire list the moment a clue was filed. Canonical order is fixed
 ## for the life of the puzzle, and is the same numbering
-## debug_dump_clueset() prints, so a dev dump and a player's screen agree.
+## debug_dump_clueset() prints only until the presentation shuffle; it no
+## longer matches the dump's generation-order numbering.
 ##
 ## Returns 0 when the text isn't found, which _clue_number_prefix renders
 ## as no prefix at all rather than a wrong "0.".

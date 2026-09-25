@@ -4956,6 +4956,195 @@ func _clue_coverage_fraction(cells: Array, terms: Array = [], disclosures: Array
     return result
 
 
+## DEV EXPLAINER. One plain-text line per scoreable assertion of `clue` that
+## the player's board does NOT yet reflect, plus a leading count line.
+##
+## It asks exactly the questions coverage asks (_disclosure_satisfied,
+## _cell_was_stated, _cell_resolved_by_player) and adds no reasoning of its
+## own, so "still to input" can never disagree with the Clues tab's own
+## coverage. It reads the player's board, never ground truth, for the
+## VERDICT; ground truth is used only to NAME the stars a clue already
+## refers to, which is a dev convenience and is why the tab is flag-gated.
+##
+## Returns [] when the clue has nothing scoreable at all, which the caller
+## words separately from "everything is recorded".
+func explain_unrecorded_assertions(clue: Dictionary) -> Array[String]:
+    var lines: Array[String] = []
+    var total: int = 0
+    var cells: Array = clue.get("cells", [])
+    var terms: Array = clue.get("search_terms", [])
+    for d in (clue.get("disclosures", []) as Array):
+        if not (d is Dictionary):
+            continue
+        if not SCOREABLE_DISCLOSURE_KINDS.has(str((d as Dictionary).get("kind", ""))):
+            continue
+        total += 1
+        if not _disclosure_satisfied(d):
+            lines.append(_describe_disclosure(d))
+    for cell in cells:
+        if not (cell is Dictionary):
+            continue
+        var c: Dictionary = cell
+        var sa: int = int(c.get("star_a", -1))
+        var sb: int = int(c.get("star_b", -1))
+        if sa < 0 or sa >= _host._star_count or sb < 0 or sb >= _host._star_count:
+            continue
+        if not _cell_was_stated(c, terms):
+            continue
+        total += 1
+        if not _cell_resolved_by_player(c):
+            lines.append("%s %s %s." % [
+                _describe_descriptor(int(c.get("cat_a", -1)), sa),
+                "is" if bool(c.get("is_true", false)) else "is NOT",
+                _describe_descriptor(int(c.get("cat_b", -1)), sb)])
+    if total == 0:
+        return []
+    # A clue can restate one fact through several cells (and a disclosure plus
+    # its cells); show each distinct sentence once, but count every assertion.
+    var seen: Dictionary = {}
+    var unique: Array[String] = []
+    for ln in lines:
+        if not seen.has(ln):
+            seen[ln] = true
+            unique.append(ln)
+    var head: Array[String] = ["%d of %d assertions still to input." % [lines.size(), total]]
+    head.append_array(unique)
+    return head
+
+
+## A descriptor (category + the star it names) the way the player would see
+## it in the clue text.
+func _describe_descriptor(cat: int, star: int) -> String:
+    var t: String = _descriptor_term(cat, star)
+    if t == "":
+        return "star %d" % star
+    var val: String = t.substr(2)
+    match cat:
+        ConstellationLogicPuzzle.Category.NAME: return val
+        ConstellationLogicPuzzle.Category.SEQUENCE: return "the star that fires %s" % ConstellationLogicPuzzle._ordinal(int(val))
+        ConstellationLogicPuzzle.Category.COLOR: return "the %s star" % val.to_lower()
+        ConstellationLogicPuzzle.Category.PITCH: return "the star with pitch %s" % val
+    return val
+
+
+## Disclosures name bare map stars (a dev shorthand): label by Name.
+func _describe_star(star: int) -> String:
+    if star >= 0 and star < _host._star_names.size():
+        return str(_host._star_names[star])
+    return "star %d" % star
+
+
+func _describe_star_list(stars: Array) -> String:
+    var parts: Array[String] = []
+    for s in stars:
+        parts.append(_describe_star(int(s)))
+    return ", ".join(parts)
+
+
+func _describe_disclosure(f: Dictionary) -> String:
+    var kind: String = str(f.get("kind", ""))
+    match kind:
+        "ordinal_exact":
+            return "%s fires %s." % [_describe_star(int(f.get("s", -1))), ConstellationLogicPuzzle._ordinal(int(f.get("r", -1)) + 1)]
+        "ordinal_neg":
+            return "%s does NOT fire %s." % [_describe_star(int(f.get("s", -1))), ConstellationLogicPuzzle._ordinal(int(f.get("r", -1)) + 1)]
+        "ordinal_cmp":
+            var a: String = _describe_star(int(f.get("a", -1)))
+            var b: String = _describe_star(int(f.get("b", -1)))
+            return "%s fires %s %s." % [a, "after" if bool(f.get("a_gt_b", false)) else "before", b]
+        "ordinal_chain":
+            return "%s fires before %s, which fires before %s." % [
+                _describe_star(int(f.get("a", -1))), _describe_star(int(f.get("mid", -1))), _describe_star(int(f.get("b", -1)))]
+        "ordinal_adjacent", "ordinal_offset":
+            return "%s fires %d after %s." % [
+                _describe_star(int(f.get("a", -1))), int(f.get("offset", 1)), _describe_star(int(f.get("b", -1)))]
+        "ordinal_range":
+            return "%s fires between the %d and %d positions." % [
+                _describe_star(int(f.get("s", -1))), int(f.get("lo", 0)) + 1, int(f.get("hi", 0)) + 1]
+        "ordinal_either_or":
+            return "%s fires %s or %s." % [_describe_star(int(f.get("s", -1))),
+                ConstellationLogicPuzzle._ordinal(int(f.get("r1", -1)) + 1), ConstellationLogicPuzzle._ordinal(int(f.get("r2", -1)) + 1)]
+        "ordinal_extreme":
+            return "%s fires %s of: %s." % [_describe_star(int(f.get("s", -1))),
+                "before all" if bool(f.get("want_lowest", false)) else "after all",
+                _describe_star_list(f.get("neighbors", []))]
+        "ordinal_count_before":
+            return "Exactly %d of [%s] fire before %s." % [int(f.get("k", -1)),
+                _describe_star_list(f.get("neighbors", [])), _describe_star(int(f.get("s", -1)))]
+        "values_all_different":
+            return "These all differ in %s: %s." % [_category_word(int(f.get("cat", -1))), _describe_star_list(f.get("stars", []))]
+        "values_same":
+            return "%s and %s share the same %s." % [_describe_star(int(f.get("a", -1))),
+                _describe_star(int(f.get("b", -1))), _category_word(int(f.get("cat", -1)))]
+        "descriptor_either_or":
+            return "%s is either %s or %s." % [
+                _describe_descriptor(int(f.get("cat_a", -1)), int(f.get("star_a", -1))),
+                _describe_descriptor(int(f.get("cat_b", -1)), int(f.get("s1", -1))),
+                _describe_descriptor(int(f.get("cat_b", -1)), int(f.get("s2", -1)))]
+        "descriptor_not_in_group":
+            var gcat: int = int(f.get("group_cat", -1))
+            var gkey: int = int(f.get("group_key", -1))
+            var grp: String = "group %d" % gkey
+            if gcat == ConstellationLogicPuzzle.Category.COLOR and gkey >= 0 and gkey < _host.COLOR_NAME_LABELS.size():
+                grp = str(_host.COLOR_NAME_LABELS[gkey]).to_lower()
+            elif gcat == ConstellationLogicPuzzle.Category.PITCH and gkey >= 0 and gkey < _host._pitch_freqs.size():
+                grp = "pitch " + ConstellationLogicPuzzle.note_name_for_freq(float(_host._pitch_freqs[gkey]))
+            return "%s is NOT %s." % [_describe_descriptor(int(f.get("cat", -1)), int(f.get("star", -1))), grp]
+        "distance_hop":
+            return "%s is %s %d hop(s) from %s." % [
+                _describe_descriptor(int(f.get("ref_cat", -1)), int(f.get("ref", -1))),
+                "NOT" if bool(f.get("negated", false)) else "exactly",
+                int(f.get("hops", 1)),
+                _describe_descriptor(int(f.get("target_cat", -1)), int(f.get("target", -1)))]
+    return kind
+
+
+func _category_word(cat: int) -> String:
+    match cat:
+        ConstellationLogicPuzzle.Category.COLOR: return "colour"
+        ConstellationLogicPuzzle.Category.PITCH: return "pitch"
+        ConstellationLogicPuzzle.Category.SEQUENCE: return "position"
+        ConstellationLogicPuzzle.Category.NAME: return "name"
+    return "value"
+
+
+## HINT SUPPORT (tiers 1 and 2 of the ZebraTutor hint ladder). Indices, into
+## `clues`, of the clues that STILL HAVE SOMETHING TO GIVE: at least one of
+## their scoreable assertions is not yet reflected on the player's board.
+##
+## "Something to give" is deliberately the SAME question the coverage
+## machinery already answers -- _clue_coverage_fraction < 1.0 -- rather than
+## a second definition that could drift from it. It reads the player's own
+## board through _disclosure_satisfied / _cell_resolved_by_player, never
+## ground truth, so a hint pointing at a clue cannot leak anything the
+## clue's own sentence doesn't already say. A clue with nothing measurable
+## (COVERAGE_UNMEASURABLE) is skipped: pointing at a sentence that asserts
+## nothing scoreable would be a hint that gives nothing.
+##
+## KNOWN LIMIT, stated so nobody over-reads it: "not yet on your board" is
+## not "you can act on it right now". A clue can be unmet yet need another
+## fact first. This tier promises only that the clue's content is new to the
+## board, not that it is the next best move -- ranking by actionability is
+## the explanation engine's job (later phase), not this predicate's.
+##
+## `clues` is the caller's list of dicts carrying cells / search_terms /
+## disclosures (constellation_puzzle_widgets._all_final_clues_for_tabs()),
+## so this never reaches into the overlay's own clue cache.
+func clue_indices_with_something_to_give(clues: Array) -> Array[int]:
+    var out: Array[int] = []
+    for i in clues.size():
+        var c = clues[i]
+        if not (c is Dictionary):
+            continue
+        var cells: Array = c["cells"] if (c as Dictionary).get("cells") is Array else []
+        var terms: Array = c["search_terms"] if (c as Dictionary).get("search_terms") is Array else []
+        var discs: Array = c["disclosures"] if (c as Dictionary).get("disclosures") is Array else []
+        var frac: float = _clue_coverage_fraction(cells, terms, discs)
+        if frac != COVERAGE_UNMEASURABLE and frac < 1.0:
+            out.append(i)
+    return out
+
+
 func _record_is_unconfirmed_star_widget_stub(record_idx: int) -> bool:
     if record_idx < 0 or record_idx >= _match_records.size():
         return false

@@ -196,6 +196,13 @@ focus_mode = 0
 theme_override_font_sizes/font_size = 19
 text = "GUIDE"
 
+[node name="TabExplain" type="Button" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox/MarkerTabBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 19
+text = "EXPLAIN"
+
 [node name="MarkerTabBar2" type="HBoxContainer" parent="CenterContainer/PanelContainer/OuterMargin/OuterVBox/CarouselClip/Pane1StarMap/MapAndPickerHBox/MarkersVBox" unique_id=808034110]
 layout_mode = 2
 
