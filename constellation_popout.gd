@@ -434,27 +434,7 @@ func _make_slot_button(id: int) -> Button:
     return slot
 
 
-## TEMPORARY (2026-09-24): prints what the selector-button border effects are
-## being told to the editor Output, to confirm they now show in play.
-## Printed only when the readout CHANGES, so it does not flood the log.
-## Remove this const, _debug_lines, _debug_last, _show_debug_lines() and the
-## DEBUG_SLOT_FX blocks in _refresh_slots() once that is confirmed.
-const DEBUG_SLOT_FX: bool = true
-var _debug_lines: Array[String] = []
-var _debug_last: String = ""
-
-
-func _show_debug_lines() -> void:
-    var text: String = "[SLOT FX DEBUG] open=%s gc=%s buttons=%d vol_slots=%s\n%s" % [
-        str(_is_open), str(_gc != null), _slot_buttons.size(),
-        str(_gc.volition_slots) if _gc else "-", "\n".join(_debug_lines)]
-    if text != _debug_last:
-        _debug_last = text
-        print(text)
-
-
 func _refresh_slots() -> void:
-    _debug_lines.clear()
     if not _slot_grid or not _cd:
         return
     for def in _slot_defs():
@@ -462,8 +442,6 @@ func _refresh_slots() -> void:
         var slot: Button = _slot_buttons.get(id)
         if not slot:
             # Not built yet (refresh can run before the first _build_slots).
-            if DEBUG_SLOT_FX:
-                _debug_lines.append("S%d: NO BUTTON YET" % id)
             continue
         slot.text = _get_slot_label(id)
         var state: String = _cd.get_visual_state(id)
@@ -482,17 +460,6 @@ func _refresh_slots() -> void:
             fx.set_effects(
                 _gc.has_parent_volition_for_constellation(id),
                 _gc._assignment_int("constellation_%d_foci" % id, 0) > 0)
-        if DEBUG_SLOT_FX:
-            _debug_lines.append("S%d parent=%s foci=%d fx=%s %s gold=%s arc=%s" % [
-                id,
-                str(_gc.has_parent_volition_for_constellation(id)) if _gc else "no-gc",
-                _gc._assignment_int("constellation_%d_foci" % id, 0) if _gc else -1,
-                str(fx != null),
-                str(fx.size) if fx else "-",
-                str(fx.parent_gold) if fx else "-",
-                str(fx.foci_arc) if fx else "-"])
-    if DEBUG_SLOT_FX:
-        _show_debug_lines()
 
 
 ## True while a constellation's identity is still hidden from the player --
