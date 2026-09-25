@@ -768,7 +768,7 @@ func enqueue_tetrad_upgrade(variety_key: String = "") -> void:
         "Yes, that! We can stockpile and filter resources with it. Just tap on one of the Monad types and my Volition will be assigned to lock those out of Tetrad assembly. Then you can keep assembling Tetrads with the other two types until you have four or more of the locked type and none of the others, unlock that first type again, and make a Fundament Tetrad from them.||OR, IF I HAVE THOSE FOUR OR MORE AND LESS OF ONE OTHER, I CAN JUST LOCK THE OTHERS OUT INSTEAD OF USING THEM.",
         "Good thinking, Boss! Let's do it!||NOT QUITE YET, KALEB; THERE'S ONE MORE THING. WHAT'S THAT NEW 'VOLUMITIONS' OPTION UNDER THE READOUTS TO THE LEFT?",
         "Heh...right. Sorry about that - I'll try to not get so distracted. Remember when I told you I can use my Volitions to duplicate your actions? That's the selector and counter for that. Every Volition you assign to it increases your Summon, Compression, Assembly, and Creation actions by one.||AND THEREFORE YOU CALL THEM...'VOLUMITIONS'. \n\nEH, GOOD ENOUGH.",
-        "Gosh, thank you so much, Boss! I'm so glad you like it!||YOUR SARCASM FILLS ME WITH PRIDE. LET'S GET BACK TO WORK.",
+        "Gosh, thank you so much, Boss! I'm so glad you like it!||YOUR SARCASM FILLS ME WITH PRIDE AND SATISFACTION. LET'S GET BACK TO WORK.",
     ]
     if not dialogue_ended.is_connected(_on_tetrad_upgrade_ended):
         dialogue_ended.connect(_on_tetrad_upgrade_ended)
@@ -881,7 +881,7 @@ func enqueue_first_mote_dialogue() -> void:
     first_mote_dialogue_done = true
     var lines = [
         "Our first Mote! We're over the threshold - just nineteen more and we can Expand!||TWENTY MOTES PER EXPANSION? WHAT IF WE HAVE MORE?",
-        "No, twenty per Uonite - and right now, just one Uonite per Expansion. So any extra Motes would just be consumed, this time. But the more Expansions we've done, the more Uonites we can Create each Expansion. And if you have enough Sparks stocked up beforehand, the Stoctagon gets bigger afterwards, too! ||THAT MAKES SENSE. YOU DID SAY WE'RE GOING TO BE MAKING A [i]LOT[/i] OF RESOURCES, EVENTUALLY.",
+        "No, twenty per Uonite - and right now, just one Uonite per Expansion. So any extra Motes would just be consumed, this time. But the more Expansions we've done, the more Uonites we can Create each Expansion.||THAT MAKES SENSE. YOU DID SAY WE'RE GOING TO BE MAKING A [i]LOT[/i] OF RESOURCES, EVENTUALLY.",
         "We sure are! We've got a whole world to build here!||AND FLOATING AROUND IN SPACE CHATTING ISN'T GOING TO GET IT DONE FOR US, SO LET'S GET BACK TO PUTTING IN THE WORK."
     ]
     if not dialogue_ended.is_connected(_on_first_mote_dialogue_ended):
@@ -935,8 +935,8 @@ func enqueue_first_prestige() -> void:
         return
     first_prestige_done = true
     var lines = [
-        "Aaaaand we're back! Everything all right, Boss? You didn't get anything pinched off anywhere?||WHAT? NO, I DIDN'T GET ANYTHING PINCH- WAIT, THAT CAN HAPPEN!?",
-        "Mmmmaybe? I mean, it [i]is[/i] an infinitely big cosmos...anyways, never mind that; look! Our first Uonite! I'm so proud! \n\n...[i]sniff[/i]... \n\nIt's a great achievement, it's wonderful.||IT'S MORE HELP. PUT IT TO WORK.",
+        "Aaaaand we're back! Everything all right, Boss? You didn't get anything pinched off anywhere?||WHAT? NO, I DIDN'T GET ANYTHING PINCH- WAIT, THAT CAN [i]HAPPEN!?[/i]",
+        "Mmmmaybe? I mean, it [i]is[/i] an infinitely big cosmos...anyways, never mind that; look! Our first Uonite! I'm so proud! \n\n...[font_size=14][i]sniff[/i][/font_size]... \n\nIt's a great achievement, it's wonderful.||IT'S MORE HELP. PUT IT TO WORK.",
         "Hey, there's more to life than labor, you know! Can't you take a moment to just enjoy this? It's our first minion! We have a minion!||I AM ENJOYING IT. I'LL ENJOY IT EVEN MORE WHEN IT'S DOING SOMETHING PRODUCTIVE.",
         "Goodness me. Can't we...I don't know...oh! Wait! Can I name it! Let me name it! We'll call it...'Kevin'!||NO.",
         "How about 'Bob'?||EVEN MORE 'NO'.",
@@ -944,8 +944,9 @@ func enqueue_first_prestige() -> void:
         "Of course not! I categorically refuse and deny any such slanderous accusations with the strongest of emphasis!||GOOD.",
         "... \n\n'Otto'?||CLEVER, BUT STILL NO. HE'S ONE OF THEM TOO.",
         "Well, drat.||HMMM. \n\nALL RIGHT, 'DRAT' IS ACCEPTABLE.",
-        "Absolutely not! We're not naming our first minion 'Drat'! That's just cruel.||NO, THAT WAS JUST A JOKE, KALEB. GIVE ME A MINUTE, I'LL PICK SOMETHING BETTER.[name_entry]",
-        "Ehhh...good enough. Welcome to the business, [uonite_name]!||YES, WELCOME ABOARD. \n\nNOW LET'S GET YOU TO WORK.",
+        "[i]What!?[/i] No! Absolutely not! We're not naming our first minion 'Drat'. That's just cruel!||...\n\n GOTCHA.",
+        "...what?||THAT WAS JUST A JOKE, KALEB. GIVE ME A MOMENT, I'LL PICK SOMETHING BETTER.[name_entry]",
+        "Oh. That's...much better. Welcome to the business, [uonite_name]!||YES, WELCOME ABOARD. \n\nNOW LET'S GET YOU TO WORK.",
         "Aaaaand we're right back to the usual old Boss again.",
     ]
     if not dialogue_ended.is_connected(_on_first_prestige_ended):
@@ -1009,6 +1010,9 @@ func enqueue_open_constellation_panel() -> void:
     open_constellation_panel_done = true
     var lines = [
         "Um, it's still very basic...just a label at the top, and the counter controls for Foci and Volitions. Every one of those you assign will guide a Spark to the Constellation. \n\nThen Multi-buttons from the Allocation Wheel and IGNORE and ENDOW buttons for on/off.||GOOD. SIMPLE AND EFFICIENT.",
+        "It also seems the Constellation needs at least one Volition assigned to it to keep whatever's going on with it...er...going on? And to help me keep shunting Sparks over to it.||UNDERSTOOD.",
+        
+        
         "And the extra space is for more controls and information later. So, Boss? Will that do?||YES. WELL DONE, KALEB.",
         "Oh. Uh...thanks!||DON'T SOUND SO SURPRISED. INTERFACE DESIGN IS CLEARLY ONE OF YOUR APEX SKILLS.",
         "O...kay? \n\nBoss, are you feeling alright?||I'M FINE. YOUR ABILITY TO HANDLE POSITIVE FEEDBACK COULD USE SOME IMPROVEMENT, THOUGH.",
