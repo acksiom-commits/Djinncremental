@@ -913,9 +913,42 @@ func _copy_header_for_record(record_idx: int, section: String) -> String:
     if nm != "":
         who = nm
     else:
-        var s: Array = _deduction._seq_candidate_set_for(record_idx)
-        who = "Note %d" % int(s[0]) if s.size() == 1 else "Slot"
+        # A Sort:Pitch slot is identified by its pitch: "Slot" told the
+        # player nothing about WHICH slot a copied Sequence list came from.
+        var pitch_name: String = _pitch_name_for_record(record_idx)
+        if pitch_name != "":
+            who = pitch_name
+            # Non-singleton reminder: the same note is played by several
+            # stars, so this slot is one of N, not THE star with that note.
+            var n_stars: int = _deduction._pitch_star_count(pitch_name)
+            if n_stars > 1:
+                who += " (%d)" % n_stars
+        else:
+            var s: Array = _deduction._seq_candidate_set_for(record_idx)
+            who = "Note %d" % int(s[0]) if s.size() == 1 else "Slot"
     return "%s — %s" % [who, section]
+
+
+## The note name a record is pinned to: its Sort:Pitch slot label
+## ("C#5 A" — note name + slot letter, see
+## _get_or_create_match_record_for_pitch_slot) if it has one, else a single
+## confirmed pitch_states entry. "" when neither. Reads the record's own
+## fields through record_at, never ground truth.
+func _pitch_name_for_record(record_idx: int) -> String:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return ""
+    var r: Dictionary = _deduction.record_at(record_idx)
+    var label: String = str(r.get("pitch_slot_label", ""))
+    if label != "":
+        return label.rsplit(" ", true, 1)[0]
+    var states: Dictionary = r.get("pitch_states", {})
+    var confirmed: String = ""
+    for note in states:
+        if int(states[note]) == 1:
+            if confirmed != "":
+                return ""
+            confirmed = str(note)
+    return confirmed
 
 
 ## THE COPY MUST AGREE WITH THE ROWS THE PLAYER IS LOOKING AT, which means

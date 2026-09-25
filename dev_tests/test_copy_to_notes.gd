@@ -15,6 +15,7 @@ extends "res://dev_tests/test_base.gd"
 # while offering values the engine has already derived as impossible.
 
 const OverlayScene = preload("res://ConstellationStudyOverlay.tscn")
+const PuzzleScript = preload("res://constellation_logic_puzzle.gd")
 
 var fails: int = 0
 
@@ -122,6 +123,34 @@ func run() -> void:
 	print("    entry: %s" % e2)
 	ok(e2.begins_with("Note 3 — Color:"),
 		"an unidentified slot is headed by its sequence position (got '%s')" % e2)
+
+	print("\n=== a Sort:Pitch slot is headed by its PITCH, with a star count when shared ===")
+	# Reported 2026-09-24: copying Sequence from a Pitch tab slot headed the
+	# entry with a bare "Slot". Two stars share the first note here so both
+	# the plain (singleton) and parenthesized (shared) forms are exercised.
+	host._star_pitch_index = [0, 0, 2, 3, 4, 5]
+	var shared_note: String = PuzzleScript.note_name_for_freq(host._pitch_freqs[0])
+	var single_note: String = PuzzleScript.note_name_for_freq(host._pitch_freqs[2])
+	d._load_match_records([])
+	var shared_slot: int = d._get_or_create_match_record_for_pitch_slot(host._pitch_freqs[0], 0)
+	var single_slot: int = d._get_or_create_match_record_for_pitch_slot(host._pitch_freqs[2], 0)
+	d._full_propagation_refresh()
+	ok(d._pitch_star_count(shared_note) == 2 and d._pitch_star_count(single_note) == 1,
+		"precondition: first note is shared by 2 stars, third is a singleton")
+	d._note_entries.clear()
+	w._on_staff_copy(shared_slot, "sequence")
+	var es: String = str(d._note_entries[0]) if not d._note_entries.is_empty() else ""
+	print("    entry: %s" % es)
+	ok(es.begins_with("%s (2) — Sequence:" % shared_note),
+		"a shared-pitch slot is headed by its note plus the star count (got '%s')" % es)
+	ok(not es.begins_with("Slot"), "and no longer by a bare 'Slot'")
+	d._note_entries.clear()
+	w._on_staff_copy(single_slot, "sequence")
+	var e1: String = str(d._note_entries[0]) if not d._note_entries.is_empty() else ""
+	print("    entry: %s" % e1)
+	ok(e1.begins_with("%s — Sequence:" % single_note),
+		"a singleton-pitch slot is headed by the plain note, no count (got '%s')" % e1)
+	host._star_pitch_index = [0, 1, 2, 3, 4, 5]
 
 	print("\n=== everything ruled out still records a line ===")
 	d._load_match_records([])
