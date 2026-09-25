@@ -1162,28 +1162,21 @@ func _on_slot_name_protect(record_idx: int, star_name: String) -> void:
     _open_name_checklist_popup(record_idx, _host._name_checklist_popup.position)
 
 
-## The note a record's pitch is KNOWN to be, in a way the player has earned
-## — "" when it isn't. Three sources, none of which leak:
-##  - the record's own confirm or a derived confirm (_record_effective_state,
-##    the raw + derived tiers, deliberately WITHOUT the star_idx ground-truth
-##    shortcut), and
-##  - a Listen-revealed pitch (pitch_revealed): only then is reading the
-##    star-anchored effective state honest.
-## Reported 2026-09-24: a Sort:Name slot whose star had its pitch Listened
-## still read "Select Pitch", because the trigger looked only at the raw
-## pitch_states — which a Listen never writes — while the checklist popup it
-## opens (via _effective_pitch_state) already showed the note as confirmed.
-## Ungated _effective_pitch_state here would show every identity-confirmed
-## star's true pitch before the player had earned it.
+## The note a record's pitch is KNOWN to be, "" when it isn't. Reads
+## _effective_pitch_state — the same reader the pitch checklist popup this
+## button opens uses, so the two can no longer disagree. Reported
+## 2026-09-24: a Sort:Name slot whose star had its pitch Listened read
+## "Select Pitch" (the button looked only at raw pitch_states, which a
+## Listen never writes) while the popup showed the note confirmed. That
+## reader is itself gated on the pitch being earned (Listen, or a pitch
+## slot bound to the star), so an identified-but-un-Listened star stays
+## "Select Pitch" here and in the popup alike.
 func _earned_pitch_for_record(record_idx: int) -> String:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return ""
-    var revealed: bool = bool(_deduction.record_at(record_idx).get("pitch_revealed", false))
     for f in _host._pitch_freqs:
         var n: String = ConstellationLogicPuzzle.note_name_for_freq(f)
-        if _deduction._record_effective_state(record_idx, "pitch_states", "protected_pitch_notes", n) == 1:
-            return n
-        if revealed and _deduction._effective_pitch_state(record_idx, n, false) == 1:
+        if _deduction._effective_pitch_state(record_idx, n, false) == 1:
             return n
     return ""
 

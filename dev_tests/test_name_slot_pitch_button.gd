@@ -11,6 +11,7 @@ extends "res://dev_tests/test_base.gd"
 # could be read off the star (the leak an ungated effective read would open).
 
 const OverlayScene = preload("res://ConstellationStudyOverlay.tscn")
+const PuzzleScript = preload("res://constellation_logic_puzzle.gd")
 
 var fails: int = 0
 
@@ -59,6 +60,14 @@ func run() -> void:
 	var t2: String = w._make_pitch_checklist_trigger_button(f).text
 	ok(t2 == "Select Pitch",
 		"an un-earned pitch stays hidden even though the star is identified (got '%s')" % t2)
+	# The gate lives in the engine reader the checklist POPUP uses, so the
+	# popup can't show it either: nothing confirmed, and no other note ruled
+	# out on the strength of ground truth the player hasn't earned.
+	var states: Array = []
+	for fr in host._pitch_freqs:
+		states.append(d._effective_pitch_state(f, PuzzleScript.note_name_for_freq(fr), false))
+	ok(states.all(func(s): return s == 0),
+		"the popup's reader shows every note still open for an identified-but-un-Listened star (got %s)" % str(states))
 
 	print("\n=== a player's own raw confirm still shows ===")
 	d._load_match_records([])

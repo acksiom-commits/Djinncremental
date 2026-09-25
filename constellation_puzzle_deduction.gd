@@ -2561,7 +2561,18 @@ func _effective_pitch_state(record_idx: int, note_name: String, collapse_soft: b
     # would otherwise hard-eliminate everything else.
     var r: Dictionary = _match_records[record_idx]
     var star_idx: int = _effective_star_idx(record_idx)
-    if star_idx >= 0:
+    # GATED on pitch_revealed (Listen). Pitch is designed to be Listen-
+    # revealed, not read off a star the player has merely identified: the
+    # star popup shows a "PITCH" placeholder until that click
+    # (constellation_puzzle_widgets.gd), and _axis_confirms /
+    # _displayable_pitch_for_record already refuse un-Listened stubs. This
+    # tier used to skip the gate, so the pitch checklist popup showed an
+    # identity-confirmed but un-Listened star's true note as confirmed
+    # (and ruled out every other note) while the star's own popup still
+    # said "PITCH" -- and every deduction pass reading this state inherited
+    # the un-earned answer. Colour/Degree are "given" axes and keep their
+    # ungated star_idx tier.
+    if star_idx >= 0 and (bool(r.get("pitch_revealed", false)) or _pitch_earned_for_star(star_idx)):
         var true_note: String = _host._widgets._note_name_for_star(star_idx)
         return 1 if true_note == note_name else 2
 
@@ -4895,6 +4906,8 @@ func _clear_deduction_caches_all() -> void:
     _distinct_profile_cache.clear()
     _listened_stars_cache.clear()
     _listened_stars_built = false
+    _pitch_earned_stars_cache.clear()
+    _pitch_earned_stars_built = false
     # Axis domains depend only on the loaded puzzle, but clearing them here
     # keeps every derived cache on one lifetime — a domain surviving a
     # constellation switch would be a silent wrong answer.
@@ -5214,6 +5227,44 @@ func _player_knows_star_pitch(star: int) -> bool:
                 _listened_stars_cache[s] = true
         _listened_stars_built = true
     return _listened_stars_cache.has(star)
+
+
+## Stars whose pitch the player has EARNED through ANY record bound to them
+## — Listen (pitch_revealed) or a Sort:Pitch slot label — counting DERIVED
+## star bindings too (via _effective_star_idx), unlike
+## _player_knows_star_pitch above, which reads only each record's own
+## star_idx and is the narrower question candidate sets ask. This is what
+## lets a Sequence row co-identified with a Listened or pitch-slotted record
+## inherit that pitch, while a star that is merely IDENTIFIED (named,
+## bound) but never Listened does not read as known — see the gate in
+## _effective_pitch_state. Built once per refresh by a no-arg pass so the
+## per-call lookup stays O(1); invalidated with the other caches.
+var _pitch_earned_stars_cache: Dictionary = {}
+var _pitch_earned_stars_built: bool = false
+
+
+func _pitch_earned_for_star(star: int) -> bool:
+    if not _pitch_earned_stars_built:
+        _build_pitch_earned_stars()
+    return _pitch_earned_stars_cache.has(star)
+
+
+func _build_pitch_earned_stars() -> void:
+    _pitch_earned_stars_cache.clear()
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        var revealed: bool = bool(r.get("pitch_revealed", false))
+        if not (revealed or str(r.get("pitch_slot_label", "")) != ""):
+            continue
+        # An auto-created star-widget stub only counts once the player has
+        # Listened to it: its bare star_idx says the widget rendered, not
+        # that anything about the star was learned.
+        if _record_is_unconfirmed_star_widget_stub(i) and not revealed:
+            continue
+        var s: int = _effective_star_idx(i)
+        if s >= 0:
+            _pitch_earned_stars_cache[s] = true
+    _pitch_earned_stars_built = true
 
 
 ## Stars this record could still be. Intersects every constraint that maps
