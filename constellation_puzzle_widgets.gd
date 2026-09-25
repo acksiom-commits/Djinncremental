@@ -924,9 +924,42 @@ func _copy_header_for_record(record_idx: int, section: String) -> String:
             if n_stars > 1:
                 who += " (%d)" % n_stars
         else:
-            var s: Array = _deduction._seq_candidate_set_for(record_idx)
-            who = "Note %d" % int(s[0]) if s.size() == 1 else "Slot"
+            # Same for a Sort:Color slot ("Blue A"). Colours are never
+            # singletons here, so the count is effectively always shown.
+            var color_idx: int = _color_idx_for_record(record_idx)
+            if color_idx >= 0:
+                who = str(_host.COLOR_NAME_LABELS[color_idx])
+                var n_color: int = _deduction._color_star_count(color_idx)
+                if n_color > 1:
+                    who += " (%d)" % n_color
+            else:
+                var s: Array = _deduction._seq_candidate_set_for(record_idx)
+                who = "Note %d" % int(s[0]) if s.size() == 1 else "Slot"
     return "%s — %s" % [who, section]
+
+
+## Colour index a record is pinned to: its Sort:Color slot label ("Blue A"
+## — colour name + slot letter) if it has one, else a single confirmed
+## color_states entry. -1 when neither. Own fields via record_at only.
+func _color_idx_for_record(record_idx: int) -> int:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return -1
+    var r: Dictionary = _deduction.record_at(record_idx)
+    var label: String = str(r.get("color_slot_label", ""))
+    if label != "":
+        var cname: String = label.rsplit(" ", true, 1)[0]
+        for ci in _host.COLOR_NAME_LABELS.size():
+            if str(_host.COLOR_NAME_LABELS[ci]) == cname:
+                return ci
+        return -1
+    var states: Dictionary = r.get("color_states", {})
+    var confirmed: int = -1
+    for ci in states:
+        if int(states[ci]) == 1:
+            if confirmed != -1:
+                return -1
+            confirmed = int(ci)
+    return confirmed
 
 
 ## The note name a record is pinned to: its Sort:Pitch slot label

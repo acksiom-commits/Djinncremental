@@ -152,6 +152,21 @@ func run() -> void:
 		"a singleton-pitch slot is headed by the plain note, no count (got '%s')" % e1)
 	host._star_pitch_index = [0, 1, 2, 3, 4, 5]
 
+	print("\n=== a Sort:Color slot is headed by its COLOUR, with its star count ===")
+	d._load_match_records([])
+	var color_slot: int = d._get_or_create_match_record_for_color_slot(0, 0)
+	d._full_propagation_refresh()
+	var color_name: String = str(host.COLOR_NAME_LABELS[0])
+	var n_color: int = d._color_star_count(0)
+	ok(n_color == 2, "precondition: colour 0 is carried by 2 stars (got %d)" % n_color)
+	d._note_entries.clear()
+	w._on_staff_copy(color_slot, "sequence")
+	var ecl: String = str(d._note_entries[0]) if not d._note_entries.is_empty() else ""
+	print("    entry: %s" % ecl)
+	ok(ecl.begins_with("%s (2) — Sequence:" % color_name),
+		"a colour slot is headed by its colour plus star count (got '%s')" % ecl)
+	ok(not ecl.begins_with("Slot"), "and no longer by a bare 'Slot'")
+
 	print("\n=== everything ruled out still records a line ===")
 	d._load_match_records([])
 	var rec3: int = d._get_or_create_match_record_for_seq(4)
