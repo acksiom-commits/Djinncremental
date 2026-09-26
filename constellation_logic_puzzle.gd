@@ -7665,6 +7665,31 @@ func _final_redundancy_safety_net(name_revealed: Array) -> void:
     _recompute_name_revealed(name_revealed)
 
 
+## Critical-pass item 6, phase 0 -- ON by default since 2026-09-26; pinned by test_early_stop_equivalence.gd. Measured
+## 2026-09-26 on 18 unpruned puzzles: the uniqueness gate is first met at ~48%
+## of the main loop's output, and every clue after that adds zero Sequence/Name
+## propagation bits. With this on, the loop stops `early_stop_margin` clues
+## after the gate is first met (checked every EARLY_STOP_CHECK_INTERVAL
+## commits); name coverage, repair, pruning and the real gate all still run.
+var early_stop_enabled: bool = true
+var early_stop_margin: int = 20
+var early_stopped: bool = false
+const EARLY_STOP_CHECK_INTERVAL := 10
+var _early_stop_gate_at: int = -1
+var _early_stop_last_check: int = 0
+
+
+## Sequence unique AND Name closure unique on the clues committed so far
+## (mention coverage is ignored: _build_name_coverage_clues guarantees it
+## later). Inconclusive searches count as not met.
+func _gate_met_on(sequence_solver_facts: Array) -> bool:
+    var sols: Array = _solve(sequence_solver_facts, 2)
+    if sols.size() != 1 or _last_solve_inconclusive:
+        return false
+    var names: Array = _solve_name_closure(sols)
+    return names.size() == 1 and not _last_solve_inconclusive
+
+
 func _generate_clues_forms_attempt() -> Dictionary:
     _build_record_array()
     _build_matrix()
@@ -7672,6 +7697,9 @@ func _generate_clues_forms_attempt() -> Dictionary:
     _last_clue_nodes = []
     chosen_form_clues = []
     _form_fail_streak = {}
+    _early_stop_gate_at = -1
+    _early_stop_last_check = 0
+    early_stopped = false
     # Phase C — uniqueness verification inputs, accumulated alongside the
     # clue set itself (not persisted to cache; only needed transiently
     # here). sequence_solver_facts feeds the already-correct, already-
@@ -7817,6 +7845,15 @@ func _generate_clues_forms_attempt() -> Dictionary:
                 break
         if committed:
             stall_count = 0
+            if early_stop_enabled:
+                var n_now: int = chosen_form_clues.size()
+                if _early_stop_gate_at < 0 and n_now - _early_stop_last_check >= EARLY_STOP_CHECK_INTERVAL:
+                    _early_stop_last_check = n_now
+                    if _gate_met_on(sequence_solver_facts):
+                        _early_stop_gate_at = n_now
+                if _early_stop_gate_at >= 0 and n_now >= _early_stop_gate_at + early_stop_margin:
+                    early_stopped = true
+                    break
         elif not any_eligible_form:
             # Every Form is excluded or capped by the current difficulty
             # profile — there is nothing left this puzzle could ever draw,
