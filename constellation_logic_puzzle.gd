@@ -6426,6 +6426,23 @@ const DIFFICULTY_PROFILES := {
         # blunt instrument for it either way; tier_ratio steering or
         # prune-side preference are the unexplored levers.
         #
+        # RE-MEASURED 2026-09-26 with early-stop on (15 puzzles), capping the
+        # Forms that are the biggest pool but the smallest survivors -- Single
+        # Negation (34% of the pool, 3% survive pruning) and Dual Negation
+        # (12%, 6% survive):
+        #
+        #     caps              time    tier mix     Forms 2+3+24 shipped
+        #     none              37.9s   24/39/37%    31%
+        #     F2<=12            50.8s   21/38/41%    31%
+        #     F2<=12, F3<=12   106.9s   21/39/40%    28%
+        #     F2<=5,  F3<=5    143.4s   21/39/40%    27%
+        #
+        # Still a loss: generation got up to 3.8x slower and the shipped mix
+        # barely moved (tier 3 got WORSE). Early-stop did not remove the
+        # starvation effect above -- a capped Form leaves the loop with less it
+        # can commit, so the gate is met later or the stall budget runs out.
+        # Do not re-try caps on the negation Forms.
+        #
         # The old "easy" caps below predate pruning and are not a precedent
         # for a value here.
         "form_caps": {},
