@@ -7522,6 +7522,11 @@ func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
     return false
 
 
+## Form ids whose clues _prune_redundant_clues tries to remove FIRST (in this
+## order). Empty = the historical newest-first order, byte-for-byte.
+var prune_first_forms: Array = []
+
+
 func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array[Dictionary]:
     var seq_facts: Array[Dictionary] = _seq_facts_from_clues()
     var seq_sols: Array = _solve(seq_facts, 2)
@@ -7553,10 +7558,34 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
         cur_revealed.append(false)
     _recompute_name_revealed(cur_revealed)
     var since_yield: int = 0
-    var i: int = chosen_form_clues.size() - 1
-    while i >= protected_count:
-        _try_prune_clue_at(i, baseline, cur_revealed)
-        i -= 1
+    # Removal ORDER decides which minimal set survives. Default: newest
+    # first (see the header above). With prune_first_forms set, the listed
+    # Forms' clues are tried first, in that Form order (newest first within
+    # a Form), then everything else newest first -- so a Form named there
+    # is the first to give up its clues whenever another clue can carry the
+    # same information. Candidates are tracked by TEXT (unique per clue),
+    # since indices shift as clues are removed.
+    var order: Array[String] = []
+    for f in prune_first_forms:
+        var j: int = chosen_form_clues.size() - 1
+        while j >= protected_count:
+            if int(chosen_form_clues[j].get("form_id", -1)) == int(f):
+                order.append(str(chosen_form_clues[j].get("text", "")))
+            j -= 1
+    var k: int = chosen_form_clues.size() - 1
+    while k >= protected_count:
+        var t: String = str(chosen_form_clues[k].get("text", ""))
+        if not order.has(t):
+            order.append(t)
+        k -= 1
+    for text in order:
+        var i: int = -1
+        for idx in chosen_form_clues.size():
+            if str(chosen_form_clues[idx].get("text", "")) == text:
+                i = idx
+                break
+        if i >= protected_count:
+            _try_prune_clue_at(i, baseline, cur_revealed)
         # Same guard the main loop uses: _host is null under the headless
         # test runner, where suspending would be pointless and the whole
         # pass runs synchronously as before.
