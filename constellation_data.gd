@@ -1039,6 +1039,27 @@ var _stat_unlock_accum:     float      = 0.0
 func _ready() -> void:
     _game_context = get_node_or_null("/root/GameContext")
     _load_patron_constellations()
+    # Debug/editor runs only: announce bad AUTHORED content instead of letting
+    # the runtime's graceful fallbacks hide it. Silent when everything is clean;
+    # production behaviour is unchanged. See constellation_content_certifier.gd.
+    if OS.is_debug_build():
+        _report_content_certification()
+
+
+const _ContentCertifier = preload("res://constellation_content_certifier.gd")
+
+
+func _report_content_certification() -> void:
+    var report: Dictionary = _ContentCertifier.report_builtin(self)
+    for e in report["errors"]:
+        push_error("[content] constellation %d: %s -- %s" % [int(e["id"]), str(e["code"]), str(e["message"])])
+    for w in report["warnings"]:
+        push_warning("[content] constellation %d: %s -- %s" % [int(w["id"]), str(w["code"]), str(w["message"])])
+    for s in report["stale"]:
+        push_warning("[content] certifier allowlist is stale: %s" % str(s))
+    if not report["placeholders"].is_empty():
+        print("[content] %d known gap(s) in placeholder constellation(s) %s (not an error; see PLACEHOLDERS)"
+            % [report["placeholders"].size(), str(_ContentCertifier.PLACEHOLDERS.keys())])
 
 
 # ==================================================
