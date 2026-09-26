@@ -523,7 +523,7 @@ func _on_notes_add_pressed() -> void:
 # price is taken from the liquid Sparks pool as a placeholder source, not a
 # decision.
 # ============================================================================
-var hint_cost_sparks: Dictionary = {1: 0, 2: 0}
+var hint_cost_sparks: Dictionary = {1: 0, 2: 0, 3: 0, 4: 0}
 
 ## What the tab is currently showing. Session-only: a hint is a pointer at
 ## the board as it is NOW, and is re-validated every repaint below rather
@@ -532,8 +532,13 @@ const HINT_NONE: int = 0
 const HINT_WAITING: int = 1       # tier 1 answered: something is waiting
 const HINT_NOTHING: int = 2       # tier 1/2 answered: nothing has anything to give
 const HINT_POINTED: int = 3       # tier 2 answered: _hint_clue_index is set
+const HINT_DESCRIPTOR: int = 4    # tier 3 answered: _hint_step names what a clue bears on
+const HINT_STEP: int = 5          # tier 4 answered: _hint_step, spelled out
+const HINT_NO_STEP: int = 6       # tier 3/4 answered: nothing is actionable yet
 var _hint_state: int = HINT_NONE
 var _hint_clue_index: int = -1    # 0-based index into _all_final_clues_for_tabs()
+## The step tiers 3/4 are showing: an entry of _deduction.hint_next_steps().
+var _hint_step: Dictionary = {}
 var _hint_constellation_id: int = -1
 
 
@@ -579,6 +584,47 @@ func _on_hint_tier2_pressed() -> void:
         _hint_state = HINT_POINTED
         _hint_clue_index = candidates[0]
     request_markers_rebuild()
+
+
+## Tiers 3 and 4 share one lookup: the best step the player could take RIGHT
+## NOW (see ConstellationPuzzleDeduction.hint_next_steps). Tier 3 reveals only
+## which clue and which thing it bears on; tier 4 spells the step out.
+func _take_step_hint(tier: int, state: int) -> void:
+    if not _try_pay_hint(tier):
+        return
+    var steps: Array[Dictionary] = _deduction.hint_next_steps(_all_final_clues_for_tabs())
+    if steps.is_empty():
+        _hint_state = HINT_NO_STEP
+        _hint_step = {}
+    else:
+        _hint_state = state
+        _hint_step = steps[0]
+    _hint_clue_index = -1
+    request_markers_rebuild()
+
+
+func _on_hint_tier3_pressed() -> void:
+    _take_step_hint(3, HINT_DESCRIPTOR)
+
+
+func _on_hint_tier4_pressed() -> void:
+    _take_step_hint(4, HINT_STEP)
+
+
+## "Alpha cannot fire 3rd or 5th." / "Alpha must fire 4th." Ranks arrive
+## 0-based, the sentence is 1-based like every other place the player reads one.
+func _step_sentence(step: Dictionary) -> String:
+    var who: String = str(step.get("descriptor", "That star"))
+    if who.begins_with("the "):
+        who = who.substr(0, 1).to_upper() + who.substr(1)
+    var resolved: int = int(step.get("resolved_rank", -1))
+    if resolved >= 0:
+        return "With what you know, %s must fire %s." % [who, ConstellationLogicPuzzle._ordinal(resolved + 1)]
+    var parts: Array[String] = []
+    for r in (step.get("eliminated_ranks", []) as Array):
+        parts.append(ConstellationLogicPuzzle._ordinal(int(r) + 1))
+    var listed: String = parts[0] if parts.size() == 1 else ", ".join(parts.slice(0, parts.size() - 1)) + " or " + parts[parts.size() - 1]
+    return "With what you know, %s cannot fire %s." % [who, listed]
 
 
 func _make_hint_button(text: String, tier: int, handler: Callable) -> Button:
@@ -646,6 +692,7 @@ func _populate_hint_markers() -> void:
         _hint_constellation_id = _host._constellation_id
         _hint_state = HINT_NONE
         _hint_clue_index = -1
+        _hint_step = {}
 
     _host._markers_content.add_child(_make_hint_message(
         "A hint tells you where to look, never what to conclude."))
@@ -653,9 +700,43 @@ func _populate_hint_markers() -> void:
         "Is anything waiting?", 1, _on_hint_tier1_pressed))
     _host._markers_content.add_child(_make_hint_button(
         "Point me to a clue", 2, _on_hint_tier2_pressed))
+    _host._markers_content.add_child(_make_hint_button(
+        "What does it bear on?", 3, _on_hint_tier3_pressed))
+    _host._markers_content.add_child(_make_hint_button(
+        "Show me the step", 4, _on_hint_tier4_pressed))
 
     var clues: Array[Dictionary] = _all_final_clues_for_tabs()
     match _hint_state:
+        HINT_NO_STEP:
+            _host._markers_content.add_child(_make_hint_message(
+                "Nothing you can act on yet. Record what the clues say first, then ask again."))
+        HINT_DESCRIPTOR, HINT_STEP:
+            # Same re-validation as tier 2: a step the player has since taken
+            # (or that their new notes have changed) must not be shown as if
+            # it were still on offer.
+            var still: Dictionary = {}
+            for cand in _deduction.hint_next_steps(clues):
+                if int(cand["clue_index"]) == int(_hint_step.get("clue_index", -2)) \
+                        and int(cand["star"]) == int(_hint_step.get("star", -2)):
+                    still = cand
+                    break
+            if still.is_empty():
+                _hint_state = HINT_NONE
+                _hint_step = {}
+                _host._markers_content.add_child(_make_hint_message(
+                    "That step is no longer available. Ask again for another."))
+            else:
+                _hint_step = still
+                var sclue: Dictionary = clues[int(still["clue_index"])]
+                _host._markers_content.add_child(_make_clue_label(
+                    str(sclue.get("text", "")),
+                    _clue_state_color(sclue, _deduction.player_marked_terms()),
+                    int(still["clue_index"]) + 1))
+                if _hint_state == HINT_DESCRIPTOR:
+                    _host._markers_content.add_child(_make_hint_message(
+                        "You can act on this clue now. It bears on %s." % str(still["descriptor"])))
+                else:
+                    _host._markers_content.add_child(_make_hint_message(_step_sentence(still)))
         HINT_WAITING:
             _host._markers_content.add_child(_make_hint_message(
                 "Yes — at least one clue still has something to give."))

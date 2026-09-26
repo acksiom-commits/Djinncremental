@@ -5145,6 +5145,111 @@ func clue_indices_with_something_to_give(clues: Array) -> Array[int]:
     return out
 
 
+const _NextStepFinder = preload("res://constellation_next_step_finder.gd")
+
+## Solver instance used ONLY for constraint propagation (never backtracking).
+## Built lazily and rebuilt if the star count changes.
+var _hint_solver = null
+
+
+func _hint_solver_for(star_count: int):
+    if _hint_solver == null or int(_hint_solver.star_count) != star_count:
+        _hint_solver = ConstellationLogicPuzzle.new()
+        _hint_solver.star_count = star_count
+    return _hint_solver
+
+
+## The player's Sequence board as the solver's own grid: grid[star][rank] is
+## true while the player's notes still allow that star at that rank. UNKNOWN
+## (no record identifies the star) is all-true -- never "no positions" -- the
+## same contract _player_positions_for_star documents. Reads the player's
+## records only, never ground truth.
+func _player_sequence_grid() -> Array:
+    var n: int = _host._star_count
+    var grid: Array = []
+    for s in n:
+        var row: Array = []
+        row.resize(n)
+        var known: Array = _player_positions_for_star(s)
+        for r in n:
+            row[r] = known.is_empty() or known.has(r + 1)
+        grid.append(row)
+    return grid
+
+
+## Descriptor categories the CLUE ITSELF used for `star` -- the only ways a
+## hint may name a star. _describe_descriptor(SEQUENCE, star) would read
+## "the star that fires 3rd" from ground truth, which is a spoiler unless the
+## clue already said it, so a star with no descriptor in the clue's own
+## search_terms is simply not nameable. Name first: it is the least
+## ambiguous thing to point at.
+func _clue_descriptor_for_star(clue: Dictionary, star: int) -> String:
+    var terms: Array = clue["search_terms"] if clue.get("search_terms") is Array else []
+    for cat in [ConstellationLogicPuzzle.Category.NAME, ConstellationLogicPuzzle.Category.COLOR,
+            ConstellationLogicPuzzle.Category.PITCH, ConstellationLogicPuzzle.Category.SEQUENCE]:
+        var t: String = _descriptor_term(int(cat), star)
+        if t != "" and terms.has(t):
+            return _describe_descriptor(int(cat), star)
+    return ""
+
+
+## HINT SUPPORT (tiers 3 and 4). Every clue that gives the player a step RIGHT
+## NOW, best first. A step is: this clue, propagated on top of the player's own
+## board, rules out at least one rank for a star the clue itself names. Unlike
+## clue_indices_with_something_to_give this IS actionability -- see the finder's
+## header. Sequence axis only.
+##
+## Each entry: {"clue_index", "star", "descriptor", "eliminated_ranks" (0-based),
+## "resolved_rank" (0-based, or -1)}. Only stars nameable from the clue's own
+## text are reported, so a hint cannot name anything the clue does not.
+## Ranked: a step that pins a star to one position first, then the one that
+## rules out the most, then clue order.
+func hint_next_steps(clues: Array) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    var solver = _hint_solver_for(_host._star_count)
+    var grid: Array = _player_sequence_grid()
+    for ci in clue_indices_with_something_to_give(clues):
+        var clue: Dictionary = clues[ci]
+        var facts: Array = []
+        for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
+            if f is Dictionary and not ConstellationLogicPuzzle.VALUE_FACT_KINDS.has(str((f as Dictionary).get("kind", ""))):
+                facts.append(f)
+        var step: Dictionary = _NextStepFinder.step_for_facts(solver, grid, facts)
+        if not bool(step["consistent"]) or (step["eliminated"] as Array).is_empty():
+            continue
+        var by_star: Dictionary = {}
+        for cell in step["eliminated"]:
+            var s: int = int(cell[0])
+            if not by_star.has(s):
+                by_star[s] = []
+            (by_star[s] as Array).append(int(cell[1]))
+        var resolved: Dictionary = {}
+        for cell2 in step["resolved"]:
+            resolved[int(cell2[0])] = int(cell2[1])
+        for s2 in by_star:
+            var label: String = _clue_descriptor_for_star(clue, int(s2))
+            if label == "":
+                continue
+            out.append({
+                "clue_index": int(ci),
+                "star": int(s2),
+                "descriptor": label,
+                "eliminated_ranks": by_star[s2],
+                "resolved_rank": int(resolved.get(int(s2), -1)),
+            })
+    out.sort_custom(func(a, b):
+        var ra: bool = int(a["resolved_rank"]) >= 0
+        var rb: bool = int(b["resolved_rank"]) >= 0
+        if ra != rb:
+            return ra
+        var na: int = (a["eliminated_ranks"] as Array).size()
+        var nb: int = (b["eliminated_ranks"] as Array).size()
+        if na != nb:
+            return na > nb
+        return int(a["clue_index"]) < int(b["clue_index"]))
+    return out
+
+
 func _record_is_unconfirmed_star_widget_stub(record_idx: int) -> bool:
     if record_idx < 0 or record_idx >= _match_records.size():
         return false
