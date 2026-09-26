@@ -67,12 +67,16 @@ extends RefCounted
 #     - NAME closure: _solve_name_closure runs the same _solve over the Name
 #       facts _build_name_clues derives, restricted by the one Sequence
 #       solution. It reads name_group / name_group_neg / name_precedes_group /
-#       name_follows_group / name_extreme_in_group / name_same_group, the
-#       position-predicate kinds (name_rank_range / name_nbr_count /
-#       name_nbr_extreme), either-or and distance_hop.
-#       NOT read by it: values_same (Equality Pair) and values_all_different
-#       (Mutual Exclusion). Those two are scored only by the player-side
-#       deduction engine.
+#       name_follows_group / name_extreme_in_group / name_same_group /
+#       name_different_group, the position-predicate kinds (name_rank_range /
+#       name_nbr_count / name_nbr_extreme), either-or and distance_hop.
+#       The RAW values_same (Equality Pair) and values_all_different (Mutual
+#       Exclusion) kinds are still never read directly, but since 2026-09-26
+#       their content is: every NAME participant gets a companion
+#       name_group / name_group_neg / name_same_group / name_different_group
+#       fact emitted alongside the raw one (see _name_same_axis_facts and
+#       _mutex_name_value_facts), and THOSE are what the closure reads. Both
+#       raw kinds are also scored by the player-side deduction engine.
 #   There is no Pitch solver (removed 2026-07-25) and Category.POSITION exists
 #   as an enum name only, for the lint and future work; there is no matrix
 #   position axis.
@@ -2940,6 +2944,20 @@ func _validate_name_same_group_fact(f: Dictionary) -> String:
     return ""
 
 
+## Mutual Exclusion's both-NAME case: two names, still-unresolved positions
+## for the closure, asserted to differ on `cat` (always Color/Pitch — see
+## _mutex_name_value_facts). Mirror of _validate_name_same_group_fact.
+func _validate_name_different_group_fact(f: Dictionary) -> String:
+    var a: int = int(f["name_star_a"])
+    var b: int = int(f["name_star_b"])
+    var cat: int = int(f["cat"])
+    var ka: int = _name_group_key(cat, a)
+    var kb: int = _name_group_key(cat, b)
+    if ka == kb:
+        return "name_different_group name_star_a=%d name_star_b=%d cat=%d claims different group but true group_keys are BOTH %d" % [a, b, cat, ka]
+    return ""
+
+
 ## Same-group EQUIVALENCE propagation — the both-sides-NAME case
 ## _name_same_axis_facts defers. name_star_a's and name_star_b's positions
 ## must share the same raw `cat` value, but WHICH value is unknown (no
@@ -2993,6 +3011,63 @@ func _propagate_same_group(possible: Array, pairs: Array) -> bool:
                 any_left = true
                 break
         if not any_left:
+            return false
+    return true
+
+
+## Mirror of _propagate_same_group for Mutual Exclusion's both-NAME case:
+## two names must resolve to positions with DIFFERENT raw `cat` values,
+## rather than the same one. Same reachability-pruning shape, negated: a
+## candidate position ra is impossible for name_star `a` only when EVERY
+## position still possible for `b` shares ra's group (b would then have no
+## way left to differ from a) -- not merely when none does, as the same-
+## group case requires. Same soundness argument and same limitation: this
+## is pairwise, not full N-ary alldifferent arc-consistency, so a group of
+## 3+ mutually-NAME participants gets each PAIR checked independently,
+## which can under-close a Hall-set violation spanning three or more names
+## at once. Under-closing is the safe direction for a rejection gate (see
+## _propagate_same_group's own header) -- it can only under-claim
+## uniqueness, never over-claim it.
+func _propagate_different_group(possible: Array, pairs: Array) -> bool:
+    var changed: bool = true
+    while changed:
+        changed = false
+        for pair in pairs:
+            var pd: Dictionary = pair
+            var a: int = int(pd["a"])
+            var b: int = int(pd["b"])
+            var cat: int = int(pd["cat"])
+            for ra in star_count:
+                if not possible[a][ra]:
+                    continue
+                var ra_group: int = _name_group_key(cat, ra)
+                var b_has_alt: bool = false
+                for rb in star_count:
+                    if possible[b][rb] and _name_group_key(cat, rb) != ra_group:
+                        b_has_alt = true
+                        break
+                if not b_has_alt:
+                    possible[a][ra] = false
+                    changed = true
+            for rb2 in star_count:
+                if not possible[b][rb2]:
+                    continue
+                var rb_group: int = _name_group_key(cat, rb2)
+                var a_has_alt: bool = false
+                for ra2 in star_count:
+                    if possible[a][ra2] and _name_group_key(cat, ra2) != rb_group:
+                        a_has_alt = true
+                        break
+                if not a_has_alt:
+                    possible[b][rb2] = false
+                    changed = true
+    for i2 in star_count:
+        var any_left2: bool = false
+        for r2 in star_count:
+            if possible[i2][r2]:
+                any_left2 = true
+                break
+        if not any_left2:
             return false
     return true
 
@@ -4359,6 +4434,58 @@ func _mutex_weighted_pick_remove(pool: Array, weights: Array):
     return picked_last
 
 
+## Mutual Exclusion's Colour/Pitch instances name-close the same way Equality
+## Pair already does (_name_same_axis_facts) -- ADDED 2026-09-26, closing the
+## gap both critical-pass reviews independently flagged. A participant's raw
+## `axis` value is ALWAYS ground truth, known regardless of what identifies
+## it (Sequence resolves through seq_sol; the other of Colour/Pitch is
+## observable and already known; only a NAME participant's true POSITION is
+## the closure's own unknown). So for each pair with at least one NAME
+## participant:
+##   - one NAME, one non-NAME (a concrete known star): the non-NAME side's
+##     group_key is fully known, so it EXCLUDES that group from the NAME
+##     side's domain -- exactly name_group_neg, no new machinery.
+##   - both NAME: neither position is known yet, so this needs the pairwise
+##     "must differ" propagation _propagate_different_group adds.
+## Deduplicated per (name_star, excluded group) and per unordered NAME pair,
+## since a clue's participant list is not itself deduplicated by axis value.
+func _mutex_name_value_facts(participants: Array, axis: int) -> Array:
+    if not mutex_name_facts_enabled:
+        return []   # A/B measurement only -- always true in normal play.
+    var facts: Array = []
+    var neg_seen: Dictionary = {}
+    var diff_seen: Dictionary = {}
+    for i in participants.size():
+        var pi: Dictionary = participants[i]
+        if int(pi["id_cat"]) != Category.NAME:
+            continue
+        var name_star_i: int = int(pi["star"])
+        for j in participants.size():
+            if j == i:
+                continue
+            var pj: Dictionary = participants[j]
+            if int(pj["id_cat"]) == Category.NAME:
+                if j < i:
+                    continue   # unordered pair -- emit once, when i < j
+                var dk: String = "%d:%d" % [name_star_i, int(pj["star"])]
+                if diff_seen.has(dk):
+                    continue
+                diff_seen[dk] = true
+                facts.append({
+                    "kind": "name_different_group",
+                    "name_star_a": name_star_i, "name_star_b": int(pj["star"]),
+                    "cat": axis,
+                })
+            else:
+                var gk: int = _name_group_key(axis, int(pj["star"]))
+                var nk: String = "%d:%d" % [name_star_i, gk]
+                if neg_seen.has(nk):
+                    continue
+                neg_seen[nk] = true
+                facts.append({"kind": "name_group_neg", "name_star": name_star_i, "cat": axis, "group_key": gk})
+    return facts
+
+
 func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
     # The heterogeneous distinctness list is the same Form's identity
     # variant, built without an axis so it can span every characteristic —
@@ -4535,6 +4662,10 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
         for p2 in participants:
             mx_stars.append(int(p2["star"]))
         value_facts.append({"kind": "values_all_different", "cat": axis, "stars": mx_stars})
+        # Give the Name closure whatever THIS clue implies about a NAME
+        # participant's position -- see _mutex_name_value_facts's own
+        # header for what it emits and why it's sound.
+        value_facts.append_array(_mutex_name_value_facts(participants, axis))
     else:
         # Name/Sequence: nothing beyond "different stars" to disclose — the
         # cross-participant False cells above already carry it all.
@@ -6711,6 +6842,10 @@ var repair_clues_added: int = 0
 ## and without it); generation always runs with it on.
 var repair_enabled: bool = true
 
+## Off only to MEASURE what Mutual Exclusion's Name-closure content buys
+## (see _mutex_name_value_facts); generation always runs with it on.
+var mutex_name_facts_enabled: bool = true
+
 ## DISAMBIGUATING-CLUE FALLBACK. When the clue set leaves the puzzle with more
 ## than one solution, add the clue that rules the wrong one out, instead of
 ## throwing the whole attempt away and redrawing.
@@ -7014,18 +7149,26 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
 const VALUE_FACT_KINDS: Array = [
     "name_group", "name_group_neg", "name_precedes_group",
     "name_follows_group", "name_extreme_in_group", "name_same_group",
+    # The both-NAME analogue of name_same_group for Mutual Exclusion's
+    # "different on this axis" content — see _propagate_different_group.
+    "name_different_group",
     "distance_hop",
     # Position-predicate kinds (Range/Count/Extreme) — see
     # NAME_POSITION_PRED_KINDS, kept in sync with it by
     # test_value_fact_kinds_complete.
     "name_rank_range", "name_nbr_count", "name_nbr_extreme",
     # Equality Pair's "these two stars share an axis value" and Mutual
-    # Exclusion's "these stars all differ on this axis". NEITHER is read by
-    # the Sequence solver or the name closure — but both are live in the
-    # DEDUCTION ENGINE's SCOREABLE_DISCLOSURE_KINDS, where they drive
-    # player-facing clue coverage. (I first recorded values_same as
-    # consumed by nothing, having grepped only this file. It is consumed;
-    # the consumer lives in constellation_puzzle_deduction.gd.)
+    # Exclusion's "these stars all differ on this axis". The RAW kinds are
+    # still never read by the Sequence solver or the Name closure — but
+    # since 2026-09-26 (see the Name closure header) their CONTENT is: every
+    # participant identified by NAME gets a companion name_group_neg (vs. a
+    # non-NAME participant) or name_different_group (vs. another NAME
+    # participant) fact alongside the raw one, and THOSE are what the
+    # closure reads. Both raw kinds are also live in the DEDUCTION ENGINE's
+    # SCOREABLE_DISCLOSURE_KINDS, where they drive player-facing clue
+    # coverage. (I first recorded values_same as consumed by nothing,
+    # having grepped only this file. It is consumed; the consumer lives in
+    # constellation_puzzle_deduction.gd.)
     #
     # They belong here because without it _seq_facts_from_clues hands them
     # to the Sequence solver, which silently ignores unknown kinds — benign
@@ -7605,11 +7748,12 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # September: it now reads name_group / name_group_neg, precedes / follows /
     # extreme-in-group, same_group, the position predicates (Range, Count,
     # Extreme), either-or and distance_hop (see the header's THE SOLVER).
-    # The two kinds it is KNOWN not to read are values_same (Equality Pair)
-    # and values_all_different (Mutual Exclusion). Whether every other Form's
-    # facts are fully covered has not been audited. Until the closure is
-    # trusted to cover everything, name_unique (mention coverage) stays a
-    # separate, load-bearing gate condition.
+    # Equality Pair's and Mutual Exclusion's Name-relevant content (raw kinds
+    # values_same / values_all_different) is now covered too, as of
+    # 2026-09-26 -- see _mutex_name_value_facts and the header's THE SOLVER.
+    # Whether every other Form's facts are fully covered has not been
+    # audited. Until the closure is trusted to cover everything, name_unique
+    # (mention coverage) stays a separate, load-bearing gate condition.
     var name_unique_closure: bool = false
     var name_solutions_count: int = -1   # -1 = not attempted (seq not unique yet)
     var name_inconclusive: bool = false
@@ -7681,6 +7825,7 @@ func _build_name_clues(seq_solutions: Array, source_clues = null) -> Dictionary:
         rank_to_star[int(seq_sol[st])] = st
     var name_clues: Array[Dictionary] = []
     var same_group_pairs: Array = []
+    var diff_group_pairs: Array = []
     var clues_to_scan: Array = chosen_form_clues if source_clues == null else (source_clues as Array)
     for clue in clues_to_scan:
         for f in (clue.get("disclosures", []) as Array):
@@ -7862,23 +8007,37 @@ func _build_name_clues(seq_solutions: Array, source_clues = null) -> Dictionary:
                 same_group_pairs.append({
                     "a": int(fd["name_star_a"]), "b": int(fd["name_star_b"]), "cat": int(fd["cat"]),
                 })
+            elif kind == "name_different_group":
+                var violation6: String = _validate_name_different_group_fact(fd)
+                if violation6 != "":
+                    push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NAME-DIFFERENT-GROUP FACT — %s" % [constellation_id, violation6])
+                diff_group_pairs.append({
+                    "a": int(fd["name_star_a"]), "b": int(fd["name_star_b"]), "cat": int(fd["cat"]),
+                })
 
-    # Same-group pairs (Equality Pair's both-sides-NAME case) can't be
-    # expressed as a per-row value_in_set/value_out_set restriction — see
-    # _propagate_same_group's header. Pre-narrow a grid with the ordinary
-    # per-row facts applied first (so same-group pruning benefits from
-    # whatever they already established), THEN run same-group to a
-    # fixpoint, and hand the result to _solve() as rank_restriction — its
-    # OWN clue application/propagation/backtracking then runs as normal on
-    # top, name_clues passed again is a harmless no-op re-narrowing.
-    if same_group_pairs.is_empty():
+    # Same/different-group pairs (Equality Pair's and Mutual Exclusion's
+    # both-sides-NAME cases) can't be expressed as a per-row
+    # value_in_set/value_out_set restriction — see _propagate_same_group's
+    # and _propagate_different_group's headers. Pre-narrow a grid with the
+    # ordinary per-row facts applied first (so both benefit from whatever
+    # those already established), THEN run each to its own fixpoint (in
+    # sequence, not jointly interleaved — sound either way per both
+    # functions' own "under-closing is the safe direction" argument, just
+    # possibly narrower than a joint fixpoint would manage; raise this if
+    # that gap ever matters in practice), and hand the result to _solve() as
+    # rank_restriction — its OWN clue application/propagation/backtracking
+    # then runs as normal on top, name_clues passed again is a harmless
+    # no-op re-narrowing.
+    if same_group_pairs.is_empty() and diff_group_pairs.is_empty():
         return {"name_clues": name_clues, "rank_restriction": [], "ok": true}
     var pre: Array = _init_possibility_grid()
     if not _apply_range_clues(pre, name_clues):
         return empty_result
     if not _apply_negative_clues(pre, name_clues):
         return empty_result
-    if not _propagate_same_group(pre, same_group_pairs):
+    if not same_group_pairs.is_empty() and not _propagate_same_group(pre, same_group_pairs):
+        return empty_result
+    if not diff_group_pairs.is_empty() and not _propagate_different_group(pre, diff_group_pairs):
         return empty_result
     return {"name_clues": name_clues, "rank_restriction": pre, "ok": true}
 
