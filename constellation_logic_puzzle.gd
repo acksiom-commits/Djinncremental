@@ -1185,6 +1185,17 @@ func _forward_check(var_idx: int, val: int, domains: Array,
 ## needing K=4, not a hypothetical.
 const MAX_NAKED_SUBSET_K: int = 5
 
+## _resolve_locked_group calls since the counter was last zeroed, and an
+## optional cap on them. Resolving a locked group re-runs _propagate_only once
+## per internal permutation, and each of THOSE finds and resolves the other
+## groups again, so the cost is roughly a product over independent groups: a
+## sparse grid took seconds per propagation where the full clue set takes
+## milliseconds. -1 (the default) = unlimited, i.e. every generation and
+## uniqueness proof behaves exactly as before. Only the step EXPLAINER sets a
+## cap, and only for a search that treats "not forced" as a safe answer.
+var resolve_calls: int = 0
+var resolve_call_budget: int = -1
+
 ## Bounded separately from MAX_NAKED_SUBSET_K (factorial, not combinatorial,
 ## growth) — resolving WITHIN a found group checks K! permutations, which
 ## a K this small keeps trivial (6! = 720) while K=8+ would not be.
@@ -1306,6 +1317,12 @@ func _naked_k_subset_search(grid: Array, domains: Array, candidates: Array, k: i
 func _resolve_locked_group(grid: Array, group: Array, values: Array,
         clues: Array[Dictionary]) -> bool:
     if group.size() > MAX_LOCKED_GROUP_RESOLVE_K:
+        return false
+    resolve_calls += 1
+    if resolve_call_budget >= 0 and resolve_calls > resolve_call_budget:
+        # Budget spent: skip the resolution. Sound (a skipped elimination can
+        # only leave the grid LOOSER), so a caller reading "forced" from this
+        # propagation is still right; it just may not reach every conclusion.
         return false
     var surviving: Array = []
     for perm in _permutations(values):
@@ -8408,6 +8425,26 @@ func _name_facts_from_clues_tagged(clues: Array) -> Array[Dictionary]:
 ## deletion search over the sufficient direction is sound.
 func _mus_minimal_support(pool: Array, still_forces: Callable) -> Array:
     var s: Array = pool.duplicate()
+    # Chunked deletion first: try dropping whole blocks (half the set, then a
+    # quarter, ...) walking from the end, so an irrelevant majority goes in a
+    # handful of trials instead of one per fact. Supports here are tiny (Name
+    # averages under one fact) against pools of 30-150, and each trial costs a
+    # full propagation, so this is most of the saving on large puzzles.
+    # Blocks that cannot go are kept; the one-by-one pass below then
+    # guarantees the result is irredundant, exactly as before -- only WHICH
+    # minimal set is found can differ.
+    @warning_ignore("integer_division")
+    var chunk: int = s.size() / 2
+    while chunk >= 2:
+        var pos: int = s.size()
+        while pos > 0:
+            var lo: int = maxi(0, pos - chunk)
+            var trial: Array = s.slice(0, lo) + s.slice(pos)
+            if still_forces.call(trial):
+                s = trial
+            pos = lo
+        @warning_ignore("integer_division")
+        chunk /= 2
     var i: int = s.size() - 1
     while i >= 0:
         var removed = s[i]
@@ -8418,6 +8455,19 @@ func _mus_minimal_support(pool: Array, still_forces: Callable) -> Array:
     return s
 
 
+## Cap on locked-group resolutions per propagation inside the explainer's
+## still-forces checks. Measured on the reference Name search: 233 of 2158
+## trials needed more than 100 resolutions, and the ones that needed ~1300 took
+## ~2.5 s each (58 trials over 1 s, nearly all of the ~330 s); 1639 needed none.
+## Budgets of 3, 10 and 30 all produced IDENTICAL explanations (total cost
+## 5484, 44 free steps, 0 hard steps) at 84 s, 97 s and 108 s, and 100 still
+## took ~200 s: the cap costs nothing in quality and a smaller one is faster.
+## Hitting the cap answers "not forced", which the search reads as "keep this
+## fact" -- a larger support, never a wrong one. A step that needs a thousand
+## nested group resolutions is not one a player can follow anyway.
+var mus_resolve_call_budget: int = 10
+
+
 ## Sequence-axis still-forces check: does propagating ONLY `atoms` still
 ## pin possible[star][rank] to `target_value`? An inconsistent candidate
 ## set proves nothing about a real target, so it counts as "no" — a
@@ -8426,22 +8476,152 @@ func _seq_target_forced(atoms: Array, star: int, rank: int, target_value: bool) 
     var typed_atoms: Array[Dictionary] = []
     for a in atoms:
         typed_atoms.append(a)
+    var saved_budget: int = resolve_call_budget
+    resolve_calls = 0
+    resolve_call_budget = mus_resolve_call_budget
     var prop: Dictionary = _propagate_only(typed_atoms)
+    resolve_call_budget = saved_budget
     if not bool(prop["consistent"]):
         return false
     var possible: Array = prop["possible"]
     return bool(possible[star][rank]) == target_value
 
 
+## _seq_target_forced for a list that is ALL `ordinal_neg` facts -- which is
+## all `explained` ever holds -- applied as a rank-restriction MASK rather than
+## as individual facts. Same answer (checked against _seq_target_forced on 360
+## random fact subsets: 0 differ, dev_tests/test_mus_explainer_speed.gd), and
+## it is what _propagate_only's rank_restriction exists for. Used by the free-
+## step search, which re-runs this once per fact removed from a set that grows
+## to ~190.
+func _seq_target_forced_via_mask(atoms: Array, star: int, rank: int, target_value: bool) -> bool:
+    var grid: Array = _init_possibility_grid()
+    for a in atoms:
+        grid[int((a as Dictionary)["s"])][int((a as Dictionary)["r"])] = false
+    if not _alldiff_eliminate(grid):
+        return false
+    return bool(grid[star][rank]) == target_value
+
+
+## Human-style elimination over a star x rank grid that is a permutation:
+## a star with one rank left claims it, a rank with one star left claims that
+## star, and pairs/triples of stars confined to the same 2-3 ranks use them up.
+## Runs to a fixpoint; returns false on a contradiction (a star with no rank
+## left, or a rank with no star).
+##
+## This is what the explainer's FREE-STEP search uses instead of
+## _propagate_only. That routine also resolves locked groups by re-running
+## itself once per internal permutation, and a mid-density grid holds many
+## independent groups, so each trial re-finds the others: measured 1.3-1.5 s
+## per trial at ~110 facts, 327 s of the 366 s for a 15-star puzzle. It is the
+## right tool for the uniqueness proofs (it is stronger) and the wrong one
+## for "is this cell forced by elimination alone", where a step a player can
+## follow is the whole point. Weaker means fewer free steps, never a wrong one:
+## every elimination here is sound for a permutation.
+func _alldiff_eliminate(grid: Array) -> bool:
+    var n: int = star_count
+    var changed: bool = true
+    while changed:
+        changed = false
+        for s in n:
+            var left: Array = []
+            for r in n:
+                if bool(grid[s][r]):
+                    left.append(r)
+            if left.is_empty():
+                return false
+            if left.size() == 1:
+                var only_r: int = int(left[0])
+                for s2 in n:
+                    if s2 != s and bool(grid[s2][only_r]):
+                        grid[s2][only_r] = false
+                        changed = true
+        for r in n:
+            var owners: Array = []
+            for s in n:
+                if bool(grid[s][r]):
+                    owners.append(s)
+            if owners.is_empty():
+                return false
+            if owners.size() == 1:
+                var only_s: int = int(owners[0])
+                for r2 in n:
+                    if r2 != r and bool(grid[only_s][r2]):
+                        grid[only_s][r2] = false
+                        changed = true
+        # Naked pairs and triples: k stars whose remaining ranks are all inside
+        # one set of k ranks use those ranks up, so nobody else can have them.
+        for k in [2, 3]:
+            var cands: Array = []
+            for s in n:
+                var cnt: int = 0
+                for r in n:
+                    if bool(grid[s][r]):
+                        cnt += 1
+                if cnt >= 2 and cnt <= k:
+                    cands.append(s)
+            if cands.size() < k:
+                continue
+            for i in cands.size():
+                for j in range(i + 1, cands.size()):
+                    var group: Array = [cands[i], cands[j]]
+                    if k == 3:
+                        for l in range(j + 1, cands.size()):
+                            if _lock_group(grid, [cands[i], cands[j], cands[l]], k):
+                                changed = true
+                    elif _lock_group(grid, group, k):
+                        changed = true
+    return true
+
+
+## If `group`'s remaining ranks are exactly `k` ranks, remove those ranks from
+## every star outside it. True if anything was removed.
+func _lock_group(grid: Array, group: Array, k: int) -> bool:
+    var union_ranks: Dictionary = {}
+    for s in group:
+        for r in star_count:
+            if bool(grid[s][r]):
+                union_ranks[r] = true
+    if union_ranks.size() != k:
+        return false
+    var removed: bool = false
+    for s2 in star_count:
+        if group.has(s2):
+            continue
+        for r2 in union_ranks:
+            if bool(grid[s2][int(r2)]):
+                grid[s2][int(r2)] = false
+                removed = true
+    return removed
+
+
 ## Name-axis still-forces check: does propagating ONLY `atoms` (re-wrapped
 ## as singleton pseudo-clues, since _build_name_clues only ever reads
 ## clue.get("disclosures")) still pin possible[name_star][position] to
 ## `target_value`?
+## Free-step counterpart of _name_target_forced for `explained`, which only
+## ever holds SEQUENCE-anchored name_group_neg facts ("name_star is not at
+## `group_key`"). Same elimination as _seq_target_forced_via_mask over the
+## name x position grid; checked against _name_target_forced on 288 random
+## fact subsets (0 differ), see dev_tests/test_mus_explainer_speed.gd.
+func _name_target_forced_via_mask(atoms: Array, name_star: int, position: int, target_value: bool) -> bool:
+    var grid: Array = _init_possibility_grid()
+    for a in atoms:
+        grid[int((a as Dictionary)["name_star"])][int((a as Dictionary)["group_key"])] = false
+    if not _alldiff_eliminate(grid):
+        return false
+    return bool(grid[name_star][position]) == target_value
+
+
 func _name_target_forced(atoms: Array, seq_solutions: Array, name_star: int, position: int, target_value: bool) -> bool:
     var pseudo_clues: Array = []
     for a in atoms:
         pseudo_clues.append({"disclosures": [a]})
+    var saved_budget: int = resolve_call_budget
+    resolve_calls = 0
+    resolve_call_budget = mus_resolve_call_budget
     var prop: Dictionary = _name_propagate_only(seq_solutions, pseudo_clues)
+    resolve_call_budget = saved_budget
     if not bool(prop["consistent"]):
         return false
     var possible: Array = prop["possible"]
@@ -8516,12 +8696,21 @@ func _mus_build_sequence_seq(clues: Array) -> Dictionary:
     for rec in precomputed:
         var st2: int = int(rec["star"])
         var r2: int = int(rec["rank"])
-        var free_check: Callable = Callable(self, "_seq_target_forced").bind(st2, r2, false)
+        var free_check: Callable = Callable(self, "_seq_target_forced_via_mask").bind(st2, r2, false)
+        var took_free: bool = false
         if free_check.call(explained):
             var free_support: Array = _mus_minimal_support(explained, free_check)
-            sequence.append({"star": st2, "rank": r2, "e": free_support, "s": [],
-                "cost": _mus_cost(free_support.size(), [])})
-        else:
+            var free_cost: int = _mus_cost(free_support.size(), [])
+            # Take the free route only when it is CHEAPER than the clue-based
+            # explanation this cell already has. Until 2026-09-26 it was
+            # always taken, so a step could be explained as "deduce this from
+            # 81 earlier facts" when one clue and a couple of facts (cost
+            # ~20-45) would have done -- the worse explanation, found by the
+            # slower search.
+            if free_cost < int(rec["cost"]):
+                sequence.append({"star": st2, "rank": r2, "e": free_support, "s": [], "cost": free_cost})
+                took_free = true
+        if not took_free:
             sequence.append({"star": st2, "rank": r2, "e": [], "s": rec["s"], "cost": int(rec["cost"])})
         explained.append({"kind": "ordinal_neg", "s": st2, "r": r2})
     return {"sequence": sequence, "stalled": [], "consistent": true}
@@ -8552,12 +8741,16 @@ func _mus_build_sequence_name(clues: Array, seq_solutions: Array) -> Dictionary:
     for rec in precomputed:
         var ns2: int = int(rec["name_star"])
         var np3: int = int(rec["position"])
-        var free_check: Callable = Callable(self, "_name_target_forced").bind(seq_solutions, ns2, np3, false)
+        var free_check: Callable = Callable(self, "_name_target_forced_via_mask").bind(ns2, np3, false)
+        var took_free: bool = false
         if free_check.call(explained):
             var free_support: Array = _mus_minimal_support(explained, free_check)
-            sequence.append({"name_star": ns2, "position": np3, "e": free_support, "s": [],
-                "cost": _mus_cost(free_support.size(), [])})
-        else:
+            var free_cost: int = _mus_cost(free_support.size(), [])
+            # Cheaper-of-two, as on the Sequence axis.
+            if free_cost < int(rec["cost"]):
+                sequence.append({"name_star": ns2, "position": np3, "e": free_support, "s": [], "cost": free_cost})
+                took_free = true
+        if not took_free:
             sequence.append({"name_star": ns2, "position": np3, "e": [], "s": rec["s"], "cost": int(rec["cost"])})
         explained.append({"kind": "name_group_neg", "name_star": ns2, "cat": Category.SEQUENCE, "group_key": np3})
     return {"sequence": sequence, "stalled": [], "consistent": true}
