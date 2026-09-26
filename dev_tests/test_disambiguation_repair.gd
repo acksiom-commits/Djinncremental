@@ -45,6 +45,9 @@ func _state(g) -> Dictionary:
 ## Runs the repair on every single-clue removal under one policy.
 func _measure(g, original: Array[Dictionary], scn: int, negations_before_pin: int) -> Dictionary:
 	g.repair_negations_before_pin = negations_before_pin
+	var pins0: int = g.repair_pins_added
+	var negs0: int = g.repair_negations_added
+	var total0: int = g.repair_clues_added
 	var m: Dictionary = {"broken": 0, "seq_broken": 0, "name_broken": 0, "harmless": 0,
 		"repaired": 0, "added": 0, "max_added": 0, "wrong_truth": 0, "bad_facts": 0}
 	for i in original.size():
@@ -92,6 +95,11 @@ func _measure(g, original: Array[Dictionary], scn: int, negations_before_pin: in
 		if bool(after["seq_ok"]) and bool(after["name_ok"]):
 			m["repaired"] += 1
 	g.chosen_form_clues = original
+	# Counter deltas over THIS policy's run (the counters accumulate across
+	# calls on the shared instance).
+	m["pins"] = g.repair_pins_added - pins0
+	m["negations"] = g.repair_negations_added - negs0
+	m["counter_total"] = g.repair_clues_added - total0
 	return m
 
 
@@ -138,6 +146,28 @@ func run() -> void:
 	ok(int(d["added"]) <= int(results["negations only"]["added"]),
 		"the shipped default never costs more clues than negations alone (%d vs %d)" % [d["added"], results["negations only"]["added"]])
 	ok(int(d["max_added"]) <= 8, "and a single repair stays modest (at most %d clues)" % int(d["max_added"]))
+
+	print("\n=== the pin / negation counters split the total by KIND ===")
+	# The aggregate repair_clues_added cannot say whether the fallback is
+	# handing over answers (pins) or only ruling them out (negations). Each
+	# policy has an exact, checkable signature.
+	for name in results:
+		var r: Dictionary = results[name]
+		ok(int(r["pins"]) + int(r["negations"]) == int(r["counter_total"]) and int(r["counter_total"]) == int(r["added"]),
+			"%s: pins + negations == the total == clues actually added (%d + %d, total %d, added %d)"
+				% [name, r["pins"], r["negations"], r["counter_total"], r["added"]])
+	var neg_only: Dictionary = results["negations only"]
+	var pin_only: Dictionary = results["pins only"]
+	var mixed: Dictionary = results["negations, then pins"]
+	ok(int(neg_only["pins"]) == 0 and int(neg_only["negations"]) > 0,
+		"negations-only policy adds no pins (%d pins, %d negations) -- and adds some, so this is not vacuous" % [neg_only["pins"], neg_only["negations"]])
+	ok(int(pin_only["negations"]) == 0 and int(pin_only["pins"]) > 0,
+		"pins-only policy adds no negations (%d negations, %d pins) -- and adds some" % [pin_only["negations"], pin_only["pins"]])
+	ok(int(mixed["pins"]) > 0 and int(mixed["negations"]) > 0,
+		"the escalating policy shows BOTH kinds (%d pins, %d negations), which the aggregate could never reveal" % [mixed["pins"], mixed["negations"]])
+	var shipped: Dictionary = d
+	ok(int(shipped["negations"]) == 0 or PuzzleScript.REPAIR_NEGATIONS_BEFORE_PIN > 0,
+		"the shipped default (pins first) behaves as pins-first: %d pins, %d negations" % [shipped["pins"], shipped["negations"]])
 
 	print("\n=== a puzzle that is already unique is left alone ===")
 	g.chosen_form_clues = original

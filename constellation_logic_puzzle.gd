@@ -6836,8 +6836,17 @@ const REPAIR_NEGATIONS_BEFORE_PIN: int = 0
 var repair_negations_before_pin: int = REPAIR_NEGATIONS_BEFORE_PIN
 
 ## Repair clues committed over this puzzle's whole generation (a measurement:
-## how often the fallback is what made an attempt pass).
+## how often the fallback is what made an attempt pass). Always equal to
+## repair_pins_added + repair_negations_added.
 var repair_clues_added: int = 0
+## The same total split by KIND, because the two are not equal in what they
+## give the player: a pin ("<Name> is the star that fires <Nth>") hands over an
+## answer, a negation only rules one out. The aggregate alone cannot tell you
+## whether the fallback is quietly turning puzzles into direct identifications
+## (critical-pass review, 2026-09-25). Counted over every attempt of the
+## generation, including attempts later discarded, like repair_clues_added.
+var repair_pins_added: int = 0
+var repair_negations_added: int = 0
 ## Off only to MEASURE what the fallback buys (first-attempt gate pass rate with
 ## and without it); generation always runs with it on.
 var repair_enabled: bool = true
@@ -6880,6 +6889,10 @@ func _repair_uniqueness(sequence_solver_facts: Array, name_revealed: Array,
                     sequence_solver_facts, name_revealed, tier_counts, form_counts):
                 committed = true
                 added += 1
+                if pin:
+                    repair_pins_added += 1
+                else:
+                    repair_negations_added += 1
                 break
         if not committed:
             break   # every candidate was a duplicate or not a true statement
@@ -7772,6 +7785,10 @@ func _generate_clues_forms_attempt() -> Dictionary:
         "seq_inconclusive": seq_inconclusive,
         "name_inconclusive": name_inconclusive,
         "inconclusive_solves": inconclusive_solves,
+        # Repair clues over this puzzle's generation so far, by kind -- see
+        # repair_pins_added. Diagnostics only.
+        "repair_pins": repair_pins_added,
+        "repair_negations": repair_negations_added,
         "name_solutions_count": name_solutions_count,
         "seq_solutions_count": seq_solutions.size(),
         # The solutions themselves, not just the count — already computed
