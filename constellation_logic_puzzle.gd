@@ -1993,6 +1993,18 @@ func _note_group_value_term(cat: int, star: int) -> void:
         _note_rendered_term("P", note_name_for_freq(_freq_for_star(star)))
 
 
+## How many times _characteristic_label has rendered an INTERNAL sub-rank
+## marker ("the white star marked B"). That letter is bookkeeping the player
+## can never see (neither overlay draws it), so a clue that names a star that
+## way is unverifiable. The generator is meant never to do it -- every sampler
+## checks _category_uniquely_labels first -- but that is a convention at each
+## call site, not something the label function enforces. This counter is the
+## direct, wording-independent detector: dev_tests/test_observable_identity.gd
+## asserts it stays 0 across every Form builder and real generations
+## (critical-pass review, item 5). It only ever counts; it changes no output.
+var subrank_labels_rendered: int = 0
+
+
 func _characteristic_label(ch: Dictionary) -> String:
     # Always a uniquely-resolving descriptor (sub-rank included whenever the
     # raw group has more than one member) — a Characteristic always refers
@@ -2014,12 +2026,14 @@ func _characteristic_label(ch: Dictionary) -> String:
             _note_rendered_term("C", COLOR_NAMES[star_colors[s]])
             if _group_size(Category.COLOR, s) <= 1:
                 return "the %s star" % COLOR_NAMES[star_colors[s]].to_lower()
+            subrank_labels_rendered += 1
             return "the %s star marked %s" % [COLOR_NAMES[star_colors[s]].to_lower(), _sub_rank_letter(_color_sub_rank[s])]
         Category.PITCH:
             var pname: String = note_name_for_freq(_freq_for_star(s))
             _note_rendered_term("P", pname)
             if _group_size(Category.PITCH, s) <= 1:
                 return "the star that plays %s" % pname
+            subrank_labels_rendered += 1
             return "the star that plays %s marked %s" % [pname, _sub_rank_letter(_pitch_sub_rank[s])]
         Category.DISTANCE:
             var ref: int = int(ch["ref"])

@@ -38,6 +38,7 @@ const AUDIBLE_MAX_HZ: float = 20000.0
 const POSITION_LENGTH_TOLERANCE: float = 0.1
 
 const _NamerScript = preload("res://constellation_star_namer.gd")
+const _PuzzleScript = preload("res://constellation_logic_puzzle.gd")
 
 ## id -> why its content is not certified yet.
 const PLACEHOLDERS: Dictionary = {
@@ -160,7 +161,19 @@ static func _certify_notes(def: Dictionary, out: Array) -> int:
         if not _is_num(f) or float(f) < AUDIBLE_MIN_HZ or float(f) > AUDIBLE_MAX_HZ:
             out.append(_finding("note_freqs_invalid", SEV_ERROR,
                 "note_freqs holds %s, not a frequency in %d..%d Hz" % [str(f), int(AUDIBLE_MIN_HZ), int(AUDIBLE_MAX_HZ)]))
+            return (nf as Array).size()   # names below are meaningless for a bad frequency
+    # A pitch clue names a star by the NOTE the player hears ("the star that
+    # plays B4"). The generator groups pitches by note INDEX, so two indices
+    # whose frequencies round to the same note name would each look unique to
+    # it while sounding identical to the player: an unverifiable identity.
+    var by_name: Dictionary = {}
+    for idx in (nf as Array).size():
+        var nm: String = _PuzzleScript.note_name_for_freq(float((nf as Array)[idx]))
+        if by_name.has(nm):
+            out.append(_finding("note_names_duplicate", SEV_ERROR,
+                "note_freqs entries %d and %d are both '%s' -- 'the star that plays %s' cannot single one out" % [int(by_name[nm]), idx, nm, nm]))
             break
+        by_name[nm] = idx
     return (nf as Array).size()
 
 

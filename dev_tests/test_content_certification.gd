@@ -121,6 +121,8 @@ func run() -> void:
 	_catches(good, good_assign, "a negative frequency", "note_freqs_invalid", func(d): d["note_freqs"][0] = -5.0)
 	_catches(good, good_assign, "an inaudible frequency", "note_freqs_invalid", func(d): d["note_freqs"][0] = 900000.0)
 	_catches(good, good_assign, "a non-numeric frequency", "note_freqs_invalid", func(d): d["note_freqs"][0] = "loud")
+	_catches(good, good_assign, "two pitch indices that are the same note", "note_names_duplicate", func(d): d["note_freqs"][1] = d["note_freqs"][0])
+	_catches(good, good_assign, "two pitch indices a hair apart (same note name)", "note_names_duplicate", func(d): d["note_freqs"][1] = d["note_freqs"][0] * 1.002)
 	_catches(good, good_assign, "no melody", "melody_empty", func(d): d["puzzle_sequence"] = [])
 	_catches(good, good_assign, "a melody note past the last pitch", "melody_note_range", func(d): d["puzzle_sequence"][0] = 99)
 	_catches(good, good_assign, "a negative melody note", "melody_note_range", func(d): d["puzzle_sequence"][0] = -2)
