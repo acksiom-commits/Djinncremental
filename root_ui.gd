@@ -290,6 +290,9 @@ var _ui_minimal_hidden: Array = []
 ## vessel-selection sequence can reuse the exact same "universe compresses
 ## toward a point of light" transition instead of duplicating the source.
 const _EXPANSION_TRANSITION_SHADER: Shader = preload("res://expansion_transition.gdshader")
+# For the static cache helper below: a bare class_name reference is flaky in
+# headless runs (known gotcha), a preload is not.
+const _PuzzleScript = preload("res://constellation_logic_puzzle.gd")
 
 var _expansion_anim_active: bool           = false
 var _expansion_overlay:     ColorRect      = null
@@ -1001,6 +1004,16 @@ func _on_constellation_selected_logic_puzzle(constellation_id: int) -> void:
     # Serve from cache if already generated.
     var cached: Dictionary = cd.get_puzzle_cache(constellation_id)
     if not cached.is_empty():
+        # A structurally INVALID cache is cleared, not just skipped: the Study
+        # overlay reads this cache directly and never goes through
+        # from_cache_dict, so leaving it in place would keep showing corrupt
+        # data while regeneration runs. See _invalid_cache_reason.
+        var cache_problem: String = _invalid_cache_reason(cached)
+        if cache_problem != "":
+            push_warning("RootUI: constellation %d cached puzzle is invalid (%s) -- discarding it and regenerating." % [constellation_id, cache_problem])
+            cd.clear_puzzle_cache(constellation_id)
+            cached = {}
+    if not cached.is_empty():
         var puzzle := ConstellationLogicPuzzle.new()
         var scn: int = int(cached.get("star_count", 0))
         if scn > 0:
@@ -1041,6 +1054,19 @@ func _start_puzzle_generation(constellation_id: int) -> void:
     _generate_puzzle(constellation_id, cd, def, cd.player_seed,
         "puzzle generation",
         func(cid: int, puzzle: ConstellationLogicPuzzle): _on_puzzle_generation_complete(cid, puzzle))
+
+
+## Why a cached puzzle must be DISCARDED, or "" if it can stay. Only a
+## structurally INVALID cache (wrong-length arrays, a rank list that is not a
+## permutation, a clue pointing at a missing star...) is discarded. A merely
+## stale-VERSION cache is left alone: it is still a valid, playable puzzle
+## with the player's notes attached, and regeneration can be refused. Static
+## so it can be tested without building the scene.
+static func _invalid_cache_reason(cached: Dictionary) -> String:
+    var problem: String = _PuzzleScript.validate_cache_dict(cached)
+    if problem.begins_with("version"):
+        return ""
+    return problem
 
 
 ## The ONE place a finished generation becomes a cached puzzle. A puzzle that

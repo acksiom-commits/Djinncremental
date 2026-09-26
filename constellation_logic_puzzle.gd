@@ -1550,9 +1550,150 @@ func to_cache_dict() -> Dictionary:
     }
 
 
+## Sanity bounds for a cached puzzle -- generous, far above any authored
+## constellation (the largest has 17 stars), so they only ever catch garbage.
+const CACHE_MAX_STARS: int = 64
+const CACHE_MAX_PITCHES: int = 64
+
+## JSON round-trips turn every saved int into a float (15 becomes 15.0), so an
+## "is this an integer" check on a LOADED cache has to accept integral floats
+## or it would reject every real save.
+static func _cache_intlike(v) -> bool:
+    return typeof(v) == TYPE_INT or (typeof(v) == TYPE_FLOAT and v == floorf(v))
+
+
+## The cheap, structural half of cache validation (critical-pass review,
+## 2026-09-25): returns "" when `data` is a usable cache, else the FIRST reason
+## it is not. Pure and static, so root_ui and tests can ask without building a
+## puzzle.
+##
+## from_cache_dict() coerces every field's TYPE (so a malformed save cannot
+## crash or hang the engine) but used to accept anything of the right shape: a
+## rank list that is not a permutation, per-star arrays of the wrong length,
+## duplicate names, a clue pointing at a star that does not exist. Those load
+## "successfully" and then misbehave in play.
+##
+## Deliberately NOT here: re-proving uniqueness. That was already gated once at
+## generation, and re-running a solve on every load would make loading depend
+## on solver speed; it belongs in dev/diagnostic tooling only.
+##
+## A reason starting "version" means a stale-but-otherwise-fine cache from an
+## older layout. Callers should regenerate but NOT treat it as corruption (see
+## root_ui: an INVALID cache is cleared, a merely stale one is left in place in
+## case regeneration is refused).
+##
+## Also deliberately lenient: it never rejects on the CONTENT of a disclosure
+## beyond `kind` being a non-empty string. Kinds evolve, and a false rejection
+## would silently regenerate a player's puzzle and wipe their notes.
+static func validate_cache_dict(data: Dictionary) -> String:
+    if not _cache_intlike(data.get("version")) or int(data["version"]) != CACHE_VERSION:
+        return "version: cache version does not match the current one"
+    if not _cache_intlike(data.get("star_count")):
+        return "star_count is not an integer"
+    var n: int = int(data["star_count"])
+    if n < 1 or n > CACHE_MAX_STARS:
+        return "star_count %d is outside 1..%d" % [n, CACHE_MAX_STARS]
+    if typeof(data.get("generation_complete")) != TYPE_BOOL or not bool(data["generation_complete"]):
+        return "generation_complete is not true"
+
+    # Per-star arrays: exact length, element type and range.
+    for key in ["star_colors", "star_degrees", "star_names", "pitch_rank_solution"]:
+        var arr = data.get(key)
+        if typeof(arr) != TYPE_ARRAY:
+            return "%s is not an array" % key
+        if (arr as Array).size() != n:
+            return "%s has %d entries for %d stars" % [key, (arr as Array).size(), n]
+    for c in (data["star_colors"] as Array):
+        if not _cache_intlike(c) or int(c) < 0 or int(c) > int(StarColor.RED):
+            return "star_colors holds a value outside the colour range"
+    for dg in (data["star_degrees"] as Array):
+        if not _cache_intlike(dg) or int(dg) < 0 or int(dg) >= n:
+            return "star_degrees holds a value outside 0..%d" % (n - 1)
+    var seen_names: Dictionary = {}
+    for nm in (data["star_names"] as Array):
+        if typeof(nm) != TYPE_STRING or (nm as String).strip_edges() == "":
+            return "star_names holds an empty or non-string name"
+        if seen_names.has(nm):
+            return "star_names repeats '%s' -- every star's name must be distinct" % nm
+        seen_names[nm] = true
+    # The firing order must be a true permutation of 0..n-1: rank -> star is
+    # inverted by _build_record_array, and a repeat or gap corrupts every clue.
+    var seen_ranks: Dictionary = {}
+    for rk in (data["pitch_rank_solution"] as Array):
+        if not _cache_intlike(rk) or int(rk) < 0 or int(rk) >= n:
+            return "pitch_rank_solution holds a rank outside 0..%d" % (n - 1)
+        if seen_ranks.has(int(rk)):
+            return "pitch_rank_solution repeats rank %d -- not a permutation" % int(rk)
+        seen_ranks[int(rk)] = true
+
+    if not _cache_intlike(data.get("pitch_count")):
+        return "pitch_count is not an integer"
+    var pc: int = int(data["pitch_count"])
+    if pc < 1 or pc > CACHE_MAX_PITCHES:
+        return "pitch_count %d is outside 1..%d" % [pc, CACHE_MAX_PITCHES]
+    var pfr = data.get("pitch_freq_rank")
+    if typeof(pfr) != TYPE_ARRAY or (pfr as Array).size() != pc:
+        return "pitch_freq_rank is not an array of pitch_count (%d) entries" % pc
+    for pr in (pfr as Array):
+        if not _cache_intlike(pr) or int(pr) < 0 or int(pr) >= pc:
+            return "pitch_freq_rank holds a rank outside 0..%d" % (pc - 1)
+
+    var clues = data.get("chosen_form_clues")
+    if typeof(clues) != TYPE_ARRAY or (clues as Array).is_empty():
+        return "chosen_form_clues is missing or empty for a completed puzzle"
+    for ci in (clues as Array).size():
+        var reason: String = _validate_cached_clue((clues as Array)[ci], n)
+        if reason != "":
+            return "clue %d: %s" % [ci, reason]
+    return ""
+
+
+static func _validate_cached_clue(raw, n: int) -> String:
+    if typeof(raw) != TYPE_DICTIONARY:
+        return "is not a dictionary"
+    var c: Dictionary = raw
+    if not _cache_intlike(c.get("form_id")) or not FORM_NAMES.has(int(c["form_id"])):
+        return "form_id is not a known Form"
+    if typeof(c.get("text")) != TYPE_STRING or (c["text"] as String).strip_edges() == "":
+        return "text is empty or not a string"
+    for key in ["chars", "cells", "disclosures"]:
+        if typeof(c.get(key)) != TYPE_ARRAY:
+            return "%s is not an array" % key
+    for ch in (c["chars"] as Array):
+        if typeof(ch) != TYPE_DICTIONARY:
+            return "a chars entry is not a dictionary"
+        var chd: Dictionary = ch
+        if not _cache_intlike(chd.get("cat")) or int(chd["cat"]) < 0 or int(chd["cat"]) > int(Category.DISTANCE):
+            return "a chars entry has an invalid category"
+        if not _cache_intlike(chd.get("star")) or int(chd["star"]) < 0 or int(chd["star"]) >= n:
+            return "a chars entry points at star %s of %d" % [str(chd.get("star")), n]
+        if chd.has("ref") and (not _cache_intlike(chd["ref"]) or int(chd["ref"]) < 0 or int(chd["ref"]) >= n):
+            return "a chars entry has an out-of-range ref"
+    for cell in (c["cells"] as Array):
+        if typeof(cell) != TYPE_DICTIONARY:
+            return "a cells entry is not a dictionary"
+        var cd: Dictionary = cell
+        for ck in ["cat_a", "cat_b"]:
+            if not _cache_intlike(cd.get(ck)) or int(cd[ck]) < 0 or int(cd[ck]) > int(Category.PITCH):
+                return "a cells entry has a non-bijective category"
+        for sk in ["star_a", "star_b"]:
+            if not _cache_intlike(cd.get(sk)) or int(cd[sk]) < 0 or int(cd[sk]) >= n:
+                return "a cells entry points at a star outside 0..%d" % (n - 1)
+        if typeof(cd.get("is_true")) != TYPE_BOOL:
+            return "a cells entry has no boolean is_true"
+    for d in (c["disclosures"] as Array):
+        if typeof(d) != TYPE_DICTIONARY or typeof((d as Dictionary).get("kind")) != TYPE_STRING \
+                or ((d as Dictionary)["kind"] as String) == "":
+            return "a disclosure has no kind"
+    return ""
+
+
 func from_cache_dict(data: Dictionary) -> bool:
-    if _coerce_int(data.get("version"), 0) != CACHE_VERSION:
-        push_warning("ConstellationLogicPuzzle: cache version mismatch, ignoring cached data.")
+    # Validate BEFORE touching any field, so a rejected cache leaves this
+    # object exactly as setup() built it rather than half-overwritten.
+    var invalid: String = validate_cache_dict(data)
+    if invalid != "":
+        push_warning("ConstellationLogicPuzzle: cache rejected (%s), ignoring cached data." % invalid)
         return false
     constellation_id    = _coerce_int(data.get("constellation_id"), -1)
     player_seed_used    = _coerce_int(data.get("player_seed_used"), 0)
