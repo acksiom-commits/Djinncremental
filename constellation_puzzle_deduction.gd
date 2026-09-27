@@ -5241,6 +5241,7 @@ func hint_next_steps(clues: Array) -> Array[Dictionary]:
                 "gain": (by_star[s2] as Array).size(),
             })
     out.append_array(_hint_name_steps(clues, solver))
+    out.append_array(_hint_position_steps(clues, solver))
     out.sort_custom(func(a, b):
         if bool(a["resolved"]) != bool(b["resolved"]):
             return bool(a["resolved"])
@@ -5270,6 +5271,60 @@ func _player_name_grid() -> Array:
     return grid
 
 
+## HINT-ONLY comparison mode: pretend every star's pitch is known. Off in
+## normal use, so the hints keep the engine's own rule (a pitch only counts once
+## the player has Listened to that star). hint_pitch_blocked() flips it on for
+## one comparison run to learn whether Listening is what stands between the
+## player and a step. Never left on: it is always restored.
+var _hint_assume_pitch_known: bool = false
+
+
+func _hint_knows_pitch(star: int) -> bool:
+    return _hint_assume_pitch_known or _player_knows_star_pitch(star)
+
+
+## _stars_possible_for_descriptor, except that in comparison mode a PITCH
+## descriptor is looked up against every star's true pitch instead of only the
+## Listened ones.
+func _hint_possible_stars(cat: int, star: int) -> Array:
+    if _hint_assume_pitch_known and cat == ConstellationLogicPuzzle.Category.PITCH:
+        var key: int = _raw_group_key(cat, star)
+        var out: Array = []
+        for s in _host._star_count:
+            if _raw_group_key(cat, s) == key:
+                out.append(s)
+        return out
+    return _stars_possible_for_descriptor(cat, star)
+
+
+func _unlistened_star_count() -> int:
+    var n: int = 0
+    for s in _host._star_count:
+        if not _player_knows_star_pitch(s):
+            n += 1
+    return n
+
+
+## True when the player is being held up by pitch they have not Listened to
+## for: some star is unlistened, and the hints would find MORE (steps or ruled-
+## out cells) if every pitch were known. The caller uses it only when no step is
+## available now, i.e. when progress genuinely requires it.
+func hint_pitch_blocked(clues: Array) -> bool:
+    if _unlistened_star_count() == 0:
+        return false
+    var now: Array[Dictionary] = hint_next_steps(clues)
+    var now_gain: int = 0
+    for st in now:
+        now_gain += int(st["gain"])
+    _hint_assume_pitch_known = true
+    var assumed: Array[Dictionary] = hint_next_steps(clues)
+    _hint_assume_pitch_known = false
+    var assumed_gain: int = 0
+    for st2 in assumed:
+        assumed_gain += int(st2["gain"])
+    return assumed_gain > now_gain
+
+
 ## Which map stars a group ("colour k", "pitch k", "the rank-k position")
 ## could contain, as far as the PLAYER knows. Returns {"maybe": stars that
 ## could be members, "certain": stars known to be members}, or {} when the
@@ -5294,14 +5349,14 @@ func _group_members_for_player(cat: int, key: int) -> Dictionary:
             break
     if handle < 0:
         return {}
-    var maybe: Array = _stars_possible_for_descriptor(cat, handle)
+    var maybe: Array = _hint_possible_stars(cat, handle)
     var certain: Array = []
     match cat:
         ConstellationLogicPuzzle.Category.COLOR:
             certain = maybe.duplicate()
         ConstellationLogicPuzzle.Category.PITCH:
             for m in maybe:
-                if _player_knows_star_pitch(int(m)):
+                if _hint_knows_pitch(int(m)):
                     certain.append(int(m))
         ConstellationLogicPuzzle.Category.SEQUENCE:
             if maybe.size() == 1:
@@ -5492,7 +5547,7 @@ func _stars_allowed_by_group_order_fact(fd: Dictionary) -> Dictionary:
 func _player_group_of(cat: int) -> Array:
     var out: Array = []
     for s in _host._star_count:
-        if cat == ConstellationLogicPuzzle.Category.PITCH and not _player_knows_star_pitch(s):
+        if cat == ConstellationLogicPuzzle.Category.PITCH and not _hint_knows_pitch(s):
             out.append(-1)
         else:
             out.append(_raw_group_key(cat, s))
@@ -5537,7 +5592,7 @@ func _name_constraints_for_clue(clue: Dictionary) -> Array:
             var bcat: int = int(fd.get("cat_b", -1))
             var allowed_e: Array = []
             for s_e in [int(fd.get("s1", -1)), int(fd.get("s2", -1))]:
-                for st in _stars_possible_for_descriptor(bcat, s_e):
+                for st in _hint_possible_stars(bcat, s_e):
                     if not allowed_e.has(int(st)):
                         allowed_e.append(int(st))
             if not allowed_e.is_empty():
@@ -5593,6 +5648,120 @@ func _name_constraints_for_clue(clue: Dictionary) -> Array:
             out.append({"row": row, "allowed": grp["maybe"], "positive": true, "phrase": phrase})
         elif not (grp["certain"] as Array).is_empty():
             out.append({"row": row, "excluded": grp["certain"], "positive": false, "phrase": phrase})
+    return out
+
+
+## The player's Sequence board as a position x star grid: grid[rank][star] is
+## true while the player's notes still allow that star at that position. The
+## transpose of _player_sequence_grid, because a clue about "the star that
+## fires 7th" restricts a POSITION's candidate stars, not a star's positions.
+func _player_rank_grid() -> Array:
+    var by_star: Array = _player_sequence_grid()
+    var n: int = _host._star_count
+    var grid: Array = []
+    for r in n:
+        var row: Array = []
+        row.resize(n)
+        for s in n:
+            row[s] = bool(by_star[s][r])
+        grid.append(row)
+    return grid
+
+
+## The restrictions a clue makes on a POSITION descriptor ("the star that fires
+## 7th"): descriptor_not_in_group ("... is not blue", "... is not pitch E") and
+## descriptor_either_or ("... is Alpha or Beta") with a Sequence subject. This
+## is where Colour and Pitch facts land on the Sequence axis: a colour group
+## says which stars a position cannot be. The subject is only ever named by the
+## clue's own term (S:<n>), and group membership comes from what the player
+## knows (see _group_members_for_player). Each entry: {"row": rank,
+## "allowed"|"excluded", "phrase", "positive", "handle"}.
+func _position_constraints_for_clue(clue: Dictionary) -> Array:
+    var out: Array = []
+    var terms: Array = clue["search_terms"] if clue.get("search_terms") is Array else []
+    var seq: int = ConstellationLogicPuzzle.Category.SEQUENCE
+    for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
+        if not (f is Dictionary):
+            continue
+        var fd: Dictionary = f
+        var kind: String = str(fd.get("kind", ""))
+        var handle: int = -1
+        if kind == "descriptor_not_in_group" and int(fd.get("cat", -1)) == seq:
+            handle = int(fd.get("star", -1))
+        elif kind == "descriptor_either_or" and int(fd.get("cat_a", -1)) == seq:
+            handle = int(fd.get("star_a", -1))
+        else:
+            continue
+        if handle < 0 or handle >= _host._sequence_rank_solution.size():
+            continue
+        if not terms.has(_descriptor_term(seq, handle)):
+            continue   # never name a position the clue does not
+        var rank: int = int(_host._sequence_rank_solution[handle])
+        if kind == "descriptor_not_in_group":
+            var gcat: int = int(fd.get("group_cat", -1))
+            var gkey: int = int(fd.get("group_key", -1))
+            var grp: Dictionary = _group_members_for_player(gcat, gkey)
+            if grp.is_empty() or (grp["certain"] as Array).is_empty():
+                continue
+            out.append({"row": rank, "excluded": grp["certain"], "positive": false,
+                "phrase": _group_phrase(gcat, gkey, int(grp["handle"])), "handle": handle})
+        else:
+            var bcat: int = int(fd.get("cat_b", -1))
+            var allowed: Array = []
+            for s_e in [int(fd.get("s1", -1)), int(fd.get("s2", -1))]:
+                for st in _hint_possible_stars(bcat, s_e):
+                    if not allowed.has(int(st)):
+                        allowed.append(int(st))
+            if not allowed.is_empty():
+                out.append({"row": rank, "allowed": allowed, "positive": true,
+                    "phrase": "one of the two stars the clue names", "handle": handle})
+    return out
+
+
+## Position-axis steps (Colour/Pitch/Name facts about a Sequence descriptor).
+## Same shape as _hint_name_steps with rows = positions; entries carry
+## axis "position" and `star` = the position index (0-based) they describe.
+func _hint_position_steps(clues: Array, solver, grid: Array = []) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    var board: Array = grid if not grid.is_empty() else _player_rank_grid()
+    for ci in clue_indices_with_something_to_give(clues):
+        var clue: Dictionary = clues[ci]
+        var constraints: Array = _position_constraints_for_clue(clue)
+        if constraints.is_empty():
+            continue
+        var step: Dictionary = _NextStepFinder.step_for_sets(solver, board, constraints)
+        if not bool(step["consistent"]) or (step["eliminated"] as Array).is_empty():
+            continue
+        var by_row: Dictionary = {}
+        for cell in step["eliminated"]:
+            var rk: int = int(cell[0])
+            if not by_row.has(rk):
+                by_row[rk] = []
+            (by_row[rk] as Array).append(int(cell[1]))
+        var resolved: Dictionary = {}
+        for cell2 in step["resolved"]:
+            resolved[int(cell2[0])] = int(cell2[1])
+        for rk2 in by_row:
+            var why: Dictionary = {}
+            for c in constraints:
+                if int(c["row"]) == int(rk2):
+                    why = c
+                    break
+            if why.is_empty():
+                continue
+            out.append({
+                "axis": "position",
+                "clue_index": int(ci),
+                "star": int(rk2),
+                "descriptor": _describe_descriptor(ConstellationLogicPuzzle.Category.SEQUENCE, int(why["handle"])),
+                "eliminated_stars": by_row[rk2],
+                "resolved_star": int(resolved.get(int(rk2), -1)),
+                "resolved_desc": _visible_star_phrase(int(resolved.get(int(rk2), -1))),
+                "resolved": int(resolved.get(int(rk2), -1)) >= 0,
+                "gain": (by_row[rk2] as Array).size(),
+                "phrase": str(why.get("phrase", "")),
+                "positive": bool(why.get("positive", true)),
+            })
     return out
 
 

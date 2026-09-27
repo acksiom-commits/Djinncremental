@@ -535,6 +535,7 @@ const HINT_POINTED: int = 3       # tier 2 answered: _hint_clue_index is set
 const HINT_DESCRIPTOR: int = 4    # tier 3 answered: _hint_step names what a clue bears on
 const HINT_STEP: int = 5          # tier 4 answered: _hint_step, spelled out
 const HINT_NO_STEP: int = 6       # tier 3/4 answered: nothing is actionable yet
+const HINT_LISTEN: int = 7        # tier 3/4 interrupted: progress needs a star the player has not Listened to
 var _hint_state: int = HINT_NONE
 var _hint_clue_index: int = -1    # 0-based index into _all_final_clues_for_tabs()
 ## The step tiers 3/4 are showing: an entry of _deduction.hint_next_steps().
@@ -590,9 +591,19 @@ func _on_hint_tier2_pressed() -> void:
 ## NOW (see ConstellationPuzzleDeduction.hint_next_steps). Tier 3 reveals only
 ## which clue and which thing it bears on; tier 4 spells the step out.
 func _take_step_hint(tier: int, state: int) -> void:
+    var clues: Array[Dictionary] = _all_final_clues_for_tabs()
+    var steps: Array[Dictionary] = _deduction.hint_next_steps(clues)
+    # INTERRUPT. If nothing is actionable but Listening to a star the player has
+    # skipped WOULD unlock something, say that instead of a bare "nothing yet".
+    # Checked before paying: a hint that only says "go Listen" costs nothing.
+    if steps.is_empty() and _deduction.hint_pitch_blocked(clues):
+        _hint_state = HINT_LISTEN
+        _hint_step = {}
+        _hint_clue_index = -1
+        request_markers_rebuild()
+        return
     if not _try_pay_hint(tier):
         return
-    var steps: Array[Dictionary] = _deduction.hint_next_steps(_all_final_clues_for_tabs())
     if steps.is_empty():
         _hint_state = HINT_NO_STEP
         _hint_step = {}
@@ -631,7 +642,7 @@ func _step_sentence(step: Dictionary) -> String:
     var who: String = str(step.get("descriptor", "That star"))
     if who.begins_with("the "):
         who = who.substr(0, 1).to_upper() + who.substr(1)
-    if str(step.get("axis", "sequence")) == "name":
+    if ["name", "position"].has(str(step.get("axis", "sequence"))):
         return _name_step_sentence(step, who)
     var resolved: int = int(step.get("resolved_rank", -1))
     if resolved >= 0:
@@ -726,6 +737,16 @@ func _populate_hint_markers() -> void:
         HINT_NO_STEP:
             _host._markers_content.add_child(_make_hint_message(
                 "Nothing you can act on yet. Record what the clues say first, then ask again."))
+        HINT_LISTEN:
+            # Re-check on every repaint: once the player has Listened, the
+            # reason for the interrupt is gone and it must not linger.
+            if _deduction.hint_pitch_blocked(clues):
+                _host._markers_content.add_child(_make_hint_message(
+                    "Progress from here needs a star's pitch, and you haven't listened to every star yet. Use Listen on the stars you've skipped, then ask again."))
+            else:
+                _hint_state = HINT_NONE
+                _host._markers_content.add_child(_make_hint_message(
+                    "That is sorted. Ask again for a hint."))
         HINT_DESCRIPTOR, HINT_STEP:
             # Same re-validation as tier 2: a step the player has since taken
             # (or that their new notes have changed) must not be shown as if
