@@ -5185,8 +5185,14 @@ func _player_sequence_grid() -> Array:
 ## ambiguous thing to point at.
 func _clue_descriptor_for_star(clue: Dictionary, star: int) -> String:
     var terms: Array = clue["search_terms"] if clue.get("search_terms") is Array else []
+    # SEQUENCE is deliberately NOT a way to name a star here. These steps are
+    # about which POSITIONS a star can hold, so "the star that fires 9th
+    # cannot fire 3rd" or "... must fire 9th" says nothing: it describes the
+    # star by the very thing being deduced. Measured 2026-09-26: 17 of 28
+    # Sequence steps from Equality/Mutex clues were that tautology. A star the
+    # clue names only by its position therefore yields no step.
     for cat in [ConstellationLogicPuzzle.Category.NAME, ConstellationLogicPuzzle.Category.COLOR,
-            ConstellationLogicPuzzle.Category.PITCH, ConstellationLogicPuzzle.Category.SEQUENCE]:
+            ConstellationLogicPuzzle.Category.PITCH]:
         var t: String = _descriptor_term(int(cat), star)
         if t != "" and terms.has(t):
             return _describe_descriptor(int(cat), star)

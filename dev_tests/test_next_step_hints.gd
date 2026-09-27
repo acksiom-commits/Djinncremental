@@ -135,6 +135,13 @@ func run() -> void:
 		"blank board: the exact clue is a step on Alpha, resolving rank 3 (got %s)" % str(steps))
 	ok(d.hint_next_steps([mute_clue]).is_empty(),
 		"a clue that names no star in its own text yields no step, so nothing can be named from ground truth")
+	# A star named ONLY by its position: "the star that fires 3rd is not 1st" would
+	# be a step describing the star by the very thing being deduced.
+	var pos_only_clue: Dictionary = {"text": "The star that fires 3rd note is not 1st.", "cells": [], "search_terms": ["S:3"],
+		"disclosures": [{"kind": "ordinal_neg", "s": 2, "r": 0}], "characteristics": [], "chars": [], "form_id": 2}
+	ok(d.clue_indices_with_something_to_give([pos_only_clue]) == [0], "the position-only clue IS offered as unrecorded, so the next check is not vacuous")
+	ok(d.hint_next_steps([pos_only_clue]).is_empty(),
+		"a star the clue names only by its position yields no step (it would describe the star by what is being deduced)")
 
 	var ranked: Array[Dictionary] = d.hint_next_steps([cmp_clue, exact_clue])
 	ok(ranked.size() >= 2 and ranked[0]["clue_index"] == 1,

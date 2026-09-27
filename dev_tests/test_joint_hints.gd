@@ -122,6 +122,8 @@ func _sweep(cd, cid: int, seed: int) -> Dictionary:
 	var resolved: int = 0
 	var lies: int = 0
 	var on_position: int = 0
+	var seq_entries: int = 0
+	var seq_pos_named: int = 0
 	for frac in [0.0, 0.2, 0.5, 0.75]:
 		var known: int = int(round(float(scn) * float(frac)))
 		d._load_match_records([])
@@ -142,10 +144,16 @@ func _sweep(cd, cid: int, seed: int) -> Dictionary:
 			if str(st["axis"]) == "position":
 				on_position += 1
 		lies += _count_lies(found, by_rank)
+		for st2 in d.hint_next_steps(g.chosen_form_clues):
+			if str(st2["axis"]) == "sequence":
+				seq_entries += 1
+				if str(st2["descriptor"]).begins_with("the star that fires"):
+					seq_pos_named += 1
 	d._load_match_records([])
 	host.queue_free()
 	return {"clues": g.chosen_form_clues.size(), "values_clues": values_clues, "companions_read": companions_read,
-		"readable": readable, "steps": steps, "cells": cells, "resolved": resolved, "lies": lies, "on_position": on_position}
+		"readable": readable, "steps": steps, "cells": cells, "resolved": resolved, "lies": lies, "on_position": on_position,
+		"seq_entries": seq_entries, "seq_pos_named": seq_pos_named}
 
 
 func run() -> void:
@@ -274,7 +282,7 @@ func run() -> void:
 
 	print("\n=== real puzzles: companions never read, and soundness on both grids ===")
 	var cd = load("res://constellation_data.gd").new()
-	var totals := {"values_clues": 0, "companions_read": 0, "readable": 0, "steps": 0, "cells": 0, "resolved": 0, "lies": 0, "on_position": 0}
+	var totals := {"values_clues": 0, "companions_read": 0, "readable": 0, "steps": 0, "cells": 0, "resolved": 0, "lies": 0, "on_position": 0, "seq_entries": 0, "seq_pos_named": 0}
 	for run_def in [[0, 12], [0, 13], [2, 11], [3, 11], [4, 11], [5, 11]]:
 		var sw: Dictionary = await _sweep(cd, int(run_def[0]), int(run_def[1]))
 		for k in totals:
@@ -285,6 +293,8 @@ func run() -> void:
 	ok(int(totals["values_clues"]) > 10, "the puzzles carry Equality/Mutex clues to judge (%d)" % int(totals["values_clues"]))
 	ok(int(totals["companions_read"]) == 0, "LEAK REGRESSION on real puzzles: no Equality/Mutex clue builds a Name hint from its companion facts (%d of %d did)" % [int(totals["companions_read"]), int(totals["values_clues"])])
 	ok(int(totals["steps"]) > 10 and int(totals["cells"]) > 20, "the sweep judged enough to mean something (%d steps, %d cells)" % [int(totals["steps"]), int(totals["cells"])])
+	ok(int(totals["seq_entries"]) > 5, "the puzzles produce Sequence steps to judge (%d), so the next check is not vacuous" % int(totals["seq_entries"]))
+	ok(int(totals["seq_pos_named"]) == 0, "no Sequence step names a star only by its own position (%d did; 17 of 28 Equality/Mutex ones used to)" % int(totals["seq_pos_named"]))
 	ok(int(totals["lies"]) == 0, "no eliminated star is the truth for its row, no resolution is wrong, on either grid (%d lies)" % int(totals["lies"]))
 	var fake: Array = [{"axis": "position", "star": 1, "eliminated_stars": [3], "resolved_star": 0}]
 	ok(_count_lies(fake, [9, 3, 9, 9, 9, 9]) == 2, "control: the lie counter catches a true star eliminated and a wrong resolution")
