@@ -83,6 +83,85 @@ func _name_steps(steps: Array) -> Array:
 	return out
 
 
+const NEW_NAME_KINDS: Array = ["name_rank_range", "name_nbr_count", "name_nbr_extreme", "name_precedes_group",
+	"name_follows_group", "name_extreme_in_group", "name_same_group", "name_different_group"]
+
+
+## Generate one puzzle on `cid` and run the record-driven soundness sweep on it:
+## boards where 20%, 50% and 75% of the stars are named, placed at their true
+## position and Listened to. Returns {"readable", "clues", "kinds", "steps",
+## "cells", "resolved", "lies"}. Freshly built host and solver each call, so
+## constellations cannot leak state into each other.
+func _sweep_constellation(cd, cid: int, seed: int) -> Dictionary:
+	var cdef: Dictionary = cd.get_constellation_def(cid)
+	var scn: int = int(cdef["star_count"])
+	var g = PuzzleScript.new()
+	var sq: Array = []
+	for i in range(scn):
+		sq.append(i)
+	g.setup(scn, cdef["line_pairs"], sq, seed, cid, cdef.get("name_theme", {}),
+		cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
+	await g._generate_clues_forms_attempt()
+	var host = OverlayScene.instantiate()
+	root.add_child(host)
+	await process_frame
+	host._cd = cd
+	host._constellation_id = cid
+	host._star_count = scn
+	host._star_names = g.star_names
+	host._star_colors = g.star_colors
+	host._star_degrees = []
+	for _s in scn:
+		host._star_degrees.append(0)
+	host._sequence_rank_solution = g.sequence_rank_solution
+	host._pitch_freqs = cd.get_note_freqs(cid)
+	host._star_pitch_index = cd.get_note_assignment(cid)
+	host._form_clues_cache = g.chosen_form_clues
+	host._rebuild_star_distances()
+	host._widgets.clear_pitch_caches()
+	var d = host._deduction
+	var solver = PuzzleScript.new()
+	solver.star_count = scn
+	d._load_match_records([])
+	d._clear_deduction_caches()
+	var kinds: Dictionary = {}
+	var readable: int = 0
+	for clue in g.chosen_form_clues:
+		if not d._name_constraints_for_clue(clue).is_empty():
+			readable += 1
+		for disc in (clue.get("disclosures", []) as Array):
+			if disc is Dictionary and NEW_NAME_KINDS.has(str((disc as Dictionary).get("kind", ""))):
+				var one: Array = d._name_constraints_for_clue({"search_terms": clue.get("search_terms", []), "disclosures": [disc]})
+				if not one.is_empty():
+					kinds[str(disc["kind"])] = int(kinds.get(str(disc["kind"]), 0)) + 1
+	var steps: int = 0
+	var cells: int = 0
+	var resolved: int = 0
+	var lies: int = 0
+	for frac in [0.2, 0.5, 0.75]:
+		var known: int = int(round(float(scn) * float(frac)))
+		d._load_match_records([])
+		for s in known:
+			var ri: int = d._get_or_create_match_record_for_star_idx(s)
+			d._match_records[ri]["name"] = str(g.star_names[s])
+			d._match_records[ri]["name_states"] = {str(g.star_names[s]): 1}
+			d._match_records[ri]["seq_lo"] = int(g.sequence_rank_solution[s]) + 1
+			d._match_records[ri]["seq_hi"] = int(g.sequence_rank_solution[s]) + 1
+			d._match_records[ri]["pitch_revealed"] = true
+		d._clear_deduction_caches()
+		var found: Array = _name_steps(d._hint_name_steps(g.chosen_form_clues, solver))
+		steps += found.size()
+		for st in found:
+			cells += (st["eliminated_stars"] as Array).size()
+			if bool(st["resolved"]):
+				resolved += 1
+		lies += _count_lies(found)
+	d._load_match_records([])
+	host.queue_free()
+	return {"readable": readable, "clues": g.chosen_form_clues.size(), "kinds": kinds, "steps": steps,
+		"cells": cells, "resolved": resolved, "lies": lies}
+
+
 func run() -> void:
 	print("=== the pure finder ===")
 	var solver = PuzzleScript.new()
@@ -356,6 +435,31 @@ func run() -> void:
 	print("    %d steps, %d eliminated cells, %d resolutions checked against truth" % [steps2, cells2, resolved2])
 	ok(steps2 > 3 and cells2 > 10, "the record-driven sweep judged enough to mean something (%d steps, %d cells)" % [steps2, cells2])
 	ok(lies2 == 0, "with real position and pitch knowledge, no eliminated star is a name's true star and no resolution is wrong (%d lies)" % lies2)
+
+	print("\n=== the same record-driven sweep on other constellations ===")
+	# One puzzle can miss whole kinds and constellation-specific topology (the
+	# neighbour kinds read the map). A 2026-09-26 sweep of 10 puzzles across
+	# constellations 0/2/3/4/5 found 0 lies and every new kind at least once;
+	# these two are the permanent slice of that.
+	var all_kinds: Dictionary = {}
+	var other_lies: int = 0
+	var total_steps: int = 0
+	var total_cells: int = 0
+	for cid2 in [2, 3]:
+		var sw: Dictionary = await _sweep_constellation(cd, cid2, 11)
+		for kk in sw["kinds"]:
+			all_kinds[kk] = int(all_kinds.get(kk, 0)) + int(sw["kinds"][kk])
+		other_lies += int(sw["lies"])
+		print("    c%d: %d of %d clues readable, new kinds %s; %d steps, %d cells, %d resolutions" % [
+			cid2, sw["readable"], sw["clues"], str(sw["kinds"]), sw["steps"], sw["cells"], sw["resolved"]])
+		total_steps += int(sw["steps"])
+		total_cells += int(sw["cells"])
+		ok(int(sw["steps"]) > 0 and int(sw["cells"]) > 10,
+			"c%d: the sweep produced steps to judge (%d steps, %d cells)" % [cid2, sw["steps"], sw["cells"]])
+		ok(int(sw["lies"]) == 0, "c%d: no eliminated star is a name's true star, no resolution is wrong (%d lies)" % [cid2, sw["lies"]])
+	ok(total_steps > 20 and total_cells > 100, "together they judged enough to mean something (%d steps, %d cells)" % [total_steps, total_cells])
+	ok(all_kinds.size() >= 4, "between them the two puzzles exercise at least 4 of the 8 new kinds (%d: %s)" % [all_kinds.size(), str(all_kinds)])
+	ok(other_lies == 0, "no lies on either constellation")
 
 	var fake: Array = [{"axis": "name", "star": 2, "eliminated_stars": [2], "resolved_star": 5}]
 	ok(_count_lies(fake) == 2, "control: the lie counter catches a true star eliminated and a wrong resolution")
