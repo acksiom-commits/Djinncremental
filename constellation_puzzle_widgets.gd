@@ -801,7 +801,7 @@ func _populate_hint_markers() -> void:
                     _host._markers_content.add_child(_make_hint_message(_step_sentence(still)))
         HINT_WAITING:
             _host._markers_content.add_child(_make_hint_message(
-                "Yes — at least one clue still has something to give."))
+                "Yes — at least one clue isn't reflected on your board yet."))
         HINT_NOTHING:
             _host._markers_content.add_child(_make_hint_message(
                 "Nothing is waiting: every clue is already reflected on your board."))
@@ -818,7 +818,7 @@ func _populate_hint_markers() -> void:
                     "That clue has nothing left to give. Ask again for another."))
             else:
                 _host._markers_content.add_child(_make_hint_message(
-                    "This clue still has something to give:"))
+                    "This clue isn't reflected on your board yet:"))
                 var clue: Dictionary = clues[_hint_clue_index]
                 _host._markers_content.add_child(_make_clue_label(
                     str(clue.get("text", "")),

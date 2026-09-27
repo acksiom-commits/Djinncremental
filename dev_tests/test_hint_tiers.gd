@@ -78,6 +78,20 @@ func run() -> void:
 
 	w._on_hint_tier1_pressed()
 	ok(w._hint_state == w.HINT_WAITING, "tier 1 says something is waiting while a clue is unrecorded")
+	# The wording must say what is true: the clue is not on the board yet. It must
+	# not promise there is something to WORK OUT -- a waiting clue can already be
+	# implied by what the player knows.
+	for c_t1 in host._markers_content.get_children():
+		c_t1.free()
+	w._populate_hint_markers()
+	var t1_text: String = ""
+	for l_t1 in host._markers_content.get_children():
+		if l_t1 is Label:
+			t1_text += (l_t1 as Label).text + " "
+	ok(t1_text.contains("isn't reflected on your board") and not t1_text.contains("something to give"),
+		"tier 1 says the clue is not on the board yet, without promising something to work out (\"%s\")" % t1_text)
+	for c_t1b in host._markers_content.get_children():
+		c_t1b.free()
 
 	w._on_hint_tier2_pressed()
 	# The list is presentation-shuffled, so find the clue by text, not slot 0.
@@ -98,6 +112,12 @@ func run() -> void:
 		if ch is PanelContainer:
 			rows += 1
 	ok(rows == 1, "the Hint tab shows exactly one clue row, no extra revelation (got %d)" % rows)
+	var t2_text: String = ""
+	for l_t2 in host._markers_content.get_children():
+		if l_t2 is Label:
+			t2_text += (l_t2 as Label).text + " "
+	ok(t2_text.contains("This clue isn't reflected on your board yet") and not t2_text.contains("something to give"),
+		"tier 2 words its pointer the same way (\"%s\")" % t2_text)
 
 	print("\n=== the pointer never outlives its cause ===")
 	var slot2: int = d._get_or_create_match_record_for_seq(3)
