@@ -536,6 +536,7 @@ const HINT_DESCRIPTOR: int = 4    # tier 3 answered: _hint_step names what a clu
 const HINT_STEP: int = 5          # tier 4 answered: _hint_step, spelled out
 const HINT_NO_STEP: int = 6       # tier 3/4 answered: nothing is actionable yet
 const HINT_LISTEN: int = 7        # tier 3/4 interrupted: progress needs a star the player has not Listened to
+const HINT_IMPLIED: int = 8       # tier 3/4 answered: no step, but waiting clues already say only what the player knows
 var _hint_state: int = HINT_NONE
 var _hint_clue_index: int = -1    # 0-based index into _all_final_clues_for_tabs()
 ## The step tiers 3/4 are showing: an entry of _deduction.hint_next_steps().
@@ -605,7 +606,11 @@ func _take_step_hint(tier: int, state: int) -> void:
     if not _try_pay_hint(tier):
         return
     if steps.is_empty():
-        _hint_state = HINT_NO_STEP
+        # Nothing to deduce. If some of the waiting clues already say only what
+        # the board entails, say so: that is a different situation from "needs
+        # more filled in first", and it points at noting them, not hunting.
+        var waiting: Dictionary = _deduction.hint_waiting_breakdown(clues)
+        _hint_state = HINT_IMPLIED if int(waiting["entailed"]) > 0 else HINT_NO_STEP
         _hint_step = {}
     else:
         _hint_state = state
@@ -737,6 +742,25 @@ func _populate_hint_markers() -> void:
         HINT_NO_STEP:
             _host._markers_content.add_child(_make_hint_message(
                 "Nothing you can act on yet. Record what the clues say first, then ask again."))
+        HINT_IMPLIED:
+            # Live, like every other answer: a step may have appeared, or the
+            # entailed clues may have been dealt with, since it was asked.
+            var live_steps: Array[Dictionary] = _deduction.hint_next_steps(clues)
+            var live_wait: Dictionary = _deduction.hint_waiting_breakdown(clues)
+            if not live_steps.is_empty():
+                _hint_state = HINT_NONE
+                _host._markers_content.add_child(_make_hint_message(
+                    "Something has changed. Ask again for a hint."))
+            elif int(live_wait["entailed"]) <= 0:
+                _hint_state = HINT_NO_STEP
+                _host._markers_content.add_child(_make_hint_message(
+                    "Nothing you can act on yet. Record what the clues say first, then ask again."))
+            elif int(live_wait["entailed"]) >= int(live_wait["waiting"]):
+                _host._markers_content.add_child(_make_hint_message(
+                    "Nothing new to work out. The clues still waiting already say only what you know."))
+            else:
+                _host._markers_content.add_child(_make_hint_message(
+                    "Nothing new to work out yet. %d of the %d clues still waiting already say only what you know; the rest need more filled in first." % [int(live_wait["entailed"]), int(live_wait["waiting"])]))
         HINT_LISTEN:
             # Re-check on every repaint: once the player has Listened, the
             # reason for the interrupt is gone and it must not linger.

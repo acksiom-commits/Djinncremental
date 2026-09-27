@@ -5278,6 +5278,165 @@ func _player_name_grid() -> Array:
     return grid
 
 
+## Is this row constraint ALREADY TRUE of everything the player's board still
+## allows? Every open star is inside the allowed set (or outside the excluded
+## one). A constraint that rules nothing out because it is trivial (allowed =
+## every star, nothing excluded) is NOT entailed -- it says nothing, which is
+## "not enough known yet", not "already known".
+func _row_constraint_entailed(row: Array, c: Dictionary) -> bool:
+    var open: Array = []
+    for s in row.size():
+        if bool(row[s]):
+            open.append(s)
+    if open.is_empty():
+        return false
+    if c.has("allowed"):
+        var allowed: Dictionary = {}
+        for a in c["allowed"]:
+            allowed[int(a)] = true
+        if allowed.size() >= row.size():
+            return false
+        for s2 in open:
+            if not allowed.has(int(s2)):
+                return false
+        return true
+    var excluded: Array = c.get("excluded", [])
+    if excluded.is_empty():
+        return false
+    for s3 in open:
+        if excluded.has(int(s3)):
+            return false
+    return true
+
+
+## The same for a pair constraint: every star still open to BOTH rows lies in one
+## known group (same) or in known groups that cannot meet (different). An unknown
+## group (-1) means the player cannot tell, so it is never entailed.
+func _pair_constraint_entailed(c: Dictionary, grids: Dictionary) -> bool:
+    var mine: Array = grids[c["grid"]][int(c["row"])]
+    var groups_a: Dictionary = {}
+    for s in mine.size():
+        if bool(mine[s]):
+            var g: int = int(c["group_of"][s])
+            if g < 0:
+                return false
+            groups_a[g] = true
+    var groups_b: Dictionary = {}
+    if c.has("other_fixed"):
+        for f in c["other_fixed"]:
+            var gf: int = int(c["group_of"][int(f)])
+            if gf < 0:
+                return false
+            groups_b[gf] = true
+    else:
+        var other: Array = grids[c["other_grid"]][int(c["other_row"])]
+        for t in other.size():
+            if bool(other[t]):
+                var gt: int = int(c["group_of"][t])
+                if gt < 0:
+                    return false
+                groups_b[gt] = true
+    if groups_a.is_empty() or groups_b.is_empty():
+        return false
+    if bool(c["same"]):
+        return groups_a.size() == 1 and groups_b.size() == 1 and groups_a.keys()[0] == groups_b.keys()[0]
+    for k in groups_a:
+        if groups_b.has(k):
+            return false
+    return true
+
+
+## The stars a Sequence fact is ABOUT (its subject, partner and neighbour fields).
+func _fact_star_ids(f: Dictionary) -> Array:
+    var out: Array = []
+    var n: int = _host._star_count
+    for k in ["s", "a", "b", "mid"]:
+        if f.has(k) and int(f[k]) >= 0 and int(f[k]) < n and not out.has(int(f[k])):
+            out.append(int(f[k]))
+    for k2 in ["neighbors", "stars"]:
+        if f.get(k2) is Array:
+            for x in (f[k2] as Array):
+                if int(x) >= 0 and int(x) < n and not out.has(int(x)):
+                    out.append(int(x))
+    return out
+
+
+## The player's three boards after the alldiff closure the finder itself starts
+## from: name x star, position x star, and star x position. Entailment must be
+## judged on THESE, not on the raw notes: with 14 of 15 names pinned the last
+## name has exactly one star left, but only after closure does the board say so
+## (measured: read raw, a name showed 15 open stars and nothing was ever judged
+## entailed on a real late-game board). {} if the board contradicts itself.
+func _closed_boards() -> Dictionary:
+    var solver = _hint_solver_for(_host._star_count)
+    var out: Dictionary = {"name": _player_name_grid(), "rank": _player_rank_grid(), "seq": _player_sequence_grid()}
+    for k in out:
+        if not solver._alldiff_eliminate(out[k]):
+            return {}
+    return out
+
+
+## Does this clue say ONLY what the player's (closed) board already entails?
+## Every part that can be checked must hold, and at least one part must be
+## checkable: a clue with nothing checkable is "unknown", not "known".
+##
+## A Sequence fact is entailed once every star it is about has a single position
+## left: clues are true, so a fact about fully-placed stars is already known.
+## distance_hop is left to the engine (it settles those into the board itself).
+func _clue_entailed(clue: Dictionary, closed: Dictionary) -> bool:
+    if closed.is_empty():
+        return false
+    var checkable: int = 0
+    for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
+        if not (f is Dictionary):
+            continue
+        var kind: String = str((f as Dictionary).get("kind", ""))
+        if kind.begins_with("ordinal_"):
+            checkable += 1
+            var stars: Array = _fact_star_ids(f)
+            if stars.is_empty():
+                return false
+            for s in stars:
+                var open_ranks: int = 0
+                for r in (closed["seq"][int(s)] as Array).size():
+                    if bool(closed["seq"][int(s)][r]):
+                        open_ranks += 1
+                if open_ranks != 1:
+                    return false
+        elif kind == "distance_hop":
+            checkable += 1
+            if not _disclosure_satisfied(f):
+                return false
+    for c in _name_constraints_for_clue(clue):
+        if c.has("other"):
+            continue
+        checkable += 1
+        if not _row_constraint_entailed(closed["name"][int(c["row"])], c):
+            return false
+    for c2 in _position_constraints_for_clue(clue):
+        checkable += 1
+        if not _row_constraint_entailed(closed["rank"][int(c2["row"])], c2):
+            return false
+    for c3 in _joint_constraints_for_clue(clue):
+        checkable += 1
+        if not _pair_constraint_entailed(c3, closed):
+            return false
+    return checkable > 0
+
+
+## How many clues are still waiting, and how many of those already say only what
+## the player's board entails. Used when there is no step to give: those clues are
+## not a deduction to make, they are things the player may simply not have noted.
+func hint_waiting_breakdown(clues: Array) -> Dictionary:
+    var waiting: Array[int] = clue_indices_with_something_to_give(clues)
+    var closed: Dictionary = _closed_boards()
+    var entailed: int = 0
+    for ci in waiting:
+        if _clue_entailed(clues[ci], closed):
+            entailed += 1
+    return {"waiting": waiting.size(), "entailed": entailed}
+
+
 ## HINT-ONLY comparison mode: pretend every star's pitch is known. Off in
 ## normal use, so the hints keep the engine's own rule (a pitch only counts once
 ## the player has Listened to that star). hint_pitch_blocked() flips it on for
