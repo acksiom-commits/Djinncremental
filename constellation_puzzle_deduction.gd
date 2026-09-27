@@ -5231,22 +5231,224 @@ func hint_next_steps(clues: Array) -> Array[Dictionary]:
             if label == "":
                 continue
             out.append({
+                "axis": "sequence",
                 "clue_index": int(ci),
                 "star": int(s2),
                 "descriptor": label,
                 "eliminated_ranks": by_star[s2],
                 "resolved_rank": int(resolved.get(int(s2), -1)),
+                "resolved": int(resolved.get(int(s2), -1)) >= 0,
+                "gain": (by_star[s2] as Array).size(),
             })
+    out.append_array(_hint_name_steps(clues, solver))
     out.sort_custom(func(a, b):
-        var ra: bool = int(a["resolved_rank"]) >= 0
-        var rb: bool = int(b["resolved_rank"]) >= 0
-        if ra != rb:
-            return ra
-        var na: int = (a["eliminated_ranks"] as Array).size()
-        var nb: int = (b["eliminated_ranks"] as Array).size()
-        if na != nb:
-            return na > nb
-        return int(a["clue_index"]) < int(b["clue_index"]))
+        if bool(a["resolved"]) != bool(b["resolved"]):
+            return bool(a["resolved"])
+        if int(a["gain"]) != int(b["gain"]):
+            return int(a["gain"]) > int(b["gain"])
+        if int(a["clue_index"]) != int(b["clue_index"]):
+            return int(a["clue_index"]) < int(b["clue_index"])
+        return str(a["axis"]) < str(b["axis"]))
+    return out
+
+
+## The player's Name board as a name x star grid: grid[name][star] is true
+## while the player's own notes still allow that name on that map star. A name
+## with no record narrowing it is all-true (unknown, never "no stars").
+func _player_name_grid() -> Array:
+    var n: int = _host._star_count
+    var grid: Array = []
+    for name_idx in n:
+        var row: Array = []
+        row.resize(n)
+        for s in n:
+            row[s] = false
+        for s2 in _stars_possible_for_descriptor(ConstellationLogicPuzzle.Category.NAME, name_idx):
+            if int(s2) >= 0 and int(s2) < n:
+                row[int(s2)] = true
+        grid.append(row)
+    return grid
+
+
+## Which map stars a group ("colour k", "pitch k", "the rank-k position")
+## could contain, as far as the PLAYER knows. Returns {"maybe": stars that
+## could be members, "certain": stars known to be members}, or {} when the
+## group has no handle star. The handle star is the disclosure's own way of
+## naming a value (see the note above _stars_possible_for_descriptor): it only
+## keys the lookup, and everything returned comes from the player's board.
+##   Colour   painted on the map, so exact: maybe == certain.
+##   Pitch    only Listened stars can be counted as certain members; an
+##            unlistened star stays a maybe.
+##   Position a group of one star, certain only once the player has narrowed
+##            "the star that fires r-th" to a single star.
+func _group_members_for_player(cat: int, key: int) -> Dictionary:
+    var handle: int = -1
+    for s in _host._star_count:
+        var k: int = -1
+        if cat == ConstellationLogicPuzzle.Category.SEQUENCE:
+            k = int(_host._sequence_rank_solution[s]) if s < _host._sequence_rank_solution.size() else -1
+        else:
+            k = _raw_group_key(cat, s)
+        if k == key:
+            handle = s
+            break
+    if handle < 0:
+        return {}
+    var maybe: Array = _stars_possible_for_descriptor(cat, handle)
+    var certain: Array = []
+    match cat:
+        ConstellationLogicPuzzle.Category.COLOR:
+            certain = maybe.duplicate()
+        ConstellationLogicPuzzle.Category.PITCH:
+            for m in maybe:
+                if _player_knows_star_pitch(int(m)):
+                    certain.append(int(m))
+        ConstellationLogicPuzzle.Category.SEQUENCE:
+            if maybe.size() == 1:
+                certain = maybe.duplicate()
+    return {"maybe": maybe, "certain": certain, "handle": handle}
+
+
+## How a group reads in a sentence. Only ever built from a group the clue itself
+## states, so it names nothing the clue does not.
+func _group_phrase(cat: int, key: int, handle: int) -> String:
+    match cat:
+        ConstellationLogicPuzzle.Category.COLOR:
+            var t: String = _descriptor_term(cat, handle)
+            return "a %s star" % t.substr(2).to_lower() if t != "" else "a star of that colour"
+        ConstellationLogicPuzzle.Category.PITCH:
+            var tp: String = _descriptor_term(cat, handle)
+            return "a star with pitch %s" % tp.substr(2) if tp != "" else "a star with that pitch"
+        ConstellationLogicPuzzle.Category.SEQUENCE:
+            return "the star that fires %s" % ConstellationLogicPuzzle._ordinal(key + 1)
+    return "a star in that group"
+
+
+## A star the way the player can see it: by its painted colour. The only
+## visible identity a star has, so a unique colour names it outright and a
+## shared one says how many share it.
+func _visible_star_phrase(star: int) -> String:
+    if star < 0 or star >= _host._star_colors.size():
+        return ""
+    var color_idx: int = int(_host._star_colors[star])
+    var label: String = str(_host.COLOR_NAME_LABELS[color_idx]).to_lower()
+    var same: int = 0
+    for c in _host._star_colors:
+        if int(c) == color_idx:
+            same += 1
+    if same <= 1:
+        return "the %s star" % label
+    return "one of the %d %s stars" % [same, label]
+
+
+## The Name restrictions one clue makes, each resolved against what the player
+## knows. Kinds handled: name_group, name_group_neg, descriptor_not_in_group on
+## a Name subject, descriptor_either_or on a Name subject. The rest of the Name
+## vocabulary (position predicates, order-vs-group, extremes, same/different
+## group, distance) is a later phase. Each entry:
+## {"row", "allowed"|"excluded", "phrase", "positive"}. A restriction that the
+## player's knowledge cannot express yet (e.g. a negation whose group has no
+## certain member) is simply omitted -- omitting only loses a step, never
+## invents one.
+func _name_constraints_for_clue(clue: Dictionary) -> Array:
+    var out: Array = []
+    var terms: Array = clue["search_terms"] if clue.get("search_terms") is Array else []
+    for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
+        if not (f is Dictionary):
+            continue
+        var fd: Dictionary = f
+        var kind: String = str(fd.get("kind", ""))
+        var row: int = -1
+        var cat: int = -1
+        var key: int = -1
+        var positive: bool = true
+        if kind == "name_group" or kind == "name_group_neg":
+            row = int(fd.get("name_star", -1))
+            cat = int(fd.get("cat", -1))
+            key = int(fd.get("group_key", -1))
+            positive = kind == "name_group"
+        elif kind == "descriptor_not_in_group" and int(fd.get("cat", -1)) == ConstellationLogicPuzzle.Category.NAME:
+            row = int(fd.get("star", -1))
+            cat = int(fd.get("group_cat", -1))
+            key = int(fd.get("group_key", -1))
+            positive = false
+        elif kind == "descriptor_either_or" and int(fd.get("cat_a", -1)) == ConstellationLogicPuzzle.Category.NAME:
+            var row_e: int = int(fd.get("star_a", -1))
+            if row_e < 0 or not terms.has(_descriptor_term(ConstellationLogicPuzzle.Category.NAME, row_e)):
+                continue
+            var bcat: int = int(fd.get("cat_b", -1))
+            var allowed_e: Array = []
+            for s_e in [int(fd.get("s1", -1)), int(fd.get("s2", -1))]:
+                for st in _stars_possible_for_descriptor(bcat, s_e):
+                    if not allowed_e.has(int(st)):
+                        allowed_e.append(int(st))
+            if not allowed_e.is_empty():
+                out.append({"row": row_e, "allowed": allowed_e, "positive": true,
+                    "phrase": "one of the two stars the clue names"})
+            continue
+        else:
+            continue
+        if row < 0 or row >= _host._star_count or cat < 0 or key < 0:
+            continue
+        if not terms.has(_descriptor_term(ConstellationLogicPuzzle.Category.NAME, row)):
+            continue   # never name a star the clue does not
+        var grp: Dictionary = _group_members_for_player(cat, key)
+        if grp.is_empty():
+            continue
+        var phrase: String = _group_phrase(cat, key, int(grp["handle"]))
+        if positive:
+            out.append({"row": row, "allowed": grp["maybe"], "positive": true, "phrase": phrase})
+        elif not (grp["certain"] as Array).is_empty():
+            out.append({"row": row, "excluded": grp["certain"], "positive": false, "phrase": phrase})
+    return out
+
+
+## Name-axis steps for hint_next_steps, given the player's own name grid (or the
+## default one). `grid` is a parameter so a test can hand in a board built from
+## ground truth and check every conclusion against it.
+func _hint_name_steps(clues: Array, solver, grid: Array = []) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    var board: Array = grid if not grid.is_empty() else _player_name_grid()
+    for ci in clue_indices_with_something_to_give(clues):
+        var clue: Dictionary = clues[ci]
+        var constraints: Array = _name_constraints_for_clue(clue)
+        if constraints.is_empty():
+            continue
+        var step: Dictionary = _NextStepFinder.step_for_sets(solver, board, constraints)
+        if not bool(step["consistent"]) or (step["eliminated"] as Array).is_empty():
+            continue
+        var by_name: Dictionary = {}
+        for cell in step["eliminated"]:
+            var nm: int = int(cell[0])
+            if not by_name.has(nm):
+                by_name[nm] = []
+            (by_name[nm] as Array).append(int(cell[1]))
+        var resolved: Dictionary = {}
+        for cell2 in step["resolved"]:
+            resolved[int(cell2[0])] = int(cell2[1])
+        for nm2 in by_name:
+            # Only a name the clue itself restricts is reported, and it is
+            # named by the clue's own term.
+            var why: Dictionary = {}
+            for c in constraints:
+                if int(c["row"]) == int(nm2):
+                    why = c
+                    break
+            if why.is_empty():
+                continue
+            out.append({
+                "axis": "name",
+                "clue_index": int(ci),
+                "star": int(nm2),
+                "descriptor": _describe_descriptor(ConstellationLogicPuzzle.Category.NAME, int(nm2)),
+                "eliminated_stars": by_name[nm2],
+                "resolved_star": int(resolved.get(int(nm2), -1)),
+                "resolved_desc": _visible_star_phrase(int(resolved.get(int(nm2), -1))),
+                "resolved": int(resolved.get(int(nm2), -1)) >= 0,
+                "gain": (by_name[nm2] as Array).size(),
+                "phrase": str(why.get("phrase", "")),
+                "positive": bool(why.get("positive", true)),
+            })
     return out
 
 

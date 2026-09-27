@@ -611,12 +611,28 @@ func _on_hint_tier4_pressed() -> void:
     _take_step_hint(4, HINT_STEP)
 
 
+## Name steps: "Only one star is left for Alpha: the blue star." / "Alpha must be
+## a blue star, which rules out 9 stars." / "Alpha cannot be a blue star, ...".
+func _name_step_sentence(step: Dictionary, who: String) -> String:
+    if int(step.get("resolved_star", -1)) >= 0:
+        var desc: String = str(step.get("resolved_desc", ""))
+        if desc == "":
+            return "With what you know, only one star is left for %s." % who
+        return "With what you know, only one star is left for %s: %s." % [who, desc]
+    var n: int = (step.get("eliminated_stars", []) as Array).size()
+    return "With what you know, %s %s %s, which rules out %d %s." % [
+        who, "must be" if bool(step.get("positive", true)) else "cannot be",
+        str(step.get("phrase", "in that group")), n, "star" if n == 1 else "stars"]
+
+
 ## "Alpha cannot fire 3rd or 5th." / "Alpha must fire 4th." Ranks arrive
 ## 0-based, the sentence is 1-based like every other place the player reads one.
 func _step_sentence(step: Dictionary) -> String:
     var who: String = str(step.get("descriptor", "That star"))
     if who.begins_with("the "):
         who = who.substr(0, 1).to_upper() + who.substr(1)
+    if str(step.get("axis", "sequence")) == "name":
+        return _name_step_sentence(step, who)
     var resolved: int = int(step.get("resolved_rank", -1))
     if resolved >= 0:
         return "With what you know, %s must fire %s." % [who, ConstellationLogicPuzzle._ordinal(resolved + 1)]
@@ -717,7 +733,8 @@ func _populate_hint_markers() -> void:
             var still: Dictionary = {}
             for cand in _deduction.hint_next_steps(clues):
                 if int(cand["clue_index"]) == int(_hint_step.get("clue_index", -2)) \
-                        and int(cand["star"]) == int(_hint_step.get("star", -2)):
+                        and int(cand["star"]) == int(_hint_step.get("star", -2)) \
+                        and str(cand["axis"]) == str(_hint_step.get("axis", "")):
                     still = cand
                     break
             if still.is_empty():

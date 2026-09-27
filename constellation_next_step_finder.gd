@@ -73,3 +73,67 @@ static func step_for_facts(solver, player_grid: Array, facts: Array) -> Dictiona
         if left1 == 1 and left0 > 1:
             resolved.append([s, last_rank])
     return {"consistent": true, "eliminated": eliminated, "resolved": resolved}
+
+
+## NAME AXIS. The grid is name x star: grid[name][star] is true while the
+## player's board still allows that name on that map star. `constraints` are
+## per-name restrictions already resolved against what the PLAYER knows (the
+## caller's job -- see ConstellationPuzzleDeduction._name_constraints_for_clue):
+##   {"row": name, "allowed": [stars]}    the name is one of these stars
+##   {"row": name, "excluded": [stars]}   the name is none of these stars
+## Names and stars are both alldiff, so the same elimination that closes the
+## Sequence grid closes this one (solver._alldiff_eliminate).
+##
+## Same contract as step_for_facts: eliminations are those the constraints
+## cause BEYOND what the board already forces by itself; `resolved` are names
+## that thereby drop to exactly one star, as [name, that_star]; a contradiction
+## returns no step.
+static func step_for_sets(solver, player_grid: Array, constraints: Array) -> Dictionary:
+    var none: Dictionary = {"consistent": false, "eliminated": [], "resolved": []}
+    if constraints.is_empty():
+        return none
+    var base: Array = _copy_grid(player_grid)
+    if not solver._alldiff_eliminate(base):
+        return none
+    var with_clue: Array = _copy_grid(base)
+    for c in constraints:
+        var row: int = int(c["row"])
+        if row < 0 or row >= with_clue.size():
+            continue
+        if c.has("allowed"):
+            var keep: Dictionary = {}
+            for s in c["allowed"]:
+                keep[int(s)] = true
+            for col in (with_clue[row] as Array).size():
+                if not keep.has(col):
+                    with_clue[row][col] = false
+        else:
+            for s2 in c.get("excluded", []):
+                if int(s2) >= 0 and int(s2) < (with_clue[row] as Array).size():
+                    with_clue[row][int(s2)] = false
+    if not solver._alldiff_eliminate(with_clue):
+        return none
+    var eliminated: Array = []
+    var resolved: Array = []
+    for r in base.size():
+        var left0: int = 0
+        var left1: int = 0
+        var last: int = -1
+        for col2 in (base[r] as Array).size():
+            if bool(base[r][col2]):
+                left0 += 1
+                if not bool(with_clue[r][col2]):
+                    eliminated.append([r, col2])
+            if bool(with_clue[r][col2]):
+                left1 += 1
+                last = col2
+        if left1 == 1 and left0 > 1:
+            resolved.append([r, last])
+    return {"consistent": true, "eliminated": eliminated, "resolved": resolved}
+
+
+static func _copy_grid(grid: Array) -> Array:
+    var out: Array = []
+    for row in grid:
+        out.append((row as Array).duplicate())
+    return out
