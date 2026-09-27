@@ -4920,6 +4920,7 @@ func _clear_deduction_caches_all() -> void:
     # every round of the fixpoint would re-walk every clue's disclosures for
     # nothing. _reset_derived() drops it once per refresh instead.
     _descriptor_star_cache.clear()
+    _hint_chain_cache_valid = false
 
 
 ## Convenience wrapper — 0.0 (nothing recorded yet) to 1.0 (every assertion
@@ -5156,6 +5157,16 @@ func _hint_solver_for(star_count: int):
     if _hint_solver == null or int(_hint_solver.star_count) != star_count:
         _hint_solver = ConstellationLogicPuzzle.new()
         _hint_solver.star_count = star_count
+        # This solver exists ONLY for hint propagation (step_for_facts calls its
+        # _propagate_only) -- never generation, never a uniqueness proof -- so it
+        # is safe to cap _resolve_locked_group's recursion the same way the MUS
+        # explainer does (c715963: budget 10 gave IDENTICAL output to unlimited
+        # on that measurement). Needed here for real: hint_full_chain calls
+        # hint_next_steps in a loop, and without this a single tier-5 press
+        # measured 2.5-4.9s on a blank 17-18 star board (2026-09-27). Under-
+        # closing is the safe direction -- it can only make a step MISS an
+        # elimination it would otherwise have found, never invent a wrong one.
+        _hint_solver.resolve_call_budget = 10
     return _hint_solver
 
 
@@ -5199,28 +5210,28 @@ func _clue_descriptor_for_star(clue: Dictionary, star: int) -> String:
     return ""
 
 
-## HINT SUPPORT (tiers 3 and 4). Every clue that gives the player a step RIGHT
-## NOW, best first. A step is: this clue, propagated on top of the player's own
-## board, rules out at least one rank for a star the clue itself names. Unlike
-## clue_indices_with_something_to_give this IS actionability -- see the finder's
-## header. Sequence axis only.
+## Sequence-axis steps for hint_next_steps, given the player's own board (or the
+## default one). `grid` is a parameter for the same reason as the other three
+## _hint_*_steps functions: a test can hand in a truth-built board, and
+## hint_full_chain hands in a WORKING COPY it narrows step by step.
+##
+## A step is: this clue, propagated on top of the board, rules out at least one
+## rank for a star the clue itself names. Unlike clue_indices_with_something_to_give
+## this IS actionability -- see the finder's header.
 ##
 ## Each entry: {"clue_index", "star", "descriptor", "eliminated_ranks" (0-based),
 ## "resolved_rank" (0-based, or -1)}. Only stars nameable from the clue's own
 ## text are reported, so a hint cannot name anything the clue does not.
-## Ranked: a step that pins a star to one position first, then the one that
-## rules out the most, then clue order.
-func hint_next_steps(clues: Array) -> Array[Dictionary]:
+func _hint_sequence_steps(clues: Array, solver, grid: Array = []) -> Array[Dictionary]:
     var out: Array[Dictionary] = []
-    var solver = _hint_solver_for(_host._star_count)
-    var grid: Array = _player_sequence_grid()
+    var board: Array = grid if not grid.is_empty() else _player_sequence_grid()
     for ci in clue_indices_with_something_to_give(clues):
         var clue: Dictionary = clues[ci]
         var facts: Array = []
         for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
             if f is Dictionary and not ConstellationLogicPuzzle.VALUE_FACT_KINDS.has(str((f as Dictionary).get("kind", ""))):
                 facts.append(f)
-        var step: Dictionary = _NextStepFinder.step_for_facts(solver, grid, facts)
+        var step: Dictionary = _NextStepFinder.step_for_facts(solver, board, facts)
         if not bool(step["consistent"]) or (step["eliminated"] as Array).is_empty():
             continue
         var by_star: Dictionary = {}
@@ -5246,9 +5257,30 @@ func hint_next_steps(clues: Array) -> Array[Dictionary]:
                 "resolved": int(resolved.get(int(s2), -1)) >= 0,
                 "gain": (by_star[s2] as Array).size(),
             })
-    out.append_array(_hint_name_steps(clues, solver))
-    out.append_array(_hint_position_steps(clues, solver))
-    out.append_array(_hint_joint_steps(clues, solver))
+    return out
+
+
+## HINT SUPPORT (tiers 3 and 4, and the per-iteration search inside tier 5's
+## hint_full_chain). Every clue that gives the player a step RIGHT NOW, best
+## first, across all four axes.
+##
+## `boards` is a parameter so hint_full_chain can hand in a WORKING COPY it
+## narrows step by step, and so a test can hand in a truth-built board; omitted
+## keys fall back to the real board, exactly the pre-tier-5 behaviour. Keys:
+## "seq" (star x rank), "name" (name x star), "rank" (position x star).
+##
+## Ranked: a step that pins something to one position first, then the one that
+## rules out the most, then clue order, then axis.
+func hint_next_steps(clues: Array, boards: Dictionary = {}) -> Array[Dictionary]:
+    var solver = _hint_solver_for(_host._star_count)
+    var seq_grid: Array = boards["seq"] if boards.has("seq") else _player_sequence_grid()
+    var name_grid: Array = boards["name"] if boards.has("name") else _player_name_grid()
+    var rank_grid: Array = boards["rank"] if boards.has("rank") else _player_rank_grid()
+    var out: Array[Dictionary] = []
+    out.append_array(_hint_sequence_steps(clues, solver, seq_grid))
+    out.append_array(_hint_name_steps(clues, solver, name_grid))
+    out.append_array(_hint_position_steps(clues, solver, rank_grid))
+    out.append_array(_hint_joint_steps(clues, solver, {"name": name_grid, "rank": rank_grid}))
     out.sort_custom(func(a, b):
         if bool(a["resolved"]) != bool(b["resolved"]):
             return bool(a["resolved"])
@@ -5258,6 +5290,75 @@ func hint_next_steps(clues: Array) -> Array[Dictionary]:
             return int(a["clue_index"]) < int(b["clue_index"])
         return str(a["axis"]) < str(b["axis"]))
     return out
+
+
+## Marks one hint_next_steps() entry's eliminated cells false on a WORKING COPY
+## of the boards (never the real player records). Sound because the entry's own
+## eliminations are exactly the cells the finder already proved impossible;
+## nothing here does new reasoning, it only records what tier 5's loop already
+## found so the NEXT iteration can build on it.
+func _apply_step_to_boards(step: Dictionary, boards: Dictionary) -> void:
+    match str(step["axis"]):
+        "sequence":
+            var row: Array = boards["seq"][int(step["star"])]
+            for r in (step["eliminated_ranks"] as Array):
+                row[int(r)] = false
+        "name":
+            var row2: Array = boards["name"][int(step["star"])]
+            for s in (step["eliminated_stars"] as Array):
+                row2[int(s)] = false
+        "position":
+            var row3: Array = boards["rank"][int(step["star"])]
+            for s2 in (step["eliminated_stars"] as Array):
+                row3[int(s2)] = false
+
+
+## Cached result of the last hint_full_chain() computation. Same one-slot,
+## invalidate-on-_clear_deduction_caches() lifetime as every other cache in
+## this file (_coverage_cache, _star_positions_cache, ...) -- valid exactly
+## while the player's own notes haven't changed. Needed for real: measured
+## 2026-09-27, an early-game chain on an 18-star puzzle costs ~5s to build
+## (~70-90ms per step, up to ~70 steps), and the Hint tab recomputes on every
+## repaint while it is showing a chain -- without this, switching tabs and
+## back would re-pay that cost for no reason.
+var _hint_chain_cache: Array[Dictionary] = []
+var _hint_chain_cache_valid: bool = false
+
+## Diagnostic only: real (non-cached) computations since this engine was
+## created. Lets a test assert the cache is doing its job without relying on
+## wall-clock timing.
+var hint_chain_computations: int = 0
+
+
+## HINT SUPPORT (tier 5, "walk me through every step"). Tier 4 stops at the
+## single best step; measured (and reported, 2026-09-27) as not explicit
+## enough, since further steps are often immediately reachable from the one it
+## just gave. This applies hint_next_steps' best step to a WORKING COPY of the
+## boards, re-derives, and repeats -- literally automating what a player would
+## get by pressing tier 4 over and over -- and returns the whole reachable
+## chain in the order they would reach it.
+##
+## Sound by construction: every entry is a real hint_next_steps() result at the
+## point it was found, over a board built only from applying EARLIER entries in
+## this same chain (never ground truth). Terminates because each entry removes
+## at least one True cell from a finite board (max_steps is a safety valve
+## only, never expected to bind).
+func hint_full_chain(clues: Array, max_steps: int = 200) -> Array[Dictionary]:
+    if _hint_chain_cache_valid:
+        return _hint_chain_cache
+    hint_chain_computations += 1
+    var boards: Dictionary = {"seq": _player_sequence_grid(), "name": _player_name_grid(), "rank": _player_rank_grid()}
+    var chain: Array[Dictionary] = []
+    for _i in max_steps:
+        var steps: Array[Dictionary] = hint_next_steps(clues, boards)
+        if steps.is_empty():
+            break
+        var step: Dictionary = steps[0]
+        chain.append(step)
+        _apply_step_to_boards(step, boards)
+    _hint_chain_cache = chain
+    _hint_chain_cache_valid = true
+    return chain
 
 
 ## The player's Name board as a name x star grid: grid[name][star] is true

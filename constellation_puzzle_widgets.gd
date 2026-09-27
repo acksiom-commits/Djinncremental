@@ -115,8 +115,12 @@ const TAB_HINT: int = 4
 const TAB_EXPLAIN: int = 5
 
 ## DEV/PLAYTEST: the EXPLAIN tab lists what the pinned clue still has to
-## give. Flip to false to hide it for release.
-const SHOW_EXPLAIN_TAB: bool = true
+## give, reading ground truth to name stars ("dev view: names shown are the
+## true ones") -- never player-facing. Superseded for players by the real
+## HINT tab (tiers 1-4, [[shipped_hint_tiers_3_4_next_step_finder]]), which
+## reasons only from the player's own board. Hidden by default 2026-09-27;
+## flip to true locally when debugging clue coverage.
+const SHOW_EXPLAIN_TAB: bool = false
 
 
 func _set_marker_tab(tab_idx: int) -> void:
@@ -523,7 +527,7 @@ func _on_notes_add_pressed() -> void:
 # price is taken from the liquid Sparks pool as a placeholder source, not a
 # decision.
 # ============================================================================
-var hint_cost_sparks: Dictionary = {1: 0, 2: 0, 3: 0, 4: 0}
+var hint_cost_sparks: Dictionary = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
 
 ## What the tab is currently showing. Session-only: a hint is a pointer at
 ## the board as it is NOW, and is re-validated every repaint below rather
@@ -537,6 +541,8 @@ const HINT_STEP: int = 5          # tier 4 answered: _hint_step, spelled out
 const HINT_NO_STEP: int = 6       # tier 3/4 answered: nothing is actionable yet
 const HINT_LISTEN: int = 7        # tier 3/4 interrupted: progress needs a star the player has not Listened to
 const HINT_IMPLIED: int = 8       # tier 3/4 answered: no step, but waiting clues already say only what the player knows
+const HINT_CHAIN: int = 9         # tier 5 answered: every step currently reachable, in order
+const HINT_CHAIN_LOADING: int = 10 # tier 5: computing (can take a few seconds on an early board)
 var _hint_state: int = HINT_NONE
 var _hint_clue_index: int = -1    # 0-based index into _all_final_clues_for_tabs()
 ## The step tiers 3/4 are showing: an entry of _deduction.hint_next_steps().
@@ -625,6 +631,48 @@ func _on_hint_tier3_pressed() -> void:
 
 func _on_hint_tier4_pressed() -> void:
     _take_step_hint(4, HINT_STEP)
+
+
+## Tier 5: every step hint_next_steps can currently find, chained (see
+## ConstellationPuzzleDeduction.hint_full_chain). Shares the same interrupt and
+## no-progress outcomes as tiers 3/4 -- an empty chain means hint_next_steps was
+## already empty on the real board, exactly tier 3/4's own "nothing yet" case.
+##
+## The chain is cached on the deduction engine, but the FIRST computation after
+## a real note change measured up to ~5s on an 18-star, early-game board (a
+## chain of ~70 single steps, each ~70-90ms) -- long enough that pressing the
+## button and getting nothing back for seconds would look broken. Shows a
+## loading message and yields one frame BEFORE running it, so the message
+## actually paints; every other outcome below is unaffected once it returns.
+func _on_hint_tier5_pressed() -> void:
+    _hint_state = HINT_CHAIN_LOADING
+    request_markers_rebuild()
+    await _host.get_tree().process_frame
+    var clues: Array[Dictionary] = _all_final_clues_for_tabs()
+    var chain: Array[Dictionary] = _deduction.hint_full_chain(clues)
+    if chain.is_empty() and _deduction.hint_pitch_blocked(clues):
+        _hint_state = HINT_LISTEN
+        _hint_step = {}
+        _hint_clue_index = -1
+        request_markers_rebuild()
+        return
+    if not _try_pay_hint(5):
+        # Unlike _take_step_hint's bare return, this tier showed a loading
+        # message before the payment check (there was no way to know the cost
+        # of NOT paying until the chain was already computed) -- it must not be
+        # left on screen forever, so this is the one hint handler that rebuilds
+        # on a failed payment.
+        _hint_state = HINT_NONE
+        request_markers_rebuild()
+        return
+    if chain.is_empty():
+        var waiting: Dictionary = _deduction.hint_waiting_breakdown(clues)
+        _hint_state = HINT_IMPLIED if int(waiting["entailed"]) > 0 else HINT_NO_STEP
+    else:
+        _hint_state = HINT_CHAIN
+    _hint_step = {}
+    _hint_clue_index = -1
+    request_markers_rebuild()
 
 
 ## Name steps: "Only one star is left for Alpha: the blue star." / "Alpha must be
@@ -736,9 +784,36 @@ func _populate_hint_markers() -> void:
         "What does it bear on?", 3, _on_hint_tier3_pressed))
     _host._markers_content.add_child(_make_hint_button(
         "Show me the step", 4, _on_hint_tier4_pressed))
+    _host._markers_content.add_child(_make_hint_button(
+        "Walk me through every step", 5, _on_hint_tier5_pressed))
 
     var clues: Array[Dictionary] = _all_final_clues_for_tabs()
     match _hint_state:
+        HINT_CHAIN_LOADING:
+            _host._markers_content.add_child(_make_hint_message(
+                "Working this out — this can take a few seconds early in a puzzle."))
+        HINT_CHAIN:
+            # Recomputed fresh every repaint, same as every other answer here --
+            # and simpler than tiers 3/4's re-validation, since the chain names
+            # no single pinned step to go stale: it is just "everything
+            # reachable right now," which recomputing already gives correctly.
+            var live_chain: Array[Dictionary] = _deduction.hint_full_chain(clues)
+            if live_chain.is_empty():
+                _hint_state = HINT_NONE
+                _host._markers_content.add_child(_make_hint_message(
+                    "That is sorted. Ask again for a hint."))
+            else:
+                _host._markers_content.add_child(_make_hint_message(
+                    "Here is everything you can work out right now, in the order you'd reach it:"))
+                for i in live_chain.size():
+                    var st: Dictionary = live_chain[i]
+                    var sclue: Dictionary = clues[int(st["clue_index"])]
+                    _host._markers_content.add_child(_make_clue_label(
+                        str(sclue.get("text", "")),
+                        _clue_state_color(sclue, _deduction.player_marked_terms()),
+                        int(st["clue_index"]) + 1))
+                    _host._markers_content.add_child(_make_hint_message(
+                        "Step %d: %s" % [i + 1, _step_sentence(st)]))
         HINT_NO_STEP:
             _host._markers_content.add_child(_make_hint_message(
                 "Nothing you can act on yet. Record what the clues say first, then ask again."))
