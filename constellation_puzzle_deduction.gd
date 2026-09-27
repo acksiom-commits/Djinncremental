@@ -5327,18 +5327,176 @@ func _group_phrase(cat: int, key: int, handle: int) -> String:
 ## A star the way the player can see it: by its painted colour. The only
 ## visible identity a star has, so a unique colour names it outright and a
 ## shared one says how many share it.
-func _visible_star_phrase(star: int) -> String:
+##
+## `board` is the player's name x star grid. When every OTHER star of the same
+## colour is already claimed by a name the player has pinned, the star is
+## named by exclusion ("the yellow star that is not Beta's"), which says which
+## one it is; otherwise it only says how many share the colour.
+func _visible_star_phrase(star: int, board: Array = []) -> String:
     if star < 0 or star >= _host._star_colors.size():
         return ""
     var color_idx: int = int(_host._star_colors[star])
     var label: String = str(_host.COLOR_NAME_LABELS[color_idx]).to_lower()
-    var same: int = 0
-    for c in _host._star_colors:
-        if int(c) == color_idx:
-            same += 1
-    if same <= 1:
+    var others: Array = []
+    for s in _host._star_colors.size():
+        if s != star and int(_host._star_colors[s]) == color_idx:
+            others.append(s)
+    if others.is_empty():
         return "the %s star" % label
-    return "one of the %d %s stars" % [same, label]
+    if not board.is_empty():
+        var owners: Array[String] = []
+        for o in others:
+            var owner: int = -1
+            for nm in board.size():
+                var open_stars: int = 0
+                var only: int = -1
+                for c in (board[nm] as Array).size():
+                    if bool(board[nm][c]):
+                        open_stars += 1
+                        only = c
+                if open_stars == 1 and only == int(o):
+                    owner = nm
+                    break
+            if owner < 0:
+                break
+            owners.append(_describe_star(owner) + "'s")
+        if owners.size() == others.size():
+            return "the %s star that is not %s" % [label, " or ".join(owners)]
+    return "one of the %d %s stars" % [others.size() + 1, label]
+
+
+## Stars one hop from `star` on the map (its connected stars).
+func _neighbors_of(star: int) -> Array:
+    var out: Array = []
+    for t in _host._star_count:
+        if t != star and _host.star_distance(star, t) == 1:
+            out.append(t)
+    return out
+
+
+## True only when the PLAYER's notes put `a` strictly before `b` in every
+## still-open arrangement. Unknown on either side is false, never vacuously
+## true -- the same contract as _positions_strictly_before.
+func _definitely_before(a: int, b: int) -> bool:
+    return _positions_strictly_before(_player_positions_for_star(a), _player_positions_for_star(b))
+
+
+## Every star each position predicate could still allow, given ONLY the
+## player's own position knowledge: a star is dropped only when the player's
+## notes CERTAINLY violate the predicate, so the set is always a superset of the
+## truth. On a board with no position knowledge nothing is dropped, so these
+## clues yield no step until the player has placed something.
+func _stars_allowed_by_position_fact(fd: Dictionary) -> Array:
+    var kind: String = str(fd.get("kind", ""))
+    var out: Array = []
+    for s in _host._star_count:
+        match kind:
+            "name_rank_range":
+                var pos: Array = _player_positions_for_star(s)
+                if pos.is_empty():
+                    out.append(s)
+                    continue
+                var lo: int = int(fd.get("lo", 0)) + 1
+                var hi: int = int(fd.get("hi", 0)) + 1
+                for p in pos:
+                    if int(p) >= lo and int(p) <= hi:
+                        out.append(s)
+                        break
+            "name_nbr_count":
+                # Exactly k of its connected stars fire before it. Bound the
+                # count by what is certain (definitely before) and what is
+                # still open (neither certainly before nor certainly after).
+                var k: int = int(fd.get("k", -1))
+                var before: int = 0
+                var unsure: int = 0
+                for t in _neighbors_of(s):
+                    if _definitely_before(int(t), s):
+                        before += 1
+                    elif not _definitely_before(s, int(t)):
+                        unsure += 1
+                if before <= k and k <= before + unsure:
+                    out.append(s)
+            "name_nbr_extreme":
+                var want_lowest: bool = bool(fd.get("want_lowest", false))
+                var holds: bool = true
+                for t2 in _neighbors_of(s):
+                    if (want_lowest and _definitely_before(int(t2), s)) \
+                            or (not want_lowest and _definitely_before(s, int(t2))):
+                        holds = false
+                        break
+                if holds:
+                    out.append(s)
+    return out
+
+
+func _position_fact_phrase(fd: Dictionary) -> String:
+    match str(fd.get("kind", "")):
+        "name_rank_range":
+            return "a star that fires %s to %s" % [ConstellationLogicPuzzle._ordinal(int(fd.get("lo", 0)) + 1),
+                ConstellationLogicPuzzle._ordinal(int(fd.get("hi", 0)) + 1)]
+        "name_nbr_count":
+            return "a star with exactly %d of its connected stars firing before it" % int(fd.get("k", 0))
+        "name_nbr_extreme":
+            return "a star that fires %s all of its connected stars" % ("before" if bool(fd.get("want_lowest", false)) else "after")
+    return "a star that fits"
+
+
+## "fires before / after every star of a group" and "earliest / latest in its
+## own group". Only CERTAIN members can rule a star out (the claim is universal
+## over members, so a possible-but-unproven member proves nothing); the extreme
+## kind also needs the subject to BE a member, so it starts from the maybe-set.
+## Returns {"allowed", "phrase"} or {} if the group has no handle.
+func _stars_allowed_by_group_order_fact(fd: Dictionary) -> Dictionary:
+    var kind: String = str(fd.get("kind", ""))
+    var cat: int = int(fd.get("cat", -1))
+    var key: int = int(fd.get("group_key", -1))
+    var grp: Dictionary = _group_members_for_player(cat, key)
+    if grp.is_empty():
+        return {}
+    var certain: Array = grp["certain"]
+    var noun: String = _group_phrase(cat, key, int(grp["handle"])).trim_prefix("a ")
+    var allowed: Array = []
+    if kind == "name_extreme_in_group":
+        var want_lowest: bool = bool(fd.get("want_lowest", false))
+        for s in (grp["maybe"] as Array):
+            var beaten: bool = false
+            for m in certain:
+                if int(m) == int(s):
+                    continue
+                if (want_lowest and _definitely_before(int(m), int(s))) \
+                        or (not want_lowest and _definitely_before(int(s), int(m))):
+                    beaten = true
+                    break
+            if not beaten:
+                allowed.append(int(s))
+        return {"allowed": allowed, "phrase": "the %s-firing %s" % ["earliest" if want_lowest else "latest", noun]}
+    var precedes: bool = kind == "name_precedes_group"
+    for s2 in _host._star_count:
+        var violated: bool = false
+        for m2 in certain:
+            if int(m2) == s2:
+                violated = true   # the name is not itself one of the group
+                break
+            if (precedes and _definitely_before(int(m2), s2)) \
+                    or (not precedes and _definitely_before(s2, int(m2))):
+                violated = true
+                break
+        if not violated:
+            allowed.append(s2)
+    return {"allowed": allowed, "phrase": "a star that fires %s every %s" % ["before" if precedes else "after", noun]}
+
+
+## Each star's group on Colour or Pitch as the PLAYER knows it: Colour is
+## painted (always known); Pitch only for Listened stars, -1 (a wildcard) for
+## the rest.
+func _player_group_of(cat: int) -> Array:
+    var out: Array = []
+    for s in _host._star_count:
+        if cat == ConstellationLogicPuzzle.Category.PITCH and not _player_knows_star_pitch(s):
+            out.append(-1)
+        else:
+            out.append(_raw_group_key(cat, s))
+    return out
 
 
 ## The Name restrictions one clue makes, each resolved against what the player
@@ -5385,6 +5543,41 @@ func _name_constraints_for_clue(clue: Dictionary) -> Array:
             if not allowed_e.is_empty():
                 out.append({"row": row_e, "allowed": allowed_e, "positive": true,
                     "phrase": "one of the two stars the clue names"})
+            continue
+        elif kind == "name_rank_range" or kind == "name_nbr_count" or kind == "name_nbr_extreme":
+            var row_p: int = int(fd.get("name_star", -1))
+            if row_p < 0 or not terms.has(_descriptor_term(ConstellationLogicPuzzle.Category.NAME, row_p)):
+                continue
+            out.append({"row": row_p, "allowed": _stars_allowed_by_position_fact(fd),
+                "positive": true, "phrase": _position_fact_phrase(fd)})
+            continue
+        elif kind == "name_precedes_group" or kind == "name_follows_group" or kind == "name_extreme_in_group":
+            var row_o: int = int(fd.get("name_star", -1))
+            if row_o < 0 or not terms.has(_descriptor_term(ConstellationLogicPuzzle.Category.NAME, row_o)):
+                continue
+            var ordered: Dictionary = _stars_allowed_by_group_order_fact(fd)
+            if ordered.is_empty():
+                continue
+            out.append({"row": row_o, "allowed": ordered["allowed"], "positive": true, "phrase": ordered["phrase"]})
+            continue
+        elif kind == "name_same_group" or kind == "name_different_group":
+            var name_a: int = int(fd.get("name_star_a", -1))
+            var name_b: int = int(fd.get("name_star_b", -1))
+            var pcat: int = int(fd.get("cat", -1))
+            var nterm_a: String = _descriptor_term(ConstellationLogicPuzzle.Category.NAME, name_a)
+            var nterm_b: String = _descriptor_term(ConstellationLogicPuzzle.Category.NAME, name_b)
+            if name_a < 0 or name_b < 0 or not terms.has(nterm_a) or not terms.has(nterm_b):
+                continue
+            if pcat != ConstellationLogicPuzzle.Category.COLOR and pcat != ConstellationLogicPuzzle.Category.PITCH:
+                continue
+            var same_kind: bool = kind == "name_same_group"
+            var gof: Array = _player_group_of(pcat)
+            var word: String = _category_word(pcat)
+            # One constraint per direction, so each name gets its own sentence.
+            out.append({"row": name_a, "other": name_b, "same": same_kind, "group_of": gof,
+                "positive": same_kind, "phrase": "a star that shares its %s with %s" % [word, _describe_star(name_b)]})
+            out.append({"row": name_b, "other": name_a, "same": same_kind, "group_of": gof,
+                "positive": same_kind, "phrase": "a star that shares its %s with %s" % [word, _describe_star(name_a)]})
             continue
         else:
             continue
@@ -5443,7 +5636,7 @@ func _hint_name_steps(clues: Array, solver, grid: Array = []) -> Array[Dictionar
                 "descriptor": _describe_descriptor(ConstellationLogicPuzzle.Category.NAME, int(nm2)),
                 "eliminated_stars": by_name[nm2],
                 "resolved_star": int(resolved.get(int(nm2), -1)),
-                "resolved_desc": _visible_star_phrase(int(resolved.get(int(nm2), -1))),
+                "resolved_desc": _visible_star_phrase(int(resolved.get(int(nm2), -1)), board),
                 "resolved": int(resolved.get(int(nm2), -1)) >= 0,
                 "gain": (by_name[nm2] as Array).size(),
                 "phrase": str(why.get("phrase", "")),

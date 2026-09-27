@@ -81,6 +81,11 @@ static func step_for_facts(solver, player_grid: Array, facts: Array) -> Dictiona
 ## caller's job -- see ConstellationPuzzleDeduction._name_constraints_for_clue):
 ##   {"row": name, "allowed": [stars]}    the name is one of these stars
 ##   {"row": name, "excluded": [stars]}   the name is none of these stars
+##   {"row": name, "other": name2, "same": bool, "group_of": [group per star]}
+##                                        the two names sit on stars of the SAME
+##                                        (or DIFFERENT) group; group_of[star] is
+##                                        that star's group as the PLAYER knows
+##                                        it, -1 = not known (wildcard)
 ## Names and stars are both alldiff, so the same elimination that closes the
 ## Sequence grid closes this one (solver._alldiff_eliminate).
 ##
@@ -96,9 +101,13 @@ static func step_for_sets(solver, player_grid: Array, constraints: Array) -> Dic
     if not solver._alldiff_eliminate(base):
         return none
     var with_clue: Array = _copy_grid(base)
+    var pairs: Array = []
     for c in constraints:
         var row: int = int(c["row"])
         if row < 0 or row >= with_clue.size():
+            continue
+        if c.has("other"):
+            pairs.append(c)
             continue
         if c.has("allowed"):
             var keep: Dictionary = {}
@@ -111,8 +120,16 @@ static func step_for_sets(solver, player_grid: Array, constraints: Array) -> Dic
             for s2 in c.get("excluded", []):
                 if int(s2) >= 0 and int(s2) < (with_clue[row] as Array).size():
                     with_clue[row][int(s2)] = false
-    if not solver._alldiff_eliminate(with_clue):
-        return none
+    # Pair constraints and the name x star elimination feed each other, so run
+    # both to a joint fixpoint.
+    var moving: bool = true
+    while moving:
+        if not solver._alldiff_eliminate(with_clue):
+            return none
+        moving = false
+        for pc in pairs:
+            if _apply_pair(with_clue, int(pc["row"]), int(pc["other"]), bool(pc["same"]), pc["group_of"]):
+                moving = true
     var eliminated: Array = []
     var resolved: Array = []
     for r in base.size():
@@ -137,3 +154,49 @@ static func _copy_grid(grid: Array) -> Array:
     for row in grid:
         out.append((row as Array).duplicate())
     return out
+
+
+## One pass of a pair constraint over the name x star grid: removes from `row`
+## every star that has no admissible partner star left for `other`. A star whose
+## group is unknown (-1) is never removed (it might match anything), and the two
+## names are on different stars, so a star is never its own partner. Sound for
+## the same reason the rest of this is: it only removes what cannot hold.
+## Returns whether anything changed.
+static func _apply_pair(grid: Array, row: int, other: int, same: bool, group_of: Array) -> bool:
+    var changed: bool = false
+    var n: int = (grid[row] as Array).size()
+    for s in n:
+        if not bool(grid[row][s]):
+            continue
+        var g: int = int(group_of[s])
+        if g < 0:
+            continue
+        var any_partner: bool = false
+        var all_same_group: bool = true
+        for t in n:
+            if t == s or not bool(grid[other][t]):
+                continue
+            any_partner = true
+            var gt: int = int(group_of[t])
+            if gt < 0 or gt != g:
+                all_same_group = false
+        var doomed: bool
+        if same:
+            # Needs a partner in the same group; a wildcard partner counts.
+            var has_match: bool = false
+            for t2 in n:
+                if t2 == s or not bool(grid[other][t2]):
+                    continue
+                var g2: int = int(group_of[t2])
+                if g2 < 0 or g2 == g:
+                    has_match = true
+                    break
+            doomed = not has_match
+        else:
+            # Different group: dead only when EVERY remaining partner is
+            # known to share this star's group.
+            doomed = any_partner and all_same_group
+        if doomed:
+            grid[row][s] = false
+            changed = true
+    return changed

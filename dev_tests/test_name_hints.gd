@@ -177,6 +177,60 @@ func run() -> void:
 	ok(d._name_constraints_for_clue(unnamed_clue).is_empty(),
 		"LEAK GUARD: a clue whose text does not name the name yields nothing about it")
 
+	print("\n=== the remaining kinds: position predicates, group order, same/different pairs ===")
+	d._load_match_records([])
+	d._clear_deduction_caches()
+	var all6: Array = [0, 1, 2, 3, 4, 5]
+	var range_fact: Dictionary = {"kind": "name_rank_range", "name_star": 0, "lo": 0, "hi": 1}
+	ok(d._stars_allowed_by_position_fact(range_fact) == all6, "LEAK GUARD: a rank range drops nothing while no position is known")
+	# The player has identified Eos as star 4 and placed it 5th.
+	var eos: int = d._get_or_create_match_record_for_star_idx(4)
+	d._match_records[eos]["name"] = "Eos"
+	d._match_records[eos]["name_states"] = {"Eos": 1}
+	d._match_records[eos]["seq_lo"] = 5
+	d._match_records[eos]["seq_hi"] = 5
+	d._clear_deduction_caches()
+	ok(d._player_positions_for_star(4) == [5], "fixture: the player knows star 4 fires 5th (got %s)" % str(d._player_positions_for_star(4)))
+	ok(d._stars_allowed_by_position_fact(range_fact) == [0, 1, 2, 3, 5],
+		"...so a range of positions 1-2 drops exactly star 4 (got %s)" % str(d._stars_allowed_by_position_fact(range_fact)))
+	var late_fact: Dictionary = {"kind": "name_rank_range", "name_star": 0, "lo": 4, "hi": 5}
+	ok(d._stars_allowed_by_position_fact(late_fact) == all6, "a range that star 4's known position satisfies drops nothing")
+
+	# Beta is now identified as star 4 (instead of Eos), which pins Beta's row.
+	d._match_records[eos]["name"] = "Beta"
+	d._match_records[eos]["name_states"] = {"Beta": 1}
+	d._clear_deduction_caches()
+	var same_clue: Dictionary = {"text": "Alpha and Beta share a colour.",
+		"cells": [{"cat_a": NAME_CAT, "star_a": 0, "cat_b": COLOR, "star_b": 2, "is_true": false}],
+		"search_terms": ["N:Alpha", "N:Beta", d._descriptor_term(COLOR, 2)],
+		"disclosures": [{"kind": "name_same_group", "name_star_a": 0, "name_star_b": 1, "cat": COLOR}],
+		"characteristics": [], "chars": [], "form_id": 12}
+	var diff_clue: Dictionary = same_clue.duplicate(true)
+	diff_clue["text"] = "Alpha and Beta differ in colour."
+	diff_clue["disclosures"] = [{"kind": "name_different_group", "name_star_a": 0, "name_star_b": 1, "cat": COLOR}]
+	ok(d.clue_indices_with_something_to_give([same_clue]) == [0] and d.clue_indices_with_something_to_give([diff_clue]) == [0],
+		"the same/different clues ARE offered as unrecorded, so what follows is not vacuous")
+	var s_same: Array = _name_steps(d.hint_next_steps([same_clue])).filter(func(st): return st["star"] == 0)
+	ok(s_same.size() == 1 and str(s_same[0]["resolved_desc"]).ends_with("star that is not Beta's"),
+		"a resolved star is named by exclusion when the other star of its colour is claimed (\"%s\")" % (str(s_same[0]["resolved_desc"]) if not s_same.is_empty() else ""))
+	ok(s_same.size() == 1 and int(s_same[0]["resolved_star"]) == 5,
+		"Beta is on star 4 (colour 2), so 'Alpha shares Beta's colour' leaves Alpha only star 5 (got %s)" % str(s_same))
+	var s_diff: Array = _name_steps(d.hint_next_steps([diff_clue])).filter(func(st): return st["star"] == 0)
+	ok(s_diff.size() == 1 and (s_diff[0]["eliminated_stars"] as Array) == [5] and not bool(s_diff[0]["positive"]),
+		"...and 'differs' rules out star 5, the only other star of that colour (got %s)" % str(s_diff))
+
+	# Group order: a name that fires before every star of a colour cannot be one of them.
+	var prec_clue: Dictionary = {"text": "Alpha fires before every star of the first colour.",
+		"cells": [{"cat_a": NAME_CAT, "star_a": 0, "cat_b": COLOR, "star_b": 0, "is_true": false}],
+		"search_terms": ["N:Alpha", d._descriptor_term(COLOR, 0)],
+		"disclosures": [{"kind": "name_precedes_group", "name_star": 0, "cat": COLOR, "group_key": 0}],
+		"characteristics": [], "chars": [], "form_id": 9}
+	var s_prec: Array = _name_steps(d.hint_next_steps([prec_clue]))
+	ok(s_prec.size() == 1 and (s_prec[0]["eliminated_stars"] as Array) == [0, 1],
+		"'fires before every <colour> star' rules out that colour's own stars (got %s)" % str(s_prec))
+	d._load_match_records([])
+	d._clear_deduction_caches()
+
 	print("\n=== the Hint tab ===")
 	host._form_clues_cache = [pos_clue]
 	w._populate_hint_markers()
@@ -259,6 +313,50 @@ func run() -> void:
 	print("    %d clue/board pairs judged, %d steps, %d eliminated cells and %d resolutions checked against truth" % [pairs, steps_seen, cells_seen, resolutions_seen])
 	ok(steps_seen > 5 and cells_seen > 20, "the sweep judged enough to mean something (%d steps, %d cells)" % [steps_seen, cells_seen])
 	ok(lies == 0, "no eliminated star is a name's true star, no resolution is wrong (%d lies)" % lies)
+	print("\n=== SOUNDNESS with truthful player records: named, placed and Listened stars ===")
+	# The sweep above only gave the finder a name grid. These kinds read the
+	# player's POSITION and PITCH knowledge, so build records that say what a
+	# correct player would have written: star s named, placed at its true
+	# position, and its pitch heard.
+	var new_kinds: Array = ["name_rank_range", "name_nbr_count", "name_nbr_extreme", "name_precedes_group",
+		"name_follows_group", "name_extreme_in_group", "name_same_group", "name_different_group"]
+	var kind_counts: Dictionary = {}
+	for rc2 in g.chosen_form_clues:
+		for dd in (rc2.get("disclosures", []) as Array):
+			if dd is Dictionary and new_kinds.has(str((dd as Dictionary).get("kind", ""))):
+				var probe: Array = rd._name_constraints_for_clue({"search_terms": rc2.get("search_terms", []), "disclosures": [dd]})
+				if not probe.is_empty():
+					kind_counts[str(dd["kind"])] = int(kind_counts.get(str(dd["kind"]), 0)) + 1
+	print("    readable clues of the new kinds in this puzzle: %s" % str(kind_counts))
+	ok(not kind_counts.is_empty(), "this puzzle carries clues of the new kinds (%d), so the sweep exercises them" % kind_counts.size())
+	var lies2: int = 0
+	var steps2: int = 0
+	var cells2: int = 0
+	var resolved2: int = 0
+	for k2 in [3, 7, 11]:
+		rd._load_match_records([])
+		for s3 in mini(int(k2), scn):
+			var ri: int = rd._get_or_create_match_record_for_star_idx(s3)
+			rd._match_records[ri]["name"] = str(g.star_names[s3])
+			rd._match_records[ri]["name_states"] = {str(g.star_names[s3]): 1}
+			rd._match_records[ri]["seq_lo"] = int(g.sequence_rank_solution[s3]) + 1
+			rd._match_records[ri]["seq_hi"] = int(g.sequence_rank_solution[s3]) + 1
+			rd._match_records[ri]["pitch_revealed"] = true
+		rd._clear_deduction_caches()
+		var steps2_list: Array = _name_steps(rd._hint_name_steps(g.chosen_form_clues, rsolver))
+		steps2 += steps2_list.size()
+		for st2 in steps2_list:
+			cells2 += (st2["eliminated_stars"] as Array).size()
+			if bool(st2["resolved"]):
+				resolved2 += 1
+		lies2 += _count_lies(steps2_list)
+		print("    %2d stars named, placed and heard: %d name steps" % [int(k2), steps2_list.size()])
+	rd._load_match_records([])
+	rd._clear_deduction_caches()
+	print("    %d steps, %d eliminated cells, %d resolutions checked against truth" % [steps2, cells2, resolved2])
+	ok(steps2 > 3 and cells2 > 10, "the record-driven sweep judged enough to mean something (%d steps, %d cells)" % [steps2, cells2])
+	ok(lies2 == 0, "with real position and pitch knowledge, no eliminated star is a name's true star and no resolution is wrong (%d lies)" % lies2)
+
 	var fake: Array = [{"axis": "name", "star": 2, "eliminated_stars": [2], "resolved_star": 5}]
 	ok(_count_lies(fake) == 2, "control: the lie counter catches a true star eliminated and a wrong resolution")
 
