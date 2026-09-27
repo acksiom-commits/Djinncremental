@@ -5242,6 +5242,7 @@ func hint_next_steps(clues: Array) -> Array[Dictionary]:
             })
     out.append_array(_hint_name_steps(clues, solver))
     out.append_array(_hint_position_steps(clues, solver))
+    out.append_array(_hint_joint_steps(clues, solver))
     out.sort_custom(func(a, b):
         if bool(a["resolved"]) != bool(b["resolved"]):
             return bool(a["resolved"])
@@ -5566,11 +5567,19 @@ func _player_group_of(cat: int) -> Array:
 func _name_constraints_for_clue(clue: Dictionary) -> Array:
     var out: Array = []
     var terms: Array = clue["search_terms"] if clue.get("search_terms") is Array else []
+    # Equality Pair / Mutual Exclusion attach companion Name facts whose group
+    # value is the TRUE colour/pitch of a star the clue does not tell the
+    # player. Those clues are read by _hint_joint_steps through their own
+    # participants instead; see _clue_has_values_fact.
+    var companion_kinds: Array = ["name_group", "name_group_neg", "name_same_group", "name_different_group"]
+    var skip_companions: bool = _clue_has_values_fact(clue)
     for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
         if not (f is Dictionary):
             continue
         var fd: Dictionary = f
         var kind: String = str(fd.get("kind", ""))
+        if skip_companions and companion_kinds.has(kind):
+            continue
         var row: int = -1
         var cat: int = -1
         var key: int = -1
@@ -5759,6 +5768,156 @@ func _hint_position_steps(clues: Array, solver, grid: Array = []) -> Array[Dicti
                 "resolved_desc": _visible_star_phrase(int(resolved.get(int(rk2), -1))),
                 "resolved": int(resolved.get(int(rk2), -1)) >= 0,
                 "gain": (by_row[rk2] as Array).size(),
+                "phrase": str(why.get("phrase", "")),
+                "positive": bool(why.get("positive", true)),
+            })
+    return out
+
+
+## Does this clue carry an Equality Pair / Mutual Exclusion fact? Those Forms
+## ALSO attach companion Name facts (name_group, name_group_neg,
+## name_same_group, name_different_group) whose group_key is the TRUE colour or
+## pitch of the star the other participant denotes. That value is not in the
+## clue text and the player may not be able to know it ("Alpha and the star
+## that fires 9th have the same colour" would announce the 9th star's colour), so
+## the hints never read those companions. _hint_joint_steps reads the clue's own
+## participants instead. Measured 2026-09-26 before this fix: 24 of 25
+## Equality/Mutex clues across 6 puzzles produced a Name hint from a companion.
+func _clue_has_values_fact(clue: Dictionary) -> bool:
+    for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
+        if f is Dictionary and ["values_same", "values_all_different"].has(str((f as Dictionary).get("kind", ""))):
+            return true
+    return false
+
+
+## One participant of a values_same / values_all_different fact, as the CLUE
+## names it: {"cat", "star", "spec"}, where spec says where its candidate stars
+## live -- a NAME row, a POSITION row, or a fixed set (a given Colour/Pitch
+## descriptor such as "the star that plays E5"). {} if the clue does not name it
+## or names it some other way.
+func _values_participant(clue: Dictionary, star: int, axis: int) -> Dictionary:
+    var terms: Array = clue["search_terms"] if clue.get("search_terms") is Array else []
+    var node: Dictionary = {}
+    for ch in (clue["chars"] if clue.get("chars") is Array else []):
+        if ch is Dictionary and int((ch as Dictionary).get("star", -1)) == star and int((ch as Dictionary).get("cat", -1)) != axis:
+            node = ch
+            break
+    if node.is_empty():
+        return {}
+    var cat: int = int(node["cat"])
+    var term: String = _descriptor_term(cat, star)
+    if term == "" or not terms.has(term):
+        return {}
+    match cat:
+        ConstellationLogicPuzzle.Category.NAME:
+            return {"cat": cat, "star": star, "grid": "name", "row": star}
+        ConstellationLogicPuzzle.Category.SEQUENCE:
+            return {"cat": cat, "star": star, "grid": "rank", "row": int(_host._sequence_rank_solution[star])}
+        ConstellationLogicPuzzle.Category.COLOR, ConstellationLogicPuzzle.Category.PITCH:
+            return {"cat": cat, "star": star, "fixed": _hint_possible_stars(cat, star)}
+    return {}
+
+
+func _participant_words(p: Dictionary) -> String:
+    if int(p["cat"]) == ConstellationLogicPuzzle.Category.NAME:
+        return _describe_star(int(p["star"]))
+    return _describe_descriptor(int(p["cat"]), int(p["star"]))
+
+
+## The joint constraints of a clue's Equality Pair / Mutual Exclusion facts:
+## every participant that sits on a NAME or POSITION row is related to every
+## other participant, whichever kind that is. Each entry is one direction, so
+## each row gets its own sentence. Empty for a clue with no such fact.
+func _joint_constraints_for_clue(clue: Dictionary) -> Array:
+    var out: Array = []
+    for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
+        if not (f is Dictionary):
+            continue
+        var fd: Dictionary = f
+        var kind: String = str(fd.get("kind", ""))
+        if kind != "values_same" and kind != "values_all_different":
+            continue
+        var axis: int = int(fd.get("cat", -1))
+        if axis != ConstellationLogicPuzzle.Category.COLOR and axis != ConstellationLogicPuzzle.Category.PITCH:
+            continue
+        var stars: Array = [int(fd.get("a", -1)), int(fd.get("b", -1))] if kind == "values_same" else (fd.get("stars", []) as Array)
+        var parts: Array = []
+        for s in stars:
+            var p: Dictionary = _values_participant(clue, int(s), axis)
+            if p.is_empty():
+                parts = []
+                break
+            parts.append(p)
+        if parts.size() < 2:
+            continue
+        var same: bool = kind == "values_same"
+        var gof: Array = _player_group_of(axis)
+        var word: String = _category_word(axis)
+        for i in parts.size():
+            if not (parts[i] as Dictionary).has("grid"):
+                continue   # a fixed participant has no row of its own to narrow
+            for j in parts.size():
+                if i == j:
+                    continue
+                var mine: Dictionary = parts[i]
+                var other: Dictionary = parts[j]
+                var c: Dictionary = {"grid": mine["grid"], "row": int(mine["row"]), "same": same,
+                    "group_of": gof, "positive": same, "handle": int(mine["star"]),
+                    "phrase": "a star that shares its %s with %s" % [word, _participant_words(other)]}
+                if other.has("grid"):
+                    c["other_grid"] = other["grid"]
+                    c["other_row"] = int(other["row"])
+                else:
+                    c["other_fixed"] = other["fixed"]
+                out.append(c)
+    return out
+
+
+## Joint Name x Position steps: the Equality Pair / Mutual Exclusion clues, read
+## through their own participants (see _clue_has_values_fact for why not through
+## their companion facts). `boards` is a parameter so a test can hand in
+## truth-built grids: {"name": name x star, "rank": position x star}.
+func _hint_joint_steps(clues: Array, solver, boards: Dictionary = {}) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    var grids: Dictionary = boards if not boards.is_empty() else {"name": _player_name_grid(), "rank": _player_rank_grid()}
+    for ci in clue_indices_with_something_to_give(clues):
+        var clue: Dictionary = clues[ci]
+        var constraints: Array = _joint_constraints_for_clue(clue)
+        if constraints.is_empty():
+            continue
+        var step: Dictionary = _NextStepFinder.step_for_joint(solver, grids, constraints)
+        if not bool(step["consistent"]) or (step["eliminated"] as Array).is_empty():
+            continue
+        var by_row: Dictionary = {}
+        for cell in step["eliminated"]:
+            var key: String = "%s:%d" % [str(cell[0]), int(cell[1])]
+            if not by_row.has(key):
+                by_row[key] = {"grid": str(cell[0]), "row": int(cell[1]), "stars": []}
+            (by_row[key]["stars"] as Array).append(int(cell[2]))
+        var resolved: Dictionary = {}
+        for cell2 in step["resolved"]:
+            resolved["%s:%d" % [str(cell2[0]), int(cell2[1])]] = int(cell2[2])
+        for key2 in by_row:
+            var entry: Dictionary = by_row[key2]
+            var why: Dictionary = {}
+            for c in constraints:
+                if str(c["grid"]) == str(entry["grid"]) and int(c["row"]) == int(entry["row"]):
+                    why = c
+                    break
+            if why.is_empty():
+                continue
+            var is_name: bool = str(entry["grid"]) == "name"
+            var res_star: int = int(resolved.get(key2, -1))
+            out.append({
+                "axis": "name" if is_name else "position",
+                "clue_index": int(ci),
+                "star": int(entry["row"]),
+                "descriptor": _describe_descriptor(ConstellationLogicPuzzle.Category.NAME if is_name else ConstellationLogicPuzzle.Category.SEQUENCE, int(why["handle"])),
+                "eliminated_stars": entry["stars"],
+                "resolved_star": res_star,
+                "resolved_desc": _visible_star_phrase(res_star, grids["name"] if is_name else []),
+                "resolved": res_star >= 0,
+                "gain": (entry["stars"] as Array).size(),
                 "phrase": str(why.get("phrase", "")),
                 "positive": bool(why.get("positive", true)),
             })

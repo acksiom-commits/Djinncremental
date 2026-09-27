@@ -200,3 +200,106 @@ static func _apply_pair(grid: Array, row: int, other: int, same: bool, group_of:
             grid[row][s] = false
             changed = true
     return changed
+
+
+## JOINT NAME x POSITION. A clue such as "Alpha and the star that fires 9th have
+## the same colour" relates a NAME row and a POSITION row: two different alldiff
+## structures (a star has one name and one position, independently) that meet
+## only in the star they both land on. So the propagation runs over BOTH grids
+## and the constraint links a row of one to a row of the other.
+##
+##   grids:       {"name": name x star grid, "rank": position x star grid}
+##   constraints: {"grid", "row", "same": bool, "group_of": [group per star, -1 =
+##                 unknown wildcard], and EITHER
+##                 "other_grid"/"other_row"   the partner is another row, OR
+##                 "other_fixed": [stars]     the partner is a given descriptor
+##                                            (e.g. "the star that plays E5")}
+##
+## The two participants of one clue are different stars (the generators never
+## pair a star with itself), which is what lets `t != s` prune below.
+##
+## Returns {"consistent", "eliminated": [[grid, row, star], ...],
+## "resolved": [[grid, row, star], ...]} with the same "beyond what the board
+## already forces" contract as step_for_facts / step_for_sets.
+static func step_for_joint(solver, grids: Dictionary, constraints: Array) -> Dictionary:
+    var none: Dictionary = {"consistent": false, "eliminated": [], "resolved": []}
+    if constraints.is_empty():
+        return none
+    var base: Dictionary = {}
+    for g in grids:
+        base[g] = _copy_grid(grids[g])
+        if not solver._alldiff_eliminate(base[g]):
+            return none
+    var with_clue: Dictionary = {}
+    for g2 in base:
+        with_clue[g2] = _copy_grid(base[g2])
+    var moving: bool = true
+    while moving:
+        for g3 in with_clue:
+            if not solver._alldiff_eliminate(with_clue[g3]):
+                return none
+        moving = false
+        for c in constraints:
+            var mine: Array = with_clue[c["grid"]][int(c["row"])]
+            var partner: Array = []
+            if c.has("other_fixed"):
+                var n: int = mine.size()
+                partner.resize(n)
+                for i in n:
+                    partner[i] = false
+                for f in c["other_fixed"]:
+                    if int(f) >= 0 and int(f) < n:
+                        partner[int(f)] = true
+            else:
+                partner = with_clue[c["other_grid"]][int(c["other_row"])]
+            if _apply_pair_sets(mine, partner, bool(c["same"]), c["group_of"]):
+                moving = true
+    var eliminated: Array = []
+    var resolved: Array = []
+    for g4 in base:
+        for r in (base[g4] as Array).size():
+            var left0: int = 0
+            var left1: int = 0
+            var last: int = -1
+            for col in (base[g4][r] as Array).size():
+                if bool(base[g4][r][col]):
+                    left0 += 1
+                    if not bool(with_clue[g4][r][col]):
+                        eliminated.append([g4, r, col])
+                if bool(with_clue[g4][r][col]):
+                    left1 += 1
+                    last = col
+            if left1 == 1 and left0 > 1:
+                resolved.append([g4, r, last])
+    return {"consistent": true, "eliminated": eliminated, "resolved": resolved}
+
+
+## _apply_pair over two candidate rows (bool per star) instead of two rows of
+## one grid. `mine` is narrowed in place; returns whether it changed. A star of
+## unknown group is never removed, and a star is never its own partner.
+static func _apply_pair_sets(mine: Array, partner: Array, same: bool, group_of: Array) -> bool:
+    var changed: bool = false
+    var n: int = mine.size()
+    for s in n:
+        if not bool(mine[s]):
+            continue
+        var g: int = int(group_of[s])
+        if g < 0:
+            continue
+        var any_partner: bool = false
+        var all_same_group: bool = true
+        var has_match: bool = false
+        for t in n:
+            if t == s or not bool(partner[t]):
+                continue
+            any_partner = true
+            var gt: int = int(group_of[t])
+            if gt < 0 or gt != g:
+                all_same_group = false
+            if gt < 0 or gt == g:
+                has_match = true
+        var doomed: bool = (not has_match) if same else (any_partner and all_same_group)
+        if doomed:
+            mine[s] = false
+            changed = true
+    return changed

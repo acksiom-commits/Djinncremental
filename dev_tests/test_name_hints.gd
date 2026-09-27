@@ -275,28 +275,46 @@ func run() -> void:
 	var late_fact: Dictionary = {"kind": "name_rank_range", "name_star": 0, "lo": 4, "hi": 5}
 	ok(d._stars_allowed_by_position_fact(late_fact) == all6, "a range that star 4's known position satisfies drops nothing")
 
-	# Beta is now identified as star 4 (instead of Eos), which pins Beta's row.
-	d._match_records[eos]["name"] = "Beta"
-	d._match_records[eos]["name_states"] = {"Beta": 1}
+	# 'Alpha and Beta share a colour' is TRUE here: Beta is star 1 (colour 0), the
+	# same colour as Alpha's star 0. The player has identified Beta as star 1.
+	# (The name index IS the star's own index in the engine's model, so a fixture
+	# that put Beta on another star would contradict itself.)
+	d._load_match_records([])
+	var beta_rec: int = d._get_or_create_match_record_for_star_idx(1)
+	d._match_records[beta_rec]["name"] = "Beta"
+	d._match_records[beta_rec]["name_states"] = {"Beta": 1}
 	d._clear_deduction_caches()
 	var same_clue: Dictionary = {"text": "Alpha and Beta share a colour.",
 		"cells": [{"cat_a": NAME_CAT, "star_a": 0, "cat_b": COLOR, "star_b": 2, "is_true": false}],
 		"search_terms": ["N:Alpha", "N:Beta", d._descriptor_term(COLOR, 2)],
-		"disclosures": [{"kind": "name_same_group", "name_star_a": 0, "name_star_b": 1, "cat": COLOR}],
-		"characteristics": [], "chars": [], "form_id": 12}
-	var diff_clue: Dictionary = same_clue.duplicate(true)
-	diff_clue["text"] = "Alpha and Beta differ in colour."
-	diff_clue["disclosures"] = [{"kind": "name_different_group", "name_star_a": 0, "name_star_b": 1, "cat": COLOR}]
-	ok(d.clue_indices_with_something_to_give([same_clue]) == [0] and d.clue_indices_with_something_to_give([diff_clue]) == [0],
-		"the same/different clues ARE offered as unrecorded, so what follows is not vacuous")
+		"disclosures": [{"kind": "values_same", "cat": COLOR, "a": 0, "b": 1},
+			{"kind": "name_same_group", "name_star_a": 0, "name_star_b": 1, "cat": COLOR}],
+		"characteristics": [], "form_id": 12,
+		"chars": [{"cat": NAME_CAT, "star": 0}, {"cat": NAME_CAT, "star": 1}, {"cat": COLOR, "star": 0}, {"cat": COLOR, "star": 1}]}
+	ok(d.clue_indices_with_something_to_give([same_clue]) == [0], "the same-colour clue IS offered as unrecorded, so what follows is not vacuous")
 	var s_same: Array = _name_steps(d.hint_next_steps([same_clue])).filter(func(st): return st["star"] == 0)
 	ok(s_same.size() == 1 and str(s_same[0]["resolved_desc"]).ends_with("star that is not Beta's"),
 		"a resolved star is named by exclusion when the other star of its colour is claimed (\"%s\")" % (str(s_same[0]["resolved_desc"]) if not s_same.is_empty() else ""))
-	ok(s_same.size() == 1 and int(s_same[0]["resolved_star"]) == 5,
-		"Beta is on star 4 (colour 2), so 'Alpha shares Beta's colour' leaves Alpha only star 5 (got %s)" % str(s_same))
+	ok(s_same.size() == 1 and int(s_same[0]["resolved_star"]) == 0,
+		"Beta is on star 1 (colour 0), so 'Alpha shares Beta's colour' leaves Alpha only star 0 (got %s)" % str(s_same))
+
+	# 'Alpha and Gamma differ in colour' is TRUE: Gamma is star 2 (colour 1).
+	d._load_match_records([])
+	var gamma_rec: int = d._get_or_create_match_record_for_star_idx(2)
+	d._match_records[gamma_rec]["name"] = "Gamma"
+	d._match_records[gamma_rec]["name_states"] = {"Gamma": 1}
+	d._clear_deduction_caches()
+	var diff_clue: Dictionary = {"text": "Alpha and Gamma differ in colour.",
+		"cells": [{"cat_a": NAME_CAT, "star_a": 0, "cat_b": COLOR, "star_b": 4, "is_true": false}],
+		"search_terms": ["N:Alpha", "N:Gamma", d._descriptor_term(COLOR, 4)],
+		"disclosures": [{"kind": "values_all_different", "cat": COLOR, "stars": [0, 2]},
+			{"kind": "name_different_group", "name_star_a": 0, "name_star_b": 2, "cat": COLOR}],
+		"characteristics": [], "form_id": 13,
+		"chars": [{"cat": NAME_CAT, "star": 0}, {"cat": COLOR, "star": 0}, {"cat": NAME_CAT, "star": 2}, {"cat": COLOR, "star": 2}]}
+	ok(d.clue_indices_with_something_to_give([diff_clue]) == [0], "the different-colour clue IS offered as unrecorded")
 	var s_diff: Array = _name_steps(d.hint_next_steps([diff_clue])).filter(func(st): return st["star"] == 0)
-	ok(s_diff.size() == 1 and (s_diff[0]["eliminated_stars"] as Array) == [5] and not bool(s_diff[0]["positive"]),
-		"...and 'differs' rules out star 5, the only other star of that colour (got %s)" % str(s_diff))
+	ok(s_diff.size() == 1 and (s_diff[0]["eliminated_stars"] as Array) == [3] and not bool(s_diff[0]["positive"]),
+		"Gamma is on star 2 (colour 1), so 'differs' rules Alpha out of star 3, the only other star of that colour (got %s)" % str(s_diff))
 
 	# Group order: a name that fires before every star of a colour cannot be one of them.
 	var prec_clue: Dictionary = {"text": "Alpha fires before every star of the first colour.",
