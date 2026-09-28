@@ -890,12 +890,16 @@ func _on_third_prestige_complete() -> void:
 
 
 func _on_fourth_prestige_complete() -> void:
-    # Satchel (now id 4) unlocks at fifth_prestige — see the swap note above.
-    _start_puzzle_generation(4)  # pre-generate Satchel (id 4)
+    # The Phial (now id 4, swapped with The Satchel 2026-09-27 — see
+    # constellation_data.gd v0.3.8) unlocks at fifth_prestige, so its
+    # pre-generation happens here, one prestige ahead of its own unlock.
+    _start_puzzle_generation(4)  # pre-generate The Phial (id 4)
 
 
 func _on_fifth_prestige_complete() -> void:
-    _start_puzzle_generation(5)  # pre-generate The Phial (id 5)
+    # The Satchel (now id 5) unlocks at sixth_prestige — see the swap
+    # note above.
+    _start_puzzle_generation(5)  # pre-generate Satchel (id 5)
 
 
 func _on_sixth_prestige_complete() -> void:

@@ -1128,9 +1128,10 @@ func enqueue_fifth_prestige() -> void:
     if fifth_prestige_done:
         return
     fifth_prestige_done = true
-    # Satchel now unlocks at fifth_prestige — see the swap note above.
+    # The Phial now unlocks at fifth_prestige, swapped with The Satchel
+    # per user direction 2026-09-27 — see constellation_data.gd v0.3.8.
     var lines = [
-        "Satchel placeholder dialogue",
+        "Phial placeholder dialogue",
     ]
     if not dialogue_ended.is_connected(_on_fifth_prestige_ended):
         dialogue_ended.connect(_on_fifth_prestige_ended)
@@ -1142,8 +1143,9 @@ func enqueue_sixth_prestige() -> void:
     if sixth_prestige_done:
         return
     sixth_prestige_done = true
+    # The Satchel now unlocks at sixth_prestige — see the swap note above.
     var lines = [
-        "Phial placeholder dialogue",
+        "Satchel placeholder dialogue",
     ]
     if not dialogue_ended.is_connected(_on_sixth_prestige_ended):
         dialogue_ended.connect(_on_sixth_prestige_ended)

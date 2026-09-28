@@ -32,19 +32,21 @@ extends "res://dev_tests/test_base.gd"
 
 ## cid -> [component_count, reachable_ordered_pairs, star_count, edge_count]
 ## The Bellows and The Satchel swapped ids (3 <-> 4) 2026-09-23 — see
-## constellation_data.gd v0.3.6 — so their rows below swapped keys too;
-## the VALUES describe the same shapes as before, just under the other id.
+## constellation_data.gd v0.3.6. The Phial and The Satchel swapped ids
+## (4 <-> 5) again 2026-09-27 — see v0.3.8. Each swap's rows moved to the
+## new keys; the VALUES describe the same shapes as before, just under
+## whichever id that constellation holds now.
 const BASELINE := {
 	0: [4, 48, 15, 15],    # The Archon    — 3 isolated triangles + a 6-cycle
 	1: [1, 240, 16, 21],   # The Spark     — fully connected; a center oval was
 	                       # added 2026-09-16 alongside the original spine/spokes
 	2: [1, 156, 13, 14],   # The Hourglass — fully connected
 	3: [5, 182, 18, 14],   # The Bellows   — 4 isolated singles + one body
-	4: [1, 272, 17, 20],   # The Satchel   — fully connected
-	5: [1, 182, 14, 14],   # The Phial     — fully connected; REDESIGNED 2026-09-27
+	4: [1, 182, 14, 14],   # The Phial     — fully connected; REDESIGNED 2026-09-27
 	                       # from the two-handled urn to an egg-bottom/spike-top
 	                       # perfume bottle (14 edges now, was 16 — the spike tip
 	                       # is a degree-1 leaf, not a closed loop)
+	5: [1, 272, 17, 20],   # The Satchel   — fully connected
 	6: [1, 272, 17, 20],   # The Djinn     — fully connected ("jar" vessel_layouts
 	                       # variant, 2026-09-27: the Phial's own OLD pithos
 	                       # outline, rotated 90° and topped with a 3-star domed lid)

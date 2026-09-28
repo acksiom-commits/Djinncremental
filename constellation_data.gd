@@ -1,5 +1,14 @@
 extends Node
-# ================= CONSTELLATION DATA v0.3.7 =================
+# ================= CONSTELLATION DATA v0.3.8 =================
+# v0.3.8: Swapped The Phial and The Satchel in the progression order AND
+#         their numeric identities, per user direction — The Phial now
+#         unlocks at "achievement:fifth_prestige"/id 4/octant 4, The
+#         Satchel at "achievement:sixth_prestige"/id 5/octant 5 (both were
+#         the reverse). Names/geometry/puzzle/bonus data stayed with their
+#         own constellation, same pattern as the v0.3.5/v0.3.6
+#         Bellows/Satchel swap. The Djinn's "jar" vessel_layouts entry
+#         (id 6) keeps its own copy of the OLD pithos geometry, unaffected
+#         by this since it was never a live reference to id 5.
 # v0.3.7: Renamed "The Vessel" (id 5, the Spark-bank constellation) to
 #         "The Phial" — per user direction, "Vessel" is reserved going
 #         forward for The Djinn (id 6, the Player's own constellation),
@@ -535,18 +544,181 @@ const BUILT_IN = [
 
 
 # ==================================================
-# CONSTELLATION 5-5: THE SATCHEL
+# CONSTELLATION 5-5: THE PHIAL
 # ==================================================
-# id/octant swapped with The Bellows (was id 3/octant 3) — see that
-# entry's comment above.
+# id/octant swapped with The Satchel 2026-09-27, per user direction, on
+# top of already sitting right before it in file order — The Phial now
+# unlocks BEFORE The Satchel (fifth_prestige, was sixth), so it moves to
+# id 4/octant 4 (was id 5/octant 5) and The Satchel takes id 5/octant 5
+# (see its entry below). Names/geometry/puzzle/bonus data stayed with
+# their own constellation; only id/octant/unlock moved, same pattern as
+# the earlier Bellows/Satchel swap higher in this file.
+#
+# Renamed from "The Vessel" 2026-09-23 (see the top-of-file v0.3.7 history
+# entry) — "Vessel" is reserved going forward for The Djinn, the Player's
+# own constellation (see its entry below), to avoid the two constellations
+# sharing a name once the Djinn's vessel-selection intro screen exists.
+#
+# A new constellation, NOT the Player's own (that's The Djinn, id 6/
+# octant 6). Ability: banks a capped pool of Sparks between expansions, so
+# a Constellation Endowment push doesn't have to start from zero every
+# single cycle — unspent Sparks above the bank's own cap still fall on
+# the ground as before, only the banked amount survives into the next
+# expansion for endowing.
+#
+# Shape: REDESIGNED 2026-09-27 from a pithos (the large two-handled ancient
+# storage jar, confirmed 2026-09-15 as the correct term) to an egg-bottomed,
+# spike-topped perfume bottle — the user's rationale: the classic Greek
+# "phial" was more of a saucer, but a modern audience recognises the
+# perfume-bottle silhouette better from modern fantasy media. The old
+# pithos geometry was NOT discarded — it lives on as The Djinn's (id 6)
+# "jar" vessel_layouts entry (rotated 90°, plus a domed lid), since the
+# user's design intent was for the Djinn's jar vessel to reuse it lying on
+# its side. See its entry below for that shape and the redesign sequencing
+# note that drove doing the copy before this redesign.
+#
+# TODO (Boss): full placeholder/outline only —
+#   - designation left empty (undecided — no mononym chosen yet, unlike the
+#     other five built-ins' KALEB/ALZIRO/DRASIN/HANLEE/DAJALA, or The
+#     Djinn's deliberately-placeholder ENIGMA). UI falls back to showing
+#     just "The Phial" until one is picked.
+#   - star_count (14, matching the designed outline below), bonus_value/
+#     bonus_levels (100/250/500/1000 Spark bank capacity) are placeholder
+#     round numbers, not a balanced design pass — spark_cap reuses the
+#     universal 28657 constant like every other built-in.
+#   - unlock is "achievement:fifth_prestige" (swapped with The Satchel
+#     2026-09-27 — see the id/octant swap note above; was
+#     "achievement:sixth_prestige" from the 2026-09-14 renumber before
+#     that).
+#   - fixed_star_positions / line_pairs REDESIGNED (2026-09-27, see the
+#     "Shape" note above) — the two-handled urn outline (2026-09-14) was
+#     replaced by an egg-bottom/spike-top perfume-bottle outline the user
+#     supplied directly (still 14 stars, now 14 edges: a rounded body —
+#     top and bottom 5-star arcs joined at the blunt left end, tapering
+#     through a neck to a joint, then one pendant edge out to the spike
+#     tip). Digitized from a reference image already laid out sideways
+#     (~609px wide : ~161px tall at the stars' own bounding box, i.e.
+#     ~3.8:1) — rotated a further 5° counterclockwise (20° first, then
+#     brought back 15° clockwise per user direction) and rescaled
+#     uniformly (one scale factor for both axes, not an anisotropic
+#     squash) so it fills this file's flat |x|<=0.130 / |y|<=0.065 display
+#     window on both axes at once, rather than sitting far short of the
+#     y bound the way an unrotated fit to the x bound alone would.
+#   - puzzle_sequence / note_freqs ADDED (2026-09-16) — reduced directly
+#     from POLKA_THEME_NOTES (still kept below the BUILT_IN array closes as
+#     the literal source/reference): the Bar 6 two-note harmony
+#     (E5 played with C#5) is unrolled into two SEQUENTIAL stars rather
+#     than a true simultaneous chord, since puzzle_sequence/note_durations
+#     are inherently monophonic lists — this is exactly what makes
+#     POLKA_THEME_NOTES' 14 note-events land 1:1 on the 14 stars with no
+#     further trimming needed.
+#   - response_freqs set equal to note_freqs (the 6 distinct pitches, same
+#     order) rather than a distinct echo phrase — The Spark (id 1) uses
+#     this same "echo the distinct notes" pattern; no separate response
+#     melody was specified for The Phial, so this is the conservative
+#     default rather than invented content. Revisit if a real one is ever
+#     designed.
+#   - DEV: puzzle solution is the Tritsch-Tratsch Polka, Op. 214 (Johann
+#     Strauss II, 1858), main theme, Bar 3 to Bar 9 Beat 1. Same idea as
+#     The Djinn's Zarathustra note below, now fully wired instead of just
+#     sourced.
+#   - bonus_rate_levels ADDED (2026-09-16) — the actual spark_bank_capacity
+#     mechanic: get_phial_spark_bank_amount() reads this per-Uonite Spark
+#     rate for Phial's current tier, multiplies by live Uonite count, and
+#     clamps to bonus_levels' cap for that same tier ("dark" has no entry
+#     in either dict, so a freshly-unlocked/uninvested Phial banks
+#     nothing). bonus_value (100.0) is unused by this mechanic — kept as
+#     the flat-bonus fallback the shared get_active_bonus() reads, in case
+#     a non-tiered consumer ever wants it.
 
     {
         "id": 4,
+        "name": "The Phial",
+        "designation": "",
+        "octant": 4,
+        "star_count": 14,
+        "unlock": "achievement:fifth_prestige",
+        "bonus_key": "spark_bank_capacity",
+        "bonus_value": 100.0,
+        "mechanic_key": "",
+        "bonus_levels": {"stars": 250.0, "lines": 500.0, "art": 1000.0},
+        "bonus_rate_levels": {"stars": 1.0, "lines": 5.0, "art": 25.0},
+        "spark_cap":      28657,
+
+        # Egg-bottom/spike-top perfume-bottle outline — see the "Shape" and
+        # "REDESIGNED" TODO notes above for how this was digitized and
+        # rescaled. Indices below match line_pairs.
+        "fixed_star_positions": [
+            [-0.1300, -0.0061, 0.9915],  # 0: body, left tip, upper
+            [-0.1271,  0.0271, 0.9915],  # 1: body, left tip, lower
+            [-0.0963, -0.0233, 0.9951],  # 2: body, upper arc 1
+            [-0.0886,  0.0311, 0.9956],  # 3: body, lower arc 1
+            [-0.0539, -0.0340, 0.9980],  # 4: body, upper arc 2
+            [-0.0462,  0.0348, 0.9983],  # 5: body, lower arc 2
+            [-0.0126, -0.0336, 0.9994],  # 6: body, upper arc 3
+            [-0.0047,  0.0225, 0.9997],  # 7: body, lower arc 3
+            [ 0.0198, -0.0348, 0.9992],  # 8: taper, upper
+            [ 0.0265,  0.0072, 0.9996],  # 9: taper, lower
+            [ 0.0507, -0.0280, 0.9983],  # 10: neck, upper
+            [ 0.0529, -0.0086, 0.9986],  # 11: neck, lower
+            [ 0.0941, -0.0235, 0.9953],  # 12: spike joint (neck's upper and lower sides meet)
+            [ 0.1300, -0.0284, 0.9911],  # 13: spike tip
+        ],
+        # The rounded body is a top arc (0-2-4-6-8-10) and a mirrored
+        # bottom arc (1-3-5-7-9-11), joined at the blunt left end (0-1);
+        # both arcs converge at the neck onto the spike joint (10-12,
+        # 11-12), which has one pendant edge out to the spike tip (12-13).
+        # 14 stars, 14 edges — a single connected component (no isolated
+        # star), but NOT the two-loops-plus-crossbar shape the old pithos
+        # had; the spike tip in particular is a degree-1 leaf.
+        "line_pairs": [
+            0,2,  2,4,  4,6,  6,8,  8,10,   # top arc
+            1,3,  3,5,  5,7,  7,9,  9,11,   # bottom arc
+            0,1,                            # blunt left end
+            10,12,  11,12,                  # neck converges on the spike joint
+            12,13,                          # spike
+        ],
+
+        # Reduced from POLKA_THEME_NOTES (see TODO above re: the Bar 6
+        # harmony unroll). Sequence order matches POLKA_THEME_NOTES exactly:
+        # A5 A5 G#5 A5 B5 A5 G#5 F#5 E5 C#5 A5 A5 E5 F#5.
+        "puzzle_sequence": [0, 0, 1, 0, 2, 0, 1, 3, 4, 5, 0, 0, 4, 3],
+        "note_freqs": [
+            880.00,  # 0: A5
+            830.61,  # 1: G#5
+            987.77,  # 2: B5
+            739.99,  # 3: F#5
+            659.25,  # 4: E5
+            554.37,  # 5: C#5
+        ],
+        # Quarter-note-beat durations, one per star, straight from
+        # POLKA_THEME_NOTES' own "duration" field in the same order.
+        "note_durations": [
+            0.625, 0.625, 0.375, 0.125, 0.25, 0.25, 0.25, 0.25,
+            0.5, 0.5, 0.625, 0.625, 0.25, 0.25,
+        ],
+        # See TODO above -- no distinct response melody specified, so this
+        # mirrors The Spark's (id 1) "echo the distinct notes" pattern.
+        "response_freqs": [880.00, 830.61, 987.77, 739.99, 659.25, 554.37],
+    },
+
+
+# ==================================================
+# CONSTELLATION 6-6: THE SATCHEL
+# ==================================================
+# id/octant swapped with The Phial 2026-09-27, per user direction — The
+# Satchel now unlocks AFTER The Phial (sixth_prestige, was fifth), so it
+# moves to id 5/octant 5 (was id 4/octant 4). See The Phial's entry above
+# for the other half of this swap. Name/geometry/puzzle/bonus data stayed
+# with this constellation; only id/octant/unlock moved.
+
+    {
+        "id": 5,
         "name": "The Satchel",
         "designation": "HANLEE",
-        "octant": 4,
+        "octant": 5,
         "star_count": 17,
-        "unlock": "achievement:fifth_prestige",
+        "unlock": "achievement:sixth_prestige",
         "bonus_key": "storage_multiplier",
         "bonus_value": 1.0,
         "mechanic_key": "",
@@ -632,163 +804,6 @@ const BUILT_IN = [
             4,0, 14,4,
             6,10, 10,11, 11,12, 12,13, 13,7, 7,15, 15,16, 16,14,
         ],
-    },
-
-
-# ==================================================
-# CONSTELLATION 6-6: THE PHIAL
-# ==================================================
-# Renamed from "The Vessel" 2026-09-23 (see the top-of-file v0.3.7 history
-# entry) — "Vessel" is reserved going forward for The Djinn, the Player's
-# own constellation (see its entry below), to avoid the two constellations
-# sharing a name once the Djinn's vessel-selection intro screen exists.
-#
-# A new constellation, NOT the Player's own (that's The Djinn, pushed to id
-# 6/octant 6 below to make room for this one at id 5/octant 5). Ability:
-# banks a capped pool of Sparks between expansions, so a Constellation
-# Endowment push doesn't have to start from zero every single cycle —
-# unspent Sparks above the bank's own cap still fall on the ground as
-# before, only the banked amount survives into the next expansion for
-# endowing.
-#
-# Shape: REDESIGNED 2026-09-27 from a pithos (the large two-handled ancient
-# storage jar, confirmed 2026-09-15 as the correct term) to an egg-bottomed,
-# spike-topped perfume bottle — the user's rationale: the classic Greek
-# "phial" was more of a saucer, but a modern audience recognises the
-# perfume-bottle silhouette better from modern fantasy media. The old
-# pithos geometry was NOT discarded — it lives on as The Djinn's (id 6)
-# "jar" vessel_layouts entry (rotated 90°, plus a domed lid), since the
-# user's design intent was for the Djinn's jar vessel to reuse it lying on
-# its side. See its entry below for that shape and the redesign sequencing
-# note that drove doing the copy before this redesign.
-#
-# TODO (Boss): full placeholder/outline only —
-#   - designation left empty (undecided — no mononym chosen yet, unlike the
-#     other five built-ins' KALEB/ALZIRO/DRASIN/HANLEE/DAJALA, or The
-#     Djinn's deliberately-placeholder ENIGMA). UI falls back to showing
-#     just "The Phial" until one is picked.
-#   - star_count (14, matching the designed outline below), bonus_value/
-#     bonus_levels (100/250/500/1000 Spark bank capacity) are placeholder
-#     round numbers, not a balanced design pass — spark_cap reuses the
-#     universal 28657 constant like every other built-in.
-#   - unlock is "achievement:sixth_prestige" (corrected 2026-09-14 — the
-#     first pass at this renumber wrongly gave The Phial "fifth_prestige"
-#     and pushed The Djinn to "sixth_prestige"; the user's actual design is
-#     Phial-at-sixth/Djinn-at-seventh, one tier later than that first
-#     guess). This also matches root_ui.gd's own pre-existing
-#     _on_fifth_prestige_complete() comment ("no sixth constellation yet;
-#     add when id 5 is defined") — id 5 pre-generates its puzzle one
-#     prestige tier BEFORE it unlocks, same as every earlier constellation.
-#   - fixed_star_positions / line_pairs REDESIGNED (2026-09-27, see the
-#     "Shape" note above) — the two-handled urn outline (2026-09-14) was
-#     replaced by an egg-bottom/spike-top perfume-bottle outline the user
-#     supplied directly (still 14 stars, now 14 edges: a rounded body —
-#     top and bottom 5-star arcs joined at the blunt left end, tapering
-#     through a neck to a joint, then one pendant edge out to the spike
-#     tip). Digitized from a reference image already laid out sideways
-#     (~609px wide : ~161px tall at the stars' own bounding box, i.e.
-#     ~3.8:1) — rotated a further 5° counterclockwise (20° first, then
-#     brought back 15° clockwise per user direction) and rescaled
-#     uniformly (one scale factor for both axes, not an anisotropic
-#     squash) so it fills this file's flat |x|<=0.130 / |y|<=0.065 display
-#     window on both axes at once, rather than sitting far short of the
-#     y bound the way an unrotated fit to the x bound alone would.
-#   - puzzle_sequence / note_freqs ADDED (2026-09-16) — reduced directly
-#     from POLKA_THEME_NOTES (still kept below the BUILT_IN array closes as
-#     the literal source/reference): the Bar 6 two-note harmony
-#     (E5 played with C#5) is unrolled into two SEQUENTIAL stars rather
-#     than a true simultaneous chord, since puzzle_sequence/note_durations
-#     are inherently monophonic lists — this is exactly what makes
-#     POLKA_THEME_NOTES' 14 note-events land 1:1 on the 14 stars with no
-#     further trimming needed.
-#   - response_freqs set equal to note_freqs (the 6 distinct pitches, same
-#     order) rather than a distinct echo phrase — The Spark (id 1) uses
-#     this same "echo the distinct notes" pattern; no separate response
-#     melody was specified for The Phial, so this is the conservative
-#     default rather than invented content. Revisit if a real one is ever
-#     designed.
-#   - DEV: puzzle solution is the Tritsch-Tratsch Polka, Op. 214 (Johann
-#     Strauss II, 1858), main theme, Bar 3 to Bar 9 Beat 1. Same idea as
-#     The Djinn's Zarathustra note below, now fully wired instead of just
-#     sourced.
-#   - bonus_rate_levels ADDED (2026-09-16) — the actual spark_bank_capacity
-#     mechanic: get_phial_spark_bank_amount() reads this per-Uonite Spark
-#     rate for Phial's current tier, multiplies by live Uonite count, and
-#     clamps to bonus_levels' cap for that same tier ("dark" has no entry
-#     in either dict, so a freshly-unlocked/uninvested Phial banks
-#     nothing). bonus_value (100.0) is unused by this mechanic — kept as
-#     the flat-bonus fallback the shared get_active_bonus() reads, in case
-#     a non-tiered consumer ever wants it.
-
-    {
-        "id": 5,
-        "name": "The Phial",
-        "designation": "",
-        "octant": 5,
-        "star_count": 14,
-        "unlock": "achievement:sixth_prestige",
-        "bonus_key": "spark_bank_capacity",
-        "bonus_value": 100.0,
-        "mechanic_key": "",
-        "bonus_levels": {"stars": 250.0, "lines": 500.0, "art": 1000.0},
-        "bonus_rate_levels": {"stars": 1.0, "lines": 5.0, "art": 25.0},
-        "spark_cap":      28657,
-
-        # Egg-bottom/spike-top perfume-bottle outline — see the "Shape" and
-        # "REDESIGNED" TODO notes above for how this was digitized and
-        # rescaled. Indices below match line_pairs.
-        "fixed_star_positions": [
-            [-0.1300, -0.0061, 0.9915],  # 0: body, left tip, upper
-            [-0.1271,  0.0271, 0.9915],  # 1: body, left tip, lower
-            [-0.0963, -0.0233, 0.9951],  # 2: body, upper arc 1
-            [-0.0886,  0.0311, 0.9956],  # 3: body, lower arc 1
-            [-0.0539, -0.0340, 0.9980],  # 4: body, upper arc 2
-            [-0.0462,  0.0348, 0.9983],  # 5: body, lower arc 2
-            [-0.0126, -0.0336, 0.9994],  # 6: body, upper arc 3
-            [-0.0047,  0.0225, 0.9997],  # 7: body, lower arc 3
-            [ 0.0198, -0.0348, 0.9992],  # 8: taper, upper
-            [ 0.0265,  0.0072, 0.9996],  # 9: taper, lower
-            [ 0.0507, -0.0280, 0.9983],  # 10: neck, upper
-            [ 0.0529, -0.0086, 0.9986],  # 11: neck, lower
-            [ 0.0941, -0.0235, 0.9953],  # 12: spike joint (neck's upper and lower sides meet)
-            [ 0.1300, -0.0284, 0.9911],  # 13: spike tip
-        ],
-        # The rounded body is a top arc (0-2-4-6-8-10) and a mirrored
-        # bottom arc (1-3-5-7-9-11), joined at the blunt left end (0-1);
-        # both arcs converge at the neck onto the spike joint (10-12,
-        # 11-12), which has one pendant edge out to the spike tip (12-13).
-        # 14 stars, 14 edges — a single connected component (no isolated
-        # star), but NOT the two-loops-plus-crossbar shape the old pithos
-        # had; the spike tip in particular is a degree-1 leaf.
-        "line_pairs": [
-            0,2,  2,4,  4,6,  6,8,  8,10,   # top arc
-            1,3,  3,5,  5,7,  7,9,  9,11,   # bottom arc
-            0,1,                            # blunt left end
-            10,12,  11,12,                  # neck converges on the spike joint
-            12,13,                          # spike
-        ],
-
-        # Reduced from POLKA_THEME_NOTES (see TODO above re: the Bar 6
-        # harmony unroll). Sequence order matches POLKA_THEME_NOTES exactly:
-        # A5 A5 G#5 A5 B5 A5 G#5 F#5 E5 C#5 A5 A5 E5 F#5.
-        "puzzle_sequence": [0, 0, 1, 0, 2, 0, 1, 3, 4, 5, 0, 0, 4, 3],
-        "note_freqs": [
-            880.00,  # 0: A5
-            830.61,  # 1: G#5
-            987.77,  # 2: B5
-            739.99,  # 3: F#5
-            659.25,  # 4: E5
-            554.37,  # 5: C#5
-        ],
-        # Quarter-note-beat durations, one per star, straight from
-        # POLKA_THEME_NOTES' own "duration" field in the same order.
-        "note_durations": [
-            0.625, 0.625, 0.375, 0.125, 0.25, 0.25, 0.25, 0.25,
-            0.5, 0.5, 0.625, 0.625, 0.25, 0.25,
-        ],
-        # See TODO above -- no distinct response melody specified, so this
-        # mirrors The Spark's (id 1) "echo the distinct notes" pattern.
-        "response_freqs": [880.00, 830.61, 987.77, 739.99, 659.25, 554.37],
     },
 
 
@@ -886,7 +901,7 @@ const BUILT_IN = [
         # no invented filler points. Source image bounding box center
         # (318.2, 387.65) px; scale 0.0004127 (rotated short axis hits
         # x=±0.131, matching the window other built-ins use). Indices
-        # 0-13 are IDENTICAL to id 5's scheme (see its "Two 4-edge handle
+        # 0-13 are IDENTICAL to The Phial's (id 4 as of v0.3.8) old pithos scheme (see its "Two 4-edge handle
         # loops..." comment) — same source photo, same digitization,
         # just transposed through its own center; 14-16 are new.
         # ring/lamp have no source art yet.
@@ -911,7 +926,7 @@ const BUILT_IN = [
                     [-0.1306,  0.0050, 0.9914],  # 15: dome apex
                     [-0.1180, -0.0258, 0.9927],  # 16: dome, right foot (above star 2)
                 ],
-                # Same 16 edges as id 5's pithos, plus a 4-edge domed lid
+                # Same 16 edges as The Phial's old pithos (id 4 as of v0.3.8), plus a 4-edge domed lid
                 # arcing over the mouth (1-14-15-16-2) alongside the
                 # original flat top bar (1-2) — both now present, so the
                 # rim reads as a lid sitting on the jar's mouth.
@@ -936,7 +951,7 @@ const BUILT_IN = [
 ]
 
 # ==================================================
-# THE PHIAL (id 5) — PLACEHOLDER PUZZLE SOURCE MATERIAL
+# THE PHIAL (id 4 as of v0.3.8) — PLACEHOLDER PUZZLE SOURCE MATERIAL
 # ==================================================
 # Raw MIDI transcription of the Tritsch-Tratsch-Polka, Op. 214 (Johann
 # Strauss II) main theme, Bar 3 to Bar 9 Beat 1 — the intended puzzle

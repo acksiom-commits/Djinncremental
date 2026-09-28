@@ -24,11 +24,12 @@ extends "res://dev_tests/test_base.gd"
 # a `-- probe`-invoked deep-check, not something every suite run pays for.
 
 const SEEDS := [11]
-# Satchel is id 4 now (swapped with The Bellows 2026-09-23 — see
-# constellation_data.gd v0.3.6); this constant must keep pointing at
-# Satchel specifically (see the header comment above), not whichever
-# constellation happens to sit at id 3 after the swap.
-const CONSTELLATIONS := [0, 4]
+# Satchel is id 5 now (swapped with The Phial 2026-09-27, constellation_data.gd
+# v0.3.8; was id 4, swapped with The Bellows 2026-09-23, v0.3.6); this
+# constant must keep pointing at Satchel specifically (see the header
+# comment above), not whichever constellation happens to sit at that id
+# after a swap.
+const CONSTELLATIONS := [0, 5]
 const SAMPLE_PER_AXIS := 6
 
 var fails: int = 0
