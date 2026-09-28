@@ -42,7 +42,9 @@ const _PuzzleScript = preload("res://constellation_logic_puzzle.gd")
 
 ## id -> why its content is not certified yet.
 const PLACEHOLDERS: Dictionary = {
-    6: "The Djinn: no line_pairs, no fixed_star_positions, and a 15-step melody for 17 stars -- content not authored yet",
+    6: "The Djinn: 'jar' vessel_layouts got its 17-star outline 2026-09-27, " \
+       + "but the Zarathustra melody is still only 15 of 17 note-events " \
+       + "(stars 15/16 never fire) -- ring/lamp vessels have no outline at all yet",
 }
 
 ## "id:code" -> why the warning is accepted.
@@ -247,6 +249,30 @@ static func _certify_names(def: Dictionary, n: int, id: int, out: Array) -> void
         out.append(_finding("names_duplicate", SEV_ERROR, "the generated star names are not all distinct"))
 
 
+## Some BUILT_IN defs (currently only The Djinn) carry PER-VESSEL geometry
+## in "vessel_layouts" ({vessel_key: {"fixed_star_positions":.., "line_pairs":..}
+## or null}) instead of those two keys directly — see _resolve_vessel_layout()
+## in constellation_data.gd, which get_constellation_def() calls against the
+## live GameContext.chosen_vessel. This certifier has no GameContext (`cd` here
+## can be the real ConstellationData OR dev_tests' minimal stub, neither
+## guaranteed to expose get_constellation_def()), so it picks "jar" directly —
+## the same fallback constellation_data.gd itself uses when chosen_vessel is
+## empty/unset. A def without "vessel_layouts" is returned unchanged.
+static func _resolve_vessel_layout_for_cert(raw: Dictionary) -> Dictionary:
+    if not raw.has("vessel_layouts"):
+        return raw
+    var layouts = raw.get("vessel_layouts")
+    if typeof(layouts) != TYPE_DICTIONARY:
+        return raw
+    var layout = (layouts as Dictionary).get("jar")
+    if typeof(layout) != TYPE_DICTIONARY:
+        return raw
+    var resolved: Dictionary = raw.duplicate()
+    resolved["fixed_star_positions"] = (layout as Dictionary).get("fixed_star_positions", [])
+    resolved["line_pairs"]           = (layout as Dictionary).get("line_pairs", [])
+    return resolved
+
+
 ## Certify every BUILT_IN def with the game's own note assignment, and sort the
 ## results by the two reviewed allowlists. Returns
 ##   {"errors": [], "warnings": [], "placeholders": [], "stale": []}
@@ -258,8 +284,9 @@ static func report_builtin(cd) -> Dictionary:
     var report: Dictionary = {"errors": [], "warnings": [], "placeholders": [], "stale": [], "all": []}
     var seen_warning_keys: Dictionary = {}
     for def in cd.BUILT_IN:
-        var d: Dictionary = def
-        var id: int = int(d.get("id", -1))
+        var raw: Dictionary = def
+        var id: int = int(raw.get("id", -1))
+        var d: Dictionary = _resolve_vessel_layout_for_cert(raw)
         var findings: Array = certify(d, cd.get_note_assignment(id))
         var has_error: bool = false
         for f in findings:

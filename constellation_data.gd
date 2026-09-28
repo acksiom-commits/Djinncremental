@@ -651,9 +651,16 @@ const BUILT_IN = [
 # before, only the banked amount survives into the next expansion for
 # endowing.
 #
-# Shape: a pithos (the large two-handled ancient storage jar) — confirmed
-# 2026-09-15 as the correct term for the outline in POLKA_THEME_NOTES's
-# neighboring fixed_star_positions/line_pairs below.
+# Shape: REDESIGNED 2026-09-27 from a pithos (the large two-handled ancient
+# storage jar, confirmed 2026-09-15 as the correct term) to an egg-bottomed,
+# spike-topped perfume bottle — the user's rationale: the classic Greek
+# "phial" was more of a saucer, but a modern audience recognises the
+# perfume-bottle silhouette better from modern fantasy media. The old
+# pithos geometry was NOT discarded — it lives on as The Djinn's (id 6)
+# "jar" vessel_layouts entry (rotated 90°, plus a domed lid), since the
+# user's design intent was for the Djinn's jar vessel to reuse it lying on
+# its side. See its entry below for that shape and the redesign sequencing
+# note that drove doing the copy before this redesign.
 #
 # TODO (Boss): full placeholder/outline only —
 #   - designation left empty (undecided — no mononym chosen yet, unlike the
@@ -672,15 +679,20 @@ const BUILT_IN = [
 #     _on_fifth_prestige_complete() comment ("no sixth constellation yet;
 #     add when id 5 is defined") — id 5 pre-generates its puzzle one
 #     prestige tier BEFORE it unlocks, same as every earlier constellation.
-#   - fixed_star_positions / line_pairs ADDED (2026-09-14) — a two-handled
-#     urn outline supplied directly by the user (14 stars, 16
-#     edges: two 4-edge handle loops at the top corners, a top bar joining
-#     them, two neck edges dropping into the body, two body-side edges,
-#     two lower-curve edges, and a bottom edge). Digitized from a
-#     reference image at native aspect (~319px wide : ~538px tall, i.e.
-#     taller than wide) and rescaled into this file's flat |x|<=0.130 /
-#     |y|<=0.055 display window — like every other built-in's shape, it's
-#     compressed to fit the wide panel, not shown at its "natural" aspect.
+#   - fixed_star_positions / line_pairs REDESIGNED (2026-09-27, see the
+#     "Shape" note above) — the two-handled urn outline (2026-09-14) was
+#     replaced by an egg-bottom/spike-top perfume-bottle outline the user
+#     supplied directly (still 14 stars, now 14 edges: a rounded body —
+#     top and bottom 5-star arcs joined at the blunt left end, tapering
+#     through a neck to a joint, then one pendant edge out to the spike
+#     tip). Digitized from a reference image already laid out sideways
+#     (~609px wide : ~161px tall at the stars' own bounding box, i.e.
+#     ~3.8:1) — rotated a further 5° counterclockwise (20° first, then
+#     brought back 15° clockwise per user direction) and rescaled
+#     uniformly (one scale factor for both axes, not an anisotropic
+#     squash) so it fills this file's flat |x|<=0.130 / |y|<=0.065 display
+#     window on both axes at once, rather than sitting far short of the
+#     y bound the way an unrotated fit to the x bound alone would.
 #   - puzzle_sequence / note_freqs ADDED (2026-09-16) — reduced directly
 #     from POLKA_THEME_NOTES (still kept below the BUILT_IN array closes as
 #     the literal source/reference): the Bar 6 two-note harmony
@@ -722,37 +734,38 @@ const BUILT_IN = [
         "bonus_rate_levels": {"stars": 1.0, "lines": 5.0, "art": 25.0},
         "spark_cap":      28657,
 
-        # Two-handled urn outline — see TODO above for how this was
-        # digitized and rescaled. Indices below match line_pairs.
+        # Egg-bottom/spike-top perfume-bottle outline — see the "Shape" and
+        # "REDESIGNED" TODO notes above for how this was digitized and
+        # rescaled. Indices below match line_pairs.
         "fixed_star_positions": [
-            [-0.120, -0.050, 0.991],  # 0: left handle, outer-top
-            [-0.059, -0.053, 0.997],  # 1: left handle, inner-top (top bar left end)
-            [ 0.061, -0.055, 0.997],  # 2: top bar right end (right handle, inner-top)
-            [ 0.123, -0.053, 0.991],  # 3: right handle, outer-top
-            [-0.130, -0.033, 0.991],  # 4: left handle, outer-bottom
-            [-0.068, -0.030, 0.997],  # 5: left handle, inner-bottom (neck-left top)
-            [ 0.073, -0.032, 0.997],  # 6: right handle, inner-bottom (neck-right top)
-            [ 0.130, -0.037, 0.991],  # 7: right handle, outer-bottom
-            [-0.120,  0.000, 0.993],  # 8: left shoulder
-            [ 0.125, -0.003, 0.992],  # 9: right shoulder
-            [-0.113,  0.029, 0.993],  # 10: left body
-            [ 0.115,  0.029, 0.993],  # 11: right body
-            [-0.055,  0.055, 0.997],  # 12: bottom-left
-            [ 0.079,  0.054, 0.995],  # 13: bottom-right
+            [-0.1300, -0.0061, 0.9915],  # 0: body, left tip, upper
+            [-0.1271,  0.0271, 0.9915],  # 1: body, left tip, lower
+            [-0.0963, -0.0233, 0.9951],  # 2: body, upper arc 1
+            [-0.0886,  0.0311, 0.9956],  # 3: body, lower arc 1
+            [-0.0539, -0.0340, 0.9980],  # 4: body, upper arc 2
+            [-0.0462,  0.0348, 0.9983],  # 5: body, lower arc 2
+            [-0.0126, -0.0336, 0.9994],  # 6: body, upper arc 3
+            [-0.0047,  0.0225, 0.9997],  # 7: body, lower arc 3
+            [ 0.0198, -0.0348, 0.9992],  # 8: taper, upper
+            [ 0.0265,  0.0072, 0.9996],  # 9: taper, lower
+            [ 0.0507, -0.0280, 0.9983],  # 10: neck, upper
+            [ 0.0529, -0.0086, 0.9986],  # 11: neck, lower
+            [ 0.0941, -0.0235, 0.9953],  # 12: spike joint (neck's upper and lower sides meet)
+            [ 0.1300, -0.0284, 0.9911],  # 13: spike tip
         ],
-        # Two 4-edge handle loops (0-1-5-4-0 and 2-3-7-6-2), a top bar
-        # joining the loops' inner-top corners (1-2), two neck edges
-        # dropping from each loop's inner-bottom corner into the body
-        # (5-8, 6-9), two body-side edges (8-10, 9-11), two lower-curve
-        # edges (10-12, 11-13), and a bottom edge closing the outline (12-13).
+        # The rounded body is a top arc (0-2-4-6-8-10) and a mirrored
+        # bottom arc (1-3-5-7-9-11), joined at the blunt left end (0-1);
+        # both arcs converge at the neck onto the spike joint (10-12,
+        # 11-12), which has one pendant edge out to the spike tip (12-13).
+        # 14 stars, 14 edges — a single connected component (no isolated
+        # star), but NOT the two-loops-plus-crossbar shape the old pithos
+        # had; the spike tip in particular is a degree-1 leaf.
         "line_pairs": [
-            0,1,  1,5,  5,4,  4,0,        # left handle loop
-            2,3,  3,7,  7,6,  6,2,        # right handle loop
-            1,2,                          # top bar
-            5,8,  6,9,                    # neck
-            8,10,  9,11,                  # body sides
-            10,12,  11,13,                # lower curves
-            12,13,                        # bottom
+            0,2,  2,4,  4,6,  6,8,  8,10,   # top arc
+            1,3,  3,5,  5,7,  7,9,  9,11,   # bottom arc
+            0,1,                            # blunt left end
+            10,12,  11,12,                  # neck converges on the spike joint
+            12,13,                          # spike
         ],
 
         # Reduced from POLKA_THEME_NOTES (see TODO above re: the Bar 6
@@ -803,8 +816,11 @@ const BUILT_IN = [
 #     once a real percussion channel exists (see the unused `perc` voice on
 #     PuzzleSequenceResource in puzzle_sequence_resource.gd). Array length
 #     (17) is arbitrary/placeholder since no exact count was given.
-#   - fixed_star_positions / line_pairs not yet designed — pending the
-#     per-vessel art choice.
+#   - fixed_star_positions / line_pairs: per-vessel now (see
+#     "vessel_layouts" on the entry below, resolved by
+#     _resolve_vessel_layout() against GameContext.chosen_vessel). "jar"
+#     is designed (17-star pithos-with-lid, 2026-09-27); ring/lamp still
+#     pending art.
 #   - unlock is "achievement:seventh_prestige" (corrected 2026-09-14, see
 #     the matching note at The Phial's entry above — Djinn is one tier
 #     later than The Phial, not the same tier as first guessed). This
@@ -856,7 +872,63 @@ const BUILT_IN = [
             130.81, 146.83, 130.81,
         ],
 
-        # fixed_star_positions / line_pairs: pending per-vessel art design.
+        # vessel_layouts: PER-VESSEL fixed_star_positions/line_pairs, chosen
+        # by GameContext.chosen_vessel at lookup time (see
+        # _resolve_vessel_layout() above get_constellation_def()). "jar"
+        # is the Phial's own pithos reference image, rotated 90° (pure
+        # rotation + one uniform scale, NOT an independent-per-axis squash
+        # like the current Phial entry above uses) so the rim/handles
+        # point left and the base points right, fitting this panel's
+        # wide/short window at the jar's real proportions instead of
+        # being flattened — plus a 3-star domed lid (14-16) the user
+        # added on top of the original 14-star outline (2026-09-27) so
+        # the shape's 17 stars match star_count/puzzle_sequence exactly,
+        # no invented filler points. Source image bounding box center
+        # (318.2, 387.65) px; scale 0.0004127 (rotated short axis hits
+        # x=±0.131, matching the window other built-ins use). Indices
+        # 0-13 are IDENTICAL to id 5's scheme (see its "Two 4-edge handle
+        # loops..." comment) — same source photo, same digitization,
+        # just transposed through its own center; 14-16 are new.
+        # ring/lamp have no source art yet.
+        "vessel_layouts": {
+            "jar": {
+                "fixed_star_positions": [
+                    [-0.0807,  0.0600, 0.9949],  # 0: left handle, outer-top
+                    [-0.0862,  0.0292, 0.9959],  # 1: left handle, inner-top (top bar left end)
+                    [-0.0907, -0.0298, 0.9954],  # 2: top bar right end (right handle, inner-top)
+                    [-0.0861, -0.0631, 0.9943],  # 3: right handle, outer-top
+                    [-0.0469,  0.0650, 0.9968],  # 4: left handle, outer-bottom
+                    [-0.0413,  0.0343, 0.9986],  # 5: left handle, inner-bottom (neck-left top)
+                    [-0.0439, -0.0369, 0.9984],  # 6: right handle, inner-bottom (neck-right top)
+                    [-0.0556, -0.0650, 0.9963],  # 7: right handle, outer-bottom
+                    [ 0.0197,  0.0619, 0.9979],  # 8: left shoulder
+                    [ 0.0126, -0.0636, 0.9979],  # 9: right shoulder
+                    [ 0.0791,  0.0574, 0.9952],  # 10: left body
+                    [ 0.0791, -0.0590, 0.9951],  # 11: right body
+                    [ 0.1306,  0.0277, 0.9911],  # 12: bottom-left
+                    [ 0.1285, -0.0404, 0.9909],  # 13: bottom-right
+                    [-0.1129,  0.0312, 0.9931],  # 14: dome, left foot (above star 1)
+                    [-0.1306,  0.0050, 0.9914],  # 15: dome apex
+                    [-0.1180, -0.0258, 0.9927],  # 16: dome, right foot (above star 2)
+                ],
+                # Same 16 edges as id 5's pithos, plus a 4-edge domed lid
+                # arcing over the mouth (1-14-15-16-2) alongside the
+                # original flat top bar (1-2) — both now present, so the
+                # rim reads as a lid sitting on the jar's mouth.
+                "line_pairs": [
+                    0,1,  1,5,  5,4,  4,0,        # left handle loop
+                    2,3,  3,7,  7,6,  6,2,        # right handle loop
+                    1,2,                          # top bar (mouth rim)
+                    1,14,  14,15,  15,16,  16,2,   # domed lid
+                    5,8,  6,9,                    # neck
+                    8,10,  9,11,                  # body sides
+                    10,12,  11,13,                # lower curves
+                    12,13,                        # bottom
+                ],
+            },
+            "ring": null,
+            "lamp": null,
+        },
     },
 
 
@@ -1274,7 +1346,7 @@ func get_constellation_def(id: int) -> Dictionary:
     # id turns a would-be crashing `==` comparison into a safe int-int one.
     for c in BUILT_IN:
         if c["id"] == id:
-            return c
+            return _resolve_vessel_layout(c)
     for c in player_constellations:
         if c is Dictionary and _coerce_int(c.get("id"), -1) == id:
             return c
@@ -1282,6 +1354,42 @@ func get_constellation_def(id: int) -> Dictionary:
         if c is Dictionary and c.get("approved", false) and _coerce_int(c.get("id"), -1) == id:
             return c
     return {}
+
+
+# ------------------------------------------------------------------
+# The Djinn (id 6) is themed on whichever Vessel the player picked on the
+# intro screen (GameContext.chosen_vessel: "lamp"/"ring"/"jar") and needs
+# its own fixed_star_positions/line_pairs PER vessel, rather than the
+# single pair every other BUILT_IN entry carries directly. Its
+# "vessel_layouts" field holds {vessel_key: {"fixed_star_positions":...,
+# "line_pairs":...} or null for a not-yet-authored vessel}; this resolves
+# the player's pick (or "jar" — the first variant put in front of the
+# player on the intro screen — if chosen_vessel is empty/unrecognized)
+# onto the SAME top-level keys every consumer (get_star_positions() below,
+# the overlay draw code, the content certifier, dev_tests) already reads,
+# so none of them need to know vessel_layouts exists. A def without a
+# "vessel_layouts" key — i.e. every other BUILT_IN — is returned
+# untouched. When the chosen vessel's own entry is null (no art authored
+# yet), this also returns the def untouched, so get_star_positions()
+# falls through to its procedural scatter exactly as it did before this
+# system existed.
+# ------------------------------------------------------------------
+func _resolve_vessel_layout(c: Dictionary) -> Dictionary:
+    if not c.has("vessel_layouts"):
+        return c
+    var vessel_key: String = "jar"
+    if _game_context:
+        var picked: String = _coerce_string(_game_context.get("chosen_vessel"), "")
+        if picked != "":
+            vessel_key = picked
+    var layouts: Dictionary = _coerce_dict(c.get("vessel_layouts"), {})
+    var layout = layouts.get(vessel_key)
+    if not (layout is Dictionary):
+        return c
+    var resolved: Dictionary = c.duplicate()
+    resolved["fixed_star_positions"] = layout.get("fixed_star_positions", [])
+    resolved["line_pairs"]           = layout.get("line_pairs", [])
+    return resolved
 
 
 func get_constellations_in_octant(octant: int) -> Array:

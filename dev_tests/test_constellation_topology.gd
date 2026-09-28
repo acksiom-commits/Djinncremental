@@ -41,15 +41,21 @@ const BASELINE := {
 	2: [1, 156, 13, 14],   # The Hourglass — fully connected
 	3: [5, 182, 18, 14],   # The Bellows   — 4 isolated singles + one body
 	4: [1, 272, 17, 20],   # The Satchel   — fully connected
-	5: [1, 182, 14, 16],   # The Phial     — fully connected (two-handled urn outline)
+	5: [1, 182, 14, 14],   # The Phial     — fully connected; REDESIGNED 2026-09-27
+	                       # from the two-handled urn to an egg-bottom/spike-top
+	                       # perfume bottle (14 edges now, was 16 — the spike tip
+	                       # is a degree-1 leaf, not a closed loop)
+	6: [1, 272, 17, 20],   # The Djinn     — fully connected ("jar" vessel_layouts
+	                       # variant, 2026-09-27: the Phial's own OLD pithos
+	                       # outline, rotated 90° and topped with a 3-star domed lid)
 }
 
-## Authored but topology-less on purpose; setup() aborts on it.
-## id 6 = The Djinn (pushed up from 5 when The Phial [then named "The
-## Vessel"] was inserted at id 5, 2026-09-13) -- still pending
-## fixed_star_positions. id 5 = The Phial got its outline on 2026-09-14
-## (see BASELINE below) and no longer belongs here.
-const NO_TOPOLOGY_YET := [6]
+## Authored but topology-less on purpose; setup() aborts on it. Currently
+## empty — The Djinn's "jar" vessel got its outline 2026-09-27 (see
+## BASELINE above); ring/lamp aren't separate constellation ids, they're
+## other entries in the SAME id's vessel_layouts dict, so they don't need
+## their own line here even while unauthored.
+const NO_TOPOLOGY_YET: Array = []
 
 var fails: int = 0
 
