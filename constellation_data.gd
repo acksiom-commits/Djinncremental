@@ -904,7 +904,8 @@ const BUILT_IN = [
         # 0-13 are IDENTICAL to The Phial's (id 4 as of v0.3.8) old pithos scheme (see its "Two 4-edge handle
         # loops..." comment) — same source photo, same digitization,
         # just transposed through its own center; 14-16 are new.
-        # ring/lamp have no source art yet.
+        # "ring" and "lamp" (below) got their own source art 2026-09-27 too
+        # — all three vessels are now fully authored.
         "vessel_layouts": {
             "jar": {
                 "fixed_star_positions": [
@@ -941,8 +942,94 @@ const BUILT_IN = [
                     12,13,                        # bottom
                 ],
             },
-            "ring": null,
-            "lamp": null,
+            # Ring outline (2026-09-27): a torus/donut silhouette viewed
+            # edge-on — an outer ellipse (10 stars) and a smaller,
+            # concentric inner ellipse (7 stars, the ring's hole), the two
+            # NOT connected to each other (2 components, matching how a
+            # real ring's outer and inner edges are genuinely separate
+            # curves) — same acceptable multi-component pattern The
+            # Bellows already uses. Classified inner-vs-outer by radius
+            # from the shape's own centroid (a clean gap: inner stars all
+            # closer than 212px, outer all farther than 243px) then each
+            # loop's points ordered by angle around that centroid to build
+            # its own closed cycle. Digitized from a reference image
+            # already at a landscape aspect (~545:272, i.e. ~2:1) —
+            # uniform scale only, no rotation needed; bounding box center
+            # (448.9, 272.4) px, scale 0.000477 (hits both x=±0.130 and
+            # y=±0.065 at once, an unusually exact fit).
+            "ring": {
+                "fixed_star_positions": [
+                    [-0.1300, -0.0149, 0.9914],  # 0: outer
+                    [-0.1194,  0.0250, 0.9925],  # 1: outer
+                    [-0.0895, -0.0168, 0.9958],  # 2: inner
+                    [-0.0814,  0.0241, 0.9964],  # 3: inner
+                    [-0.0650, -0.0486, 0.9967],  # 4: outer
+                    [-0.0515,  0.0515, 0.9973],  # 5: outer
+                    [-0.0361, -0.0303, 0.9989],  # 6: inner
+                    [-0.0102,  0.0650, 0.9978],  # 7: outer
+                    [-0.0058,  0.0424, 0.9991],  # 8: inner
+                    [ 0.0039, -0.0650, 0.9979],  # 9: outer
+                    [ 0.0342, -0.0361, 0.9988],  # 10: inner
+                    [ 0.0419,  0.0515, 0.9978],  # 11: outer
+                    [ 0.0751,  0.0323, 0.9967],  # 12: inner
+                    [ 0.0761, -0.0419, 0.9962],  # 13: outer
+                    [ 0.0872, -0.0135, 0.9961],  # 14: inner
+                    [ 0.1151,  0.0236, 0.9931],  # 15: outer
+                    [ 0.1300, -0.0048, 0.9915],  # 16: outer
+                ],
+                # Outer decagon (0-4-9-13-16-15-11-7-5-1-0, 10 edges) and
+                # inner heptagon (2-6-10-14-12-8-3-2, 7 edges) — two
+                # disjoint closed loops, 17 edges total, no isolated star.
+                "line_pairs": [
+                    0,4,  4,9,  9,13,  13,16,  16,15,
+                    15,11,  11,7,  7,5,  5,1,  1,0,      # outer loop
+                    2,6,  6,10,  10,14,  14,12,  12,8,  8,3,  3,2,  # inner loop
+                ],
+            },
+            # Lamp outline (2026-09-27): an Aladdin-style oil lamp lying on
+            # its side, spout to the right — digitized as a SINGLE
+            # continuous open path (not a closed loop), traced by finding
+            # each dashed/curved stroke's teal pixel blob and matching it
+            # to its two nearest star centers (straight-line sampling
+            # alone missed the curved/squiggly strokes near the handle
+            # loop, same issue as the jar's dome squiggles above). Every
+            # star came out degree 2 except two (the path's open ends,
+            # both near the tail on the left) — a fully self-consistent
+            # 17-star, 16-edge Hamiltonian path, which is strong evidence
+            # the trace is right. Bounding box aspect already landscape
+            # (~619:250, ~2.5:1); uniform scale only, no rotation needed;
+            # bounding box center (429.7, 344.4) px, scale 0.000420.
+            "lamp": {
+                "fixed_star_positions": [
+                    [-0.1300, -0.0146, 0.9914],  # 0: tail, path end
+                    [-0.0919, -0.0125, 0.9957],  # 1
+                    [-0.0762,  0.0015, 0.9971],  # 2: tail, other path end
+                    [-0.0559, -0.0205, 0.9982],  # 3
+                    [-0.0537,  0.0074, 0.9985],  # 4
+                    [-0.0237, -0.0311, 0.9992],  # 5
+                    [-0.0194,  0.0058, 0.9998],  # 6
+                    [ 0.0111,  0.0032, 0.9999],  # 7
+                    [ 0.0208,  0.0494, 0.9986],  # 8: handle loop, low point
+                    [ 0.0297, -0.0374, 0.9989],  # 9: body top apex area
+                    [ 0.0390,  0.0261, 0.9989],  # 10
+                    [ 0.0621, -0.0524, 0.9967],  # 11: top apex
+                    [ 0.0797,  0.0269, 0.9965],  # 12: handle loop base
+                    [ 0.0979, -0.0370, 0.9945],  # 13
+                    [ 0.1018,  0.0524, 0.9934],  # 14: handle loop, lowest point
+                    [ 0.1047,  0.0159, 0.9944],  # 15
+                    [ 0.1300, -0.0115, 0.9914],  # 16: spout tip
+                ],
+                # Single open path (16 edges) — top silhouette from the
+                # tail (0) over the apex (11) to the spout tip (16), back
+                # through a hanging loop near the spout base (16-15-12-
+                # 14-8-10-7), then along the lower body back to the tail
+                # area (7-6-4-2).
+                "line_pairs": [
+                    0,1,  1,3,  3,5,  5,9,  9,11,  11,13,  13,16,
+                    16,15,  15,12,  12,14,  14,8,  8,10,  10,7,
+                    7,6,  6,4,  4,2,
+                ],
+            },
         },
     },
 
