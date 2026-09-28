@@ -582,10 +582,14 @@ const BUILT_IN = [
 #     other five built-ins' KALEB/ALZIRO/DRASIN/HANLEE/DAJALA, or The
 #     Djinn's deliberately-placeholder ENIGMA). UI falls back to showing
 #     just "The Phial" until one is picked.
-#   - star_count (14, matching the designed outline below), bonus_value/
-#     bonus_levels (100/250/500/1000 Spark bank capacity) are placeholder
-#     round numbers, not a balanced design pass — spark_cap reuses the
-#     universal 28657 constant like every other built-in.
+#   - star_count (14, matching the designed outline below) is a placeholder
+#     round number, not a balanced design pass — spark_cap reuses the
+#     universal 28657 constant like every other built-in. bonus_value/
+#     bonus_levels (100/250/500/1000) are ALSO now purely decorative — see
+#     the CAP CHANGED note at get_phial_spark_bank_amount() below; they
+#     still feed the generic "Effects by Tier" popout display (which has
+#     no way to show a live-computed value), but the real spark_bank cap
+#     no longer reads them at all.
 #   - unlock is "achievement:fifth_prestige" (swapped with The Satchel
 #     2026-09-27 — see the id/octant swap note above; was
 #     "achievement:sixth_prestige" from the 2026-09-14 renumber before
@@ -625,11 +629,18 @@ const BUILT_IN = [
 #   - bonus_rate_levels ADDED (2026-09-16) — the actual spark_bank_capacity
 #     mechanic: get_phial_spark_bank_amount() reads this per-Uonite Spark
 #     rate for Phial's current tier, multiplies by live Uonite count, and
-#     clamps to bonus_levels' cap for that same tier ("dark" has no entry
-#     in either dict, so a freshly-unlocked/uninvested Phial banks
-#     nothing). bonus_value (100.0) is unused by this mechanic — kept as
-#     the flat-bonus fallback the shared get_active_bonus() reads, in case
-#     a non-tiered consumer ever wants it.
+#     clamps to a cap ("dark" has no entry in bonus_rate_levels, so a
+#     freshly-unlocked/uninvested Phial banks nothing). bonus_value (100.0)
+#     is unused by this mechanic — kept as the flat-bonus fallback the
+#     shared get_active_bonus() reads, in case a non-tiered consumer ever
+#     wants it.
+#   - CAP CHANGED (2026-09-27, per user direction) — the cap is no longer
+#     bonus_levels' flat placeholder numbers. It's now a fraction of the
+#     Stoctagon's OWN cap (GameContext.get_effective_storage_cap(), which
+#     already folds in the Satchel's live storage_multiplier bonus, so an
+#     active Satchel's temporary boost to the Stoctagon carries straight
+#     through), by Phial's own tier: stars ×0.25, lines ×0.5, art ×1.0
+#     (PHIAL_CAP_TIER_FRACTION, just below get_phial_spark_bank_amount()).
 
     {
         "id": 4,
@@ -1825,8 +1836,21 @@ func get_active_level_bonus(bonus_key: String) -> float:
 # constellation in its own octant, same "only counts while active" rule
 # get_active_bonus()/get_active_level_bonus() already use for every other
 # constellation bonus.
+#
+# CAP CHANGED 2026-09-27, per user direction: the flat placeholder numbers
+# in bonus_levels (100/250/500/1000, still there for the "Effects by Tier"
+# popout display — see its TODO note in constellation_popout.gd) no longer
+# drive the real cap. The real cap is now a fraction of the Stoctagon's own
+# cap — GameContext.get_effective_storage_cap(), which ALREADY folds in the
+# Satchel's live, tier-reversible storage_multiplier bonus, so a currently-
+# active Satchel's temporary boost carries straight through into how much
+# the Phial can bank, with no separate lookup needed here. The fraction is
+# PHIAL_CAP_TIER_FRACTION below, by Phial's OWN tier: stars ×0.25,
+# lines ×0.5, art ×1.0 (full Stoctagon cap).
+const PHIAL_CAP_TIER_FRACTION: Dictionary = {"stars": 0.25, "lines": 0.5, "art": 1.0}
+
 func get_phial_spark_bank_amount() -> BigNum:
-    const PHIAL_ID: int = 5
+    const PHIAL_ID: int = 4
     if not _game_context:
         return BigNum.zero()
     if not unlocked.has(PHIAL_ID):
@@ -1842,10 +1866,11 @@ func get_phial_spark_bank_amount() -> BigNum:
     var rate: float = _coerce_float(rate_levels.get(tier), 0.0)
     if rate <= 0.0:
         return BigNum.zero()
-    var cap_levels: Dictionary = _coerce_dict(def.get("bonus_levels"), {})
-    var cap: float = _coerce_float(cap_levels.get(tier), 0.0)
+    var tier_fraction: float = _coerce_float(PHIAL_CAP_TIER_FRACTION.get(tier), 0.0)
+    if tier_fraction <= 0.0:
+        return BigNum.zero()
+    var cap_bignum: BigNum = _game_context.get_effective_storage_cap().mul_float(tier_fraction)
     var banked: BigNum = _game_context.uonite.mul_float(rate)
-    var cap_bignum: BigNum = BigNum.from_float(cap)
     if banked.is_greater_than(cap_bignum):
         banked = cap_bignum
     return banked
