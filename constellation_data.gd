@@ -585,11 +585,18 @@ const BUILT_IN = [
 #   - star_count (14, matching the designed outline below) is a placeholder
 #     round number, not a balanced design pass — spark_cap reuses the
 #     universal 28657 constant like every other built-in. bonus_value/
-#     bonus_levels (100/250/500/1000) are ALSO now purely decorative — see
-#     the CAP CHANGED note at get_phial_spark_bank_amount() below; they
-#     still feed the generic "Effects by Tier" popout display (which has
-#     no way to show a live-computed value), but the real spark_bank cap
-#     no longer reads them at all.
+#     bonus_levels (100/250/500/1000) are now UNREAD by the real mechanic —
+#     see the CAP CHANGED note at get_phial_spark_bank_amount() below.
+#     constellation_popout.gd's "Effects by Tier" display and current-tier
+#     InfoBonusLabel both special-case bonus_key == "spark_bank_capacity"
+#     (2026-09-28) to show the live Stoctagon-derived value via
+#     _phial_tier_cap_bignum() instead of reading these numbers — which
+#     falls back to a flat zero, not these numbers, if _gc/_cd are ever
+#     unreachable there. So bonus_value/bonus_levels are genuinely dead
+#     data for the Phial now, kept only because def.has("bonus_levels")
+#     is what turns the ladder/label on at all (see _refresh_tier_effects_
+#     display()'s own early-out) and bonus_value still feeds the shared
+#     get_active_bonus() fallback in case a non-tiered consumer wants it.
 #   - unlock is "achievement:fifth_prestige" (swapped with The Satchel
 #     2026-09-27 — see the id/octant swap note above; was
 #     "achievement:sixth_prestige" from the 2026-09-14 renumber before
@@ -1838,15 +1845,17 @@ func get_active_level_bonus(bonus_key: String) -> float:
 # constellation bonus.
 #
 # CAP CHANGED 2026-09-27, per user direction: the flat placeholder numbers
-# in bonus_levels (100/250/500/1000, still there for the "Effects by Tier"
-# popout display — see its TODO note in constellation_popout.gd) no longer
-# drive the real cap. The real cap is now a fraction of the Stoctagon's own
-# cap — GameContext.get_effective_storage_cap(), which ALREADY folds in the
-# Satchel's live, tier-reversible storage_multiplier bonus, so a currently-
-# active Satchel's temporary boost carries straight through into how much
-# the Phial can bank, with no separate lookup needed here. The fraction is
+# in bonus_levels (100/250/500/1000) no longer drive the real cap. The real
+# cap is now a fraction of the Stoctagon's own cap — GameContext.
+# get_effective_storage_cap(), which ALREADY folds in the Satchel's live,
+# tier-reversible storage_multiplier bonus, so a currently-active Satchel's
+# temporary boost carries straight through into how much the Phial can
+# bank, with no separate lookup needed here. The fraction is
 # PHIAL_CAP_TIER_FRACTION below, by Phial's OWN tier: stars ×0.25,
-# lines ×0.5, art ×1.0 (full Stoctagon cap).
+# lines ×0.5, art ×1.0 (full Stoctagon cap). constellation_popout.gd's
+# "Effects by Tier" display was updated 2026-09-28 to match (its own
+# _phial_tier_cap_bignum() reads this same fraction table), so bonus_levels
+# is now genuinely unread anywhere for this constellation.
 const PHIAL_CAP_TIER_FRACTION: Dictionary = {"stars": 0.25, "lines": 0.5, "art": 1.0}
 
 func get_phial_spark_bank_amount() -> BigNum:

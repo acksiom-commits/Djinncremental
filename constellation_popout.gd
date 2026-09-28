@@ -73,14 +73,36 @@ func _bonus_is_multiplier(bonus_key: String) -> bool:
     return bonus_key.ends_with("_multiplier")
 
 
-## Additive bonus values (Archon's +1/+2/+3, Phial's +250/+500/+1000) are
-## whole numbers stored as float -- str() on a whole float prints a
-## trailing ".0" ("+1.0") that doesn't belong in front of the player.
-## Multiplier values keep their real decimals (×1.5, ×0.25).
+## Additive bonus values (Archon's +1/+2/+3) are whole numbers stored as
+## float -- str() on a whole float prints a trailing ".0" ("+1.0") that
+## doesn't belong in front of the player. Multiplier values keep their real
+## decimals (×1.5, ×0.25). The Phial's spark_bank_capacity is additive too
+## but goes through _phial_tier_cap_bignum()/BigNum.to_display_string()
+## instead, since its live value can run far past what a float should hold.
 func _fmt_bonus_val(val: float) -> String:
     if val == floor(val):
         return str(int(val))
     return str(val)
+
+
+## The Phial's spark_bank_capacity cap AT A GIVEN TIER, live — see
+## get_phial_spark_bank_amount()'s "CAP CHANGED 2026-09-27" note in
+## constellation_data.gd: a fraction of the Stoctagon's own effective cap
+## (GameContext.get_effective_storage_cap(), which already folds in an
+## active Satchel's temporary storage_multiplier boost) by tier, not
+## bonus_levels' static placeholder numbers (100/250/500/1000 — those still
+## sit in the data but nothing reads them for this bonus_key anymore).
+## Returns zero for "dark" (no entry in ConstellationData's
+## PHIAL_CAP_TIER_FRACTION), matching the real mechanic banking nothing
+## before Stars tier — deliberately NOT def["bonus_value"]'s flat fallback,
+## which the generic ladder uses for every other bonus_key's "dark" cell.
+func _phial_tier_cap_bignum(tier: String) -> BigNum:
+    if not _gc or not _cd:
+        return BigNum.zero()
+    var frac: float = _coerce_float(_cd.PHIAL_CAP_TIER_FRACTION.get(tier), 0.0)
+    if frac <= 0.0:
+        return BigNum.zero()
+    return _gc.get_effective_storage_cap().mul_float(frac)
 
 const FEED_COLORS: Array = [
     Color(0.35, 0.35, 0.35, 1.0),   # off — grey
@@ -847,16 +869,22 @@ func _refresh_info_panel() -> void:
         solved = _gc._assignment_int(solve_key, 0) > 0
     if def.has("bonus_levels"):
         if solved:
-            # def["bonus_levels"] is a save-derived field too — a wrong
-            # type there would crash calling .get() on it the same way
-            # bracket-indexing a non-Dictionary does (see the id-read fix
-            # above), and def["bonus_value"]/the state's entry could be
-            # wrong-typed even when bonus_levels itself is a real Dictionary.
-            var bonus_levels: Dictionary = _coerce_dict(def.get("bonus_levels"), {})
-            var default_bonus: float = _coerce_float(def.get("bonus_value"), 1.0)
-            var current_val: float = _coerce_float(bonus_levels.get(state, default_bonus), default_bonus)
-            var val_fmt: String = ("×%s" % str(current_val)) if _bonus_is_multiplier(bonus_key) \
-                else ("+%s" % _fmt_bonus_val(current_val))
+            var val_fmt: String
+            if bonus_key == "spark_bank_capacity":
+                # The Phial: no longer a static per-tier number — see
+                # _phial_tier_cap_bignum()'s doc comment.
+                val_fmt = "+%s" % _phial_tier_cap_bignum(state).to_display_string()
+            else:
+                # def["bonus_levels"] is a save-derived field too — a wrong
+                # type there would crash calling .get() on it the same way
+                # bracket-indexing a non-Dictionary does (see the id-read fix
+                # above), and def["bonus_value"]/the state's entry could be
+                # wrong-typed even when bonus_levels itself is a real Dictionary.
+                var bonus_levels: Dictionary = _coerce_dict(def.get("bonus_levels"), {})
+                var default_bonus: float = _coerce_float(def.get("bonus_value"), 1.0)
+                var current_val: float = _coerce_float(bonus_levels.get(state, default_bonus), default_bonus)
+                val_fmt = ("×%s" % str(current_val)) if _bonus_is_multiplier(bonus_key) \
+                    else ("+%s" % _fmt_bonus_val(current_val))
             _info_bonus_label.text = "%s: %s" % [bonus_desc, val_fmt]
             _info_bonus_label.add_theme_color_override("font_color",
                 TIER_COLORS.get(state, Color.WHITE))
@@ -960,12 +988,19 @@ func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
     var row_parts:    Array  = []
     var current_line: String = ""
     var is_multiplier: bool = _bonus_is_multiplier(bonus_key)
+    var is_phial_cap: bool  = (bonus_key == "spark_bank_capacity")
     for tier in TIER_ORDER:
-        var val: float = _coerce_float(bonus_levels.get(tier), default_bonus) \
-            if bonus_levels.has(tier) else default_bonus
         var tier_name: String = TIER_DISPLAY_NAMES.get(tier, tier)
-        var row_text:  String = ("%s  ×%s" % [tier_name, str(val)]) if is_multiplier \
-            else ("%s  +%s" % [tier_name, _fmt_bonus_val(val)])
+        var row_text:  String
+        if is_phial_cap:
+            # The Phial: no longer static bonus_levels numbers — see
+            # _phial_tier_cap_bignum()'s doc comment.
+            row_text = "%s  +%s" % [tier_name, _phial_tier_cap_bignum(tier).to_display_string()]
+        else:
+            var val: float = _coerce_float(bonus_levels.get(tier), default_bonus) \
+                if bonus_levels.has(tier) else default_bonus
+            row_text = ("%s  ×%s" % [tier_name, str(val)]) if is_multiplier \
+                else ("%s  +%s" % [tier_name, _fmt_bonus_val(val)])
         if tier == current_state:
             var hi_color: Color = TIER_COLORS.get(tier, Color.WHITE)
             current_line = "[color=#%s][b]▶ %s[/b][/color]" % [hi_color.to_html(false), row_text]
