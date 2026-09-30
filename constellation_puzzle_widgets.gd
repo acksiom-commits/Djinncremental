@@ -1145,7 +1145,7 @@ func _populate_guide_markers() -> void:
 
 
 func _sort_matches(mode: int) -> void:
-    if mode < 0 or mode > 4:
+    if mode < 0 or mode > 5:
         push_warning("StudyOverlay: _sort_matches called with invalid mode %d, ignoring" % mode)
         return
     _host._matches_sort_mode = mode
@@ -1179,6 +1179,7 @@ func _populate_name_markers() -> void:
         {"label": "Name",  "mode": 0},
         {"label": "Color", "mode": 2},
         {"label": "Pitch", "mode": 3},
+        {"label": "Repeats", "mode": 5},
     ]
     for entry in sort_entries:
         var btn := Button.new()
@@ -1202,6 +1203,8 @@ func _populate_name_markers() -> void:
             _populate_pitch_group_rows()
         4:
             _populate_degree_group_rows()
+        5:
+            _populate_repeat_bucket_rows()
         _:
             push_warning("StudyOverlay: unknown _matches_sort_mode %d, resetting to Name" % _host._matches_sort_mode)
             _host._matches_sort_mode = 0
@@ -1473,6 +1476,15 @@ func _on_staff_copy(record_idx: int, section: String) -> void:
                     continue
                 if COPYABLE_ROW_STATES.has(ns):
                     items.append(name_str)
+        "repeat":
+            var excluded_repeats: Array[int] = _deduction._compute_excluded_repeats_for(record_idx)
+            for v in _deduction._get_repeat_bucket_values():
+                var value: int = int(v)
+                var rs: int = _deduction._effective_repeat_state(record_idx, value, false)
+                if (rs == 0 or rs == 4) and excluded_repeats.has(value):
+                    continue
+                if COPYABLE_ROW_STATES.has(rs):
+                    items.append(_deduction._repeat_value_label(value))
     _copy_open_items_to_notes(_copy_header_for_record(record_idx, section.capitalize()), items)
 
 
@@ -1783,6 +1795,162 @@ func _on_pitch_checklist_undo_all(record_idx: int) -> void:
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
     _open_pitch_checklist_popup(record_idx, _host._pitch_checklist_popup.position)
+
+
+# ==================================================
+# SORT:REPEATS CHECKLIST — same trigger-button/shared-popup pattern as
+# Pitch's block above, minus the pitch_revealed guard (Repeat Count has no
+# reveal mechanic at all) and keyed by an int bucket value drawn from the
+# player-driven _repeat_bucket_values list instead of a fixed puzzle-wide
+# domain — see that field's own comment in constellation_puzzle_deduction.gd.
+# ==================================================
+func _earned_repeat_for_record(record_idx: int) -> String:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return ""
+    for v in _deduction._get_repeat_bucket_values():
+        if _deduction._effective_repeat_state(record_idx, int(v), false) == 1:
+            return _deduction._repeat_value_label(int(v))
+    return ""
+
+
+func _make_repeat_checklist_trigger_button(record_idx: int) -> Button:
+    var btn := Button.new()
+    btn.custom_minimum_size = Vector2(110, 0)
+    btn.add_theme_font_size_override("font_size", 16)
+    btn.focus_mode = Control.FOCUS_NONE
+    var confirmed_label: String = _earned_repeat_for_record(record_idx)
+    btn.text = confirmed_label if confirmed_label != "" else "Select Repeats"
+    var ridx := record_idx
+    var btn_ref := btn
+    btn.pressed.connect(func():
+        var target: Vector2 = btn_ref.global_position + Vector2(0, btn_ref.size.y)
+        _open_repeat_checklist_popup(ridx, btn_ref.get_viewport().get_screen_transform() * target))
+    return btn
+
+
+## Trigger button plus a COPY button, same pairing as
+## _make_pitch_checklist_row_for_record — see there.
+func _make_repeat_checklist_row_for_record(record_idx: int) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 3)
+    row.add_child(_make_repeat_checklist_trigger_button(record_idx))
+    var copy_btn := Button.new()
+    copy_btn.text = "⎘"
+    copy_btn.custom_minimum_size = Vector2(26, 24)
+    copy_btn.focus_mode = Control.FOCUS_NONE
+    copy_btn.tooltip_text = "Write the still-possible repeat counts into the Notes tab"
+    var cridx := record_idx
+    copy_btn.pressed.connect(func(): _on_repeat_checklist_copy(cridx))
+    row.add_child(copy_btn)
+    return row
+
+
+func _open_repeat_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
+    _host._repeat_checklist_popup.clear_rows()
+    var bucket_values: Array = _deduction._get_repeat_bucket_values()
+    _host._repeat_checklist_popup.set_expected_row_count(bucket_values.size())
+    var excluded_repeats: Array[int] = _deduction._compute_excluded_repeats_for(record_idx)
+    for v in bucket_values:
+        var value: int = int(v)
+        # collapse_soft=false so the row can paint the protect tier, same
+        # as the pitch/name popups.
+        var state: int = _deduction._effective_repeat_state(record_idx, value, false)
+        if (state == 0 or state == 4) and excluded_repeats.has(value):
+            state = 2
+        _host._repeat_checklist_popup.add_repeat_row(value, _deduction._repeat_value_label(value), state, STATE_COLORS.neutral)
+    _host._repeat_checklist_popup.open(record_idx, _clamp_popup_screen_pos(screen_pos))
+
+
+func _on_repeat_checklist_check(record_idx: int, value: int, _row: StaffPopupRow) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var repeat_states: Dictionary = _deduction.record_at(record_idx).get("repeat_states", {})
+    var cur: int = int(repeat_states.get(value, 0))
+    if cur == 1:
+        # Toggling back off — see _on_staff_name_check for why siblings
+        # aren't restored here.
+        repeat_states[value] = 0
+        _deduction.record_at(record_idx)["repeat_states"] = repeat_states
+    else:
+        _deduction._propagate_repeat_confirmed_same_record(record_idx, value)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+    _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
+
+
+func _on_repeat_checklist_x(record_idx: int, value: int, _row: StaffPopupRow) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var r: Dictionary = _deduction.record_at(record_idx)
+    var repeat_states: Dictionary = r.get("repeat_states", {})
+    var cur: int = int(repeat_states.get(value, 0))
+    repeat_states[value] = 0 if cur == 2 else 2
+    r["repeat_states"] = repeat_states
+    var manual: Dictionary = r.get("manual_repeat_blocks", {})
+    if cur == 2:
+        manual.erase(value)
+    else:
+        manual[value] = true
+    r["manual_repeat_blocks"] = manual
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+    _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
+
+
+func _on_repeat_checklist_protect(record_idx: int, value: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var r: Dictionary = _deduction.record_at(record_idx)
+    var states: Dictionary = r.get("repeat_states", {})
+    if int(states.get(value, 0)) != 0:
+        return   # already hard-confirmed or hard-eliminated; right-click no-ops
+    var protected: Dictionary = r.get("protected_repeat_values", {})
+    if protected.has(value):
+        protected.erase(value)
+    else:
+        protected[value] = true
+    r["protected_repeat_values"] = protected
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+    _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
+
+
+func _on_repeat_checklist_undo_selects(record_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    _deduction._undo_category_selects(record_idx, "repeat_states", "manual_repeat_blocks", "protected_repeat_values", _deduction._get_repeat_bucket_values())
+    var r: Dictionary = _deduction.record_at(record_idx)
+    if str(r.get("repeat_slot_label", "")) != "":
+        r["repeat_slot_label"] = ""
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+    _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
+
+
+func _on_repeat_checklist_undo_blocks(record_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    _deduction._undo_category_blocks(record_idx, "repeat_states", "manual_repeat_blocks")
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+    _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
+
+
+func _on_repeat_checklist_undo_all(record_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    _deduction._undo_category_selects(record_idx, "repeat_states", "manual_repeat_blocks", "protected_repeat_values", _deduction._get_repeat_bucket_values())
+    _deduction._undo_category_blocks(record_idx, "repeat_states", "manual_repeat_blocks")
+    var r: Dictionary = _deduction.record_at(record_idx)
+    if str(r.get("repeat_slot_label", "")) != "":
+        r["repeat_slot_label"] = ""
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+    _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
+
+
+func _on_repeat_checklist_copy(record_idx: int) -> void:
+    _on_staff_copy(record_idx, "repeat")
 
 
 func _make_color_toggle_row_for_record(record_idx: int) -> HBoxContainer:
@@ -2559,6 +2727,7 @@ func _build_color_group_row(color_idx: int, position_in_group: int) -> void:
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
     facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
+    facts_vbox.add_child(_make_fact_row("Repeats:", _make_repeat_checklist_row_for_record(record_idx), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
 
@@ -2619,6 +2788,7 @@ func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
     # clutter, never adding information the row wasn't already showing.
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Repeats:", _make_repeat_checklist_row_for_record(record_idx), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
 
@@ -2675,6 +2845,7 @@ func _build_degree_group_row(degree: int, position_in_group: int) -> void:
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Repeats:", _make_repeat_checklist_row_for_record(record_idx), row_color))
     _host._markers_content.add_child(HSeparator.new())
 
 
@@ -2713,6 +2884,7 @@ func _build_name_row(name_str: String) -> void:
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
     facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
+    facts_vbox.add_child(_make_fact_row("Repeats:", _make_repeat_checklist_row_for_record(record_idx), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
 
@@ -2722,6 +2894,104 @@ func _populate_name_rows() -> void:
     names_sorted.sort_custom(func(a, b): return String(a).nocasecmp_to(String(b)) < 0)
     for n in names_sorted:
         _build_name_row(String(n))
+
+
+# ==================================================
+# SORT:REPEATS BUCKET ROWS — unlike Color/Pitch/Degree's groups, a bucket's
+# row COUNT is player-controlled rather than read from ground truth (see
+# _repeat_bucket_values' own comment in constellation_puzzle_deduction.gd:
+# the true per-value incidence is exactly the secret this axis withholds).
+# Placing a record in a bucket slot IS the confirm for this axis (the
+# slot-label tier in _effective_repeat_state), so — unlike every other
+# Sort:tab row — this row shows every OTHER axis as a fact but never a
+# Repeats selector of its own.
+# ==================================================
+func _build_repeat_bucket_row(value: int, position_in_group: int) -> void:
+    var record_idx: int = _deduction._get_or_create_match_record_for_repeat_slot(value, position_in_group)
+    var row_color: Color = _deduction._display_color_for_record(record_idx)
+
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 8)
+    row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _host._markers_content.add_child(row)
+
+    var value_lbl := Label.new()
+    value_lbl.text = _deduction._repeat_value_label(value)
+    value_lbl.custom_minimum_size = Vector2(120, 0)
+    value_lbl.add_theme_font_size_override("font_size", 19)
+    value_lbl.add_theme_color_override("font_color", row_color)
+    row.add_child(value_lbl)
+
+    var facts_vbox := VBoxContainer.new()
+    facts_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    facts_vbox.add_theme_constant_override("separation", 1)
+    row.add_child(facts_vbox)
+
+    facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
+    facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
+    facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
+
+    _host._markers_content.add_child(HSeparator.new())
+
+
+## One "Add slot" button per bucket, appended after its rows — the tab's
+## own version of what "position_in_group" is for Color/Degree/Pitch: since
+## the true count can't be read from ground truth, the player grows it by
+## hand instead. Pressing it only ever adds a row; it never removes one
+## automatically, matching the "safe to shrink, nothing is ever deleted"
+## framing on _remove_repeat_bucket_slot's own comment (the row that
+## disappears on a later Remove press is still there under the hood).
+func _build_repeat_bucket_slot_controls(value: int) -> void:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 6)
+    _host._markers_content.add_child(row)
+
+    var add_btn := Button.new()
+    add_btn.text = "+ Add slot"
+    add_btn.focus_mode = Control.FOCUS_NONE
+    add_btn.add_theme_font_size_override("font_size", 14)
+    var v1 := value
+    add_btn.pressed.connect(func():
+        _deduction._add_repeat_bucket_slot(v1)
+        _populate_name_markers())
+    row.add_child(add_btn)
+
+    if _deduction._repeat_bucket_slot_count(value) > 1:
+        var remove_btn := Button.new()
+        remove_btn.text = "- Remove slot"
+        remove_btn.focus_mode = Control.FOCUS_NONE
+        remove_btn.add_theme_font_size_override("font_size", 14)
+        var v2 := value
+        remove_btn.pressed.connect(func():
+            _deduction._remove_repeat_bucket_slot(v2)
+            _populate_name_markers())
+        row.add_child(remove_btn)
+
+    _host._markers_content.add_child(HSeparator.new())
+
+
+## Called both from the Sort:tab dispatcher (_markers_content already
+## cleared by _populate_name_markers, same as every other axis's populate
+## function) and indirectly via that same dispatcher whenever an Add/Remove
+## button above needs to refresh the list — never clears its own container,
+## so it stays consistent with _populate_name_rows/_populate_color_group_
+## rows/etc., which don't either.
+func _populate_repeat_bucket_rows() -> void:
+    for value in _deduction._get_repeat_bucket_values():
+        var v: int = int(value)
+        for pos in _deduction._repeat_bucket_slot_count(v):
+            _build_repeat_bucket_row(v, pos)
+        _build_repeat_bucket_slot_controls(v)
+
+    var add_bucket_btn := Button.new()
+    add_bucket_btn.text = "+ Add another repeat count"
+    add_bucket_btn.focus_mode = Control.FOCUS_NONE
+    add_bucket_btn.custom_minimum_size = Vector2(0, 32)
+    add_bucket_btn.pressed.connect(func():
+        _deduction._add_repeat_bucket()
+        _populate_name_markers())
+    _host._markers_content.add_child(add_bucket_btn)
 
 
 # ==================================================

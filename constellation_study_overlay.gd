@@ -81,6 +81,7 @@ var _staff_popup: StaffPopup = null
 var _staff_popup_tick: int = -1     # the raw melody tick the open popup was opened for, never a resolved rank -- see _open_staff_popup's own comment
 var _name_checklist_popup: NameChecklistPopup = null
 var _pitch_checklist_popup: PitchChecklistPopup = null
+var _repeat_checklist_popup: RepeatChecklistPopup = null
 
 # Widget-construction and deduction-engine halves of the Stage 2/3 file
 # split — see constellation_puzzle_widgets.gd and
@@ -302,9 +303,18 @@ func _ready() -> void:
     _pitch_checklist_popup.undo_selects_pressed.connect(_widgets._on_pitch_checklist_undo_selects)
     _pitch_checklist_popup.undo_blocks_pressed.connect(_widgets._on_pitch_checklist_undo_blocks)
     _pitch_checklist_popup.undo_all_pressed.connect(_widgets._on_pitch_checklist_undo_all)
+    _repeat_checklist_popup = preload("res://RepeatChecklistPopup.tscn").instantiate()
+    add_child(_repeat_checklist_popup)
+    _repeat_checklist_popup.repeat_check_pressed.connect(_widgets._on_repeat_checklist_check)
+    _repeat_checklist_popup.repeat_x_pressed.connect(_widgets._on_repeat_checklist_x)
+    _repeat_checklist_popup.repeat_row_right_clicked.connect(_widgets._on_repeat_checklist_protect)
+    _repeat_checklist_popup.undo_selects_pressed.connect(_widgets._on_repeat_checklist_undo_selects)
+    _repeat_checklist_popup.undo_blocks_pressed.connect(_widgets._on_repeat_checklist_undo_blocks)
+    _repeat_checklist_popup.undo_all_pressed.connect(_widgets._on_repeat_checklist_undo_all)
     _staff_popup.copy_pressed.connect(_widgets._on_staff_copy)
     _name_checklist_popup.copy_pressed.connect(_widgets._on_name_checklist_copy)
     _pitch_checklist_popup.copy_pressed.connect(_widgets._on_pitch_checklist_copy)
+    _repeat_checklist_popup.copy_pressed.connect(_widgets._on_repeat_checklist_copy)
     _star_map_control.resized.connect(_on_star_map_resized)
     _close_btn.pressed.connect(_on_close)
     # Click-to-jump: clicking the pinned-clue readout switches to whichever
@@ -537,6 +547,21 @@ func _load_constellation_data() -> void:
         var ntxt: String = str(n)
         if ntxt != "":
             _deduction._note_entries.append(ntxt)
+
+    # Sort:Repeats bucket shape. Cleared first, same per-puzzle isolation as
+    # _noted_clue_refs/_note_entries above — an empty/missing list here is
+    # exactly the "nothing loaded yet" case _ensure_repeat_buckets_seeded()
+    # is built to handle, so no explicit default-seeding is needed here.
+    _deduction._repeat_bucket_values.clear()
+    for bv in _coerce_array(notes.get("repeat_bucket_values", []), []):
+        _deduction._repeat_bucket_values.append(_coerce_int(bv, 0))
+    _deduction._repeat_bucket_slot_counts.clear()
+    var raw_bucket_counts: Dictionary = _coerce_dict(notes.get("repeat_bucket_slot_counts"), {})
+    for bk in raw_bucket_counts:
+        var bucket_key: int = _deduction._coerce_int_key(bk, -1)
+        if bucket_key < 0:
+            continue
+        _deduction._repeat_bucket_slot_counts[bucket_key] = max(1, _coerce_int(raw_bucket_counts[bk], 1))
 
     # The old "protected_names" / "user_blocks" note fields are gone: the
     # star widget's protect and manual-block flags moved onto each star's

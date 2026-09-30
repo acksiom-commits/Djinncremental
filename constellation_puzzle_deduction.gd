@@ -923,6 +923,37 @@ func _propagate_pitch_confirmed_same_record(record_idx: int, confirmed_note: Str
         r["pitch_slot_label"] = ""
 
 
+## Same shape as _propagate_pitch_confirmed_same_record — see there. Iterates
+## the current Sort:Repeats bucket list rather than a fixed puzzle-wide
+## domain like _host._pitch_freqs, since that list is player-driven (see
+## _repeat_bucket_values' own comment) and grows over the course of a
+## puzzle; a value added to the tab AFTER this record last confirmed
+## something is still a real sibling to clear here.
+func _propagate_repeat_confirmed_same_record(record_idx: int, confirmed_value: int) -> void:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return
+    var r: Dictionary = _match_records[record_idx]
+    var repeat_states: Dictionary = r.get("repeat_states", {})
+    for v in _get_repeat_bucket_values():
+        var value: int = int(v)
+        if value != confirmed_value:
+            repeat_states[value] = 2
+    repeat_states[confirmed_value] = 1
+    r["repeat_states"] = repeat_states
+    var manual_repeat: Dictionary = r.get("manual_repeat_blocks", {})
+    if manual_repeat.has(confirmed_value):
+        manual_repeat.erase(confirmed_value)
+        r["manual_repeat_blocks"] = manual_repeat
+    # Same staleness fix as pitch's: a repeat_slot_label naming a DIFFERENT
+    # value than what was just confirmed here (this record was reached via
+    # some OTHER tab's "Repeats:" checklist, not by being placed in a
+    # bucket) is now wrong, and _effective_repeat_state checks the label
+    # before raw repeat_states.
+    var label: String = str(r.get("repeat_slot_label", ""))
+    if label != "" and not label.begins_with("R%d " % confirmed_value):
+        r["repeat_slot_label"] = ""
+
+
 ## Clue texts the player has right-clicked into Notes, as reference material
 ## rather than a "done" marker — Used Up (2026-08-14 to 2026-08-24) was the
 ## same gesture but meant "I am finished with this clue"; Notes means "I
@@ -937,9 +968,119 @@ var _noted_clue_refs: Dictionary = {}
 ## meaningful; the player is building a running scratchpad, not a set.
 var _note_entries: Array[String] = []
 
+## Sort:Repeats bucket bookkeeping. Unlike Color/Degree/Pitch, whose
+## Sort:tab group sizes come straight from ground truth (those axes are
+## given/observable, so the true count is no leak), Repeat Count's true
+## per-value incidence IS the secret the design doc explicitly withholds
+## ("no free tier for this axis" — see planned_repeat_count_axis_design.md).
+## So the bucket LIST and each bucket's SLOT COUNT are player-driven state,
+## not derived from _host._repeat_count: the player starts with buckets
+## 0/1/2 (a universal, puzzle-independent range — same kind of safe
+## structural fact as Sequence's 1..star_count, not this puzzle's answer)
+## and grows either dimension themselves as clues imply more is needed.
+## Persisted per-puzzle (_save_puzzle_notes() / the load block in
+## constellation_study_overlay.gd), same isolation as _noted_clue_refs.
+var _repeat_bucket_values: Array = []
+var _repeat_bucket_slot_counts: Dictionary = {}
+
 
 func is_clue_noted(text: String) -> bool:
     return _noted_clue_refs.has(text)
+
+
+## Lazily seeds the starting buckets on first use rather than at
+## declaration time, so a fresh puzzle (nothing loaded yet) and a loaded
+## save with an explicit empty list are indistinguishable — both want the
+## same default, and seeding at declaration would also fire before a real
+## loaded list has had a chance to land.
+func _ensure_repeat_buckets_seeded() -> void:
+    if _repeat_bucket_values.is_empty():
+        _repeat_bucket_values = [0, 1, 2]
+
+
+func _get_repeat_bucket_values() -> Array:
+    _ensure_repeat_buckets_seeded()
+    return _repeat_bucket_values.duplicate()
+
+
+## Appends the next integer not already a bucket — always the current
+## maximum plus one, so buckets stay a contiguous 0..N run (matching the
+## axis's own real shape: a repeat count of N implies 0..N-1 are at least
+## conceivable too) rather than letting gaps accumulate from repeated
+## presses landing on the same next value.
+func _add_repeat_bucket() -> void:
+    _ensure_repeat_buckets_seeded()
+    var next_value: int = 0
+    for v in _repeat_bucket_values:
+        next_value = max(next_value, int(v) + 1)
+    _repeat_bucket_values.append(next_value)
+    _save_puzzle_notes()
+
+
+func _repeat_bucket_slot_count(value: int) -> int:
+    return int(_repeat_bucket_slot_counts.get(value, 1))
+
+
+func _add_repeat_bucket_slot(value: int) -> void:
+    _repeat_bucket_slot_counts[value] = _repeat_bucket_slot_count(value) + 1
+    _save_puzzle_notes()
+
+
+## Floored at 1 rather than letting a bucket go to zero rows — a bucket
+## with no rows at all has no way back into view (nothing left to click
+## "add slot" on). Never deletes the record a hidden slot pointed to: slot
+## records are found by LABEL STRING equality (see
+## _get_or_create_match_record_for_repeat_slot), so a slot removed here and
+## re-added later reunites with the exact same record and everything the
+## player had already filled in in it, rather than losing it.
+func _remove_repeat_bucket_slot(value: int) -> void:
+    var cur: int = _repeat_bucket_slot_count(value)
+    if cur <= 1:
+        return
+    _repeat_bucket_slot_counts[value] = cur - 1
+    _save_puzzle_notes()
+
+
+## Shared wording for a repeat-count value — the Sort:Repeats bucket header
+## and this axis's own clue text (_characteristic_label's REPEAT branch,
+## constellation_logic_puzzle.gd) should read as the same fact in different
+## places, not two independently-phrased claims about the same number.
+func _repeat_value_label(value: int) -> String:
+    if value == 0:
+        return "Never repeats"
+    if value == 1:
+        return "Repeats once"
+    if value == 2:
+        return "Repeats twice"
+    return "Repeats %d times" % value
+
+
+## Same "adopt an existing confirmed record, else create a blank one" shape
+## as _get_or_create_match_record_for_color_slot/_degree_slot — see those
+## for the general pattern. Placing a record here is itself the confirm
+## (see _effective_repeat_state's slot-label tier), not a separate step.
+func _get_or_create_match_record_for_repeat_slot(value: int, position_in_group: int) -> int:
+    var label: String = "R%d %s" % [value, _slot_letter(position_in_group)]
+    for i in _match_records.size():
+        if str(_match_records[i].get("repeat_slot_label", "")) == label:
+            return i
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        if str(r.get("repeat_slot_label", "")) != "":
+            continue
+        if int(r.get("repeat_states", {}).get(value, 0)) == 1:
+            r["repeat_slot_label"] = label
+            return i
+    _match_records.append(_new_match_record({"repeat_slot_label": label}))
+    _sync_derived_size()
+    return _match_records.size() - 1
+
+
+func _compute_excluded_repeats_for(record_idx: int) -> Array[int]:
+    var out: Array[int] = []
+    for v in _compute_excluded_for_axis(Axis.REPEAT, record_idx):
+        out.append(int(v))
+    return out
 
 
 ## Returns the new state, so the caller can rebuild without re-querying.
@@ -1049,6 +1190,12 @@ func _save_puzzle_notes() -> void:
     # protected_names / user_blocks are gone as separate note fields — the
     # star widget's protect and manual-block flags now live on each star's
     # own record, so they round-trip inside match_records above.
+    # Sort:Repeats bucket shape — player-driven state, not derivable from
+    # match_records alone (an empty bucket the player added but hasn't
+    # filled a slot in yet would otherwise vanish on reload). New fields,
+    # no legacy key to preserve.
+    notes["repeat_bucket_values"] = _repeat_bucket_values.duplicate()
+    notes["repeat_bucket_slot_counts"] = _repeat_bucket_slot_counts.duplicate()
     _host._cd.set_player_puzzle_notes(_host._constellation_id, notes)
 
 # ==================================================
@@ -1462,6 +1609,7 @@ func _new_match_record(overrides: Dictionary = {}) -> Dictionary:
         "color_slot_label": "",
         "pitch_slot_label": "",
         "degree_slot_label": "",
+        "repeat_slot_label": "",
         "melody_ticks": [],
     }
     for k in overrides:
@@ -1930,6 +2078,48 @@ func _merge_match_records(target_idx: int, source_idx: int, allow_await: bool = 
     if bool(source.get("pitch_revealed", false)):
         target["pitch_revealed"] = true
 
+    # Same conflict-detection shape as color/degree/pitch above. Found while
+    # building the Sort:Repeats tab (2026-09-30): this whole function is
+    # explicit field-by-field with no generic fallback (see this function's
+    # own "anything not copied over here is gone for good" comment below),
+    # and repeat_states had no entry at all — a Repeats confirm on either
+    # side of a Name/Colour/Pitch-proven merge would have been silently
+    # discarded the instant the merge ran.
+    var target_confirmed_repeat: int = -1
+    for rk0 in target["repeat_states"]:
+        if int(target["repeat_states"][rk0]) == 1:
+            target_confirmed_repeat = int(rk0)
+            break
+    var source_confirmed_repeat: int = -1
+    for rk1 in source["repeat_states"]:
+        if int(source["repeat_states"][rk1]) == 1:
+            source_confirmed_repeat = int(rk1)
+            break
+    if target_confirmed_repeat >= 0 and source_confirmed_repeat >= 0 and target_confirmed_repeat != source_confirmed_repeat:
+        # Fail-safe (see allow_await): unreachable while
+        # _merge_conflict_kinds() lists every conflict below, and an
+        # abandoned merge if it ever stops doing so — never a suspend.
+        if not allow_await:
+            return target_idx
+        var winning_repeat: String = await _conflict_dialog_fn.call(
+            "confirmed repeat count", str(target_confirmed_repeat), str(source_confirmed_repeat))
+        if winning_repeat == str(source_confirmed_repeat):
+            target["repeat_states"][target_confirmed_repeat] = 0
+            target_confirmed_repeat = source_confirmed_repeat
+        else:
+            source["repeat_states"][source_confirmed_repeat] = 0
+            source_confirmed_repeat = -1
+
+    for rk in source["repeat_states"]:
+        var sv_r: int = int(source["repeat_states"][rk])
+        var tv_r: int = int(target["repeat_states"].get(rk, 0))
+        if int(rk) == source_confirmed_repeat and target_confirmed_repeat >= 0 and int(rk) != target_confirmed_repeat:
+            continue
+        if sv_r == 1 or tv_r == 1:
+            target["repeat_states"][rk] = 1
+        elif sv_r == 2 or tv_r == 2:
+            target["repeat_states"][rk] = 2
+
     var target_elim: Dictionary = target.get("star_elim", {})
     var source_elim: Dictionary = source.get("star_elim", {})
     for sk in source_elim:
@@ -1959,7 +2149,7 @@ func _merge_match_records(target_idx: int, source_idx: int, allow_await: bool = 
             target_name_states[nk] = 2
     target["name_states"] = target_name_states
 
-    for protect_key in ["protected_pitch_notes", "protected_color_idxs", "protected_staff_names", "manual_name_blocks", "manual_pitch_blocks", "manual_color_blocks"]:
+    for protect_key in ["protected_pitch_notes", "protected_color_idxs", "protected_staff_names", "protected_repeat_values", "manual_name_blocks", "manual_pitch_blocks", "manual_color_blocks", "manual_repeat_blocks"]:
         var target_protect: Dictionary = target.get(protect_key, {})
         var source_protect: Dictionary = source.get(protect_key, {})
         for pk in source_protect:
@@ -2014,6 +2204,18 @@ func _merge_match_records(target_idx: int, source_idx: int, allow_await: bool = 
         if not allow_await:
             return target_idx
         target["degree_slot_label"] = await _conflict_dialog_fn.call("degree slot label", target_degree_label, source_degree_label)
+
+    var target_repeat_label: String = str(target.get("repeat_slot_label", ""))
+    var source_repeat_label: String = str(source.get("repeat_slot_label", ""))
+    if target_repeat_label == "" and source_repeat_label != "":
+        target["repeat_slot_label"] = source_repeat_label
+    elif target_repeat_label != "" and source_repeat_label != "" and target_repeat_label != source_repeat_label:
+        # Fail-safe (see allow_await): unreachable while
+        # _merge_conflict_kinds() lists every conflict below, and an
+        # abandoned merge if it ever stops doing so — never a suspend.
+        if not allow_await:
+            return target_idx
+        target["repeat_slot_label"] = await _conflict_dialog_fn.call("repeats slot label", target_repeat_label, source_repeat_label)
 
     # _match_records may have been cleared/rebuilt by one of the awaits
     # above (see _match_records_generation's own comment) — target_idx/
@@ -2207,6 +2409,34 @@ func _load_match_records(data: Array) -> void:
                 continue
             degree_states[degree_key] = _coerce_int(raw_degree_states[dk], 0)
 
+        # Missing from this function was the exact gotcha this file's own
+        # comment on _blank_derived_entry() warns about for a new axis:
+        # Category.REPEAT existed as a live clue axis for days before this
+        # was added, and nothing round-tripped a player's repeat_states mark
+        # through save/load until now -- a Sort:Repeats confirm would have
+        # silently reverted to unknown on the very next reload.
+        var raw_repeat_states: Dictionary = _coerce_dict(e.get("repeat_states"), {})
+        var repeat_states: Dictionary = {}
+        for rk in raw_repeat_states:
+            var repeat_key: int = _coerce_int_key(rk, -1)
+            if repeat_key < 0:
+                continue
+            repeat_states[repeat_key] = _coerce_int(raw_repeat_states[rk], 0)
+
+        var manual_repeat_blocks: Dictionary = {}
+        for mrk in _coerce_dict(e.get("manual_repeat_blocks"), {}):
+            var mr_idx: int = _coerce_int_key(mrk, -1)
+            if mr_idx < 0:
+                continue
+            manual_repeat_blocks[mr_idx] = true
+
+        var protected_repeat_values: Dictionary = {}
+        for prk in _coerce_dict(e.get("protected_repeat_values"), {}):
+            var pr_idx: int = _coerce_int_key(prk, -1)
+            if pr_idx < 0:
+                continue
+            protected_repeat_values[pr_idx] = true
+
         var protected_pitch_notes: Dictionary = {}
         for ppk in _coerce_dict(e.get("protected_pitch_notes"), {}):
             protected_pitch_notes[str(ppk)] = true
@@ -2242,18 +2472,22 @@ func _load_match_records(data: Array) -> void:
             "pitch_states": pitch_states,
             "degree_states": degree_states,
             "name_states": name_states,
+            "repeat_states": repeat_states,
             "manual_name_blocks": manual_name_blocks,
             "manual_pitch_blocks": manual_pitch_blocks,
             "manual_color_blocks": manual_color_blocks,
+            "manual_repeat_blocks": manual_repeat_blocks,
             "protected_pitch_notes": protected_pitch_notes,
             "protected_color_idxs": protected_color_idxs,
             "protected_staff_names": protected_staff_names,
+            "protected_repeat_values": protected_repeat_values,
             "pitch_revealed": _coerce_bool(e.get("pitch_revealed"), false),
             "star_elim": star_elim,
             "star_idx": _coerce_int(e.get("star_idx"), -1),
             "color_slot_label": str(e.get("color_slot_label", "")),
             "pitch_slot_label": str(e.get("pitch_slot_label", "")),
             "degree_slot_label": str(e.get("degree_slot_label", "")),
+            "repeat_slot_label": str(e.get("repeat_slot_label", "")),
             "melody_ticks": melody_ticks,
         }))
     # Sized against the now-FULLY-populated _match_records, not the
@@ -2769,6 +3003,17 @@ func _effective_degree_state(record_idx: int, degree: int) -> int:
 func _effective_repeat_state(record_idx: int, value: int, collapse_soft: bool = true) -> int:
     if record_idx < 0 or record_idx >= _match_records.size():
         return 0
+    # Slot-label tier, same as _effective_color_state's "a 'Blue A' row is
+    # structurally Blue even though nothing ever writes that into
+    # color_states": placing a record into the Sort:Repeats tab's "R0 A"
+    # bucket IS the player's confirm, not a separate step. Unlike Colour
+    # this is the record's OWN assertion rather than a ground-truth fact —
+    # but the effect on this axis's state is identical either way, so it
+    # reads the same way here.
+    var label: String = str(_match_records[record_idx].get("repeat_slot_label", ""))
+    if label != "":
+        var label_value: int = int(label.get_slice(" ", 0).substr(1))
+        return 1 if label_value == value else 2
     var soft: int = _record_effective_state(record_idx, "repeat_states", "protected_repeat_values", value)
     if not collapse_soft:
         return soft
@@ -2966,7 +3211,12 @@ func _merge_conflict_kinds(idx_a: int, idx_b: int) -> Array[String]:
     if ap != "" and bp != "" and ap != bp:
         kinds.append("pitch")
 
-    for label_key in ["color_slot_label", "pitch_slot_label", "degree_slot_label"]:
+    var ar: int = _raw_confirmed_int_key(a, "repeat_states")
+    var br: int = _raw_confirmed_int_key(b, "repeat_states")
+    if ar >= 0 and br >= 0 and ar != br:
+        kinds.append("repeat")
+
+    for label_key in ["color_slot_label", "pitch_slot_label", "degree_slot_label", "repeat_slot_label"]:
         var al: String = str(a.get(label_key, ""))
         var bl: String = str(b.get(label_key, ""))
         if al != "" and bl != "" and al != bl:
@@ -3062,6 +3312,7 @@ func _merge_value_clashes(idx_a: int, idx_b: int) -> Array[String]:
         {"key": "degree_states", "label": "degree"},
         {"key": "pitch_states",  "label": "pitch"},
         {"key": "name_states",   "label": "name"},
+        {"key": "repeat_states", "label": "repeat count"},
     ]:
         var states_key: String = str(axis["key"])
         var av: Dictionary = a.get(states_key, {})
@@ -3096,6 +3347,8 @@ func _value_label(states_key: String, key) -> String:
             return str(key)
         "degree_states":
             return str(key)
+        "repeat_states":
+            return _repeat_value_label(int(key))
     return str(key)
 
 
