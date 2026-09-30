@@ -1276,7 +1276,7 @@ func get_constellation_sub_targets(constellation_id: int) -> Array:
 
 
 func get_bonus_volitions_per_slot() -> int:
-    # Returns 0/1/2/3 based on Archon constellation tier.
+    # Returns 0/1/2/4 based on Archon constellation tier.
     var cd = get_node_or_null("/root/ConstellationData")
     if cd and cd.has_method("get_bonus_volition_grant"):
         return cd.get_bonus_volition_grant()

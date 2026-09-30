@@ -183,7 +183,7 @@ const BUILT_IN = [
         "bonus_key": "bonus_volitions",
         "bonus_value": 1.0,
         "mechanic_key": "unlock_archon_titles",
-        "bonus_levels": {"stars": 1, "lines": 2, "art": 3},
+        "bonus_levels": {"stars": 1, "lines": 2, "art": 4},
         "spark_cap":      28657,
         # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
         "snap_horiz_stars": [0, 1],
@@ -2042,7 +2042,7 @@ func get_phial_spark_bank_amount() -> BigNum:
 
 
 func get_bonus_volition_grant() -> int:
-    # Returns 0/1/2/3 Bonus Volitions per Normal Volition, sourced from the
+    # Returns 0/1/2/4 Bonus Volitions per Normal Volition, sourced from the
     # Archon (id 0) — bonus_volitions is permanently exclusive to the Archon
     # by design, so this reads it directly rather than scanning all octants.
     # Requires: Archon active in its octant, solved, AND self-activated
