@@ -29,7 +29,7 @@ var ticker_items: Array = [
     {"type": "music", "text": "♪ Now Playing: Check the Djinncremental Discord for this week's community playlist! ♪"},
     {"type": "tip",   "text": "Earth = 2 Solid + 1 Liquid + 1 Gas. Water = 2 Liquid + 1 Solid + 1 Gas. Air = 2 Gas + 1 Solid + 1 Liquid."},
     {"type": "tip",   "text": "Mud, Dust, and Cloud are Symmetrics — two pairs of the same type."},
-    {"type": "tip",   "text": "Dirt, Sand, Haze, Mist, Ooze, and Foam are Medials — three of one, one of another."},
+    {"type": "tip",   "text": "Silt, Sand, Haze, Mist, Ooze, and Foam are Medials — three of one, one of another."},
     {"type": "tip",   "text": "Iota Assembly costs 5 Sparks + 16 Monads + 4 Particles. Plan your reserves."},
     {"type": "tip",   "text": "Grain Assembly costs 25 Sparks + 64 Monads + 16 Particles + 4 Motes. Worth it."},
 ]

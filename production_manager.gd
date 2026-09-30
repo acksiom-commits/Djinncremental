@@ -896,7 +896,7 @@ const TETRAD_COMPOSITIONS := {
     "adaemant": [4, 0, 0], "aquae": [0, 4, 0], "aethyr": [0, 0, 4],
     "earth":    [2, 1, 1], "water": [1, 2, 1], "air":    [1, 1, 2],
     "mud":      [2, 2, 0], "dust":  [2, 0, 2], "cloud":  [0, 2, 2],
-    "dirt":     [3, 1, 0], "sand":  [3, 0, 1], "haze":   [1, 0, 3],
+    "silt":     [3, 1, 0], "sand":  [3, 0, 1], "haze":   [1, 0, 3],
     "mist":     [0, 1, 3], "ooze":  [1, 3, 0], "foam":   [0, 3, 1],
 }
 
@@ -1131,7 +1131,7 @@ func _batch_distribute_tetrads(amount: BigNum, sr: float, lr: float, gr: float) 
         "adaemant": sr*sr*sr*sr,      "aquae": lr*lr*lr*lr,      "aethyr": gr*gr*gr*gr,
         "earth":    6.0*sr*sr*lr*gr,  "water": 6.0*lr*lr*sr*gr,  "air":    6.0*gr*gr*sr*lr,
         "mud":      6.0*sr*sr*lr*lr,  "dust":  6.0*sr*sr*gr*gr,  "cloud":  6.0*lr*lr*gr*gr,
-        "dirt":     4.0*sr*sr*sr*lr,  "sand":  4.0*sr*sr*sr*gr,
+        "silt":     4.0*sr*sr*sr*lr,  "sand":  4.0*sr*sr*sr*gr,
         "haze":     4.0*gr*gr*gr*sr,  "mist":  4.0*gr*gr*gr*lr,
         "ooze":     4.0*lr*lr*lr*sr,  "foam":  4.0*lr*lr*lr*gr,
     }
@@ -1683,7 +1683,7 @@ func dev_inject_ten_grains() -> void:
     #  1/81 each: adaemant aquae aethyr             → 95   each (94 + 1)
     # 12/81 each: earth water air                   → 1138 each (1137 + 1)
     #  6/81 each: mud dust cloud                    → 569  each (568 + 1)
-    #  4/81 each: dirt sand haze mist ooze foam     → 379  each
+    #  4/81 each: silt sand haze mist ooze foam     → 379  each
     gc.add_to_total("adaemant", BigNum.from_int(95))
     gc.add_to_total("aquae",    BigNum.from_int(95))
     gc.add_to_total("aethyr",   BigNum.from_int(95))
@@ -1693,7 +1693,7 @@ func dev_inject_ten_grains() -> void:
     gc.add_to_total("mud",      BigNum.from_int(569))
     gc.add_to_total("dust",     BigNum.from_int(569))
     gc.add_to_total("cloud",    BigNum.from_int(569))
-    gc.add_to_total("dirt",     BigNum.from_int(379))
+    gc.add_to_total("silt",     BigNum.from_int(379))
     gc.add_to_total("sand",     BigNum.from_int(379))
     gc.add_to_total("haze",     BigNum.from_int(379))
     gc.add_to_total("mist",     BigNum.from_int(379))
@@ -1914,7 +1914,7 @@ func _resolve_tetrad(s: int, l: int, g: int) -> String:
     if s == 2 and l == 2: return "mud"
     if s == 2 and g == 2: return "dust"
     if g == 2 and l == 2: return "cloud"
-    if s == 3 and l == 1: return "dirt"
+    if s == 3 and l == 1: return "silt"
     if s == 3 and g == 1: return "sand"
     if g == 3 and s == 1: return "haze"
     if g == 3 and l == 1: return "mist"

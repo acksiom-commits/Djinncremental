@@ -15,7 +15,7 @@ var tetrad:   Dictionary = {
     "adaemant": BigNum.zero(), "aquae": BigNum.zero(), "aethyr": BigNum.zero(),
     "earth":    BigNum.zero(), "water": BigNum.zero(), "air":    BigNum.zero(),
     "mud":      BigNum.zero(), "dust":  BigNum.zero(), "cloud":  BigNum.zero(),
-    "dirt":     BigNum.zero(), "sand":  BigNum.zero(), "haze":   BigNum.zero(),
+    "silt":     BigNum.zero(), "sand":  BigNum.zero(), "haze":   BigNum.zero(),
     "mist":     BigNum.zero(), "ooze":  BigNum.zero(), "foam":   BigNum.zero(),
 }
 var particle:    BigNum = BigNum.zero()
@@ -83,6 +83,12 @@ const HOURGLASS_OP_RENAMES: Dictionary = {
     "particle_compress": "particle_assemble",
     "iota_assemble":     "iota_assemble_uonite",
     "mote_compress":     "mote_assemble_uonite",
+}
+
+# One-time load-time migration for the "dirt" Medial Tetrad variety, renamed
+# to "silt" (2026-09-29) -- see load_save_data()'s locks/totals_created reads.
+const TETRAD_VARIETY_RENAMES: Dictionary = {
+    "dirt": "silt",
 }
 
 
@@ -174,7 +180,7 @@ var totals_created: Dictionary = {
     "adaemant": BigNum.zero(), "aquae":    BigNum.zero(), "aethyr": BigNum.zero(),
     "earth":    BigNum.zero(), "water":    BigNum.zero(), "air":    BigNum.zero(),
     "mud":      BigNum.zero(), "dust":     BigNum.zero(), "cloud":  BigNum.zero(),
-    "dirt":     BigNum.zero(), "sand":     BigNum.zero(), "haze":   BigNum.zero(),
+    "silt":     BigNum.zero(), "sand":     BigNum.zero(), "haze":   BigNum.zero(),
     "mist":     BigNum.zero(), "ooze":     BigNum.zero(), "foam":   BigNum.zero(),
     "particle": BigNum.zero(), "iota_uonite": BigNum.zero(), "mote_uonite": BigNum.zero(),
     "iota_grains": BigNum.zero(), "mote_grains": BigNum.zero(),
@@ -409,7 +415,7 @@ var locks: Dictionary = {
     "adaemant":      false, "aquae":         false, "aethyr":        false,
     "earth":        false, "water":         false, "air":           false,
     "mud":          false, "dust":          false, "cloud":         false,
-    "dirt":         false, "sand":          false, "haze":          false,
+    "silt":         false, "sand":          false, "haze":          false,
     "mist":         false, "ooze":          false, "foam":          false,
     # Tetrad category locks (1 Volition each, covers all varieties in that category)
     "cat_fundament": false, "cat_element":   false,
@@ -428,7 +434,7 @@ const TETRAD_CATEGORIES = {
     "cat_fundament": ["adaemant", "aquae", "aethyr"],
     "cat_element":   ["earth", "water", "air"],
     "cat_symmetric": ["mud", "dust", "cloud"],
-    "cat_medial":    ["dirt", "sand", "haze", "mist", "ooze", "foam"],
+    "cat_medial":    ["silt", "sand", "haze", "mist", "ooze", "foam"],
 }
 
 
@@ -1800,7 +1806,13 @@ func load_save_data(data: Dictionary) -> void:
     creation_order   = _coerce_dict(data.get("creation_order"), {})
 
     for k in tetrad:
-        tetrad[k] = BigNum.from_string(data.get("tetrad_" + k, "0:0"))
+        # "silt" was renamed from "dirt" (2026-09-29); an old save's
+        # tetrad_dirt still needs to land here, or that variety's whole
+        # stockpile silently reads back as 0.
+        if k == "silt":
+            tetrad[k] = BigNum.from_string(data.get("tetrad_silt", data.get("tetrad_dirt", "0:0")))
+        else:
+            tetrad[k] = BigNum.from_string(data.get("tetrad_" + k, "0:0"))
     for key in ["particle", "iota_uonite", "mote_uonite", "iota_grains", "mote_grains", "grain", "uonite"]:
         set_resource(key, BigNum.from_string(data.get(key, "0:0")))
 
@@ -1846,8 +1858,9 @@ func load_save_data(data: Dictionary) -> void:
             assignments[key] = _coerce_int(val, 0)
     var raw_locks: Dictionary = _coerce_dict(data.get("locks"), {})
     for key in raw_locks:
-        if locks.has(key):
-            locks[key] = _coerce_bool(raw_locks[key], false)
+        var mapped_key: String = TETRAD_VARIETY_RENAMES.get(key, key)
+        if locks.has(mapped_key):
+            locks[mapped_key] = _coerce_bool(raw_locks[key], false)
     # --- Volition Slots ---
     if data.has("volition_slots"):
         _deserialize_volition_slots(data["volition_slots"])
@@ -1908,8 +1921,9 @@ func load_save_data(data: Dictionary) -> void:
         monad_milestones[key] = _coerce_int(raw_monad_milestones[key], 0)
     var raw_totals_created: Dictionary = _coerce_dict(data.get("totals_created"), {})
     for key in raw_totals_created:
-        if totals_created.has(key):
-            totals_created[key] = BigNum.from_string(raw_totals_created[key])
+        var mapped_tc_key: String = TETRAD_VARIETY_RENAMES.get(key, key)
+        if totals_created.has(mapped_tc_key):
+            totals_created[mapped_tc_key] = BigNum.from_string(raw_totals_created[key])
     var raw_totals_milestones: Dictionary = _coerce_dict(data.get("totals_milestones"), {})
     for key in raw_totals_milestones:
         # Default 2 matches the .get(key, 2) fallback every consumer

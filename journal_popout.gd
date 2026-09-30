@@ -361,7 +361,7 @@ func _build_reference() -> String:
         ["Adaemant", "S4"],       ["Aquae",  "L4"],         ["Aethyr", "G4"],
         ["Earth",    "S2/L1/G1"], ["Water",  "L2/S1/G1"],   ["Air",    "G2/S1/L1"],
         ["Mud",      "S2/L2"],    ["Dust",   "S2/G2"],       ["Cloud",  "L2/G2"],
-        ["Dirt",     "S3/L1"],    ["Sand",   "S3/G1"],
+        ["Silt",     "S3/L1"],    ["Sand",   "S3/G1"],
         ["Haze",     "G3/S1"],    ["Mist",   "G3/L1"],
         ["Ooze",     "L3/S1"],    ["Foam",   "L3/G1"],
     ]

@@ -503,7 +503,7 @@ func notify_tetrad_created(variety_key: String, triggered_dict: Dictionary) -> v
         "fundament": ["adaemant", "aquae", "aethyr"],
         "element":   ["earth", "water", "air"],
         "symmetric": ["mud", "dust", "cloud"],
-        "medial":    ["dirt", "sand", "haze", "mist", "ooze", "foam"],
+        "medial":    ["silt", "sand", "haze", "mist", "ooze", "foam"],
     }
     for cat in category_map:
         if _category_notified[cat]:

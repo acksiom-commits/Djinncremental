@@ -138,7 +138,7 @@ var _tetrad_variety_triggered: Dictionary = {
     "adaemant": false, "aquae": false, "aethyr": false,
     "earth":    false, "water": false, "air":    false,
     "mud":      false, "dust":  false, "cloud":  false,
-    "dirt":     false, "sand":  false, "haze":   false,
+    "silt":     false, "sand":  false, "haze":   false,
     "mist":     false, "ooze":  false, "foam":   false,
 }
 
@@ -174,7 +174,7 @@ const TETRAD_NAMES = {
     "adaemant": "Adaemant", "aquae": "Aquae",  "aethyr": "Aethyr",
     "earth":    "Earth",    "water": "Water",   "air":    "Air",
     "mud":      "Mud",      "dust":  "Dust",    "cloud":  "Cloud",
-    "dirt":     "Dirt",     "sand":  "Sand",    "haze":   "Haze",
+    "silt":     "Silt",     "sand":  "Sand",    "haze":   "Haze",
     "mist":     "Mist",     "ooze":  "Ooze",    "foam":   "Foam",
 }
 
@@ -184,7 +184,7 @@ const LEFT_LINE_MAP = [
     "aquae",    "aquae",
     "aethyr",   "aethyr",
     "cat_medial",
-    "dirt",     "dirt",
+    "silt",     "silt",
     "ooze",     "ooze",
 ]
 
@@ -1535,7 +1535,7 @@ func _get_completing_category() -> String:
         "fundament": ["adaemant", "aquae", "aethyr"],
         "element":   ["earth", "water", "air"],
         "symmetric": ["mud", "dust", "cloud"],
-        "medial":    ["dirt", "sand", "haze", "mist", "ooze", "foam"],
+        "medial":    ["silt", "sand", "haze", "mist", "ooze", "foam"],
     }
     for cat in category_map:
         var all_done = true
@@ -1961,11 +1961,11 @@ func _check_totals_milestones() -> void:
         "tetrad_fundament": ["adaemant", "aquae", "aethyr"],
         "tetrad_element":   ["earth", "water", "air"],
         "tetrad_symmetric": ["mud", "dust", "cloud"],
-        "tetrad_medial":    ["dirt", "sand", "haze", "mist", "ooze", "foam"],
+        "tetrad_medial":    ["silt", "sand", "haze", "mist", "ooze", "foam"],
         "tetrad_all":       ["adaemant", "aquae", "aethyr",
                              "earth", "water", "air",
                              "mud", "dust", "cloud",
-                             "dirt", "sand", "haze", "mist", "ooze", "foam"],
+                             "silt", "sand", "haze", "mist", "ooze", "foam"],
     }
     for cat_key in TETRAD_CATEGORIES:
         var cat_min := _min_totals(TETRAD_CATEGORIES[cat_key])
@@ -3118,7 +3118,7 @@ func _build_category_header(category_name: String, category_key: String) -> Stri
         "cat_fundament": ["adaemant", "aquae", "aethyr"],
         "cat_element":   ["earth", "water", "air"],
         "cat_symmetric": ["mud", "dust", "cloud"],
-        "cat_medial":    ["dirt", "sand", "haze", "mist", "ooze", "foam"],
+        "cat_medial":    ["silt", "sand", "haze", "mist", "ooze", "foam"],
     }
     var any_created := false
     for v in category_varieties.get(category_key, []):
@@ -3204,7 +3204,7 @@ func _update_tetrad_display() -> void:
     if _left_tetrad_label and _left_tetrad_label is RichTextLabel:
         var txt  = _build_category_header("Fundaments", "cat_fundament") + "\n"
         txt     += _build_tetrad_line(["adaemant", "aquae", "aethyr"]) + "\n\n"
-        txt     += _build_tetrad_line(["dirt", "ooze"]) + "\n"
+        txt     += _build_tetrad_line(["silt", "ooze"]) + "\n"
         _left_tetrad_label.bbcode_enabled = true
         _left_tetrad_label.bbcode_text    = txt
     if _middle_label and _middle_label is RichTextLabel:

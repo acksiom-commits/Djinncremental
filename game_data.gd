@@ -70,7 +70,7 @@ const TETRADS = {
     "mud":      {"category": "symmetric", "s": 2, "l": 2, "g": 0, "display": "Mud"},
     "dust":     {"category": "symmetric", "s": 2, "l": 0, "g": 2, "display": "Dust"},
     "cloud":    {"category": "symmetric", "s": 0, "l": 2, "g": 2, "display": "Cloud"},
-    "dirt":     {"category": "medial",    "s": 3, "l": 1, "g": 0, "display": "Dirt"},
+    "silt":     {"category": "medial",    "s": 3, "l": 1, "g": 0, "display": "Silt"},
     "sand":     {"category": "medial",    "s": 3, "l": 0, "g": 1, "display": "Sand"},
     "haze":     {"category": "medial",    "s": 1, "l": 0, "g": 3, "display": "Haze"},
     "mist":     {"category": "medial",    "s": 0, "l": 1, "g": 3, "display": "Mist"},
