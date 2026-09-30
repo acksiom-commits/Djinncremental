@@ -88,7 +88,10 @@ func _clamp_popup_screen_pos(screen_pos: Vector2) -> Vector2:
 ## whatever constellation is open; a range form ("1-15") is always shorter
 ## than the enumeration it stands for, so this is a true upper bound.
 func _max_candidate_list_length() -> int:
-    var n: int = _host._star_count
+    # Melody TICK count, not star_count: the list can hold more entries than
+    # there are stars once a candidate rank repeats (2026-09-28, per user
+    # direction — the box now displays the same ground truth as the staff).
+    var n: int = _deduction._melody_tick_count()
     if n <= 0:
         return 32
     var digits: int = 0
@@ -2087,7 +2090,18 @@ func _refresh_range_edits(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit
     if lo > 0 and lo == hi:
         lo_edit.text = ""
         hi_edit.text = ""
-        mid_edit.text = "= %d" % lo
+        # ALL ticks this rank fires at (2026-09-28, per user direction), not
+        # just its first -- a repeated note is one star, but "= 1" alone
+        # would look like a contradiction next to a staff clearly showing
+        # that same star at both tick 1 and tick 9.
+        # PackedStringArray, not a plain Array: String.join() is typed, and
+        # handing it an untyped Array is the silent-abort class this project
+        # has hit before (see _copy_open_items_to_notes's own comment).
+        var ticks: Array = _deduction._melody_ticks_for_rank(lo)
+        var tick_strs := PackedStringArray()
+        for t in ticks:
+            tick_strs.append(str(t))
+        mid_edit.text = "= %s" % ",".join(tick_strs)
         return
     var lo_val: int = _deduction._exclusive_display_lo(lo, hi)
     var hi_val: int = _deduction._exclusive_display_hi(lo, hi)
@@ -2114,8 +2128,16 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEd
     var typed_lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
     var typed_hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
 
-    if typed_lo < 1 or typed_lo > _host._star_count: typed_lo = 0
-    if typed_hi < 1 or typed_hi > _host._star_count: typed_hi = 0
+    # Typed numbers are melody TICKS (2026-09-28, per user direction — the
+    # same ground truth as the staff), not ranks, so the valid range is the
+    # melody's own length. Each valid tick converts to its RANK below,
+    # before the existing rank-based bound logic runs unchanged — typing
+    # EITHER occurrence of a repeated note's tick lands on the same rank,
+    # exactly like clicking either occurrence on the staff opens the same
+    # popup (see _seq_pos_for_melody_tick's own comment).
+    var tick_count: int = _deduction._melody_tick_count()
+    if typed_lo < 1 or typed_lo > tick_count: typed_lo = 0
+    if typed_hi < 1 or typed_hi > tick_count: typed_hi = 0
 
     if exact_typed:
         if typed_lo <= 0:
@@ -2126,7 +2148,10 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEd
     if typed_lo > 0 and typed_hi > 0 and typed_lo > typed_hi:
         var tmp := typed_lo; typed_lo = typed_hi; typed_hi = tmp
 
-    var converted: Array = _deduction._parse_exclusive_bounds(typed_lo, typed_hi)
+    var rank_lo: int = _deduction._seq_pos_for_melody_tick(typed_lo) if typed_lo > 0 else 0
+    var rank_hi: int = _deduction._seq_pos_for_melody_tick(typed_hi) if typed_hi > 0 else 0
+
+    var converted: Array = _deduction._parse_exclusive_bounds(rank_lo, rank_hi)
     var lo: int = int(converted[0])
     var hi: int = int(converted[1])
 
@@ -2148,28 +2173,27 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEd
         return
 
     # Reject an entry whose CONVERTED bounds can't be satisfied, instead of
-    # writing a meaningless range. The clamps above only check the typed
-    # numbers are within 1..star_count; they say nothing about whether the
-    # exclusive bound those numbers produce is reachable, and the two
+    # writing a meaningless range. Checked on rank_lo/rank_hi (RANK space,
+    # the domain _parse_exclusive_bounds' own arithmetic operates in), not
+    # the raw typed ticks — a tick number this large or small says nothing
+    # about whether the resulting rank bound is reachable; two different
+    # tick numbers can still convert to the SAME rank (a repeat), which
+    # must be judged exact, not as a pair of ordinary bounds. The two
     # extremes used to fail silently in opposite directions:
-    #   * "< 1" (typing 1 in the high box) converts to hi = 0, which is the
-    #     sentinel for NO upper bound — an impossible constraint silently
-    #     became "any position", the exact inverse of the request.
-    #   * "> star_count" (typing the last position in the low box) converts
-    #     to lo = star_count + 1, giving an empty candidate set that reads
-    #     as "no information" in _record_descriptor_state but as a genuinely
+    #   * "< 1" (typing rank 1 in the high box) converts to hi = 0, which is
+    #     the sentinel for NO upper bound — an impossible constraint
+    #     silently became "any position", the exact inverse of the request.
+    #   * "> star_count" (typing the last rank in the low box) converts to
+    #     lo = star_count + 1, giving an empty candidate set that reads as
+    #     "no information" in _record_descriptor_state but as a genuinely
     #     empty set in _effective_seq_bounds.
     # Same shape as _merge_match_records' "bounds contradict once
     # intersected" guard: keep what was there and re-render it, so the row
     # visibly snaps back rather than appearing to accept the entry.
-    # The equal-values case is an EXACT pin, not a pair of exclusive bounds
-    # (see _parse_exclusive_bounds' first branch), so "1 and 1" or
-    # "15 and 15" are perfectly valid and must skip these checks — they'd
-    # otherwise be rejected as "< 1" and "> 15".
-    var is_exact_entry: bool = typed_lo > 0 and typed_lo == typed_hi
+    var is_exact_entry: bool = rank_lo > 0 and rank_lo == rank_hi
     if not is_exact_entry:
-        var impossible_hi: bool = typed_hi > 0 and typed_hi <= 1
-        var impossible_lo: bool = typed_lo > 0 and typed_lo >= _host._star_count
+        var impossible_hi: bool = rank_hi > 0 and rank_hi <= 1
+        var impossible_lo: bool = rank_lo > 0 and rank_lo >= _host._star_count
         if impossible_hi or impossible_lo or (lo > 0 and hi > 0 and lo > hi):
             _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
             return
@@ -2238,19 +2262,27 @@ func _commit_sequence_candidates(record_idx: int, lo_edit: LineEdit, mid_edit: L
         _undo_sequence_entry(record_idx, lo_edit, mid_edit, hi_edit)
         return
 
+    # Parsed numbers are melody TICKS, same domain as the range boxes (see
+    # _commit_sequence_range's own comment) -- converted to their RANKS and
+    # DEDUPED here, since two ticks of the same repeated note collapse to
+    # one rank (one star), not two candidates.
     var parsed: Array = _deduction._parse_candidate_list(raw)
-    var valid: Array = []
+    var tick_count: int = _deduction._melody_tick_count()
+    var valid_ranks: Dictionary = {}
     for p in parsed:
-        if p >= 1 and p <= _host._star_count:
-            valid.append(p)
+        if p >= 1 and p <= tick_count:
+            valid_ranks[_deduction._seq_pos_for_melody_tick(int(p))] = true
+    var valid: Array = valid_ranks.keys()
+    valid.sort()
 
     if valid.is_empty():
         mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
         return
 
     if valid.size() == 1:
-        lo_edit.text = str(valid[0])
-        hi_edit.text = str(valid[0])
+        var one_tick: int = int(_deduction._melody_ticks_for_rank(int(valid[0]))[0])
+        lo_edit.text = str(one_tick)
+        hi_edit.text = str(one_tick)
         _commit_sequence_range(record_idx, lo_edit, mid_edit, hi_edit)
         return
 
@@ -2767,7 +2799,15 @@ func _fit_string_to_width(font: Font, text: String, size: int, max_w: float) -> 
 
 func _draw_melody_staff() -> void:
     var panel_size: Vector2 = _host._melody_staff_panel.size
-    if _host._star_count <= 0 or panel_size.x <= 0.0 or panel_size.y <= 0.0:
+    # One tick per melody note-EVENT, not per star (2026-09-28, per user
+    # direction): a repeated note gets its own tick, showing the same
+    # star's info as its earlier tick(s), rather than being collapsed away.
+    # Falls back to one-tick-per-star for a cache written before
+    # melody_star_sequence existed (see to_cache_dict's own comment) or a
+    # constellation whose melody is a clean 1:1 with its stars, where the
+    # two counts are identical anyway.
+    var tick_count: int = _host._melody_star_sequence.size() if not _host._melody_star_sequence.is_empty() else _host._star_count
+    if tick_count <= 0 or panel_size.x <= 0.0 or panel_size.y <= 0.0:
         return
 
     var margin_x: float = 20.0
@@ -2782,7 +2822,7 @@ func _draw_melody_staff() -> void:
     var staff_bottom_pad: float = NUMERAL_BLOCK_H
     var usable_w: float = panel_size.x - margin_x * 2.0
     var usable_h: float = panel_size.y - staff_top - staff_bottom_pad
-    var step_x: float = usable_w / float(maxi(_host._star_count - 1, 1))
+    var step_x: float = usable_w / float(maxi(tick_count - 1, 1))
 
     var baseline_y: float = staff_top + usable_h * 0.5
     var baseline_col := STATE_COLORS.muted
@@ -2794,7 +2834,7 @@ func _draw_melody_staff() -> void:
     # constellation and isn't something the UI should assume it knows).
     var bar_col := STATE_COLORS.muted
     var pos: int = 4
-    while pos < _host._star_count:
+    while pos < tick_count:
         var bx: float = margin_x + step_x * float(pos)
         _host._melody_staff_panel.draw_line(
             Vector2(bx, staff_top), Vector2(bx, staff_top + usable_h), bar_col, 1.0)
@@ -2805,8 +2845,15 @@ func _draw_melody_staff() -> void:
     var font := ThemeDB.fallback_font
     var font_size_small := 16
 
-    for seq_pos in range(1, _host._star_count + 1):
-        var x: float = margin_x + step_x * float(seq_pos - 1)
+    for tick in range(1, tick_count + 1):
+        var x: float = margin_x + step_x * float(tick - 1)
+        # seq_pos is the RANK this tick's note belongs to (1-indexed, the
+        # domain _melody_marker_for_position/_known_color_for_seq_position/
+        # _known_name_for_seq_position already expect) — NOT the tick's own
+        # melody position. Two ticks sharing a repeated note resolve to the
+        # SAME seq_pos and so draw identically: the repeat is the same star
+        # firing again, not a new unknown to solve.
+        var seq_pos: int = _melody_rank_for_tick(tick)
         var marker: Dictionary = _deduction._melody_marker_for_position(seq_pos)
 
         # ONE COLOUR PER POSITION, and COLOUR is what sets it.
@@ -2827,13 +2874,15 @@ func _draw_melody_staff() -> void:
         # NAME, on one of two staggered rows, above the staff. "?" until
         # identified, then the name itself.
         #
-        # ODD positions high, EVEN low, so no name shares a row with either
-        # horizontal neighbour and each may run to roughly TWO columns
-        # before it can collide — with the position two along, on its own
-        # row. The ellipsis stays as a backstop for a very narrow panel or a
-        # very long name, but at 15 stars it should now rarely fire.
+        # ODD ticks high, EVEN low — by the tick's own SCREEN position, not
+        # by seq_pos/rank, since two ticks a repeat apart can land on the
+        # same parity of rank while sitting on opposite sides of a dividing
+        # tick between them. So no name shares a row with either horizontal
+        # neighbour and each may run to roughly TWO columns before it can
+        # collide — with the tick two along, on its own row. The ellipsis
+        # stays as a backstop for a very narrow panel or a very long name.
         var star_name: String = _deduction._known_name_for_seq_position(seq_pos)
-        var name_dy: float = NAME_ROW_HIGH_DY if seq_pos % 2 == 1 else NAME_ROW_LOW_DY
+        var name_dy: float = NAME_ROW_HIGH_DY if tick % 2 == 1 else NAME_ROW_LOW_DY
         var name_label: String = _fit_string_to_width(
             font, star_name, FONT_SIZE_STAFF_NAME, step_x * 2.0 - 6.0) if star_name != "" else "?"
         var fw: float = font.get_string_size(name_label, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE_STAFF_NAME).x
@@ -2862,33 +2911,60 @@ func _draw_melody_staff() -> void:
                 "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, pos_col)
 
         # NUMERAL, at the very bottom of the panel now, below the staff.
-        var num_label: String = str(seq_pos)
+        # This is the tick's own melody position (1..tick_count) — which
+        # note in the tune this is — not seq_pos/rank, so a repeat's two
+        # ticks show two different numerals (e.g. "2" and "9") over the
+        # same name/pitch/colour, matching the melody they actually play.
+        var num_label: String = str(tick)
         var nw: float = font.get_string_size(num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
         _host._melody_staff_panel.draw_string(font,
             Vector2(x - nw * 0.5, panel_size.y - NUMERAL_BASELINE_PAD),
             num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, pos_col)
 
 
+## Resolves a melody TICK (1-indexed staff position, 1..tick_count in
+## _draw_melody_staff) to the 1-indexed seq_pos (rank) every seq_pos
+## consumer in constellation_puzzle_deduction.gd already expects (see that
+## file's own "seq_lo"/"seq_hi" comment: 1-indexed, 0 reserved for
+## "unknown"). Falls back to the tick itself when there is no raw melody
+## array to resolve through (old cache, or a clean 1:1 melody where tick
+## and rank already coincide) or when a star's rank failed to resolve
+## (sequence_rank_solution holding -1, an authoring bug already flagged
+## elsewhere — not this function's job to re-report, just to not crash on
+## it).
+## Thin alias for _deduction._seq_pos_for_melody_tick -- kept as its own name
+## here since the staff's own callers read more clearly calling a "rank for
+## tick" function, but the actual lookup lives in exactly one place (see
+## that function's own comment for why it reads the PRE-TRANSLATED
+## _host._melody_seq_pos_sequence array rather than sequence_rank_solution
+## directly: a matrix-up lint violation this session, fixed by moving the
+## ground-truth translation to the generator).
+func _melody_rank_for_tick(tick: int) -> int:
+    return _deduction._seq_pos_for_melody_tick(tick)
+
+
 func _on_melody_staff_input(event: InputEvent) -> void:
     if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
         return
-    if _host._star_count <= 0:
+    # Same tick_count as _draw_melody_staff — melody note-events, not stars.
+    var tick_count: int = _host._melody_star_sequence.size() if not _host._melody_star_sequence.is_empty() else _host._star_count
+    if tick_count <= 0:
         return
 
     var panel_size: Vector2 = _host._melody_staff_panel.size
     var margin_x: float = 20.0
     var usable_w: float = panel_size.x - margin_x * 2.0
-    var step_x: float = usable_w / float(maxi(_host._star_count - 1, 1))
+    var step_x: float = usable_w / float(maxi(tick_count - 1, 1))
 
     var click_x: float = event.position.x
-    var nearest_pos: int = 1
+    var nearest_tick: int = 1
     var nearest_dist: float = INF
-    for seq_pos in range(1, _host._star_count + 1):
-        var x: float = margin_x + step_x * float(seq_pos - 1)
+    for tick in range(1, tick_count + 1):
+        var x: float = margin_x + step_x * float(tick - 1)
         var d: float = abs(click_x - x)
         if d < nearest_dist:
             nearest_dist = d
-            nearest_pos = seq_pos
+            nearest_tick = tick
 
     if nearest_dist <= step_x * 0.5:
         # PopupPanel extends Window, not Control — its position is actual
@@ -2900,12 +2976,24 @@ func _on_melody_staff_input(event: InputEvent) -> void:
         # intercepts left-clicks against the wrong bounds while right-click
         # skips that check and still hit-tests correctly).
         var target: Vector2 = _host._melody_staff_panel.global_position + Vector2(click_x, event.position.y) - Vector2(90, 0)
-        _open_staff_popup(nearest_pos, _host._melody_staff_panel.get_viewport().get_screen_transform() * target)
+        # Opens by the raw TICK, not a ground-truth-resolved rank — see
+        # _open_staff_popup's own comment for why. Two ticks that are
+        # secretly the same star will end up sharing a record once the
+        # player's own marks prove it, never on the click itself.
+        _open_staff_popup(nearest_tick, _host._melody_staff_panel.get_viewport().get_screen_transform() * target)
 
 
-func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
-    _host._staff_popup_seq_pos = seq_pos
-    var record_idx: int = _deduction._get_or_create_match_record_for_seq(seq_pos)
+## Keyed by the raw melody TICK the player clicked, never by its resolved
+## RANK -- see _get_or_create_match_record_for_melody_tick's own comment for
+## why: translating tick->rank via ground truth HERE would seed a brand-new
+## record with the true answer (seq_lo/seq_hi) the instant a tick is first
+## clicked, before the player has done anything. Two ticks that are secretly
+## the same star still end up sharing state, but only once the player's own
+## Name/Colour/Pitch/Sequence marks prove it (ordinary record-merge, unioning
+## melody_ticks) -- never from the click itself.
+func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
+    _host._staff_popup_tick = tick
+    var record_idx: int = _deduction._get_or_create_match_record_for_melody_tick(tick)
 
     _host._staff_popup.clear_all_rows()
 
@@ -2982,7 +3070,7 @@ func _open_staff_popup(seq_pos: int, screen_pos: Vector2) -> void:
     # panel's height — for a tall enough popup (many stars, even after the
     # column-scaling above) the centered top edge lands ABOVE the header,
     # over the clue box. This is the actual floor.
-    _host._staff_popup.open(seq_pos, record_idx, _clamp_popup_screen_pos(screen_pos))
+    _host._staff_popup.open(tick, record_idx, _clamp_popup_screen_pos(screen_pos))
 
 
 func _on_staff_pitch_check(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
@@ -2998,7 +3086,7 @@ func _on_staff_pitch_check(record_idx: int, note_name: String, _row: StaffPopupR
         _deduction.record_at(record_idx)["pitch_states"] = pitch_states
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_pitch_x(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
@@ -3019,7 +3107,7 @@ func _on_staff_pitch_x(record_idx: int, note_name: String, _row: StaffPopupRow) 
     r["manual_pitch_blocks"] = manual
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_pitch_protect(record_idx: int, note_name: String) -> void:
@@ -3048,7 +3136,7 @@ func _on_staff_color_check(record_idx: int, color_idx: int, _row: StaffPopupRow)
     _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_color_x(record_idx: int, color_idx: int, _row: StaffPopupRow) -> void:
@@ -3069,7 +3157,7 @@ func _on_staff_color_x(record_idx: int, color_idx: int, _row: StaffPopupRow) -> 
     _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_color_protect(record_idx: int, color_idx: int) -> void:
@@ -3097,7 +3185,7 @@ func _on_staff_name_check(record_idx: int, star_name: String, _row: StaffPopupRo
         _deduction._propagate_name_states_confirmed_same_record(record_idx, star_name)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
@@ -3116,7 +3204,7 @@ func _on_staff_name_x(record_idx: int, star_name: String, _row: StaffPopupRow) -
     r["manual_name_blocks"] = manual
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_name_protect(record_idx: int, star_name: String) -> void:
@@ -3162,7 +3250,7 @@ func _on_staff_pitch_undo_selects(record_idx: int) -> void:
     if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         _deduction._save_puzzle_notes()
         _deduction._full_propagation_refresh()
-        _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+        _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
         return
     _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
     var r: Dictionary = _deduction.record_at(record_idx)
@@ -3170,7 +3258,7 @@ func _on_staff_pitch_undo_selects(record_idx: int) -> void:
         r["pitch_slot_label"] = ""
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_pitch_undo_blocks(record_idx: int) -> void:
@@ -3178,12 +3266,12 @@ func _on_staff_pitch_undo_blocks(record_idx: int) -> void:
     if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         _deduction._save_puzzle_notes()
         _deduction._full_propagation_refresh()
-        _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+        _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
         return
     _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_pitch_undo_all(record_idx: int) -> void:
@@ -3191,7 +3279,7 @@ func _on_staff_pitch_undo_all(record_idx: int) -> void:
     if bool(_deduction.record_at(record_idx).get("pitch_revealed", false)):
         _deduction._save_puzzle_notes()
         _deduction._full_propagation_refresh()
-        _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+        _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
         return
     _deduction._undo_category_selects(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", _distinct_note_names())
     _deduction._undo_category_blocks(record_idx, "pitch_states", "manual_pitch_blocks")
@@ -3200,7 +3288,7 @@ func _on_staff_pitch_undo_all(record_idx: int) -> void:
         r["pitch_slot_label"] = ""
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_color_undo_selects(record_idx: int) -> void:
@@ -3218,7 +3306,7 @@ func _on_staff_color_undo_selects(record_idx: int) -> void:
     _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_color_undo_blocks(record_idx: int) -> void:
@@ -3226,7 +3314,7 @@ func _on_staff_color_undo_blocks(record_idx: int) -> void:
     _deduction._recompute_color_star_elim(record_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_color_undo_all(record_idx: int) -> void:
@@ -3241,21 +3329,21 @@ func _on_staff_color_undo_all(record_idx: int) -> void:
         r["color_slot_label"] = ""
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_name_undo_selects(record_idx: int) -> void:
     _deduction._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _all_star_names_padded())
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_name_undo_blocks(record_idx: int) -> void:
     _deduction._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_staff_name_undo_all(record_idx: int) -> void:
@@ -3263,7 +3351,7 @@ func _on_staff_name_undo_all(record_idx: int) -> void:
     _deduction._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_record_value_protect_toggle(record_idx: int, states_key: String, protect_key: String, value_key, reopen_staff_popup: bool = true) -> void:
@@ -3282,9 +3370,9 @@ func _on_record_value_protect_toggle(record_idx: int, states_key: String, protec
     _deduction._full_propagation_refresh()
     # Sort:tab checklists pass reopen_staff_popup = false — there's no
     # popup open to refresh, and this would otherwise pop one open
-    # unexpectedly using a stale _staff_popup_seq_pos.
+    # unexpectedly using a stale _staff_popup_tick.
     if reopen_staff_popup:
-        _open_staff_popup(_host._staff_popup_seq_pos, _host._staff_popup.position)
+        _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 # ==================================================

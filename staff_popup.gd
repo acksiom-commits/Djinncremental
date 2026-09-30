@@ -45,8 +45,9 @@ signal copy_pressed(record_idx: int, section: String)
 ## Preloaded row scene for instantiation.
 var _row_scene: PackedScene = preload("res://StaffPopupRow.tscn")
 
-## Currently displayed sequence position.
-var current_seq_pos: int = -1
+## Currently displayed raw melody tick -- never a resolved Sequence rank, see
+## constellation_puzzle_widgets.gd's _open_staff_popup for why.
+var current_tick: int = -1
 
 ## Currently displayed record index.
 var current_record_idx: int = -1
@@ -124,10 +125,10 @@ func _add_copy_button(sibling: Button, section: String) -> void:
     parent.add_child(btn)
 
 
-func open(seq_pos: int, record_idx: int, screen_pos: Vector2) -> void:
-    current_seq_pos = seq_pos
+func open(tick: int, record_idx: int, screen_pos: Vector2) -> void:
+    current_tick = tick
     current_record_idx = record_idx
-    _title_label.text = "Note %d" % seq_pos
+    _title_label.text = "Note %d" % tick
     _warn_on_row_count_mismatch()
     position = Vector2i(screen_pos)
     popup()

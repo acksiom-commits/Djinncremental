@@ -260,6 +260,77 @@ const BUILT_IN = [
             6,7,  7,8,  8,6,                            # right eye
             9,10, 10,11, 11,9,                          # mouth (self-contained triangle)
         ],
+
+        # EASY LAYOUT (2026-09-28, redefines what "easy" means for this
+        # constellation per user direction -- see get_constellation_difficulty()
+        # and _resolve_difficulty_layout() below for the selection mechanism,
+        # same pattern as The Djinn's vessel_layouts).
+        #
+        # Star count reduced from 15 to Archon's own note_freqs.size() (10):
+        # every star gets one distinct note, none shared, so a player never has
+        # to disambiguate two stars that sound alike. This is deliberately a
+        # SEPARATE authored shape, not a subset of the 15 hard-mode stars --
+        # once note_assignment shuffles per player_seed (see the Fisher-Yates
+        # shuffle at the end of get_note_assignment() below), no particular
+        # hard-mode star reliably "owns" a given note, so there is no fixed
+        # subset of the 15 to pick a survivor from.
+        #
+        # Shape: same outer-triangle/eyes/mouth face motif as hard mode, kept
+        # recognizable, with the eyes and mouth both flattened to their
+        # simplest form -- the mouth is no longer its own 3-star triangle; its
+        # two upper corners ARE the eyes' own bottom corners (shared, not
+        # separate stars), and it contributes only its own chin vertex.
+        # Digitized from a reference sketch the user supplied directly, same
+        # process as the Phial redesign: pixel bounding box of the 10 star
+        # points only (963 x 606), uniformly rescaled (single scale factor,
+        # not an anisotropic squash) to fit this file's |y|<=0.055 bound (the
+        # binding axis here; x comes in well under |x|<=0.130), z computed as
+        # sqrt(1-x^2-y^2). Indices below match easy_layout's own line_pairs,
+        # NOT the hard-mode indices above -- they are unrelated shapes.
+        #
+        # puzzle_sequence/note_durations/response_freqs are deliberately left
+        # untouched at their hard-mode values, and this is a GOOD fit, not a
+        # trade-off -- corrected 2026-09-28 after actually reading
+        # get_note_assignment()'s branches instead of assuming: note_freqs
+        # here has only 10 entries (0-9), the constellation's own DISTINCT
+        # pitch count, while star_count is 15 in hard mode. 15 != 10, so hard
+        # mode ALREADY takes the "more stars than pitches: round-robin"
+        # branch, not a 1:1 one -- several hard-mode stars already share a
+        # note today (this is the original "shared notes" premise this whole
+        # easy-layout feature was built to address, not a side effect of it).
+        # Easy mode's star_count (10) DOES equal note_freqs.size() (10), so
+        # get_note_assignment() takes the clean 1:1 branch instead: every
+        # easy-mode star gets its own distinct note, none shared. The melody
+        # (puzzle_sequence, still 15 note-EVENTS long, replayed as-is by both
+        # click_sequence_puzzle_engine.gd's tick() and the deduction staff)
+        # is therefore genuinely, exactly musically matched in easy mode --
+        # more so than hard mode's round-robin sharing -- because every one
+        # of its 15 events resolves to one of the 10 real easy-mode stars,
+        # with a repeated pitch correctly re-triggering the SAME star each
+        # time (there is only one star left to reuse once sharing is gone).
+        # See melody_star_sequence's own comment in constellation_logic_
+        # puzzle.gd for how the staff displays those repeats.
+        "easy_layout": {
+            "star_count": 10,
+            "fixed_star_positions": [
+                [-0.0874, -0.0550, 0.9946],  # 0: outer top-left
+                [ 0.0874, -0.0550, 0.9946],  # 1: outer top-right
+                [-0.0055,  0.0550, 0.9985],  # 2: outer bottom apex
+                [-0.0504, -0.0381, 0.9980],  # 3: left-eye top-left
+                [-0.0159, -0.0398, 0.9991],  # 4: left-eye top-right
+                [-0.0302, -0.0084, 0.9995],  # 5: left-eye bottom apex
+                [ 0.0261, -0.0387, 0.9989],  # 6: right-eye top-left
+                [ 0.0573, -0.0383, 0.9976],  # 7: right-eye top-right
+                [ 0.0320, -0.0096, 0.9994],  # 8: right-eye bottom apex
+                [-0.0035,  0.0236, 0.9997],  # 9: mouth chin
+            ],
+            "line_pairs": [
+                0,1,  1,2,  2,0,      # outer triangle
+                3,4,  4,5,  5,3,      # left eye
+                6,7,  7,8,  8,6,      # right eye
+                5,8,  5,9,  8,9,      # mouth: bridges the eyes' own bottom corners to one chin star
+            ],
+        },
     },
  
 # ==================================================
@@ -360,6 +431,48 @@ const BUILT_IN = [
             8,14, 14,15,           # right hub -> lower-right arm
             1,3,  3,6,  6,14,  14,11,  11,9,  9,1,   # center oval
         ],
+
+        # EASY LAYOUT (2026-09-28, same mechanism as The Archon's -- see its
+        # own "EASY LAYOUT" comment for the full reasoning this one reuses).
+        #
+        # Star count reduced from 16 to Spark's own note_freqs.size() (7):
+        # every star gets one distinct note, none shared. Hard mode already
+        # round-robins those same 7 notes across all 16 stars today (the
+        # "16-event Hallelujah Chorus over 7 stars" precedent), so this is
+        # the same "collapse to the real note count" move as Archon's, not a
+        # new mechanic. star_count(7) == note_freqs.size()(7) here too, so
+        # get_note_assignment() takes the clean 1:1 branch and the melody
+        # (still puzzle_sequence's real 16 note-events, untouched) replays
+        # exactly, repeats correctly re-triggering the one star that owns
+        # that note.
+        #
+        # Shape: a fresh single-hub star-burst, digitized from a reference
+        # sketch the user supplied directly (6 spokes off one central star,
+        # two of them drawn much longer than the other four) -- a SEPARATE
+        # authored shape from hard mode's twin-hub dumbbell, not a subset of
+        # its 16 stars, for the same note-assignment-shuffles-per-player_seed
+        # reason Archon's easy layout documents. Pixel bounding box of the 7
+        # star points only (923 x 258, hub-relative), uniformly rescaled
+        # (single scale factor) to fit this file's |x|<=0.130 bound (the
+        # binding axis here, unlike Archon's -- this sketch is far wider
+        # than it is tall; y comes in well under |y|<=0.055), z computed as
+        # sqrt(1-x^2-y^2). Indices below are their own scheme, unrelated to
+        # the hard-mode indices above.
+        "easy_layout": {
+            "star_count": 7,
+            "fixed_star_positions": [
+                [-0.0030,  0.0011, 1.0000],  # 0: centre hub (degree 6)
+                [-0.1300,  0.0020, 0.9915],  # 1: far left
+                [ 0.1300, -0.0011, 0.9915],  # 2: far right
+                [-0.0359, -0.0344, 0.9988],  # 3: upper-left
+                [ 0.0354, -0.0363, 0.9987],  # 4: upper-right
+                [-0.0393,  0.0363, 0.9986],  # 5: lower-left
+                [ 0.0297,  0.0341, 0.9990],  # 6: lower-right
+            ],
+            "line_pairs": [
+                0,1,  0,2,  0,3,  0,4,  0,5,  0,6,   # hub spokes, all six
+            ],
+        },
     },
 
 # ==================================================
@@ -1466,7 +1579,7 @@ func get_constellation_def(id: int) -> Dictionary:
     # id turns a would-be crashing `==` comparison into a safe int-int one.
     for c in BUILT_IN:
         if c["id"] == id:
-            return _resolve_vessel_layout(c)
+            return _resolve_difficulty_layout(_resolve_vessel_layout(c), id)
     for c in player_constellations:
         if c is Dictionary and _coerce_int(c.get("id"), -1) == id:
             return c
@@ -1507,6 +1620,49 @@ func _resolve_vessel_layout(c: Dictionary) -> Dictionary:
     if not (layout is Dictionary):
         return c
     var resolved: Dictionary = c.duplicate()
+    resolved["fixed_star_positions"] = layout.get("fixed_star_positions", [])
+    resolved["line_pairs"]           = layout.get("line_pairs", [])
+    return resolved
+
+
+# ------------------------------------------------------------------
+# "Easy" was redefined (2026-09-28, per user direction) to mean a genuinely
+# smaller, separately-authored star layout for constellations that have one
+# ("easy_layout": {"star_count", "fixed_star_positions", "line_pairs"} --
+# see The Archon's own "EASY LAYOUT" comment for why this can't be a subset
+# of the hard-mode stars). Same shape and same resolve-onto-the-same-keys
+# principle as _resolve_vessel_layout above: a def without "easy_layout" is
+# untouched, so every constellation without one keeps its single hard-mode
+# geometry regardless of the difficulty setting. get_constellation_difficulty()
+# already defaults to "easy" for every constellation (GameContext), so this
+# is live the moment a def gains an easy_layout, with no other call site
+# needing to change -- get_note_assignment() reads star_count/puzzle_sequence
+# through get_constellation_def() too, so it sees the resolved star_count
+# automatically and falls through to its own clean 1:1 branch once star_count
+# equals note_freqs.size(), exactly what a repeat-free easy layout wants.
+# ------------------------------------------------------------------
+func _resolve_difficulty_layout(c: Dictionary, id: int) -> Dictionary:
+    if not c.has("easy_layout"):
+        return c
+    # Default "hard" (untouched), NOT "easy", when there is no GameContext to
+    # ask -- unlike _resolve_vessel_layout's "jar" fallback (The Djinn has no
+    # privileged default layout to protect; every vessel is equally valid),
+    # easy_layout is an ADDITION next to a long-established hard-mode default
+    # that every existing caller without a GameContext (every dev_tests probe
+    # and test module that builds a bare ConstellationData.new(), which is
+    # most of them) already depends on. Defaulting to "easy" here would have
+    # silently swapped constellation 0 to 10 stars under every one of them.
+    if not _game_context:
+        return c
+    var difficulty: String = _coerce_string(_game_context.get_constellation_difficulty(id), "hard")
+    if difficulty != "easy":
+        return c
+    var layout: Dictionary = _coerce_dict(c.get("easy_layout"), {})
+    if layout.is_empty():
+        return c
+    var resolved: Dictionary = c.duplicate()
+    if layout.has("star_count"):
+        resolved["star_count"] = layout["star_count"]
     resolved["fixed_star_positions"] = layout.get("fixed_star_positions", [])
     resolved["line_pairs"]           = layout.get("line_pairs", [])
     return resolved
@@ -1957,7 +2113,19 @@ func get_response_freqs(constellation_id: int) -> Array:
 
 
 func get_note_assignment(constellation_id: int) -> Array:
-    var def:        Dictionary = get_constellation_def(constellation_id)
+    return _note_assignment_for_def(get_constellation_def(constellation_id), constellation_id)
+
+
+## Split out of get_note_assignment() (2026-09-28) so the content certifier can
+## build an assignment for a SPECIFIC def dict -- raw hard-mode data, or an
+## easy_layout variant -- without going through get_constellation_def()'s live
+## GameContext-dependent difficulty resolution. Certification wants the same
+## deterministic-by-id, difficulty-INDEPENDENT behaviour vessel certification
+## already has (see _resolve_vessel_layout_for_cert's own "jar" default):
+## calling get_note_assignment(id) directly would size the assignment to
+## whichever difficulty the live player happens to be on, which can mismatch a
+## def built from raw (always hard-mode) BUILT_IN data.
+func _note_assignment_for_def(def: Dictionary, constellation_id: int) -> Array:
     var freqs:      Array      = get_note_freqs(constellation_id)
     # maxi, not just type coercion: a corrupted player/patron def could set
     # a genuinely-numeric but negative star_count, which is a value, not a

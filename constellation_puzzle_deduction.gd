@@ -61,22 +61,35 @@ var _conflict_dialog_fn: Callable = Callable()
 #   "pitch_states": Dictionary,   # {note_name(String): state(int)}
 #   "degree_states": Dictionary,  # {degree(int): state(int)}
 #   "name_states": Dictionary,    # {name(String): state(int)}
+#   "repeat_states": Dictionary,  # {repeat_count_value(int): state(int)} -- NEW
+#                                 # axis (2026-09-29), same 0/1/2/3/4 vocabulary,
+#                                 # but NOT alldiff: multiple records can validly
+#                                 # confirm the SAME value (most stars share 0).
+#                                 # See planned_repeat_count_axis_design.md.
 #   "manual_name_blocks": Dictionary,   # {name(String): true} — names the player
 #   "manual_pitch_blocks": Dictionary,  # X'd directly, as opposed to state-2
 #   "manual_color_blocks": Dictionary,  # entries that are fallout from confirming
-#                                        # a sibling value. Lets the Undo row tell
+#   "manual_repeat_blocks": Dictionary, # a sibling value. Lets the Undo row tell
 #                                        # "Undo selects" (revert sibling-clearing
 #                                        # fallout only) apart from "Undo blocks"
 #                                        # (revert the player's own X clicks only).
 #   "protected_pitch_notes": Dictionary,  # {note_name(String): true} — right-click
 #   "protected_color_idxs": Dictionary,   # "still possible" flags, one dict per
 #   "protected_staff_names": Dictionary,  # category; cosmetic hints, not hard facts.
+#   "protected_repeat_values": Dictionary,# same, for repeat_states.
 #   "pitch_revealed": bool,       # true once the record's pitch has been shown to the player
 #   "star_elim": Dictionary,      # {star_idx(int): state(int)} — which stars are ruled out for THIS record
 #   "star_idx": int,              # -1 until resolvable from seq_lo==seq_hi or map-widget confirm
 #   "color_slot_label": String,   # "" unless bound to a Sort:Color grid slot (e.g. "Blue A")
 #   "pitch_slot_label": String,   # "" unless bound to a Sort:Pitch grid slot
 #   "degree_slot_label": String,  # "" unless bound to a Sort:Sequence grid slot
+#   "melody_ticks": Array,         # raw melody note-event indices (1-indexed)
+#                                  # this record has been opened FROM on the staff --
+#                                  # NEVER seeded from ground truth (see
+#                                  # _get_or_create_match_record_for_melody_tick's
+#                                  # own comment); grows by UNION when two tick-
+#                                  # anchored records merge because the PLAYER's
+#                                  # own marks proved them the same star.
 # }
 var _match_records: Array[Dictionary] = []
 
@@ -182,11 +195,24 @@ var _derived: Array[Dictionary] = []
 
 
 func _blank_derived_entry() -> Dictionary:
+    # Every states_key _add_derived_state/_derived_state can be called with
+    # (via _axis_states_key) needs its own sub-dict here, or _add_derived_
+    # state's `_derived[record_idx][states_key]` reads back null for a
+    # missing key, gets coerced into a fresh, DISCONNECTED empty Dictionary
+    # by the typed `var d: Dictionary` it assigns into, and the write that
+    # follows lands in that orphaned dict and vanishes — _add_derived_state
+    # still returns true, so nothing LOOKS wrong at the call site. Caught
+    # exactly this way when Axis.REPEAT was wired in (2026-09-29):
+    # _settle_derived_exclusions_for_axis computed every condition for
+    # elimination correctly and _add_derived_state reported success, but
+    # _effective_repeat_state never saw it, because repeat_states was
+    # missing here.
     return {
         "color_states":  {},
         "degree_states": {},
         "pitch_states":  {},
         "name_states":   {},
+        "repeat_states": {},
         "star_elim":     {},
         "seq_candidates": [],
         # Phase 3. A record the engine has concluded IS some star, without
@@ -1421,18 +1447,22 @@ func _new_match_record(overrides: Dictionary = {}) -> Dictionary:
         "pitch_states": {},
         "degree_states": {},
         "name_states": {},
+        "repeat_states": {},
         "manual_name_blocks": {},
         "manual_pitch_blocks": {},
         "manual_color_blocks": {},
+        "manual_repeat_blocks": {},
         "protected_pitch_notes": {},
         "protected_color_idxs": {},
         "protected_staff_names": {},
+        "protected_repeat_values": {},
         "pitch_revealed": false,
         "star_elim": {},
         "star_idx": -1,
         "color_slot_label": "",
         "pitch_slot_label": "",
         "degree_slot_label": "",
+        "melody_ticks": [],
     }
     for k in overrides:
         r[k] = overrides[k]
@@ -1539,6 +1569,40 @@ func _get_or_create_match_record_for_seq(slot: int) -> int:
     if idx >= 0:
         return idx
     _match_records.append(_new_match_record({"seq_lo": slot, "seq_hi": slot}))
+    _sync_derived_size()
+    return _match_records.size() - 1
+
+
+## Melody TICK identity (raw playback position, 1-indexed), never a resolved
+## rank -- see melody_ticks' own field comment for why this exists as a
+## SEPARATE keying scheme from _get_or_create_match_record_for_seq above,
+## which that function's own `{"seq_lo": slot, "seq_hi": slot}` creation
+## dict makes unsafe for this purpose: seeding a brand-new record with the
+## TRUE rank the instant a tick is clicked writes ground truth into
+## player-visible storage before the player has done anything (2026-09-28,
+## found when the user pointed out the staff's melody replay -- and by
+## extension its repeat pattern -- is the reward for solving, not a free
+## tool, which invalidated this session's earlier "it's audible anyway"
+## justification for the shared-record shortcut). A record created here
+## starts with seq_lo/seq_hi at 0 (fully unknown), exactly like every other
+## fresh record; it only gains a real Sequence pin through the player's own
+## Name/Colour/Pitch/Seq. actions, same as any other record. Two different
+## ticks that turn out to be the same star still end up sharing one record —
+## but only once the player's OWN marks prove it, via the ordinary identity-
+## merge machinery (_merge_match_records unions their melody_ticks), never
+## because a click silently looked up the answer.
+func _find_match_record_by_melody_tick(tick: int) -> int:
+    for i in _match_records.size():
+        if (_match_records[i].get("melody_ticks", []) as Array).has(tick):
+            return i
+    return -1
+
+
+func _get_or_create_match_record_for_melody_tick(tick: int) -> int:
+    var idx: int = _find_match_record_by_melody_tick(tick)
+    if idx >= 0:
+        return idx
+    _match_records.append(_new_match_record({"melody_ticks": [tick]}))
     _sync_derived_size()
     return _match_records.size() - 1
 
@@ -1905,6 +1969,16 @@ func _merge_match_records(target_idx: int, source_idx: int, allow_await: bool = 
     if int(target["star_idx"]) < 0 and int(source["star_idx"]) >= 0:
         target["star_idx"] = source["star_idx"]
 
+    # UNION, not overwrite: once two tick-anchored records are proven to be
+    # the same star (via a Name/Colour/Pitch confirm shared between them —
+    # see melody_ticks' own comment), the merged record needs to answer to
+    # EVERY tick either one did, so re-clicking any of them still finds it.
+    var target_ticks: Array = target.get("melody_ticks", [])
+    for t in source.get("melody_ticks", []):
+        if not target_ticks.has(t):
+            target_ticks.append(t)
+    target["melody_ticks"] = target_ticks
+
     var target_label: String = str(target.get("color_slot_label", ""))
     var source_label: String = str(source.get("color_slot_label", ""))
     if target_label == "" and source_label != "":
@@ -2152,6 +2226,10 @@ func _load_match_records(data: Array) -> void:
         for v in _coerce_array(e.get("seq_candidates"), []):
             seq_candidates.append(_coerce_int(v, 0))
 
+        var melody_ticks: Array = []
+        for v in _coerce_array(e.get("melody_ticks"), []):
+            melody_ticks.append(_coerce_int(v, 0))
+
         # Built on _new_match_record() rather than as its own literal, so a
         # save written before some field existed comes back carrying that
         # field's current default instead of missing it entirely — and so
@@ -2176,6 +2254,7 @@ func _load_match_records(data: Array) -> void:
             "color_slot_label": str(e.get("color_slot_label", "")),
             "pitch_slot_label": str(e.get("pitch_slot_label", "")),
             "degree_slot_label": str(e.get("degree_slot_label", "")),
+            "melody_ticks": melody_ticks,
         }))
     # Sized against the now-FULLY-populated _match_records, not the
     # transiently-empty one right after .clear() above — _reset_derived()
@@ -2317,6 +2396,20 @@ func _degree_star_count(degree: int) -> int:
     for s in _host._star_count:
         var d: int = int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0
         if d == degree:
+            count += 1
+    return count
+
+
+func _repeat_count_star_count(value: int) -> int:
+    # Same shape again, keyed by Repeat Count. This is the CAPACITY the
+    # group-elimination rule (_settle_derived_exclusions_for_axis via
+    # Axis.REPEAT) checks against — unlike Colour/Degree this axis is
+    # hidden, so this ground-truth count is read only by the SOLVER'S own
+    # incidence/clique bookkeeping, never displayed to the player directly.
+    var count: int = 0
+    for s in _host._star_count:
+        var rc: int = int(_host._repeat_count[s]) if s < _host._repeat_count.size() else -1
+        if rc == value:
             count += 1
     return count
 
@@ -2465,21 +2558,31 @@ func _propagate_name_states_confirmed_same_record(record_idx: int, confirmed_nam
 
 
 
+## The list itself is melody TICK numbers, not ranks -- see
+## _melody_ticks_for_rank. "No info" (blank) is still judged in RANK space
+## (every rank still open, before expansion): expanding first and comparing
+## tick-list size against star_count would falsely read "narrowed" the
+## moment any candidate rank repeats, since repeats make the tick list
+## longer than the rank list even with zero real progress.
 func _compressed_possible_positions_str(record_idx: int) -> String:
     var candidates: Array = _effective_seq_candidates(record_idx)
     if candidates.is_empty():
         return ""
     if candidates.size() == _host._star_count:
         return ""
-    candidates.sort()
-    if candidates.size() == 1:
-        return str(candidates[0])
+    var ticks: Array = []
+    for c in candidates:
+        for t in _melody_ticks_for_rank(int(c)):
+            ticks.append(int(t))
+    ticks.sort()
+    if ticks.size() == 1:
+        return str(ticks[0])
 
     var segments: Array = []
-    var seg_start: int = candidates[0]
-    var prev: int = candidates[0]
-    for idx in range(1, candidates.size()):
-        var c: int = candidates[idx]
+    var seg_start: int = ticks[0]
+    var prev: int = ticks[0]
+    for idx in range(1, ticks.size()):
+        var c: int = ticks[idx]
         if c == prev + 1:
             prev = c
         else:
@@ -2654,6 +2757,25 @@ func _effective_degree_state(record_idx: int, degree: int) -> int:
     if raw != 0:
         return raw
     return _derived_state(record_idx, "degree_states", degree)
+
+
+## Repeat Count has NO ground-truth/star_idx shortcut tier at all — unlike
+## Colour/Pitch/Degree (given axes, freely observable) and unlike even Name
+## (which has r["name"] as a promoted overall-identity field), a record's
+## repeat-count is genuinely just another axis value with no "look it up"
+## fallback. It is narrowed the exact same way any other Sort-tab checklist
+## is: raw player marks, then the derived layer, then the soft protect tier
+## — same three-tier fold _effective_color_state/_effective_pitch_state use.
+func _effective_repeat_state(record_idx: int, value: int, collapse_soft: bool = true) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return 0
+    var soft: int = _record_effective_state(record_idx, "repeat_states", "protected_repeat_values", value)
+    if not collapse_soft:
+        return soft
+    match soft:
+        3: return 2   # soft-eliminated (a sibling value is protected) counts as eliminated
+        4: return 0   # protected ("still possible") is not a confirmation — stays neutral
+        _: return soft
 
 
 func _effective_star_state(record_idx: int, star_idx: int) -> int:
@@ -3707,12 +3829,16 @@ func _share_derived_facts(src: int, dst: int) -> void:
 # the dominant cost in these passes (~570 allocations a round).
 # ==================================================
 
-enum Axis { NAME, PITCH, COLOR, DEGREE }
+enum Axis { NAME, PITCH, COLOR, DEGREE, REPEAT }
 
 ## Axes carrying a shared (non-alldiff) value, in the order the fixpoint
 ## has always run them. Name is excluded: it is alldiff and takes the
-## single-confirmer path instead.
-const CLIQUE_AXES: Array = [Axis.PITCH, Axis.COLOR, Axis.DEGREE]
+## single-confirmer path instead. REPEAT belongs here, not with Name -- a
+## repeat-count value is shared across multiple stars by construction (most
+## share 0), the same shape as Pitch/Colour/Degree, even though (unlike
+## those three) it is hidden rather than given -- see _axis_confirms' own
+## REPEAT note for why that difference needs no special-casing here.
+const CLIQUE_AXES: Array = [Axis.PITCH, Axis.COLOR, Axis.DEGREE, Axis.REPEAT]
 
 
 func _axis_states_key(axis: int) -> String:
@@ -3721,6 +3847,7 @@ func _axis_states_key(axis: int) -> String:
         Axis.PITCH:  return "pitch_states"
         Axis.COLOR:  return "color_states"
         Axis.DEGREE: return "degree_states"
+        Axis.REPEAT: return "repeat_states"
     return ""
 
 
@@ -3756,6 +3883,16 @@ func _build_axis_domain(axis: int) -> Array:
             for s in _host._star_count:
                 seen[int(_host._star_degrees[s]) if s < _host._star_degrees.size() else 0] = true
             out = seen.keys()
+        Axis.REPEAT:
+            # -1 (never-fires, an authoring gap) is excluded from the
+            # domain -- it is not a legitimate value for the player to
+            # confirm/deduce, unlike every real repeat-count.
+            var seen_repeat: Dictionary = {}
+            for s2 in _host._star_count:
+                var rc: int = int(_host._repeat_count[s2]) if s2 < _host._repeat_count.size() else -1
+                if rc >= 0:
+                    seen_repeat[rc] = true
+            out = seen_repeat.keys()
     return out
 
 
@@ -3765,6 +3902,7 @@ func _axis_state(axis: int, record_idx: int, value) -> int:
         Axis.PITCH:  return _effective_pitch_state(record_idx, str(value))
         Axis.COLOR:  return _effective_color_state(record_idx, int(value))
         Axis.DEGREE: return _effective_degree_state(record_idx, int(value))
+        Axis.REPEAT: return _effective_repeat_state(record_idx, int(value))
     return 0
 
 
@@ -3775,6 +3913,7 @@ func _axis_incidence(axis: int, value) -> int:
         Axis.PITCH:  return _pitch_star_count(str(value))
         Axis.COLOR:  return _color_star_count(int(value))
         Axis.DEGREE: return _degree_star_count(int(value))
+        Axis.REPEAT: return _repeat_count_star_count(int(value))
     return 0
 
 
@@ -3783,6 +3922,7 @@ func _axis_clique_key(axis: int, value) -> String:
         Axis.PITCH:  return "P:" + str(value)
         Axis.COLOR:  return "C:%d" % int(value)
         Axis.DEGREE: return "D:%d" % int(value)
+        Axis.REPEAT: return "R:%d" % int(value)
     return ""
 
 
@@ -3790,7 +3930,10 @@ func _axis_clique_key(axis: int, value) -> String:
 ## guard: an auto-created star-widget record holds a star_idx it never
 ## earned, so its ground-truth note must not count until Listen has
 ## actually revealed it. Colour and Degree are "given" axes — painted on
-## the map — so their ground-truth tier is no leak.
+## the map — so their ground-truth tier is no leak. REPEAT needs no guard
+## either, for the opposite reason: it has NO ground-truth tier at all (see
+## _effective_repeat_state), so a confirm can only ever come from the
+## player's own repeat_states mark — there is nothing un-earned to leak.
 func _axis_confirms(axis: int, record_idx: int, value) -> bool:
     if axis == Axis.PITCH \
             and _record_is_unconfirmed_star_widget_stub(record_idx) \
@@ -3817,6 +3960,12 @@ func _axis_skip_record(axis: int, record_idx: int) -> bool:
     # deductions. Caught while chasing the perf of this very refactor —
     # the first draft applied the skip to every axis.
     if axis == Axis.NAME:
+        return false
+    # REPEAT is the same shape as NAME here, for the same reason:
+    # _effective_repeat_state has no star_idx tier at all, so a bound
+    # record's repeat-count is exactly as undetermined as an unbound one's
+    # until the player's own marks (or elimination) say otherwise.
+    if axis == Axis.REPEAT:
         return false
     return _effective_star_idx(record_idx) >= 0
 
@@ -4478,6 +4627,13 @@ func _value_domain(cat: int) -> Array:
             if s >= _host._star_colors.size():
                 continue
             v = int(_host._star_colors[s])
+        elif cat == ConstellationLogicPuzzle.Category.REPEAT:
+            if s >= _host._repeat_count.size():
+                continue
+            var rc: int = int(_host._repeat_count[s])
+            if rc < 0:
+                continue   # never-fires sentinel, not a real repeat value
+            v = rc
         else:
             var n: String = _host._widgets._note_name_for_star(s)
             if n == "?":
@@ -4510,6 +4666,8 @@ func _raw_group_key(cat: int, star: int) -> int:
             return int(_host._star_colors[star]) if star < _host._star_colors.size() else -1
         ConstellationLogicPuzzle.Category.PITCH:
             return int(_host._star_pitch_index[star]) if star < _host._star_pitch_index.size() else -1
+        ConstellationLogicPuzzle.Category.REPEAT:
+            return int(_host._repeat_count[star]) if star < _host._repeat_count.size() else -1
     return -1
 
 
@@ -4528,6 +4686,8 @@ func _possible_values_for_star(star: int, cat: int) -> Array:
             var st: int = 0
             if cat == ConstellationLogicPuzzle.Category.COLOR:
                 st = _effective_color_state(int(idx), int(v))
+            elif cat == ConstellationLogicPuzzle.Category.REPEAT:
+                st = _effective_repeat_state(int(idx), int(v))
             else:
                 st = _effective_pitch_state(int(idx), str(v))
             if st == 2:
@@ -5106,6 +5266,7 @@ func _category_word(cat: int) -> String:
         ConstellationLogicPuzzle.Category.PITCH: return "pitch"
         ConstellationLogicPuzzle.Category.SEQUENCE: return "position"
         ConstellationLogicPuzzle.Category.NAME: return "name"
+        ConstellationLogicPuzzle.Category.REPEAT: return "repeat count"
     return "value"
 
 
@@ -6302,21 +6463,85 @@ func _record_has_unpromoted_name_claim(record_idx: int) -> bool:
     return false
 
 
+## Melody TICK numbers (1-indexed, matching _draw_melody_staff's own domain
+## in constellation_puzzle_widgets.gd) that resolve to a given SEQ_POS
+## (RANK, 1-indexed) -- the inverse of that file's own _melody_rank_for_tick.
+## Reads ONLY the PRE-TRANSLATED _host._melody_seq_pos_sequence (a plain
+## array of already-resolved seq_pos values, one per tick) -- never
+## sequence_rank_solution directly. That split is load-bearing, not style:
+## an earlier draft of this function subscripted sequence_rank_solution[
+## star_idx] right here, which the matrix-up lint correctly caught (D1: "a
+## position read an identity off ground truth") -- see
+## melody_seq_pos_sequence's own comment in constellation_logic_puzzle.gd
+## for why the translation belongs in the generator instead. A rank whose
+## star fires more than once in the melody (a repeated note) maps to more
+## than one tick here (2026-09-28, per user direction: the Sort tabs' Seq.
+## field must read the same ground truth as the staff's ticks, not the
+## collapsed rank count). Falls back to [seq_pos] when there is no
+## precomputed array to search (old cache, or a clean 1:1 melody where tick
+## and rank coincide).
+func _melody_ticks_for_rank(seq_pos: int) -> Array:
+    if _host._melody_seq_pos_sequence.is_empty():
+        return [seq_pos]
+    var ticks: Array = []
+    for i in _host._melody_seq_pos_sequence.size():
+        if int(_host._melody_seq_pos_sequence[i]) == seq_pos:
+            ticks.append(i + 1)
+    return ticks if not ticks.is_empty() else [seq_pos]
+
+
+## Inverse direction: resolves a typed/clicked melody TICK number to its
+## seq_pos (RANK) via the same precomputed _host._melody_seq_pos_sequence
+## _melody_ticks_for_rank reads (see its own comment for why) -- same
+## mapping constellation_puzzle_widgets.gd's own _melody_rank_for_tick
+## computes for the staff, so typing either occurrence of a repeated note's
+## tick number here lands on the SAME rank, exactly like clicking either
+## occurrence on the staff opens the same popup.
+func _seq_pos_for_melody_tick(tick: int) -> int:
+    if _host._melody_seq_pos_sequence.is_empty():
+        return tick
+    var event_idx: int = tick - 1
+    if event_idx < 0 or event_idx >= _host._melody_seq_pos_sequence.size():
+        return tick
+    var resolved: int = int(_host._melody_seq_pos_sequence[event_idx])
+    return resolved if resolved > 0 else tick
+
+
+## The Sort tabs' melody-tick domain size (matches _draw_melody_staff's own
+## tick_count): the real melody length when known, else star_count. A single
+## source for this so every Seq.-field entry point (range/candidate commit,
+## bound validation) agrees with the staff on how many ticks exist.
+func _melody_tick_count() -> int:
+    return _host._melody_seq_pos_sequence.size() if not _host._melody_seq_pos_sequence.is_empty() else _host._star_count
+
+
+## Returns a melody TICK number, not a raw rank -- see _melody_ticks_for_rank.
+## The exclusive-bound arithmetic itself (inclusive_lo - 1) stays in RANK
+## space and is unchanged: rank order and first-tick order are identical by
+## construction (a rank IS that star's first-occurrence position, so ranks
+## sort exactly the way their first ticks do), which is what keeps "N < x"
+## as meaningful in tick-space as it always was in rank-space. Only the
+## FIRST tick of the resulting rank is shown -- this box holds one number,
+## and a repeat's later ticks would only restate the same boundary.
 func _exclusive_display_lo(inclusive_lo: int, inclusive_hi: int) -> int:
     if inclusive_lo <= 0:
         return 0
-    if inclusive_lo == inclusive_hi:
-        return inclusive_lo
-    return inclusive_lo - 1
+    var rank: int = inclusive_lo if inclusive_lo == inclusive_hi else inclusive_lo - 1
+    if rank <= 0:
+        return 0
+    return int(_melody_ticks_for_rank(rank)[0])
 
 
+## See _exclusive_display_lo's own comment -- same reasoning, upper bound.
 func _exclusive_display_hi(inclusive_lo: int, inclusive_hi: int) -> int:
     if inclusive_hi <= 0:
         return 0
     if inclusive_lo == inclusive_hi:
-        return inclusive_hi
+        return int(_melody_ticks_for_rank(inclusive_hi)[0])
     var shown: int = inclusive_hi + 1
-    return 0 if shown > _host._star_count else shown
+    if shown > _host._star_count:
+        return 0
+    return int(_melody_ticks_for_rank(shown)[0])
 
 
 func _parse_exclusive_bounds(raw_lo: int, raw_hi: int) -> Array:

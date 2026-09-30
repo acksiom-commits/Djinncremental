@@ -273,6 +273,37 @@ static func _resolve_vessel_layout_for_cert(raw: Dictionary) -> Dictionary:
     return resolved
 
 
+## Sibling of _resolve_vessel_layout_for_cert, same reasoning: certification
+## must check the "easy_layout" content directly off raw BUILT_IN data,
+## deterministically, never through get_constellation_def()'s live
+## GameContext-dependent difficulty selection (see EASY_LAYOUT_ID_OFFSET's own
+## comment for why report_builtin needs this AND a distinct id space).
+static func _resolve_easy_layout_for_cert(raw: Dictionary) -> Dictionary:
+    if not raw.has("easy_layout"):
+        return raw
+    var layout = raw.get("easy_layout")
+    if typeof(layout) != TYPE_DICTIONARY:
+        return raw
+    var resolved: Dictionary = raw.duplicate()
+    var l: Dictionary = layout as Dictionary
+    if l.has("star_count"):
+        resolved["star_count"] = l["star_count"]
+    resolved["fixed_star_positions"] = l.get("fixed_star_positions", [])
+    resolved["line_pairs"]           = l.get("line_pairs", [])
+    return resolved
+
+
+## Findings for constellation `id`'s easy_layout are tagged with this much
+## added to `id`, never the real id. Every real id is 0-6, so this stays a
+## disjoint range: without it, an easy-variant-only warning would either be
+## silently swallowed by a KNOWN_WARNINGS entry that was only ever reviewed
+## against the hard variant, or vice versa -- both allowlists are keyed
+## "id:code", and hard/easy are genuinely different content a player can
+## actually be looking at (a real difficulty toggle, unlike vessel_layouts'
+## one-time, permanent pick), so their findings must never collide.
+const EASY_LAYOUT_ID_OFFSET: int = 100
+
+
 ## Certify every BUILT_IN def with the game's own note assignment, and sort the
 ## results by the two reviewed allowlists. Returns
 ##   {"errors": [], "warnings": [], "placeholders": [], "stale": []}
@@ -285,27 +316,32 @@ static func report_builtin(cd) -> Dictionary:
     var seen_warning_keys: Dictionary = {}
     for def in cd.BUILT_IN:
         var raw: Dictionary = def
-        var id: int = int(raw.get("id", -1))
-        var d: Dictionary = _resolve_vessel_layout_for_cert(raw)
-        var findings: Array = certify(d, cd.get_note_assignment(id))
-        var has_error: bool = false
-        for f in findings:
-            var item: Dictionary = (f as Dictionary).duplicate()
-            item["id"] = id
-            report["all"].append(item)
-            if item["severity"] == SEV_ERROR:
-                has_error = true
-                if PLACEHOLDERS.has(id):
-                    report["placeholders"].append(item)
+        var real_id: int = int(raw.get("id", -1))
+        var variants: Array = [[real_id, _resolve_vessel_layout_for_cert(raw)]]
+        if raw.has("easy_layout"):
+            variants.append([real_id + EASY_LAYOUT_ID_OFFSET, _resolve_easy_layout_for_cert(raw)])
+        for variant in variants:
+            var id: int = int(variant[0])
+            var d: Dictionary = variant[1]
+            var findings: Array = certify(d, cd._note_assignment_for_def(d, real_id))
+            var has_error: bool = false
+            for f in findings:
+                var item: Dictionary = (f as Dictionary).duplicate()
+                item["id"] = id
+                report["all"].append(item)
+                if item["severity"] == SEV_ERROR:
+                    has_error = true
+                    if PLACEHOLDERS.has(id):
+                        report["placeholders"].append(item)
+                    else:
+                        report["errors"].append(item)
                 else:
-                    report["errors"].append(item)
-            else:
-                var key: String = "%d:%s" % [id, str(item["code"])]
-                seen_warning_keys[key] = true
-                if not KNOWN_WARNINGS.has(key):
-                    report["warnings"].append(item)
-        if PLACEHOLDERS.has(id) and not has_error:
-            report["stale"].append("placeholder %d now certifies clean -- remove it from PLACEHOLDERS" % id)
+                    var key: String = "%d:%s" % [id, str(item["code"])]
+                    seen_warning_keys[key] = true
+                    if not KNOWN_WARNINGS.has(key):
+                        report["warnings"].append(item)
+            if PLACEHOLDERS.has(id) and not has_error:
+                report["stale"].append("placeholder %d now certifies clean -- remove it from PLACEHOLDERS" % id)
     for key in KNOWN_WARNINGS:
         if not seen_warning_keys.has(key):
             report["stale"].append("known warning %s no longer occurs -- remove it from KNOWN_WARNINGS" % key)

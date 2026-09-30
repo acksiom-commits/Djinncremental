@@ -78,7 +78,7 @@ const _RESET_DIALOG_TEXT := "Generate a brand new arrangement for this constella
 
 var _staff_popup: StaffPopup = null
 @warning_ignore("unused_private_class_variable") # read only via _host. from constellation_puzzle_widgets.gd
-var _staff_popup_seq_pos: int = -1
+var _staff_popup_tick: int = -1     # the raw melody tick the open popup was opened for, never a resolved rank -- see _open_staff_popup's own comment
 var _name_checklist_popup: NameChecklistPopup = null
 var _pitch_checklist_popup: PitchChecklistPopup = null
 
@@ -158,6 +158,8 @@ var _name_assignments:    Array = []     # Array[String], per-star slot
 var _active_marker_tab:   int   = -1     # -1=Default(Matches) 0=Clues 1=Notes 2=Guide 3=Search 4=Hint
 var _widget_closed: Dictionary = {}             # star_idx -> bool, closed via outside-click (was the removed ✕ button)
 var _sequence_rank_solution:   Array = []     # Array[int], melody step per star
+var _melody_star_sequence:     Array = []     # Array[int], star per RAW melody note-event (length = melody length, repeats included) -- see logic puzzle's own field comment
+var _melody_seq_pos_sequence:  Array = []     # Array[int], PRE-TRANSLATED 1-indexed seq_pos per melody tick -- see logic puzzle's melody_seq_pos_sequence comment for why this is computed generator-side, never here
 var _star_pitch_index:      Array = []     # Array[int], raw note index per star (ConstellationData)
 var _pitch_freqs:           Array = []     # Array[float], frequency table for this constellation
 @warning_ignore("unused_private_class_variable") # read/written only via _host. from constellation_puzzle_widgets.gd
@@ -181,6 +183,12 @@ var _star_widgets: Array = []
 var _star_tags: Array = []
 var _star_count: int = 0
 var _star_degrees: Array = []
+
+## repeat_count[star] mirrored from the puzzle's own field of the same name
+## (constellation_logic_puzzle.gd) -- ground truth for the new Repeat Count
+## axis, see planned_repeat_count_axis_design.md. -1 = never fires (an
+## authoring gap), 0 = fires once, 1+ = that many repeats.
+var _repeat_count: Array = []
 
 ## Player-side MINIMUM hop-distance matrix: _star_distances[a][b] = fewest
 ## map connections between star a and star b, -1 when unreachable (some
@@ -494,6 +502,11 @@ func _load_constellation_data() -> void:
     for d in raw_degrees:
         _star_degrees.append(_coerce_int(d, 0))
 
+    var raw_repeat_counts = _coerce_array(cache.get("repeat_count"), [])
+    _repeat_count = []
+    for rc in raw_repeat_counts:
+        _repeat_count.append(_coerce_int(rc, -1))
+
     _star_count = _star_names.size()
     _rebuild_star_distances()
 
@@ -540,6 +553,14 @@ func _load_constellation_data() -> void:
     _sequence_rank_solution = []
     for v in _coerce_array(cache.get("pitch_rank_solution"), []):   # wire key, see logic puzzle's to_dict
         _sequence_rank_solution.append(_coerce_int(v, 0))
+
+    _melody_star_sequence = []
+    for v in _coerce_array(cache.get("melody_star_sequence"), []):
+        _melody_star_sequence.append(_coerce_int(v, 0))
+
+    _melody_seq_pos_sequence = []
+    for v in _coerce_array(cache.get("melody_seq_pos_sequence"), []):
+        _melody_seq_pos_sequence.append(_coerce_int(v, 0))
 
     _star_pitch_index = []
     for v in ([] if identity_hidden else _cd.get_note_assignment(_constellation_id)):

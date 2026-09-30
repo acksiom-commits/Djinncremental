@@ -101,7 +101,7 @@ extends RefCounted
 # GROUND TRUTH GENERATION — ported verbatim, upstream of everything below
 # ==================================================
 enum StarColor { BLUE, WHITE, YELLOW_ORANGE, RED }
-enum Category { NAME, SEQUENCE, COLOR, PITCH, DISTANCE, POSITION }
+enum Category { NAME, SEQUENCE, COLOR, PITCH, DISTANCE, POSITION, REPEAT }
 # POSITION is deliberately NOT in BIJECTIVE_CATEGORIES and never will be by
 # the same route NAME/COLOR/PITCH are: putting it there would make the
 # clue-selection pool (_random_bijective_category_pair,
@@ -120,6 +120,20 @@ enum Category { NAME, SEQUENCE, COLOR, PITCH, DISTANCE, POSITION }
 # existing enum value's int shifts — cached chosen_form_clues store "cat"
 # as a raw int, and a mid-list insert would silently misread a stale
 # cache's old category as the wrong new one.
+#
+# REPEAT (2026-09-29, per user direction — see planned_repeat_count_axis_
+# design.md) is added AFTER POSITION for the exact same save-compatibility
+# reason just explained above, not because it belongs in the same "solver
+# has a name to reference" bucket as POSITION — REPEAT DOES follow the
+# NAME/COLOR/PITCH bijective-via-sub-rank route (see _repeat_count_sub_rank
+# and _build_record_array's own REPEAT block), unlike POSITION. It is
+# DELIBERATELY NOT YET added to BIJECTIVE_CATEGORIES below: doing so before
+# _characteristic_label() has a REPEAT branch would make every live puzzle
+# start drawing broken "?" clues immediately, the exact failure this
+# comment already warns POSITION would cause. That activation is a later,
+# separate step in the design doc's build order (Form 12 first, once clue
+# text exists) — this step only makes the matrix ENCODING correct and
+# testable in isolation.
 const COLOR_NAMES           := ["Blue", "White", "Yellow", "Red"]
 const SEQ_WORD_EARLIER      := "earlier"
 const SEQ_WORD_LATER        := "later"
@@ -189,9 +203,36 @@ var star_colors: Array[int] = []       # star_colors[i] = StarColor int (visible
 var _color_sub_rank: Array[int] = []   # star_colors[i]-relative sub-rank (0,1,2.. -> "A","B","C") so any star is referenceable, not just singleton colors
 var star_names: Array[String] = []     # star_names[i] = procedural name (per-constellation)
 ## sequence_rank_solution[star] = that star's FIRING POSITION, 0..star_count-1
-## (0 fires first). This is the SEQUENCE axis and has nothing to do with pitch
-## — a star's note lives in star_pitch_index, and its frequency ordering in
-## _pitch_freq_rank.
+## (0 fires first). This is the SEQUENCE axis.
+##
+## GROUND TRUTH FOR THIS AXIS IS THE MELODY, not an independent per-puzzle
+## shuffle (2026-09-28, this note replaces a wrong reading of the paragraph
+## below that a prior session drew from it — see the "actively misled" note
+## just under this one for what an ambiguous comment here has already cost
+## once). setup()'s correct_star_sequence parameter is computed by
+## click_sequence_puzzle_engine.gd's get_correct_star_sequence() /
+## _compute_correct_star_sequence(), which walks the constellation's authored
+## def["puzzle_sequence"] (one pitch index per melody note-EVENT) and finds
+## which star plays each pitch — root_ui.gd's real _generate_puzzle() call
+## passes exactly that array in. It is the SAME mapping the click-sequence
+## mini-game itself plays back: "clicking the correct notes in the correct
+## sequence is the solution gate" (project owner, 2026-09-28) — the logic
+## puzzle built in this file and that mini-game are two faces of one ground
+## truth, not two separate systems, and this axis is not generated
+## independently of the melody the way Colour is independently shuffled.
+##
+## sequence_rank_solution ITSELF is a further-derived value, and THIS is what
+## "has nothing to do with pitch" below correctly described, narrowly: a
+## star's own stored VALUE here (a position index) is not a pitch value —
+## its note lives in star_pitch_index, its frequency ordering in
+## _pitch_freq_rank — but its ORIGIN is the melody above, not chosen
+## independently of it. When a melody has more note-events than stars (a
+## note repeats, so the same star fires more than once — e.g. Spark's
+## 16-event Hallelujah Chorus over 7 stars, live today), the melody's own
+## length and repeats are collapsed down to this star_count-length
+## permutation by first-fire order; see _set_sequence_ranks_from_order()
+## for exactly how, and for why that collapse — not a fresh, pitch-blind
+## shuffle — is where this array's values actually come from.
 ##
 ## Called pitch_rank_solution until 2026-08-19, which actively misled: the
 ## Adjacency Form rendered every clue backwards for its whole life
@@ -199,7 +240,55 @@ var star_names: Array[String] = []     # star_names[i] = procedural name (per-co
 ## and the wrong name is why nobody reading that code saw it. The wire key in
 ## to_dict/load_from_dict is still the old string for save compatibility.
 var sequence_rank_solution: Array[int] = []
- 
+
+## The RAW melody, one star per note-EVENT (length = the melody's own
+## event count, e.g. 15 for The Archon regardless of difficulty — see
+## constellation_data.gd's "puzzle_sequence/note_durations/response_freqs
+## are deliberately left at the hard-mode length" comment). This is exactly
+## setup()'s correct_star_sequence parameter, kept verbatim instead of
+## discarded once sequence_rank_solution is derived from it, because the
+## melody staff (constellation_puzzle_widgets.gd's _draw_melody_staff)
+## displays ONE TICK PER NOTE-EVENT, not one per star (2026-09-28, per user
+## direction) — a repeated note gets its own tick, showing the same star's
+## name/colour/pitch as its earlier tick(s), rather than being collapsed
+## away. Nothing about the CSP itself changes: a tick's tick just looks up
+## sequence_rank_solution[melody_star_sequence[event]] and asks the exact
+## same rank-keyed deduction functions (_melody_marker_for_position etc.)
+## every other seq_pos consumer already uses.
+var melody_star_sequence: Array[int] = []
+
+## melody_star_sequence's values, pre-translated through sequence_rank_solution
+## into the 1-indexed seq_pos each melody tick resolves to -- see setup()'s
+## own comment on this field for why the translation happens HERE (generator
+## side) rather than in constellation_puzzle_deduction.gd or
+## constellation_puzzle_widgets.gd (player side). 0 means "no rank" (a star
+## that never fires anywhere, an authoring gap already flagged elsewhere).
+var melody_seq_pos_sequence: Array[int] = []
+
+## repeat_count[star] = how many EXTRA times that star's note fires in the
+## melody beyond its first occurrence: 0 = fires once, no repeat; 1 = fires
+## twice (repeats once); 2 = fires three times; -1 = never fires at all (an
+## authoring gap, same sentinel meaning as elsewhere in this file, not a
+## legitimate repeat count). Derived purely from melody_star_sequence — a
+## simple occurrence count minus one — computed here in setup(), generator
+## side, for the SAME reason melody_seq_pos_sequence is: this is GROUND
+## TRUTH for a brand-new deduced axis (2026-09-28/29, per user direction —
+## see planned_repeat_count_axis_design.md), and that design doc's own
+## "why this is a bigger lift than it sounds" section exists precisely
+## because the matrix-up lint already caught one derived-ground-truth-array
+## computed in the wrong (player-side) file this session. This field is
+## ONLY the raw numbers; nothing yet reads it as a clue axis — see the
+## design doc for the build order this is step 1 of.
+var repeat_count: Array[int] = []
+
+## repeat_count[i]-relative sub-rank (0,1,2.. -> "A","B","C"), same purpose
+## and same _assign_sub_ranks_within_groups mechanism as _color_sub_rank/
+## _pitch_sub_rank — makes every star individually addressable in the
+## bijective matrix even though many stars legitimately share one
+## repeat_count value (most will share 0). Computed in setup() alongside
+## the other two, once repeat_count itself is finalized.
+var _repeat_count_sub_rank: Array[int] = []
+
 # ── Internal clue representation ─────────────────────────────────────────
 # Clues are stored as plain Dictionaries rather than Callables so they
 # can be serialized to the save cache. The solver reconstructs comparison
@@ -272,7 +361,48 @@ func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
     # reshuffled by _separate_indistinguishable_positions() once the pitch
     # data is in (it is assigned below this point), and a sub-rank taken
     # from a superseded colouring would be silently wrong.
+    melody_star_sequence = []
+    for v in correct_star_sequence:
+        melody_star_sequence.append(int(v))
     _set_sequence_ranks_from_order(correct_star_sequence)
+
+    # PRECOMPUTED HERE, not resolved on demand by the player-side deduction/
+    # widgets files, and that placement is load-bearing, not a style choice
+    # (2026-09-28, matrix-up lint caught the first draft: a deduction.gd
+    # helper subscripted sequence_rank_solution[star_idx] directly from a
+    # `seq_pos`-shaped parameter — D1's exact "a position read an identity
+    # off ground truth" pattern). This file is the generator side, where
+    # every other resolved-once-at-setup array already lives (star_colors,
+    # star_names, sequence_rank_solution itself) and where reading those
+    # arrays is expected, not a violation — see test_matrix_up_lint.gd's own
+    # SCOPE note: the invariant is PLAYER-SIDE code must not read ground
+    # truth, and that boundary is the FILE boundary. melody_seq_pos_sequence
+    # is melody_star_sequence's own values pre-translated through
+    # sequence_rank_solution into the 1-indexed seq_pos numbering
+    # constellation_puzzle_deduction.gd already keys every record on, so
+    # deduction.gd/widgets.gd can do a plain array lookup by tick index and
+    # never need to touch sequence_rank_solution themselves.
+    melody_seq_pos_sequence = []
+    for star_idx in melody_star_sequence:
+        var rank: int = sequence_rank_solution[star_idx] if star_idx >= 0 and star_idx < sequence_rank_solution.size() else -1
+        melody_seq_pos_sequence.append(rank + 1 if rank >= 0 else 0)
+
+    # Ground truth for the Repeat Count axis (see repeat_count's own field
+    # comment) -- a plain occurrence count over melody_star_sequence, minus
+    # one so "fires once" reads as 0 repeats. -1 for a star that never fires
+    # (already an authoring gap flagged elsewhere; not a real repeat count).
+    var _fire_counts: Array[int] = []
+    _fire_counts.resize(star_count)
+    for i in star_count:
+        _fire_counts[i] = 0
+    for star_idx2 in melody_star_sequence:
+        if star_idx2 >= 0 and star_idx2 < star_count:
+            _fire_counts[star_idx2] += 1
+    repeat_count = []
+    repeat_count.resize(star_count)
+    for i in star_count:
+        repeat_count[i] = _fire_counts[i] - 1 if _fire_counts[i] > 0 else -1
+
     star_names = ConstellationStarNamer.generate_names(
         star_count, p_constellation_id, name_theme)
     _shuffle_star_names_for_player()
@@ -306,6 +436,16 @@ func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
     for s in star_count:
         pitch_freq_rank_per_star.append(_pitch_freq_rank[star_pitch_index[s]])
     _pitch_sub_rank = _assign_sub_ranks_within_groups(pitch_freq_rank_per_star)
+    # repeat_count is already finalized (computed earlier in this function,
+    # right after melody_seq_pos_sequence), so no ordering dependency here.
+    # ISOLATED rng, not self._rng — see _assign_sub_ranks_within_groups_
+    # isolated's own comment for why this axis must not perturb the shared
+    # stream while it isn't live yet. Derived the same way _rng's own seed
+    # is (player_seed XOR constellation-salted constants), just with
+    # different constants so it's never accidentally the same stream.
+    var _repeat_rng := RandomNumberGenerator.new()
+    _repeat_rng.seed = p_player_seed ^ (p_constellation_id * 0x2545_F491) ^ 0x7F4A_7C15
+    _repeat_count_sub_rank = _assign_sub_ranks_within_groups_isolated(repeat_count, _repeat_rng)
  
  
 func _compute_pitch_freq_rank() -> void:
@@ -520,6 +660,41 @@ func _assign_sub_ranks_within_groups(values: Array) -> Array[int]:
     return sub_rank
 
 
+## Same grouping/shuffling logic as _assign_sub_ranks_within_groups just
+## above, but against a CALLER-SUPPLIED rng instead of the shared self._rng.
+## Repeat Count uses this specifically (2026-09-29) because it is not yet a
+## live clue axis (see Category.REPEAT's own comment) — consuming the SHARED
+## stream here would shift every draw that comes after it in setup() and
+## generation (name shuffles, Form selection, ...), silently changing every
+## OTHER category's output for every seed even though nothing reads this
+## axis yet. Confirmed the hard way: the first draft used the shared _rng
+## and test_clue_redundancy.gd's fixed-seed puzzles changed enough to trip
+## a real "wasted descriptor" check on an entirely unrelated Sequence-axis
+## clue. An isolated, deterministically-seeded rng keeps this step
+## genuinely inert — every existing seed's generated puzzle is byte-
+## identical to before Repeat Count existed — while still being
+## reproducible per (player_seed, constellation_id) once this axis is read.
+func _assign_sub_ranks_within_groups_isolated(values: Array, rng: RandomNumberGenerator) -> Array[int]:
+    var groups: Dictionary = {}
+    for i in values.size():
+        var v = values[i]
+        if not groups.has(v):
+            groups[v] = []
+        groups[v].append(i)
+    var sub_rank: Array[int] = []
+    sub_rank.resize(values.size())
+    for v in groups.keys():
+        var members: Array = groups[v]
+        for i in range(members.size() - 1, 0, -1):
+            var j: int = rng.randi_range(0, i)
+            var tmp = members[i]
+            members[i] = members[j]
+            members[j] = tmp
+        for pos in members.size():
+            sub_rank[int(members[pos])] = pos
+    return sub_rank
+
+
 func _shuffle_star_names_for_player() -> void:
     # The name POOL is fixed per constellation_id (lore — same set of names
     # for every player, per ConstellationStarNamer), but WHICH star gets
@@ -532,12 +707,20 @@ func _shuffle_star_names_for_player() -> void:
         star_names[j] = tmp
 
 
+## `correct_star_sequence` IS the ground truth (the melody, walked pitch by
+## pitch onto the star that owns each pitch — see sequence_rank_solution's own
+## declaration comment above for the full chain back to def["puzzle_sequence"]
+## and why this is not an independent shuffle). Its length is the melody's
+## note-EVENT count, which can exceed star_count when a pitch repeats, so this
+## function's job is to collapse that into the star_count-length alldiff
+## permutation the rest of this file's Sequence solver needs — never to
+## invent an ordering of its own.
 func _set_sequence_ranks_from_order(correct_star_sequence: Array) -> void:
     sequence_rank_solution = []
     sequence_rank_solution.resize(star_count)
     for i in star_count:
         sequence_rank_solution[i] = -1
- 
+
     # Record each star's FIRST-occurrence step. Some constellations reuse a
     # star across multiple melody steps (more steps than stars — e.g. Spark's
     # 16-step Hallelujah Chorus over 7 stars), so we rank stars by first-fire
@@ -1564,6 +1747,18 @@ func to_cache_dict() -> Dictionary:
         # indistinguishable on load (from_cache_dict's _coerce_dict reads
         # a missing key as {} too).
         "difficulty_score":    _difficulty_score.duplicate(true),
+        # OPTIONAL, no CACHE_VERSION bump -- same reasoning as difficulty_score
+        # just above: [] by default, matching the field, so a save written
+        # before this field existed loads as an empty array rather than
+        # failing. A staff that reads an empty melody_star_sequence falls
+        # back to one-tick-per-star (see _draw_melody_staff's guard), the
+        # exact behavior every save had before this field existed.
+        "melody_star_sequence": melody_star_sequence.duplicate(),
+        # Same optional-field reasoning as melody_star_sequence just above.
+        "melody_seq_pos_sequence": melody_seq_pos_sequence.duplicate(),
+        # Same optional-field reasoning again. Ground truth only, no clue
+        # content depends on it yet -- see repeat_count's own field comment.
+        "repeat_count": repeat_count.duplicate(),
     }
 
 
@@ -1680,7 +1875,19 @@ static func _validate_cached_clue(raw, n: int) -> String:
         if typeof(ch) != TYPE_DICTIONARY:
             return "a chars entry is not a dictionary"
         var chd: Dictionary = ch
-        if not _cache_intlike(chd.get("cat")) or int(chd["cat"]) < 0 or int(chd["cat"]) > int(Category.DISTANCE):
+        # EXPLICIT set membership, not a `<= max` range check: Category.
+        # POSITION sits between DISTANCE and REPEAT in enum order (appended
+        # there for save-compatibility reasons unrelated to this check —
+        # see the enum's own comments) but is not a valid "chars" category
+        # today, so a range bound would wrongly accept it the moment REPEAT
+        # needed to be. REPEAT itself was missing here entirely until
+        # 2026-09-29 (Form 12/Equality Pair's activation) — every REPEAT-
+        # axis clue a real puzzle generated failed this check and the whole
+        # cache was rejected, caught by test_cache_invariants.gd the first
+        # time a real puzzle happened to ship one.
+        if not _cache_intlike(chd.get("cat")) or not (int(chd["cat"]) in [
+                Category.NAME, Category.SEQUENCE, Category.COLOR,
+                Category.PITCH, Category.DISTANCE, Category.REPEAT]):
             return "a chars entry has an invalid category"
         if not _cache_intlike(chd.get("star")) or int(chd["star"]) < 0 or int(chd["star"]) >= n:
             return "a chars entry points at star %s of %d" % [str(chd.get("star")), n]
@@ -1690,8 +1897,17 @@ static func _validate_cached_clue(raw, n: int) -> String:
         if typeof(cell) != TYPE_DICTIONARY:
             return "a cells entry is not a dictionary"
         var cd: Dictionary = cell
+        # REPEAT (2026-09-29) is bijective-via-sub-rank exactly like Color/
+        # Pitch (see _build_record_array's own REPEAT block) even though it
+        # is deliberately NOT in BIJECTIVE_CATEGORIES itself (that const
+        # also gates the shared category pools other Forms draw from — see
+        # its own comment) — a grid_updates cell can legitimately carry it
+        # once Equality Pair asserts it. Same explicit-membership reasoning
+        # as the chars check above, not a raised range bound.
         for ck in ["cat_a", "cat_b"]:
-            if not _cache_intlike(cd.get(ck)) or int(cd[ck]) < 0 or int(cd[ck]) > int(Category.PITCH):
+            if not _cache_intlike(cd.get(ck)) or not (int(cd[ck]) in [
+                    Category.NAME, Category.SEQUENCE, Category.COLOR,
+                    Category.PITCH, Category.REPEAT]):
                 return "a cells entry has a non-bijective category"
         for sk in ["star_a", "star_b"]:
             if not _cache_intlike(cd.get(sk)) or int(cd[sk]) < 0 or int(cd[sk]) >= n:
@@ -1733,6 +1949,18 @@ func from_cache_dict(data: Dictionary) -> bool:
     sequence_rank_solution = []
     for v in _coerce_array(data.get("pitch_rank_solution"), []):   # wire key, see to_dict
         sequence_rank_solution.append(_coerce_int(v, 0))
+
+    melody_star_sequence = []
+    for v in _coerce_array(data.get("melody_star_sequence"), []):
+        melody_star_sequence.append(_coerce_int(v, 0))
+
+    melody_seq_pos_sequence = []
+    for v in _coerce_array(data.get("melody_seq_pos_sequence"), []):
+        melody_seq_pos_sequence.append(_coerce_int(v, 0))
+
+    repeat_count = []
+    for v in _coerce_array(data.get("repeat_count"), []):
+        repeat_count.append(_coerce_int(v, -1))
 
     pitch_count = _coerce_int(data.get("pitch_count"), 0)
     _pitch_freq_rank = []
@@ -1820,12 +2048,12 @@ func from_cache_dict(data: Dictionary) -> bool:
 # directly (see Characteristic below) already removes the ambiguity a raw
 # hop-count alone would have, without needing a parallel sub-rank scheme.
 
-var _cat_star_to_value: Array = []   # [Category] -> Array[int] star -> value_index (Distance slot unused)
-var _cat_value_to_star: Array = []   # [Category] -> Array[int] value_index -> star (Distance slot unused)
+var _cat_star_to_value: Array = []   # [Category] -> Array[int] star -> value_index (Distance/Position slots unused)
+var _cat_value_to_star: Array = []   # [Category] -> Array[int] value_index -> star (Distance/Position slots unused)
 
 func _build_record_array() -> void:
-    _cat_star_to_value.resize(5)
-    _cat_value_to_star.resize(5)
+    _cat_star_to_value.resize(7)
+    _cat_value_to_star.resize(7)
 
     var name_order: Array = []
     for s in star_count:
@@ -1859,6 +2087,16 @@ func _build_record_array() -> void:
     _cat_star_to_value[Category.PITCH] = pitch_s2v
     _cat_value_to_star[Category.PITCH] = _invert_bijection(pitch_s2v)
 
+    # REPEAT (2026-09-29): same bijective-via-sub-rank treatment as Color/
+    # Pitch just above, over repeat_count instead of star_colors/pitch rank.
+    # NOT yet in BIJECTIVE_CATEGORIES or _characteristic_label -- see the
+    # Category enum's own REPEAT comment for why this step stops at a
+    # correct, testable matrix encoding and does not activate live clue
+    # generation.
+    var repeat_s2v: Array = _rank_by_raw_and_subrank(repeat_count, _repeat_count_sub_rank)
+    _cat_star_to_value[Category.REPEAT] = repeat_s2v
+    _cat_value_to_star[Category.REPEAT] = _invert_bijection(repeat_s2v)
+
 
 func _rank_by_raw_and_subrank(raw_values: Array, sub_ranks: Array) -> Array:
     var order: Array = []
@@ -1889,7 +2127,19 @@ func _freq_for_star(s: int) -> float:
 
 func _group_size(cat: int, star: int) -> int:
     # How many stars share this star's raw value in the given category —
-    # 1 for Name/Sequence (always singleton), variable for Color/Pitch.
+    # 1 for Name/Sequence (always singleton), variable for Color/Pitch/
+    # Repeat. Repeat added 2026-09-29: even though Equality Pair (the only
+    # Form that currently DRAWS Category.REPEAT — see BIJECTIVE_CATEGORIES'
+    # own comment) never needs this for its OWN id labels, the "chain"
+    # mechanism can hand a previous clue's axis_a/axis_b (cat=REPEAT) node
+    # to the NEXT Form's _sample_identity_axis_cell as `chain`, which calls
+    # _category_uniquely_labels (= _group_size <= 1) on it regardless of
+    # which Form is asking. Without this branch that call falls through to
+    # the default `return 1`, claiming Repeat Count always uniquely labels
+    # a star — false whenever more than one star shares a count, which is
+    # most of the time — and the resulting clue would either misidentify a
+    # star or (once rendered) show "?" per _characteristic_label's own
+    # unmatched-category fallback.
     match cat:
         Category.COLOR:
             var n: int = 0
@@ -1903,7 +2153,39 @@ func _group_size(cat: int, star: int) -> int:
                 if pi == star_pitch_index[star]:
                     n2 += 1
             return n2
+        Category.REPEAT:
+            # -1 (never-fires, an authoring gap) is never a valid identity
+            # label regardless of how many stars share it — forcing a
+            # group size > 1 here means _category_uniquely_labels always
+            # rejects it, the same safety _build_form_equality_pair's own
+            # raw_a guard gives its two callers directly.
+            if int(repeat_count[star]) < 0:
+                return star_count + 1
+            var n3: int = 0
+            for rc in repeat_count:
+                if rc == repeat_count[star]:
+                    n3 += 1
+            return n3
     return 1
+
+
+## True when every star shares the same repeat_count value -- zero
+## discriminating power for any clue this axis could ever produce (e.g. a
+## hard-mode-only constellation with a clean 1:1 melody, where every star's
+## count is 0; or any constellation where an authoring gap left every star
+## at -1). Ground truth is computed unconditionally in setup() regardless —
+## this is the guard Form-building code checks before drawing on the axis
+## at all, same principle as Form 18's per-constellation exclusion, applied
+## automatically instead of by hand-picking constellations. See
+## planned_repeat_count_axis_design.md's "Degeneracy guard" section.
+func _repeat_count_is_degenerate() -> bool:
+    if repeat_count.is_empty():
+        return true
+    var first: int = repeat_count[0]
+    for v in repeat_count:
+        if v != first:
+            return false
+    return true
 
 
 func _category_uniquely_labels(cat: int, star: int) -> bool:
@@ -2008,6 +2290,8 @@ func _note_group_value_term(cat: int, star: int) -> void:
         _note_rendered_term("C", COLOR_NAMES[star_colors[star]])
     elif cat == Category.PITCH:
         _note_rendered_term("P", note_name_for_freq(_freq_for_star(star)))
+    elif cat == Category.REPEAT:
+        _note_rendered_term("R", repeat_count[star])
 
 
 ## How many times _characteristic_label has rendered an INTERNAL sub-rank
@@ -2062,6 +2346,23 @@ func _characteristic_label(ch: Dictionary) -> String:
             _note_rendered_term("H", d)
             _note_rendered_term("N", star_names[ref])
             return "%s star %d %s from %s" % [article, d, _hop_word(d), star_names[ref]]
+        Category.REPEAT:
+            # Reached only via the "chain" mechanism today (a previous
+            # Equality Pair clue's axis_a/axis_b node handed to the next
+            # Form's chain parameter) — Equality Pair's own id_a/id_b are
+            # always drawn from NAME/SEQUENCE/COLOR/PITCH, never REPEAT
+            # itself, so this Form never calls _characteristic_label with
+            # this category on its OWN two rendered labels. Implemented
+            # anyway so that chain path is correct rather than merely
+            # non-crashing — see _group_size's own REPEAT comment.
+            var rc_val: int = int(repeat_count[s])
+            _note_rendered_term("R", rc_val)
+            var phrase: String = "the star whose note never repeats" if rc_val == 0 \
+                else "the star that repeats %d time%s" % [rc_val, "" if rc_val == 1 else "s"]
+            if _group_size(Category.REPEAT, s) <= 1:
+                return phrase
+            subrank_labels_rendered += 1
+            return "%s marked %s" % [phrase, _sub_rank_letter(_repeat_count_sub_rank[s])]
     return "?"
 
 
@@ -2119,6 +2420,15 @@ func _group_predicate(cat: int, star: int) -> String:
     if cat == Category.COLOR:
         _note_rendered_term("C", COLOR_NAMES[star_colors[star]])
         return "is %s" % COLOR_NAMES[star_colors[star]].to_lower()
+    if cat == Category.REPEAT:
+        var rc: int = int(repeat_count[star])
+        _note_rendered_term("R", rc)
+        # Plain "repeats N times" even for N==0, never "never repeats" --
+        # this predicate only ever appears inside a "Neither X nor Y ___"
+        # / "None of [...] ___" NEGATED sentence (see
+        # _build_form_group_negation), and "never repeats" there would
+        # read as a confusing double negative.
+        return "repeats %d time%s" % [rc, "" if rc == 1 else "s"]
     var pname: String = note_name_for_freq(_freq_for_star(star))
     _note_rendered_term("P", pname)
     return "plays %s" % pname
@@ -2244,6 +2554,33 @@ func _build_matrix() -> void:
                     row[v2] = {"is_true": star_a == star_b, "used": false}
                 rows[v1] = row
             _matrix[_pair_key(ca, cb)] = rows
+
+    # REPEAT (2026-09-29) paired explicitly against each of the four
+    # already-bijective categories, WITHOUT adding it to BIJECTIVE_
+    # CATEGORIES itself. That constant also feeds _random_bijective_
+    # category_pair() and the generic category pools other Forms draw
+    # from (_weighted_category_excluding, _non_distance_category), and
+    # this axis is being activated ONE FORM AT A TIME per planned_repeat_
+    # count_axis_design.md's build order — Equality Pair (Form 12) first,
+    # referencing Category.REPEAT directly rather than through that shared
+    # pool. Built here regardless of which Form ends up asking: the "chain"
+    # mechanism can hand a REPEAT-tagged node from one clue to the next
+    # Form's sampling regardless of which Form drew it originally (see
+    # _group_size's own REPEAT comment), and an absent "X:REPEAT" matrix
+    # entry would crash that lookup rather than just skip it.
+    for other_cat in BIJECTIVE_CATEGORIES:
+        var oc: int = int(other_cat)
+        var r_rows: Array = []
+        r_rows.resize(star_count)
+        for rv1 in star_count:
+            var r_row: Array = []
+            r_row.resize(star_count)
+            var r_star_a: int = int(_cat_value_to_star[oc][rv1])
+            for rv2 in star_count:
+                var r_star_b: int = int(_cat_value_to_star[Category.REPEAT][rv2])
+                r_row[rv2] = {"is_true": r_star_a == r_star_b, "used": false}
+            r_rows[rv1] = r_row
+        _matrix[_pair_key(oc, Category.REPEAT)] = r_rows
 
 
 ## Does this clue say ANYTHING the player has not already been told?
@@ -2624,15 +2961,22 @@ func _non_distance_category() -> int:
 
 
 func _is_hidden_category(cat: int) -> bool:
-    # Name and Sequence are the only two axes genuinely unknown to the
-    # player — Color is painted on the map and Pitch is fully recoverable
-    # via the Listen mechanic, both zero-deduction "given" information once
-    # looked at. A Distance-anchored clue (Forms 15/16/19) where every
-    # labeled star is drawn from Color/Pitch is entirely re-derivable by
-    # looking at the map — true, but contributes nothing a player couldn't
-    # already see, and reads as a non-clue. Require at least one labeled
-    # star per Distance-anchored clue to come from a hidden axis.
-    return cat == Category.NAME or cat == Category.SEQUENCE
+    # Name and Sequence were the only two axes genuinely unknown to the
+    # player until Repeat Count (2026-09-29, per user direction — see
+    # planned_repeat_count_axis_design.md) — Color is painted on the map and
+    # Pitch is fully recoverable via the Listen mechanic, both zero-
+    # deduction "given" information once looked at, but a star's Repeat
+    # Count has no such reveal mechanic at all; it is deduced or nothing.
+    # A Distance-anchored clue (Forms 15/16/19) where every labeled star is
+    # drawn from Color/Pitch is entirely re-derivable by looking at the map
+    # — true, but contributes nothing a player couldn't already see, and
+    # reads as a non-clue. Require at least one labeled star per Distance-
+    # anchored clue to come from a hidden axis. (Repeat is not currently
+    # drawable as an identity LABEL anywhere — see _weighted_category_
+    # excluding/_non_distance_category's fixed 4-item pools — so this
+    # addition is inert for those Forms today; correctness first, in case
+    # that changes later.)
+    return cat == Category.NAME or cat == Category.SEQUENCE or cat == Category.REPEAT
 
 
 # ==================================================
@@ -2779,6 +3123,8 @@ func _name_group_key(cat: int, star: int) -> int:
             return int(star_pitch_index[star])
         Category.SEQUENCE:
             return int(sequence_rank_solution[star])
+        Category.REPEAT:
+            return int(repeat_count[star])
     return -1
 
 
@@ -2794,7 +3140,14 @@ func _name_group_facts(ch_a: Dictionary, ch_b: Dictionary, is_true: bool) -> Arr
     var name_ch: Dictionary = ch_a if a_is_name else ch_b
     var obs_ch: Dictionary = ch_b if a_is_name else ch_a
     var obs_cat: int = int(obs_ch["cat"])
-    if obs_cat != Category.COLOR and obs_cat != Category.PITCH and obs_cat != Category.SEQUENCE:
+    # REPEAT added 2026-09-29 (Form 23/Group Membership's activation) --
+    # _name_group_key already handles it correctly (fixed for Form 12), so
+    # omitting it here would just silently drop a REPEAT-based clue's
+    # contribution to the fast Name-closure prover, not produce a wrong
+    # fact -- but there's no reason to leave that gap once the key itself
+    # is correct.
+    if obs_cat != Category.COLOR and obs_cat != Category.PITCH \
+            and obs_cat != Category.SEQUENCE and obs_cat != Category.REPEAT:
         return []
     return [{
         "kind": "name_group" if is_true else "name_group_neg",
@@ -3884,13 +4237,48 @@ func _build_form_adjacency(chain: Dictionary) -> Dictionary:
 
 
 func _build_form_equality_pair(chain: Dictionary) -> Dictionary:
-    # Only Color/Pitch can meaningfully hold an equality (Name/Sequence are
+    # Color/Pitch/Repeat can meaningfully hold an equality (Name/Sequence are
     # alldiff, so two stars can never share a value there by construction).
+    # Repeat added 2026-09-29 (first live Form for the new axis — see
+    # planned_repeat_count_axis_design.md's build order) precisely BECAUSE
+    # its whole existence proof is "two stars can share a value", the same
+    # shape Color/Pitch already have here, just hidden instead of given.
     # star_b is a specific, predetermined star (whichever else shares
     # star_a's raw value), same shape as Form 7's target — not freely
     # chosen among all remaining candidates like Forms 5/6.
-    var axis: int = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
-    var raw_of: Callable = func(s): return star_colors[s] if axis == Category.COLOR else star_pitch_index[s]
+    #
+    # REPEAT excluded from the pool entirely when degenerate (every star
+    # shares one repeat_count — e.g. any hard-mode constellation today,
+    # where every star fires exactly once) rather than drawn-then-rejected:
+    # every pair would trivially satisfy "same repeat count", making every
+    # such clue a free, zero-information sentence, exactly the degeneracy
+    # planned_repeat_count_axis_design.md's own guard exists to prevent.
+    #
+    # The degenerate branch keeps the ORIGINAL `randf() < 0.5` call shape
+    # rather than routing through the same randi_range() as the 3-way pick
+    # below. Found the hard way, twice: (1) always including REPEAT in the
+    # pool let a hard-mode fixture's all-zero repeat_count generate a wave
+    # of free clues; (2) even after excluding REPEAT there, replacing
+    # `randf() < 0.5` with `randi_range(0, 1)` for the SAME 50/50 choice
+    # still shifted the RNG stream (different underlying PRNG consumption),
+    # still changing which clues an unrelated hard-mode test's fixed seed
+    # generated (test_anonymous_slot_invariant.gd, then test_name_hints.gd
+    # once the first fix moved the stream again). Every hard-mode
+    # constellation today is degenerate, so this keeps their RNG stream —
+    # and therefore every clue they generate — byte-identical to before
+    # Repeat Count existed; only a non-degenerate constellation (Archon/
+    # Spark easy mode, brand new this session, no prior baseline to
+    # protect) ever reaches the new 3-way draw at all.
+    var axis: int
+    if _repeat_count_is_degenerate():
+        axis = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
+    else:
+        axis = [Category.COLOR, Category.PITCH, Category.REPEAT][_rng.randi_range(0, 2)]
+    var raw_of: Callable = func(s):
+        match axis:
+            Category.COLOR:  return star_colors[s]
+            Category.REPEAT: return repeat_count[s]
+            _:               return star_pitch_index[s]
     # bias_name on both draws: this Form is the biggest closure-coverage
     # contributor by volume, and every one-side-NAME instance feeds a
     # name_group fact directly, every both-NAME instance feeds
@@ -3902,6 +4290,13 @@ func _build_form_equality_pair(chain: Dictionary) -> Dictionary:
         return {}
     var star_a: int = int(a["star"])
     var raw_a = raw_of.call(star_a)
+    # -1 is repeat_count's "never fires" sentinel (an authoring gap, not a
+    # real repeat value — see that field's own comment) — asserting two
+    # such stars "repeat the same number of times" would be nonsense, not
+    # merely a boring clue. Only relevant when axis == REPEAT; raw_a is
+    # never negative for Color/Pitch.
+    if axis == Category.REPEAT and int(raw_a) < 0:
+        return {}
     var candidates: Array = []
     for s in star_count:
         if s != star_a and raw_of.call(s) == raw_a:
@@ -3930,13 +4325,25 @@ func _build_form_equality_pair(chain: Dictionary) -> Dictionary:
     # distance-anchored Forms — its docstring describes this exact failure;
     # it had simply never been applied here. Reject and let the caller retry
     # with a fresh draw.
+    #
+    # When axis == REPEAT this check is stricter than it needs to be — the
+    # ASSERTION itself is hidden now, so given id labels would still leave
+    # real content in the clue (e.g. "the star marked Blue A and the star
+    # that plays F5 repeat the same number of times" teaches something).
+    # Left unconditional anyway for this first activation: it only makes
+    # Repeat-axis Equality Pair clues rarer (still needs one Name/Sequence
+    # label), never wrong, and keeps the first live proof point's phrasing
+    # anchored to the two axes players already reason about identity
+    # through. Revisit once this Form's Repeat output is measured.
     if not _is_hidden_category(int(a["id_cat"])) and not _is_hidden_category(int(b["id_cat"])):
         return {}
     var id_a: Dictionary = {"cat": int(a["id_cat"]), "star": star_a}
     var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
     var axis_a: Dictionary = {"cat": axis, "star": star_a}
     var axis_b: Dictionary = {"cat": axis, "star": star_b}
-    var noun: String = "color" if axis == Category.COLOR else "pitch"
+    var noun: String = "repeat count"
+    if axis == Category.COLOR: noun = "color"
+    elif axis == Category.PITCH: noun = "pitch"
     var text: String = "%s and %s have the same %s." % [_characteristic_label(id_a), _characteristic_label(id_b), noun]
     # axis is always Color/Pitch here — no Sequence-relational content —
     # but id_cat (excluded only from axis, never from Sequence) can still
@@ -5746,13 +6153,38 @@ func _build_form_cross_domain_bridge(chain: Dictionary) -> Dictionary:
 # way to produce before. ──────────────────────────────────────────────────
 
 func _build_form_group_membership(chain: Dictionary) -> Dictionary:
-    var group_cat: int = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
+    # REPEAT added 2026-09-29 (see Equality Pair's own comment for the full
+    # reasoning, repeated in brief here): excluded from the pool entirely
+    # when degenerate, not drawn-then-rejected, since every star sharing
+    # one repeat_count (any hard-mode constellation today) would make "X
+    # is one of the stars that never repeat" trivially true of literally
+    # every star. The degenerate branch keeps the ORIGINAL `randf() < 0.5`
+    # call shape rather than routing through randi_range() for the same
+    # 50/50 choice — a different PRNG consumption for an "equivalent" pick
+    # still shifted the RNG stream and broke unrelated fixed-seed tests the
+    # first time this exact mistake was made (Equality Pair's own build
+    # notes). Every hard-mode constellation's RNG stream, and therefore its
+    # entire clue set, must stay byte-identical to before Repeat Count
+    # existed; only a non-degenerate constellation reaches the 3-way draw.
+    var group_cat: int
+    if _repeat_count_is_degenerate():
+        group_cat = Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
+    else:
+        group_cat = [Category.COLOR, Category.PITCH, Category.REPEAT][_rng.randi_range(0, 2)]
     var g: Dictionary = _sample_identity_axis_cell(group_cat, chain, -1)
     if g.is_empty():
         return {}
     var def_star: int = int(g["star"])
-    var raw_of: Callable = func(s): return star_colors[s] if group_cat == Category.COLOR else star_pitch_index[s]
+    var raw_of: Callable = func(s):
+        match group_cat:
+            Category.COLOR:  return star_colors[s]
+            Category.REPEAT: return repeat_count[s]
+            _:               return star_pitch_index[s]
     var raw_val = raw_of.call(def_star)
+    # -1 is repeat_count's never-fires sentinel, not a real group value —
+    # same guard Equality Pair's own axis draw uses.
+    if group_cat == Category.REPEAT and int(raw_val) < 0:
+        return {}
     var group_stars: Array = []
     for s in star_count:
         if raw_of.call(s) == raw_val:
@@ -5814,7 +6246,15 @@ func _build_form_group_membership(chain: Dictionary) -> Dictionary:
     var subject_id: Dictionary = {"cat": subj_id_cat, "star": subject_star}
     var group_def_ch: Dictionary = {"cat": group_cat, "star": def_star}
     _note_group_value_term(group_cat, def_star)
-    var group_phrase: String = ("the %s stars" % COLOR_NAMES[star_colors[def_star]].to_lower()) if group_cat == Category.COLOR else ("the stars that play %s" % note_name_for_freq(_freq_for_star(def_star)))
+    var group_phrase: String
+    if group_cat == Category.COLOR:
+        group_phrase = "the %s stars" % COLOR_NAMES[star_colors[def_star]].to_lower()
+    elif group_cat == Category.REPEAT:
+        var def_rc: int = int(repeat_count[def_star])
+        group_phrase = "the stars whose note never repeats" if def_rc == 0 \
+            else "the stars that repeat %d time%s" % [def_rc, "" if def_rc == 1 else "s"]
+    else:
+        group_phrase = "the stars that play %s" % note_name_for_freq(_freq_for_star(def_star))
     var word: String = "one of" if want_positive else "not one of"
     var text: String = "%s is %s %s." % [_characteristic_label(subject_id), word, group_phrase]
     # Both grid_updates entries below are TAUTOLOGICAL self-identity
@@ -5940,7 +6380,19 @@ func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
     var group_defs: Array = []       # {cat, star}
     var group_members: Array = []    # parallel to group_defs: Array[star]
     var excluded: Dictionary = {}    # star -> true, every member of every group
+    # REPEAT (2026-09-29) appended ONLY when non-degenerate, never
+    # unconditionally: _shuffle_array on a 3-element list is a different
+    # PRNG consumption than on the original 2-element one, which would
+    # shift the RNG stream (and therefore the whole clue set) for every
+    # existing, degenerate hard-mode constellation even though REPEAT
+    # itself never gets exercised there — the exact mistake Equality
+    # Pair's and Group Membership's own build notes describe. Keeping the
+    # 2-element list exactly as before for the degenerate case keeps that
+    # stream byte-identical; only a non-degenerate constellation (brand
+    # new this session, no prior baseline to protect) ever sees 3.
     var cats: Array = [Category.COLOR, Category.PITCH]
+    if not _repeat_count_is_degenerate():
+        cats.append(Category.REPEAT)
     _shuffle_array(cats)
     var want_groups: int = 2 if _rng.randf() < 0.45 else 1
     for gc in cats:
@@ -5948,6 +6400,15 @@ func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
             break
         var pool: Array = []
         for s in star_count:
+            # -1 is repeat_count's never-fires sentinel, not a real group
+            # value — same guard every other REPEAT-aware Form uses. Not
+            # covered by _group_size's own -1 handling: that sentinel value
+            # (star_count + 1) exists to fail _category_uniquely_labels,
+            # a DIFFERENT check than the ">= 2, is there a real group"
+            # test this loop makes, and would otherwise slip a -1 star
+            # through as a valid group definer here.
+            if int(gc) == Category.REPEAT and int(repeat_count[s]) < 0:
+                continue
             if _group_size(int(gc), s) >= 2:
                 pool.append(s)
         if pool.is_empty():
