@@ -1,0 +1,35 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://will_form_switch.gd" id="1_wfswitch"]
+
+[node name="WillFormSwitchInstance" type="VBoxContainer"]
+offset_right = 140.0
+offset_bottom = 93.0
+script = ExtResource("1_wfswitch")
+
+[node name="CreateBar" type="Label" parent="."]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 41)
+size_flags_vertical = 0
+
+[node name="ChoiceRow" type="HBoxContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="WillBox" type="Panel" parent="ChoiceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="WillLabel" type="Label" parent="ChoiceRow/WillBox"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="FormBox" type="Panel" parent="ChoiceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="FormLabel" type="Label" parent="ChoiceRow/FormBox"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0

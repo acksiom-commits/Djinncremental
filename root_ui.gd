@@ -55,6 +55,20 @@ var _uonite_icosa:           Node = null
 ## abandoned approach if it's ever worth revisiting).
 var _uonite_strip_bar:       TextureProgressBar = null
 var _uonite_strip_viewport:  SubViewport = null
+## Will/Form switch (2026-10-01): the Grain-branch counterparts of
+## _uonite_icosa/_uonite_strip_bar/_uonite_strip_viewport above, same
+## cropped-viewport-as-progress-texture technique, substituted into view in
+## place of the Uonite cluster whenever the switch is on FORM -- see
+## _sync_will_form_display_visibility()/_on_will_form_switch_changed().
+var _grain_tetra:            Node = null
+var _grain_strip_bar:        TextureProgressBar = null
+var _grain_strip_viewport:   SubViewport = null
+var _create_grain_button:    Node = null
+var _grain_creation_panel:   Node = null
+var _grain_counter_row:      Node = null
+var _grain_mote_display:     int = 0
+var _create_uonite_button:   Node = null
+var _uonite_creation_panel:  Node = null
 var _journal_popout:         Node = null
 var _ages_popout:            Node = null
 var _settings_popout:        Node = null
@@ -305,6 +319,7 @@ func _ready() -> void:
     game_context            = get_node_or_null("/root/GameContext")
     if game_context:
         game_context.constellation_art_tier_achieved.connect(_on_constellation_art_tier_achieved)
+        game_context.will_form_switch_changed.connect(_on_will_form_switch_changed)
     production_manager      = get_node_or_null("/root/ProductionManager")
     save_manager            = get_node_or_null("/root/SaveManager")
     game_data               = get_node_or_null("/root/GameData")
@@ -314,6 +329,17 @@ func _ready() -> void:
     _uonite_strip_viewport  = find_child("UoniteStripSubViewport", true, false)
     if _uonite_strip_bar and _uonite_strip_viewport:
         _uonite_strip_bar.texture_progress = _uonite_strip_viewport.get_texture()
+    _grain_tetra            = find_child("GrainTetrahedron",    true, false)
+    _grain_strip_bar        = find_child("GrainCooldownBar",    true, false)
+    _grain_strip_viewport   = find_child("GrainStripSubViewport", true, false)
+    if _grain_strip_bar and _grain_strip_viewport:
+        _grain_strip_bar.texture_progress = _grain_strip_viewport.get_texture()
+    _create_grain_button    = find_child("CreateGrainButton",   true, false)
+    _grain_creation_panel   = find_child("GrainCreationPanel",  true, false)
+    _grain_counter_row      = find_child("RowGrainCounterInstance", true, false)
+    _create_uonite_button   = find_child("CreateUoniteButton",  true, false)
+    _uonite_creation_panel  = find_child("UoniteCreationPanel", true, false)
+    _sync_will_form_display_visibility()
     _storage_display        = find_child("StorageDisplay",    true, false)
     _archon_tetra           = find_child("ArchonTetrahedron", true, false)
     var _archon_panel_node := find_child("ArchonGraphicPanel", true, false)
@@ -489,6 +515,9 @@ func _setup_panel_nodes() -> void:
         "constellation":    find_child("ConstellationPanel",           true, false),
         "uonite_button":    find_child("CreateUoniteButton",           true, false),
         "uonite_cooldown":  find_child("UoniteCooldownBar",            true, false),
+        "grain_creation":   find_child("GrainCreationPanel",           true, false),
+        "grain_button":     find_child("CreateGrainButton",            true, false),
+        "grain_cooldown":   find_child("GrainCooldownBar",             true, false),
         "volumition":       find_child("ClickVolAssistVBox",           true, false),
         "stoctagon":        _storage_display,
     }
@@ -991,6 +1020,15 @@ func _on_first_mote_dialogue_complete() -> void:
     _reveal_panel("uonite_creation")
     _reveal_panel("uonite_button")
     _reveal_panel("uonite_cooldown")
+    # Grain-branch infrastructure unlocks at the same milestone as Uonite's
+    # -- both are available from here on, WILL/FORM just picks which one's
+    # showing (see _sync_will_form_display_visibility()). Each stays hidden
+    # behind its own .visible toggle until the switch actually selects it,
+    # same AND-gate composition the Uonite cluster never needed since it
+    # has no sibling to hide behind.
+    _reveal_panel("grain_creation")
+    _reveal_panel("grain_button")
+    _reveal_panel("grain_cooldown")
 
 
 func _on_constellation_panel_opened() -> void:
@@ -2311,9 +2349,9 @@ func _connect_action_buttons() -> void:
     _try_connect_button("IotaAssembleButton",     "pressed", _on_iota_assemble_pressed)
     _try_connect_button("ParticleCompressButton", "pressed", _on_particle_compress_pressed)
     _try_connect_button("CreateUoniteButton",     "pressed", _on_create_uonite_pressed)
+    _try_connect_button("CreateGrainButton",      "pressed", _on_create_grain_pressed)
     _try_connect_button("TetradAssembleButton",   "pressed", _on_tetrad_assemble_pressed)
     _try_connect_button("MoteCompressButton",     "pressed", _on_mote_compress_pressed)
-    _try_connect_button("GrainAssembleButton",    "pressed", _on_grain_assemble_pressed)
     _try_connect_button("ClickVolMinusButton",    "pressed", _on_click_vol_minus_pressed)
     _try_connect_button("ClickVolPlusButton",     "pressed", _on_click_vol_plus_pressed)
     _click_vol_label = find_child("ClickVolLabel", true, false)
@@ -2568,23 +2606,6 @@ func _on_particle_compress_pressed() -> void:
         if bar: bar.flash_not_ready()
 
 
-func _on_grain_assemble_pressed() -> void:
-    if _is_tutorial_blocking(): return
-    if not production_manager: return
-    var bar = _get_cooldown_bar("GrainCooldownBar")
-    if bar and not bar.is_ready():
-        bar.flash_not_ready()
-        return
-    var any_success := false
-    for i in _get_click_multiplier():
-        if production_manager.manual_grain_assemble():
-            any_success = true
-    if any_success:
-        if bar: bar.notify_clicked()
-    else:
-        if bar: bar.flash_not_ready()
-
-
 func _on_create_uonite_pressed() -> void:
     if _is_tutorial_blocking(): return
     if _expansion_anim_active: return
@@ -2606,6 +2627,40 @@ func _on_create_uonite_pressed() -> void:
     var any_success: bool = production_manager.manual_create_uonite()
     if any_success:
         _play_expansion_animation()
+
+
+func _on_create_grain_pressed() -> void:
+    if _is_tutorial_blocking(): return
+    if not production_manager: return
+    # Unlike Create Uonite above, this does NOT trigger an Expansion -- by
+    # the user's own explicit design call (2026-10-01), Grain is a separate
+    # accumulator with no per-cycle limiter and no prestige tie-in at all;
+    # the storage cap (game_context.get_grain_storage_cap()) is its only
+    # ceiling. manual_create_grain() already independently caps the batch
+    # at that headroom, so a click past the cap is just a no-op.
+    production_manager.manual_create_grain()
+
+
+## Will/Form switch (2026-10-01): shows exactly one of the Uonite/Grain
+## creation clusters (button + cap bar + lattice display + counter),
+## matching whichever side is currently lit. Called once at _ready() to
+## match whatever state a loaded save already has, and again every time
+## the switch toggles -- see game_context.gd's toggle_will_form_switch().
+func _sync_will_form_display_visibility() -> void:
+    if not game_context:
+        return
+    var is_will: bool = game_context.will_form_switch_is_will
+    if _create_uonite_button:  _create_uonite_button.visible  = is_will
+    if _uonite_strip_bar:      _uonite_strip_bar.visible      = is_will
+    if _uonite_creation_panel: _uonite_creation_panel.visible = is_will
+    if _create_grain_button:  _create_grain_button.visible  = not is_will
+    if _grain_strip_bar:      _grain_strip_bar.visible      = not is_will
+    if _grain_creation_panel: _grain_creation_panel.visible = not is_will
+    if _grain_counter_row:    _grain_counter_row.visible    = not is_will
+
+
+func _on_will_form_switch_changed(_is_will: bool) -> void:
+    _sync_will_form_display_visibility()
 
 
 ## intro_screen.gd's vessel-selection sequence plays Phase 1 (warp to
@@ -2821,10 +2876,10 @@ func _setup_resource_rows() -> void:
             "RowIotaInstance":           row.set_resource_key("iota_uonite")
             "RowParticleInstance":       row.set_resource_key("particle")
             "RowMoteInstance":           row.set_resource_key("mote_uonite")
-            "RowGrainInstance":          row.set_resource_key("grain")
             "RowUonitesInstance":        row.set_resource_key("uonites_wheel")
             "RowFociInstance":           row.set_resource_key("foci_wheel")
             "RowVolitionsInstance":      row.set_resource_key("volitions_wheel")
+            "RowGrainCounterInstance":   row.set_resource_key("grain")
             _:
                 row.set_label(row.name)
                 row.set_resource_key(row.name)
@@ -2837,7 +2892,8 @@ func _setup_resource_rows() -> void:
 func _cache_tooltip_buttons() -> void:
     for btn_name in ["MonadCompressButton", "TetradAssembleButton",
                      "ParticleCompressButton", "IotaAssembleButton",
-                     "MoteCompressButton", "GrainAssembleButton", "CreateUoniteButton"]:
+                     "MoteCompressButton", "CreateUoniteButton",
+                     "CreateGrainButton"]:
         var node = find_child(btn_name, true, false)
         if node:
             _tooltip_buttons[btn_name] = node
@@ -2857,8 +2913,8 @@ func _update_button_tooltips() -> void:
         "ParticleCompressButton": "particle_assemble",
         "IotaAssembleButton":     "iota_assemble_uonite",
         "MoteCompressButton":     "mote_assemble_uonite",
-        "GrainAssembleButton":    "grain_assemble",
         "CreateUoniteButton":     "uonite_assemble",
+        "CreateGrainButton":      "grain_assemble",
     }
     var tc: Dictionary = game_context.totals_created
     var total_map: Dictionary = {
@@ -2866,8 +2922,8 @@ func _update_button_tooltips() -> void:
         "ParticleCompressButton": tc.get("particle",    BigNum.zero()),
         "IotaAssembleButton":     tc.get("iota_uonite", BigNum.zero()),
         "MoteCompressButton":     tc.get("mote_uonite", BigNum.zero()),
-        "GrainAssembleButton":    tc.get("grain",       BigNum.zero()),
         "CreateUoniteButton":     tc.get("uonite",      BigNum.zero()),
+        "CreateGrainButton":      tc.get("grain",       BigNum.zero()),
     }
     for btn_name in total_map:
         var node: Control = _tooltip_buttons.get(btn_name)
@@ -3074,6 +3130,36 @@ func _update_counters() -> void:
             var progress: Vector2i = game_context.get_uonite_cycle_progress()
             _uonite_strip_bar.max_value = progress.y
             _uonite_strip_bar.value     = progress.x
+        if _grain_tetra and game_context.ui_unlocks.get("grain_creation", false):
+            # Grain-branch counterpart of the _uonite_icosa block above --
+            # same cosmetic wrap-every-N-Motes reveal, but N is
+            # GRAIN_MOTES_PER_UNIT (4), matching grain_tetrahedron.gd's own
+            # 4-face host solid, not the icosahedron's 20. No storage_display
+            # sparkle-icon spawn on completion (spawn_completed_uonite_icon()
+            # is Uonite-specific; a Grain equivalent is out of scope here --
+            # infrastructure only, per the user's own 2026-10-01 scope call).
+            var g_chunks: BigNum    = game_context.mote_grains.div_int_floor(game_context.GRAIN_MOTES_PER_UNIT)
+            var g_remainder: BigNum = game_context.mote_grains.sub(g_chunks.mul_int(game_context.GRAIN_MOTES_PER_UNIT))
+            var g_target: int       = g_remainder.to_int()
+
+            var g_display_changed := false
+            if g_target < _grain_mote_display:
+                _grain_mote_display = g_target
+                g_display_changed = true
+                _grain_tetra.play_completion_dim()
+            elif g_target > _grain_mote_display:
+                _grain_mote_display += 1
+                g_display_changed = true
+            if g_display_changed:
+                _grain_tetra.current_motes = _grain_mote_display
+        if _grain_strip_bar and game_context.ui_unlocks.get("grain_creation", false):
+            # Real progress toward the storage-derived Grain cap -- see
+            # game_context.get_grain_progress(). No per-cycle component
+            # (unlike Uonite's get_uonite_cycle_progress()): the storage cap
+            # is the only ceiling here.
+            var g_progress: Vector2i = game_context.get_grain_progress()
+            _grain_strip_bar.max_value = g_progress.y
+            _grain_strip_bar.value     = g_progress.x
 
 
 # ==================================================

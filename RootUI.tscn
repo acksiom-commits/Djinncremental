@@ -19,6 +19,7 @@
 [ext_resource type="Texture2D" uid="uid://cr843n70v8kle" path="res://icons/grain.svg" id="12_ubeuf"]
 [ext_resource type="Texture2D" uid="uid://ds84s3o6aht03" path="res://icons/uonite.svg" id="13_34no1"]
 [ext_resource type="PackedScene" uid="uid://ghxpihrmiisr" path="res://ButtonLabel.tscn" id="15_8msm3"]
+[ext_resource type="PackedScene" path="res://WillFormSwitch.tscn" id="15_wfswitch"]
 [ext_resource type="Script" uid="uid://bxthxopf80lsk" path="res://archon_tetrahedron.gd" id="15_aj54v"]
 [ext_resource type="PackedScene" path="res://CooldownBar.tscn" id="16_jgph3"]
 [ext_resource type="PackedScene" uid="uid://3biuj3blqqca" path="res://UoniteIcosahedron.tscn" id="17_12345"]
@@ -33,6 +34,9 @@
 [ext_resource type="PackedScene" path="res://LatticePanel.tscn" id="32_latticepanel"]
 [ext_resource type="PackedScene" uid="uid://c8f3k2qaq04mt" path="res://UoniteCycleProgressBar.tscn" id="33_unitestrip"]
 [ext_resource type="Shader" uid="uid://dpw3wgiwp57qe" path="res://uonite_bar_rounded_corners.gdshader" id="34_roundedcorners"]
+[ext_resource type="PackedScene" path="res://WillFormMiniIcon.tscn" id="35_wfminiicon"]
+[ext_resource type="PackedScene" path="res://GrainTetrahedron.tscn" id="36_graintetra"]
+[ext_resource type="PackedScene" path="res://GrainCycleProgressBar.tscn" id="37_grainstrip"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_hloqn"]
 shader = ExtResource("1_6fk1d")
@@ -883,6 +887,20 @@ offset_right = 140.0
 offset_bottom = 63.0
 resource_key = "uonite"
 
+[node name="CreateGrainButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=911312432]
+visible = false
+custom_minimum_size = Vector2(140, 55)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 4
+
+[node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/CreateGrainButton" unique_id=250834037 instance=ExtResource("15_8msm3")]
+layout_mode = 0
+offset_top = 59.0
+offset_right = 140.0
+offset_bottom = 63.0
+resource_key = "grain"
+
 [node name="UoniteCooldownBar" type="TextureProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=819063763]
 material = SubResource("ShaderMaterial_unitebar_round")
 custom_minimum_size = Vector2(140, 6)
@@ -911,6 +929,36 @@ surface_material_override/0 = SubResource("StandardMaterial3D_cxrvj")
 surface_material_override/1 = SubResource("StandardMaterial3D_35r6k")
 
 [node name="UoniteStripCamera" type="Camera3D" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCooldownBar/UoniteStripViewport/UoniteStripSubViewport" unique_id=819063767]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
+projection = 1
+size = 0.072
+
+[node name="GrainCooldownBar" type="TextureProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=819063768]
+visible = false
+material = SubResource("ShaderMaterial_unitebar_round")
+custom_minimum_size = Vector2(140, 6)
+layout_mode = 2
+
+[node name="GrainStripViewport" type="SubViewportContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/GrainCooldownBar" unique_id=819063769]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+stretch = true
+
+[node name="GrainStripSubViewport" type="SubViewport" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/GrainCooldownBar/GrainStripViewport" unique_id=819063770]
+own_world_3d = true
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(142, 6)
+render_target_update_mode = 4
+
+[node name="GrainCycleProgressBar" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/GrainCooldownBar/GrainStripViewport/GrainStripSubViewport" unique_id=819063771 instance=ExtResource("37_grainstrip")]
+
+[node name="GrainStripCamera" type="Camera3D" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/GrainCooldownBar/GrainStripViewport/GrainStripSubViewport" unique_id=819063772]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
 projection = 1
 size = 0.072
@@ -948,6 +996,39 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2)
 
 [node name="UoniteGrainCounterLabel" type="RichTextLabel" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/UoniteCreationPanel" unique_id=486133986]
 custom_minimum_size = Vector2(142, 24)
+layout_mode = 2
+
+[node name="GrainCreationPanel" type="PanelContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=999999996]
+visible = false
+custom_minimum_size = Vector2(142, 142)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_jq48x")
+
+[node name="GrainCreationViewport" type="SubViewportContainer" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/GrainCreationPanel" unique_id=999999991]
+custom_minimum_size = Vector2(142, 142)
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 0
+stretch = true
+
+[node name="GrainCreationSubViewport" type="SubViewport" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/GrainCreationPanel/GrainCreationViewport" unique_id=999999990]
+own_world_3d = true
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(142, 142)
+render_target_update_mode = 4
+
+[node name="GrainTetrahedron" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/GrainCreationPanel/GrainCreationViewport/GrainCreationSubViewport" unique_id=999999989 instance=ExtResource("36_graintetra")]
+radius = 1.0
+rotation_speed = 0.1
+current_motes = 0
+
+[node name="GrainCamera" type="Camera3D" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox/GrainCreationPanel/GrainCreationViewport/GrainCreationSubViewport" unique_id=999999988]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2)
+
+[node name="RowGrainCounterInstance" parent="CanvasLayer/RootUI/TopBandHBox/LeftStackVBox/CompressPanelContainer/CompressMargin/CompressVBox" unique_id=999999987 instance=ExtResource("5_g5yj0")]
+visible = false
+custom_minimum_size = Vector2(140, 20)
 layout_mode = 2
 
 [node name="RightStackVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox" unique_id=1252689769]
@@ -1150,6 +1231,14 @@ theme_override_font_sizes/bold_font_size = 16
 [node name="BottomLabel" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton/ButtonLabelInstance" index="1" unique_id=1248530810]
 theme_override_font_sizes/normal_font_size = 20
 
+[node name="WillFormIconLeft" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton" instance=ExtResource("35_wfminiicon")]
+layout_mode = 0
+side = "left"
+
+[node name="WillFormIconRight" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/ParticleCompressButton" instance=ExtResource("35_wfminiicon")]
+layout_mode = 0
+side = "right"
+
 [node name="ParticleCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox" unique_id=1890166982 instance=ExtResource("16_jgph3")]
 custom_minimum_size = Vector2(0, 6)
 layout_mode = 2
@@ -1179,6 +1268,14 @@ offset_right = 140.0
 offset_bottom = 63.0
 resource_key = "iota_uonite"
 
+[node name="WillFormIconLeft" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/IotaAssembleButton" instance=ExtResource("35_wfminiicon")]
+layout_mode = 0
+side = "left"
+
+[node name="WillFormIconRight" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/IotaAssembleButton" instance=ExtResource("35_wfminiicon")]
+layout_mode = 0
+side = "right"
+
 [node name="IotaCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1899966072 instance=ExtResource("16_jgph3")]
 custom_minimum_size = Vector2(0, 6)
 layout_mode = 2
@@ -1198,6 +1295,14 @@ custom_minimum_size = Vector2(140, 0)
 layout_mode = 0
 resource_key = "mote_uonite"
 
+[node name="WillFormIconLeft" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/MoteCompressButton" instance=ExtResource("35_wfminiicon")]
+layout_mode = 0
+side = "left"
+
+[node name="WillFormIconRight" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/MoteCompressButton" instance=ExtResource("35_wfminiicon")]
+layout_mode = 0
+side = "right"
+
 [node name="MoteCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1119047235 instance=ExtResource("16_jgph3")]
 custom_minimum_size = Vector2(0, 6)
 layout_mode = 2
@@ -1209,26 +1314,15 @@ custom_minimum_size = Vector2(140, 20)
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="GrainAssembleButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1731880581]
-custom_minimum_size = Vector2(140, 55)
+[node name="WillFormSwitchButton" type="Button" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=1731880581]
+custom_minimum_size = Vector2(140, 93)
 layout_mode = 2
 size_flags_horizontal = 0
 
-[node name="ButtonLabelInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/GrainAssembleButton" unique_id=1684463377 instance=ExtResource("15_8msm3")]
+[node name="WillFormSwitchInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox/WillFormSwitchButton" unique_id=1684463377 instance=ExtResource("15_wfswitch")]
 layout_mode = 0
-offset_top = 59.0
 offset_right = 140.0
-offset_bottom = 63.0
-resource_key = "grain"
-
-[node name="GrainCooldownBar" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=655964790 instance=ExtResource("16_jgph3")]
-custom_minimum_size = Vector2(0, 6)
-layout_mode = 2
-resource_key = "grain"
-operation_key = "grain_assemble"
-
-[node name="RowGrainInstance" parent="CanvasLayer/RootUI/TopBandHBox/RightStackVBox/AssemblePanelContainer/AssembleMargin/AssembleTopHBox/ParticleIotaMoteGrainVBox/IotaMoteGrainVBox" unique_id=172671712 instance=ExtResource("5_g5yj0")]
-layout_mode = 2
+offset_bottom = 93.0
 
 [node name="RightEdgePopoutsVBox" type="VBoxContainer" parent="CanvasLayer/RootUI/TopBandHBox" unique_id=559855176]
 custom_minimum_size = Vector2(0, 310)

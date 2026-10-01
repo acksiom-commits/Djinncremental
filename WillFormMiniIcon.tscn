@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://will_form_mini_icon.gd" id="1_wfmini"]
+
+[node name="WillFormMiniIcon" type="Control"]
+script = ExtResource("1_wfmini")

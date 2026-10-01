@@ -1,0 +1,9 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://grain_tetrahedron.gd" id="1"]
+
+[node name="GrainTetrahedron" type="MeshInstance3D"]
+script = ExtResource("1")
+radius = 1.0
+rotation_speed = 0.1
+current_motes = 0

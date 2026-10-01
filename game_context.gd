@@ -405,6 +405,31 @@ var hint_bias_enabled: bool = false
 var total_playtime_seconds: float = 0.0
 var refund_warning_shown: bool = false
 
+# ===================== WILL / FORM PRODUCTION SWITCH =======================
+# Which branch of Iota/Mote assembly is currently selected -- Will = the
+# Uonite branch (cheap, unfilled cavity colonization), Form = the Grain
+# branch (expensive, packed with real Tetrad/Particle density). Visual
+# toggle only for now (2026-09-30, requested as part of the Uonite/Grains
+# switch to-do item) -- this flag just records which side is lit. Actually
+# routing IotaAssembleButton/MoteCompressButton to the matching recipe
+# (iota_assemble_uonite/_grains, mote_assemble_uonite/_grains) and the
+# Create Uonite/Assemble Grains button+display swap are separate,
+# not-yet-built to-do items -- nothing reads this flag to change
+# production behavior yet. Defaults true (Will) to match the Uonite
+# branch already being the one with a working button.
+#
+# will_form_switch.gd (the switch button) and will_form_mini_icon.gd (the
+# Particle/Iota/Mote mini-icons, 2026-10-01) both read this flag directly,
+# but mutate it only through toggle_will_form_switch() below -- that's the
+# one place that flips the flag AND emits will_form_switch_changed, so the
+# two can never drift out of sync with each other.
+var will_form_switch_is_will: bool = true
+
+
+func toggle_will_form_switch() -> void:
+    will_form_switch_is_will = not will_form_switch_is_will
+    emit_signal("will_form_switch_changed", will_form_switch_is_will)
+
 
 # ===================== PURITY LOCKS =======================
 var purity_locks_unlocked: bool = false
@@ -445,6 +470,7 @@ signal archon_foci_changed(new_value: int)
 signal lock_state_changed(key: String, locked: bool)
 signal volition_slots_changed()
 signal constellation_art_tier_achieved(constellation_id: int, crossing_number: int, bonus_mult: float)
+signal will_form_switch_changed(is_will: bool)
 
 
 # ===================== CREATION ORDER TRACKING ===========
@@ -796,6 +822,51 @@ func get_uonite_storage_cap() -> int:
     # in do_prestige_reset()) -- NOT get_effective_storage_cap()'s temporary
     # multiplier, which has nothing to do with this stockpile ceiling.
     return storage_cap.mul(storage_cap).div_int_floor(UONITE_SPARKS_COST).to_int()
+
+
+# Total cumulative Sparks cost of one Grain (Monad 5 -> Tetrad 21 ->
+# Particle 85 -> Iota_grains 514 -> Mote_grains 3,780 -> Grain 16,825), per
+# the grain_assemble/mote_assemble_grains/... recipe chain in game_data.gd.
+# Same derivation method as UONITE_SPARKS_COST above (verified against its
+# documented chain before reusing it here); Mote_grains' 3,780 also matches
+# the independently-verified figure in planned_archai_purity_tier_taxonomy
+# memory notes (2026-09-02).
+const GRAIN_SPARKS_COST: int = 16825
+
+# grain_assemble's own mote_grains input cost (game_data.gd) -- 4, NOT the
+# 20 Uonite uses. Documented as its own constant (not re-read from
+# GameData.RECIPES here) because get_uonite_storage_cap() above sets the
+# precedent of a hardcoded, chain-derived constant rather than a live
+# cross-autoload read; if grain_assemble's recipe ever changes this needs
+# updating alongside it, same as GRAIN_SPARKS_COST would.
+const GRAIN_MOTES_PER_UNIT: int = 4
+
+
+## Will/Form switch (2026-10-01): same storage-footprint technique as
+## get_uonite_storage_cap(), just substituting Grain's own chain cost.
+func get_grain_storage_cap() -> int:
+    return storage_cap.mul(storage_cap).div_int_floor(GRAIN_SPARKS_COST).to_int()
+
+
+## Progress toward the storage-derived Grain cap, counted in Motes
+## (GRAIN_MOTES_PER_UNIT = 1 Grain) for the Create-Grain strip bar.
+## Returns Vector2i(current, cap).
+##
+## Deliberately NOT get_uonite_cycle_progress()'s shape: per the user's own
+## explicit design call (2026-10-01), creating a Grain does not trigger an
+## Expansion/prestige reset and has no per-cycle Fibonacci limiter -- the
+## storage cap is the ONLY ceiling, so there is no "this cycle" concept to
+## track here, just the raw mote_grains stockpile against that one ceiling.
+func get_grain_progress() -> Vector2i:
+    var storage_headroom: int = maxi(0, get_grain_storage_cap() - grain.to_int())
+    if storage_headroom <= 0:
+        # Nothing more fits at all -- an empty (not degenerate max_value=0)
+        # bar communicates "maxed out" better than a raw Mote count that
+        # can never actually complete into a Grain.
+        return Vector2i(0, 1)
+    var cap_motes: int = storage_headroom * GRAIN_MOTES_PER_UNIT
+    var current: int = mini(mote_grains.to_int(), cap_motes)
+    return Vector2i(current, cap_motes)
 
 
 ## Progress toward whichever Uonite cap is actually binding THIS cycle,
@@ -1568,6 +1639,7 @@ func get_save_data() -> Dictionary:
     data["expansions"]            = expansions
     data["next_expansion_foci_exp"] = next_expansion_foci_exp
     data["purity_locks_unlocked"] = purity_locks_unlocked
+    data["will_form_switch_is_will"] = will_form_switch_is_will
     data["grains_this_cycle"]     = grains_this_cycle
     data["motes_this_cycle"]      = motes_this_cycle
     data["uonites_this_cycle"]    = uonites_this_cycle
@@ -1830,6 +1902,7 @@ func load_save_data(data: Dictionary) -> void:
     expansions               = _coerce_int(data.get("expansions"), 0)
     next_expansion_foci_exp = _coerce_int(data.get("next_expansion_foci_exp"), 0)
     purity_locks_unlocked   = _coerce_bool(data.get("purity_locks_unlocked"), false)
+    will_form_switch_is_will = _coerce_bool(data.get("will_form_switch_is_will"), true)
     grains_this_cycle       = _coerce_int(data.get("grains_this_cycle"), 0)
     motes_this_cycle        = _coerce_int(data.get("motes_this_cycle"), 0)
     uonites_this_cycle      = _coerce_int(data.get("uonites_this_cycle"), 0)

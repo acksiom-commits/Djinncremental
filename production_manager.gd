@@ -1635,6 +1635,50 @@ func manual_grain_assemble() -> bool:
     return _try_assemble_grain()
 
 
+## Batch Create-Grain action (2026-10-01), the Grain-branch counterpart of
+## manual_create_uonite() below -- but deliberately NOT a copy of its
+## Expansion-triggering, Fibonacci-cycle-capped shape. Per the user's own
+## explicit design call: creating a Grain never triggers an Expansion reset
+## and has no per-cycle limiter at all -- the storage cap
+## (gc.get_grain_storage_cap()) is the ONLY ceiling, since Grain is meant to
+## eventually be produced in massive, uncapped-per-cycle quantities. Still a
+## real batch conversion (not the old single-unit manual_grain_assemble()
+## above, which +1's per click) -- converts as many Grains as mote_grains,
+## sparks, particle, monad, AND storage headroom all allow at once.
+##
+## grain_assemble costs FOUR inputs (sparks, monad, particle, mote_grains),
+## unlike uonite_assemble's two (mote_uonite, sparks) -- every one of them
+## bounds `count` below.
+func manual_create_grain() -> bool:
+    var mote_cost:     int = _recipe_cost("grain_assemble", "mote_grains")
+    var sparks_cost:   int = _recipe_cost("grain_assemble", "sparks")
+    var monad_cost:    int = _recipe_cost("grain_assemble", "monad")
+    var particle_cost: int = _recipe_cost("grain_assemble", "particle")
+    if gc.is_locked("sparks") or gc.is_locked("particle") or gc.is_locked("mote_grains"): return false
+    if gc.mote_grains.is_less_than(BigNum.from_int(mote_cost)): return false
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)):    return false
+    if gc.particle.is_less_than(BigNum.from_int(particle_cost)): return false
+    if gc.get_monad_unlocked_total().is_less_than(BigNum.from_int(monad_cost)): return false
+    var storage_headroom: int = gc.get_grain_storage_cap() - gc.grain.to_int()
+    if storage_headroom <= 0: return false
+
+    var possible_by_mote:     int = gc.mote_grains.div_int_floor(mote_cost).to_int()
+    var possible_by_sparks:   int = gc.sparks.div_int_floor(sparks_cost).to_int()
+    var possible_by_particle: int = gc.particle.div_int_floor(particle_cost).to_int()
+    var possible_by_monad:    int = gc.get_monad_unlocked_total().div_int_floor(monad_cost).to_int()
+    var count: int = mini(possible_by_mote,
+        mini(possible_by_sparks, mini(possible_by_particle, mini(possible_by_monad, storage_headroom))))
+    if count <= 0: return false
+
+    if not _draw_monads(monad_cost * count): return false
+    gc.spend_mote_grains(mote_cost * count)
+    gc.spend_sparks(sparks_cost * count)
+    gc.spend_particle(particle_cost * count)
+    gc.grain = gc.grain.add(BigNum.from_int(count))
+    gc.add_to_total("grain", BigNum.from_int(count))
+    return true
+
+
 # ==================================================
 # DEV TOOL — skip forward by injecting 10 Grains
 # Adds the correct totals_created credit for every tier
