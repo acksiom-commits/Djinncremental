@@ -2867,12 +2867,18 @@ func _orderable_categories() -> Array:
 func _order_value(cat: int, star: int) -> int:
     # A star's position on an orderable axis. Sequence: its rank directly.
     # Pitch: ascending-frequency rank (ties share a rank, same structure the
-    # pitch solver already uses).
+    # pitch solver already uses). Repeat: the raw repeat_count itself (2026-
+    # 09-30, Form 14 only — see _build_form_group_comparison's own guard
+    # against the -1 never-fires sentinel; this function has no way to
+    # signal "invalid" back to a caller that doesn't check first, so the
+    # caller is responsible for excluding -1 before ever comparing it here).
     match cat:
         Category.SEQUENCE:
             return sequence_rank_solution[star]
         Category.PITCH:
             return _pitch_freq_rank[star_pitch_index[star]]
+        Category.REPEAT:
+            return repeat_count[star]
     return 0
 
 
@@ -5344,6 +5350,8 @@ func _group_comparison_noun(axis: int) -> String:
             return "sequence position"
         Category.PITCH:
             return "frequency"
+        Category.REPEAT:
+            return "repeat count"
     return "color rank"
 
 
@@ -5352,16 +5360,39 @@ func _build_form_group_comparison(chain: Dictionary) -> Dictionary:
     # member is a specific, predetermined star (whichever passed the
     # greater/lesser filter), so it uses the Form 7/12 pattern instead —
     # its own TRUE identity-establishing cell via _identity_cell_for_known_star.
-    var axis: int = _orderable_categories()[_rng.randi_range(0, 1)]
+    #
+    # Repeat Count (2026-09-30) gets its OWN local pool here rather than
+    # touching _orderable_categories() itself — that function is also
+    # Form 5's (Pairwise Order), which already ships live, already-tuned
+    # puzzles. User decision: Form 5 stays untouched; only Form 14 gains
+    # Repeat Count as a comparison axis. Degeneracy-gated and built AFTER
+    # the base 2-element list so the original `_orderable_categories()[randi_
+    # range(0, 1)]` call is reproduced byte-for-byte whenever the 2-element
+    # branch is taken -- same size, same bound, same call, not merely an
+    # "equivalent" one (the randf()-vs-randi_range() lesson from Equality
+    # Pair/Group Membership doesn't apply here, since this was ALREADY a
+    # randi_range call before Repeat Count existed).
+    var comparison_cats: Array = _orderable_categories()
+    if not _repeat_count_is_degenerate():
+        comparison_cats = comparison_cats + [Category.REPEAT]
+    var axis: int = comparison_cats[_rng.randi_range(0, comparison_cats.size() - 1)]
     var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
     if a.is_empty():
         return {}
     var subject_star: int = int(a["star"])
+    # -1 is repeat_count's never-fires sentinel. _sample_identity_axis_cell
+    # only validates the IDENTITY label's uniqueness, never axis_cat's
+    # validity for the star it returns -- Sequence/Pitch never need that
+    # (every star has a real value on both), so this guard is REPEAT-only.
+    if axis == Category.REPEAT and int(repeat_count[subject_star]) < 0:
+        return {}
     var subject_val: int = _order_value(axis, subject_star)
     var s_more: bool = _rng.randf() < 0.5
     var candidates: Array = []
     for s in star_count:
         if s == subject_star:
+            continue
+        if axis == Category.REPEAT and int(repeat_count[s]) < 0:
             continue
         var v: int = _order_value(axis, s)
         if s_more and v >= subject_val:
