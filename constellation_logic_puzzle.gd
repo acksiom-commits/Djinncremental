@@ -7248,8 +7248,14 @@ func generate_clues_forms() -> void:
         # genuinely different set of draws over the SAME ground truth (names,
         # colours, order): only the clues change, never the constellation.
         if attempt % MAX_GENERATION_ATTEMPTS == 0 and attempt < total_attempts:
+            # Integer division is exact here, never truncating -- the `if`
+            # above already guarantees attempt is a whole multiple of
+            # MAX_GENERATION_ATTEMPTS, the static analyzer just can't see
+            # that invariant.
+            @warning_ignore("integer_division")
+            var round_number: int = attempt / MAX_GENERATION_ATTEMPTS + 1
             push_warning("ConstellationLogicPuzzle [%d]: %d attempts failed the uniqueness gate, retrying (round %d of %d)." % [
-                constellation_id, attempt, attempt / MAX_GENERATION_ATTEMPTS + 1, 1 + EXTRA_GENERATION_ROUNDS])
+                constellation_id, attempt, round_number, 1 + EXTRA_GENERATION_ROUNDS])
         # Yield a frame before the next attempt instead of blocking straight
         # through every attempt in one go — see the header
         # comment above generation_complete for why. No-op (old synchronous
