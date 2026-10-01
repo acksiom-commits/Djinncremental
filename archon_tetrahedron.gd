@@ -4,6 +4,60 @@ extends MeshInstance3D
 @export var size: float = 0.67
 @export var line_color: Color = Color(0.873, 0.662, 0.087, 1.0)
 
+# Real geometric width of each face line (2026-09-30) -- edges used to be
+# drawn with Mesh.PRIMITIVE_LINES, which Godot's renderer always rasterizes
+# at a fixed ~1 screen pixel with no width control at all. That looked fine
+# at the game's native resolution but went thin and uneven under the
+# "expand to fit" window-stretch mode, since a fixed-pixel line scales
+# along with everything else being stretched. Replaced with real box/tube
+# geometry per edge (see _add_thick_edge), so thickness is now an actual
+# property of the mesh and scales correctly at any window size. A first
+# attempt at this used a flat ribbon (one thickness axis only) instead of a
+# full box -- it visibly FLICKERED at the expanded window size, because a
+# mathematically flat, zero-depth ribbon from one edge sits at almost
+# exactly the same depth as another edge's ribbon right where they meet at
+# a shared vertex, so the GPU can't consistently pick a winner and it flips
+# frame to frame as the continuous idle/tracking rotation shifts things by
+# a hair -- worse at a larger render size because more pixels show the same
+# flicker. A box has real volume on BOTH perpendicular axes, so adjoining
+# edges' surfaces essentially never land at the exact same depth over a
+# whole visible region, which removes the flicker rather than just hiding
+# it. Default bumped up substantially after the first (too-thin) attempt,
+# then again (2026-09-30) once a dramatic "thick/extremely thin" flicker on
+# the horizontal top edge turned out NOT to be a geometry problem at all --
+# see msaa_3d on the ArchonTetrahedronViewport nodes for the actual root
+# cause and fix (rasterization aliasing at this node's tiny native 140x140
+# render resolution). A thicker line still helps independently of that fix:
+# the same one-pixel aliasing jump is proportionally smaller against a
+# thicker line than a thin one. Tune this directly in the inspector to taste.
+@export var line_thickness: float = 0.02:
+    set(value):
+        line_thickness = max(0.0001, value)
+        _rebuild_mesh()
+
+# How many flat sides approximate each edge's round cross-section (2026-09-
+# 30). The box version above (4 sides, a square rod) fixed the depth-fight
+# flicker but introduced a different one: a square's APPARENT on-screen
+# width genuinely changes with viewing angle -- looking straight at one of
+# its flat faces vs. looking at a corner differs by as much as ~41% (that's
+# just geometry, not a bug) -- so as Kaleb's continuous idle/tracking
+# rotation sweeps through angles, the line visibly breathes wider and
+# narrower. A rounder cross-section's apparent width barely changes with
+# angle: at 8 sides the gap is only ~8%, at 16 it's under 2%.
+#
+# CONFIRMED (reported 2026-09-30): at 8 sides this was still visible, but
+# ONLY on the strictly horizontal edges, and specifically while the mouse-
+# tracking rotation is turning the face. Those edges' round cross-section
+# happens to sit in the same plane the tracking rotation turns around, so
+# they're the single worst-case orientation for a low side count -- every
+# OTHER edge direction was already fine at 8. Default raised and the range
+# widened accordingly; still a trivial triangle count either way (even the
+# new max is under 1600 triangles for the whole character).
+@export_range(3, 32) var line_segments: int = 16:
+    set(value):
+        line_segments = clamp(value, 3, 32)
+        _rebuild_mesh()
+
 @export_range(0, 5) var ability_level: int = 3:
     set(value):
         ability_level = clamp(value, 0, 5)
@@ -153,6 +207,11 @@ func _ready() -> void:
     var line_mat := StandardMaterial3D.new()
     line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     line_mat.vertex_color_use_as_albedo = true
+    # PRIMITIVE_LINES has no concept of facing direction, so this was never
+    # needed before. Now that each edge is a real triangle ribbon (see
+    # _add_thick_edge), the default back-face culling would make some edges
+    # flicker in and out as Kaleb's face rotates to track the mouse.
+    line_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
     set_surface_override_material(0, line_mat)
 
 func _process(delta: float) -> void:
@@ -189,7 +248,7 @@ func _rebuild_mesh() -> void:
     if not is_inside_tree(): return
     
     var st := SurfaceTool.new()
-    st.begin(Mesh.PRIMITIVE_LINES)
+    st.begin(Mesh.PRIMITIVE_TRIANGLES)
     
     var geo := _calculate_geometry()
     var v0: Vector3 = geo.v0
@@ -301,27 +360,114 @@ func _add_eyes(st: SurfaceTool, geo: Dictionary) -> void:
 # Drawing Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-func _add_tetra_edges(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, 
+func _add_tetra_edges(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3,
                      fz: float, td: float, is_inner: bool = false) -> void:
+    # `b` is always the single vertex that sits farther back in Z (the
+    # "apex" receding away from the viewer) -- a, c, d always share the
+    # SAME z (the front-facing framing triangle). True for every call site
+    # (outer tetra, inner tetra, eyes): each one's own geometry puts its
+    # 2nd positional vertex at an added Z offset, the other three at none.
+    # Edges touching `b` are the ones that fade into depth; the three
+    # among {a, c, d} are the framing triangle itself and never fade.
     var pairs := [[a, b], [a, c], [a, d], [b, c], [b, d], [c, d]]
-    for pair in pairs:
-        for v in pair:
-            st.set_color(_get_dimmed_color(v, fz, td, is_inner))
-            st.add_vertex(v)
+    var touches_b := [true, false, false, true, true, false]
+    for i in pairs.size():
+        _add_thick_edge(st, pairs[i][0], pairs[i][1], fz, td, is_inner, touches_b[i])
 
-func _get_dimmed_color(pos: Vector3, l_fz: float, l_td: float, is_inner: bool = false) -> Color:
+
+## Renders one edge as a thin, SOLID tube (line_segments side faces)
+## instead of a zero-width PRIMITIVE_LINES segment -- see line_thickness's
+## and line_segments' own comments for the full history. A flat one-axis
+## ribbon was tried first and visibly flickered at the expanded window
+## size: two ribbons meeting at a shared vertex are both mathematically
+## flat planes, so they can land at the exact same depth right where they
+## cross, and the GPU flips between them frame to frame as the continuous
+## idle/tracking rotation shifts things by a hair. Giving the edge real
+## volume on BOTH perpendicular axes fixed that. A 4-sided box (square
+## cross-section) was tried next; it stopped the depth flicker but
+## introduced a different one -- a square's apparent on-screen width
+## genuinely varies with viewing angle, so it visibly breathed wider and
+## narrower as Kaleb rotated. Approximating a round cross-section with more
+## sides keeps the apparent width close to constant from any angle instead.
+##
+## perp1/perp2 form an orthonormal cross-section basis together with the
+## edge direction, built from a fixed local "facing" axis so a mostly
+## front-facing character reads as genuine on-screen thickness from most
+## angles the mouse-tracking rotation actually reaches. Falls back to a
+## different facing axis only when the edge happens to run almost exactly
+## along the first one (cross product would otherwise collapse toward zero
+## length). Built once per mesh rebuild (an expression or geometry
+## parameter changing), never per frame, so this stays exactly as cheap as
+## the old line-based approach -- the rotation itself is a transform change
+## the GPU applies for free, not a rebuild. End caps are omitted (every
+## edge meets another edge at each end, so they're never visible) -- that
+## halves the triangle count for free.
+func _add_thick_edge(st: SurfaceTool, p0: Vector3, p1: Vector3, fz: float, td: float, is_inner: bool, is_receding: bool = false) -> void:
+    var edge_dir: Vector3 = (p1 - p0).normalized()
+    var facing_axis := Vector3(0, 0, 1)
+    if absf(edge_dir.dot(facing_axis)) > 0.99:
+        facing_axis = Vector3(0, 1, 0)
+    var radius: float = line_thickness * 0.5
+    var perp1: Vector3 = edge_dir.cross(facing_axis).normalized()
+    var perp2: Vector3 = edge_dir.cross(perp1).normalized()
+
+    # line_segments points evenly spaced around the circle, shared by both
+    # ends of the tube.
+    var offsets: Array[Vector3] = []
+    for i in line_segments:
+        var theta: float = i * TAU / line_segments
+        offsets.append((perp1 * cos(theta) + perp2 * sin(theta)) * radius)
+
+    var c0: Color = _get_dimmed_color(p0, fz, td, is_inner, is_receding)
+    var c1: Color = _get_dimmed_color(p1, fz, td, is_inner, is_receding)
+
+    # cull_mode is disabled on the material (see _ready()) specifically so
+    # winding direction never matters here -- every face renders both ways.
+    for i in offsets.size():
+        var next_i: int = (i + 1) % offsets.size()
+        var a0: Vector3 = p0 + offsets[i]
+        var a1: Vector3 = p0 + offsets[next_i]
+        var b0: Vector3 = p1 + offsets[i]
+        var b1: Vector3 = p1 + offsets[next_i]
+
+        st.set_color(c0)
+        st.add_vertex(a0)
+        st.set_color(c0)
+        st.add_vertex(a1)
+        st.set_color(c1)
+        st.add_vertex(b1)
+
+        st.set_color(c0)
+        st.add_vertex(a0)
+        st.set_color(c1)
+        st.add_vertex(b1)
+        st.set_color(c1)
+        st.add_vertex(b0)
+
+func _get_dimmed_color(pos: Vector3, l_fz: float, l_td: float, is_inner: bool = false, is_receding: bool = false) -> Color:
     var depth_t: float = (pos.z - l_fz) / l_td
     var brightness: float = 1.0
-    
+
     # 95% dimming (your current preference)
     if depth_t > 0.25:
         var dim_factor: float = (depth_t - 0.25) / 0.75
         brightness = 1.0 - (dim_factor * 0.95)
-    
+
+    # Flat reduction for lines receding into depth (2026-09-30, raised from
+    # 90% to 75% after the first pass still read too strong) -- these used
+    # to start at the exact same 100% brightness as the front-facing
+    # framing triangle they attach to. Scales the WHOLE existing curve by
+    # this factor rather than just the near end, so it now runs 75% -> 3.75%
+    # instead of 100% -> 5%, same shape, uniformly dimmer. Applies to every
+    # receding edge (outer frame, inner tetra, and eyes alike) for a
+    # consistent look throughout.
+    if is_receding:
+        brightness *= 0.75
+
     # Boost inner front edges
     if is_inner:
         brightness *= inner_front_boost
-    
+
     return Color(line_color.r * brightness, line_color.g * brightness, line_color.b * brightness, line_color.a)
 
 
