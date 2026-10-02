@@ -542,6 +542,28 @@ const BUILT_IN = [
             466.16, 554.37, 587.33, 466.16, 587.33,
             554.37, 466.16, 554.37
         ],
+
+        # Beginner-mode outline (2026-10-01, user-drawn): a single
+        # continuous 8-star loop, pinched into a bowtie at the middle four
+        # stars (the "waist"). Digitized the same way as every other
+        # easy_layout: centre on the shape's own bounding box, scale so the
+        # larger axis spans +/-0.13, no rotation.
+        "easy_layout": {
+            "star_count": 8,
+            "fixed_star_positions": [
+                [-0.127816, -0.055971,  0.990217],  # 0: top-left
+                [-0.130000,  0.057297,  0.989857],  # 1: bottom-left
+                [-0.014548, -0.013534,  0.999803],  # 2: upper-waist-left
+                [ 0.023831, -0.013846,  0.999620],  # 3: upper-waist-right
+                [-0.014548,  0.014236,  0.999793],  # 4: lower-waist-left
+                [ 0.020399,  0.014236,  0.999691],  # 5: lower-waist-right
+                [ 0.118377, -0.062523,  0.990998],  # 6: top-right
+                [ 0.124305,  0.060105,  0.990422],  # 7: bottom-right
+            ],
+            "line_pairs": [
+                0,2,  0,1,  1,4,  2,3,  4,5,  3,6,  6,7,  5,7,
+            ],
+        },
     },
     
     
@@ -653,6 +675,28 @@ const BUILT_IN = [
             10,17, 17,12,               # bottom edge continues: valve→pleat-tip3→handle
             13,14, 14,15, 15,16, 16,17, # pleat interior zigzag
         ],
+
+        # Beginner-mode outline (2026-10-01, user-drawn): top-left and
+        # bottom-left each run to a middle vertex, the two middle vertices
+        # meeting at a central hub; the hub has a short tail out to a
+        # far-right star (the nozzle). Digitized the same way as every
+        # other easy_layout: centre on the shape's own bounding box, scale
+        # so the larger axis spans +/-0.13, no rotation.
+        "easy_layout": {
+            "star_count": 7,
+            "fixed_star_positions": [
+                [-0.102081, -0.059175,  0.993015],  # 0: top-left
+                [-0.048192, -0.003490,  0.998832],  # 1: left-notch
+                [-0.102081,  0.044291,  0.993790],  # 2: bottom-left
+                [ 0.020786, -0.029356,  0.999353],  # 3: upper-mid
+                [ 0.016834,  0.037825,  0.999143],  # 4: lower-mid
+                [ 0.084734,  0.005492,  0.996389],  # 5: hub
+                [ 0.130000,  0.004414,  0.991504],  # 6: nozzle (far-right)
+            ],
+            "line_pairs": [
+                0,1,  0,3,  1,2,  2,4,  3,5,  4,5,  5,6,
+            ],
+        },
     },
 
 
@@ -831,6 +875,27 @@ const BUILT_IN = [
         # See TODO above -- no distinct response melody specified, so this
         # mirrors The Spark's (id 1) "echo the distinct notes" pattern.
         "response_freqs": [880.00, 830.61, 987.77, 739.99, 659.25, 554.37],
+
+        # Beginner-mode outline (2026-10-01, user-drawn): a tail into a hub,
+        # which splits into two prongs (upper-mid, lower-mid), each prong
+        # reaching a right-side vertex; the two right vertices close the
+        # triangle. Digitized the same way as every other easy_layout:
+        # centre on the shape's own bounding box, scale so the larger axis
+        # spans +/-0.13, no rotation.
+        "easy_layout": {
+            "star_count": 6,
+            "fixed_star_positions": [
+                [-0.130000, -0.004397,  0.991504],  # 0: far-left tail
+                [-0.080205, -0.000310,  0.996778],  # 1: hub
+                [ 0.017156, -0.022606,  0.999597],  # 2: upper-mid
+                [ 0.009352,  0.022730,  0.999698],  # 3: lower-mid
+                [ 0.091848, -0.057909,  0.994088],  # 4: top-right
+                [ 0.091848,  0.062492,  0.993810],  # 5: bottom-right
+            ],
+            "line_pairs": [
+                0,1,  1,2,  1,3,  2,4,  3,5,  4,5,
+            ],
+        },
     },
 
 
@@ -935,6 +1000,27 @@ const BUILT_IN = [
             4,0, 14,4,
             6,10, 10,11, 11,12, 12,13, 13,7, 7,15, 15,16, 16,14,
         ],
+
+        # Beginner-mode outline (2026-10-01, user-drawn): a 4-star box with
+        # a 3-star flap arcing from the box's top-left corner over to its
+        # top-right corner. Digitized the same way as every other
+        # easy_layout: centre on the shape's own bounding box, scale so the
+        # larger axis spans +/-0.13, no rotation.
+        "easy_layout": {
+            "star_count": 7,
+            "fixed_star_positions": [
+                [-0.128158, -0.007193,  0.991728],  # 0: box-top-left
+                [ 0.121140, -0.010877,  0.992576],  # 1: box-top-right
+                [-0.130000,  0.119912,  0.984236],  # 2: box-bottom-left
+                [ 0.108860,  0.119298,  0.986873],  # 3: box-bottom-right
+                [-0.069825, -0.074737,  0.994756],  # 4: flap-left
+                [-0.007807, -0.055088,  0.998451],  # 5: flap-middle
+                [ 0.105789, -0.091316,  0.990187],  # 6: flap-right
+            ],
+            "line_pairs": [
+                0,1,  0,2,  1,3,  2,3,  0,4,  4,5,  5,6,  6,1,
+            ],
+        },
     },
 
 
@@ -1072,6 +1158,32 @@ const BUILT_IN = [
                     10,12,  11,13,                # lower curves
                     12,13,                        # bottom
                 ],
+                # Beginner-mode outline (2026-10-01, user-drawn): a small
+                # closed cap on top (two top stars over a horizontal bar,
+                # each top star linking down to its own side of the bar),
+                # the bar's ends running out to the two shoulders, and a
+                # bottom bar closing the body between the two lowest
+                # stars. Digitized the same way as every other easy_layout:
+                # centre on the shape's own bounding box, scale so the
+                # larger axis spans +/-0.13, no rotation.
+                "easy_layout": {
+                    "star_count": 8,
+                    "fixed_star_positions": [
+                        [-0.021037, -0.109679,  0.993744],  # 0: top-left
+                        [ 0.015957, -0.113327,  0.993430],  # 1: top-right
+                        [-0.038753, -0.079459,  0.996085],  # 2: bar-left
+                        [ 0.038883, -0.085711,  0.995561],  # 3: bar-right
+                        [-0.120035,  0.061743,  0.990848],  # 4: left-shoulder
+                        [ 0.123292,  0.069559,  0.989930],  # 5: right-shoulder
+                        [-0.062199,  0.130000,  0.989561],  # 6: bottom-left
+                        [ 0.063893,  0.126874,  0.989859],  # 7: bottom-right
+                    ],
+                    "line_pairs": [
+                        0,1,  0,2,  1,3,  2,3,          # cap: top arc, two sides, bar
+                        2,4,  3,5,                       # bar ends out to the shoulders
+                        4,6,  6,7,  7,5,                 # body: left side, bottom bar, right side
+                    ],
+                },
             },
             # Ring outline (2026-09-27): a torus/donut silhouette viewed
             # edge-on — an outer ellipse (10 stars) and a smaller,
@@ -1116,6 +1228,31 @@ const BUILT_IN = [
                     15,11,  11,7,  7,5,  5,1,  1,0,      # outer loop
                     2,6,  6,10,  10,14,  14,12,  12,8,  8,3,  3,2,  # inner loop
                 ],
+                # Beginner-mode outline (2026-10-01, user-drawn): an outer
+                # 7-star loop plus two internal chords -- B-C near the top,
+                # and a single centre star (4) bridging the far-left and
+                # far-right sides. Digitized the same way as every other
+                # easy_layout: centre on the shape's own bounding box, scale
+                # so the larger axis spans +/-0.13, no rotation.
+                "easy_layout": {
+                    "star_count": 8,
+                    "fixed_star_positions": [
+                        [-0.024711, -0.074490,  0.996916],  # 0: top
+                        [-0.041901, -0.029366,  0.998690],  # 1: upper-inner-left
+                        [ 0.040468, -0.032231,  0.998661],  # 2: upper-inner-right
+                        [-0.130000,  0.010744,  0.991456],  # 3: far-left
+                        [ 0.036887,  0.011460,  0.999254],  # 4: centre
+                        [ 0.127851, -0.005730,  0.991777],  # 5: far-right
+                        [-0.066253,  0.056584,  0.996197],  # 6: bottom-left
+                        [ 0.057658,  0.063030,  0.996345],  # 7: bottom-right
+                    ],
+                    "line_pairs": [
+                        0,1,  0,2,  1,2,              # top + inner chord
+                        1,3,  2,5,                     # outer loop, upper
+                        3,6,  6,7,  7,5,               # outer loop, lower
+                        3,4,  4,5,                     # centre chord
+                    ],
+                },
             },
             # Lamp outline (2026-09-27): an Aladdin-style oil lamp lying on
             # its side, spout to the right — digitized as a SINGLE
@@ -1160,6 +1297,31 @@ const BUILT_IN = [
                     16,15,  15,12,  12,14,  14,8,  8,10,  10,7,
                     7,6,  6,4,  4,2,
                 ],
+                # Beginner-mode outline (2026-10-01, user-drawn): spout-tip
+                # trailing into a hub, which splits into an upper loop
+                # (through the lamp-top and handle) and a lower loop (the
+                # base), the two sharing one edge (left-base to right-base).
+                # Digitized the same way as every other easy_layout: centre
+                # on the shape's own bounding box, scale so the larger axis
+                # spans +/-0.13, no rotation.
+                "easy_layout": {
+                    "star_count": 8,
+                    "fixed_star_positions": [
+                        [-0.130000, -0.025557,  0.991185],  # 0: spout-tip
+                        [-0.050424, -0.022405,  0.998477],  # 1: hub
+                        [ 0.026394, -0.062981,  0.997666],  # 2: lamp-top
+                        [ 0.077606, -0.023587,  0.996705],  # 3: handle
+                        [-0.001182,  0.015807,  0.999874],  # 4: left-base
+                        [ 0.037818,  0.012655,  0.999204],  # 5: right-base
+                        [-0.019303,  0.053231,  0.998396],  # 6: bottom-left
+                        [ 0.059091,  0.052837,  0.996853],  # 7: bottom-right
+                    ],
+                    "line_pairs": [
+                        0,1,  1,2,  2,3,  3,5,          # spout/hub/handle loop, upper half
+                        1,4,  4,5,                       # hub down to the base, shared edge
+                        4,6,  6,7,  7,5,                 # base loop, lower half
+                    ],
+                },
             },
         },
     },
@@ -1622,6 +1784,17 @@ func _resolve_vessel_layout(c: Dictionary) -> Dictionary:
     var resolved: Dictionary = c.duplicate()
     resolved["fixed_star_positions"] = layout.get("fixed_star_positions", [])
     resolved["line_pairs"]           = layout.get("line_pairs", [])
+    # Beginner mode is ALSO per-vessel (2026-10-01) -- each vessel's own
+    # "easy_layout" sub-dict (star_count/fixed_star_positions/line_pairs),
+    # forwarded onto the SAME top-level "easy_layout" key
+    # _resolve_difficulty_layout() already checks for, so that function
+    # needs no changes of its own. Only set when the chosen vessel actually
+    # HAS one authored -- e.g. "jar" has none yet -- so an absent key
+    # correctly falls through to _resolve_difficulty_layout()'s own
+    # "untouched" path (hard-mode geometry regardless of difficulty),
+    # exactly like every other not-yet-easy-authored constellation.
+    if layout.get("easy_layout") is Dictionary:
+        resolved["easy_layout"] = layout["easy_layout"]
     return resolved
 
 
