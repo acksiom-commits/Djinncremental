@@ -4666,8 +4666,31 @@ func _mutex_pick_viable_axis(min_groups: int) -> Dictionary:
     var viable: Dictionary = {}   # cat(int) -> groups(Array)
     for cat in MUTEX_AXIS_WEIGHTS:
         var groups: Array = _mutex_axis_groups(int(cat))
-        if groups.size() >= min_groups:
-            viable[cat] = groups
+        if groups.size() < min_groups:
+            continue
+        # Colour/Pitch specifically (never Name/Sequence, which are
+        # correctly singleton-only by alldiff construction): a group of
+        # size 1 proves nothing about "these stars have DIFFERENT values"
+        # — it just says a star's value happens to be globally unique,
+        # which _mutex_axis_groups already required to even form the group.
+        # If EVERY group on this axis is a singleton, every participant
+        # this draw could pick is pre-verified unique, making "they all
+        # have different colors/pitches" tautologically true before a
+        # single star is chosen. Reported live 2026-10-01 as "Helios,
+        # Oraides, and Pyrios all have different pitches" reading as a
+        # non-clue under Beginner mode (easy_layout, pitch bijective with
+        # star by construction) — but _mutex_axis_groups' unique-only
+        # filter means this was ALWAYS true, in Expert mode too, just rare
+        # there (~19% of stars have a globally-unique pitch, vs 100% under
+        # Beginner) and so easy to never notice. The matching bug for
+        # Name/Sequence was already caught and fixed 2026-08-14 (see the
+        # cross_cells==0 reject below, in this Form's text-building branch)
+        # — this is the Colour/Pitch half of that same fix, applied at the
+        # axis-selection stage instead since there's no cross-category
+        # pairing here to fall back on.
+        if (int(cat) == Category.COLOR or int(cat) == Category.PITCH) and not _mutex_axis_has_real_group(groups):
+            continue
+        viable[cat] = groups
     if viable.is_empty():
         return {}
     var total_weight: float = 0.0
@@ -4681,6 +4704,23 @@ func _mutex_pick_viable_axis(min_groups: int) -> Dictionary:
             return {"axis": int(cat), "groups": viable[cat]}
     var last_cat = viable.keys()[viable.size() - 1]
     return {"axis": int(last_cat), "groups": viable[last_cat]}   # float-rounding fallback
+
+
+## True when at least one of `groups` (as built by _mutex_axis_groups) has
+## 2+ members — i.e. this axis actually has a shared value somewhere, so
+## picking one representative per group is a genuine "these differ" claim
+## rather than a foregone conclusion. _mutex_axis_groups' own unique-only
+## pre-filter for Colour/Pitch means every group it builds today IS a
+## singleton, always (see _mutex_pick_viable_axis's call site comment) —
+## this helper is written as a general check anyway, not a hardcoded
+## "Colour/Pitch always fail," so it costs nothing extra now and needs no
+## further change if that filter is ever revisited to build real
+## multi-member groups later.
+func _mutex_axis_has_real_group(groups: Array) -> bool:
+    for g in groups:
+        if (g as Array).size() >= 2:
+            return true
+    return false
 
 
 ## Stars grouped by raw value on `axis`, shuffled — a direct pick surface
