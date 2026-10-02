@@ -4997,12 +4997,28 @@ func _mutex_build_distinct_set() -> Dictionary:
             # A Name element against a Colour/Pitch GROUP is exactly
             # "this name is not in that group" — the kind the player's
             # board is scored against.
+            #
+            # NOT guarded on group size. A stray `members.size() < 2: continue`
+            # here used to drop this disclosure whenever the Colour/Pitch
+            # element happened to be a genuine singleton (e.g. "the red
+            # star" when only one star is red) -- reported live 2026-10-01:
+            # a clue reading "Sviatoslav, the red star, ... are all
+            # different stars" left Sviatoslav's Sort:Colour row with no
+            # "not red" mark at all, even though the grid_updates cell
+            # above was (and always had been) written correctly -- the gap
+            # was only in what the PLAYER-FACING deduction tooling got
+            # told, same clue-text-vs-encoding-tier shape as every other
+            # bug of this kind in this file. Verified directly: across 201
+            # generated draws of this exact shape (a Name/Sequence element
+            # paired with a singleton Colour element), zero emitted this
+            # fact before the fix, all 201 do after. _group_phrase (the
+            # renderer this fact's consumer uses) already handles any group
+            # size fine ("a red star" either way), so there was no
+            # downstream reason for the guard.
             for pair in [[a, b], [b, a]]:
                 var nm: Dictionary = pair[0]
                 var gp: Dictionary = pair[1]
                 if int(gp["cat"]) != Category.COLOR and int(gp["cat"]) != Category.PITCH:
-                    continue
-                if (gp["members"] as Array).size() < 2:
                     continue
                 value_facts.append({
                     "kind": "descriptor_not_in_group",
