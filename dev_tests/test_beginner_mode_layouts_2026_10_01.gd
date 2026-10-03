@@ -36,6 +36,22 @@ func ok(c: bool, s: String) -> void:
 		fails += 1
 
 
+# Exact edge sets, each checked by eye against the user's own drawing (the
+# source image rendered next to the resolved layout). The structural checks
+# below can't catch a layout that is well-formed but WRONG -- the Ring once
+# shipped with its top star wired to the inner pair instead of the outer
+# corners and passed every one of them.
+const GOLDEN_EDGES := {
+	"c2 Hourglass": ["0-1", "0-2", "1-4", "2-3", "3-6", "4-5", "5-7", "6-7"],
+	"c3 Bellows": ["0-1", "0-3", "1-2", "2-4", "3-5", "4-5", "5-6"],
+	"c4 Phial": ["0-1", "1-2", "1-3", "2-4", "3-5", "4-5"],
+	"c5 Satchel": ["0-1", "0-2", "0-4", "1-3", "1-6", "2-3", "4-5", "5-6"],
+	"c6 Djinn (lamp)": ["0-1", "1-2", "1-4", "2-3", "3-5", "4-5", "4-6", "5-7", "6-7"],
+	"c6 Djinn (ring)": ["0-3", "0-5", "1-2", "1-3", "2-5", "3-4", "3-6", "4-5", "5-7", "6-7"],
+	"c6 Djinn (jar)": ["0-1", "0-2", "1-3", "2-3", "2-4", "3-5", "4-6", "5-7", "6-7"],
+}
+
+
 func _check_layout(cd, gc, cid: int, label: String, expected_star_count: int) -> void:
 	gc.constellation_difficulty[cid] = "easy"
 	var def: Dictionary = cd.get_constellation_def(cid)
@@ -75,6 +91,11 @@ func _check_layout(cd, gc, cid: int, label: String, expected_star_count: int) ->
 		seen_edges[key] = true
 		(adjacency[a] as Array).append(b)
 		(adjacency[b] as Array).append(a)
+	var actual_edges: Array = seen_edges.keys()
+	actual_edges.sort()
+	var golden: Array = GOLDEN_EDGES.get(label, [])
+	ok(not golden.is_empty() and actual_edges == golden,
+		"%s: edge set matches the user's drawing exactly (got %s)" % [label, str(actual_edges)])
 	ok(bad_bounds == 0, "%s: every line_pairs index is in bounds (%d bad)" % [label, bad_bounds])
 	ok(self_loops == 0, "%s: no self-loops (%d found)" % [label, self_loops])
 	ok(duplicates == 0, "%s: no duplicated edges (%d found)" % [label, duplicates])

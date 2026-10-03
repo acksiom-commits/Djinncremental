@@ -76,6 +76,13 @@ func save_game() -> void:
         # A prior load found corrupt save files; writing now would overwrite
         # them and destroy any chance of manual recovery. Stay hands-off.
         return
+    # The opening vessel-selection screen is not part of a playthrough yet.
+    # Saving from it (the window-close hook below does, unconditionally)
+    # wrote a blank-vessel save, and intro_screen.gd treats any save on disk
+    # as "returning player" and skips the screen on every launch after.
+    var scene: Node = get_tree().current_scene if get_tree() else null
+    if scene and scene.has_method("is_awaiting_vessel_choice") and scene.is_awaiting_vessel_choice():
+        return
     var gc:      Node = get_node_or_null("/root/GameContext")
     var cd:      Node = get_node_or_null("/root/ConstellationData")
     var adm:     Node = get_node_or_null("/root/ArchonDialogueManager")

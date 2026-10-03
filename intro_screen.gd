@@ -85,6 +85,12 @@ var _hovered_vessel: String = ""
 var _confirmed_vessel: String = ""
 var _input_locked: bool = false
 
+# True from the moment the vessel choice is on screen until one is confirmed.
+# SaveManager.save_game() refuses to write while this is set: closing the
+# window here used to save a blank-vessel playthrough, and the next launch
+# then saw "existing save" and skipped this screen for good.
+var _awaiting_choice: bool = false
+
 # Background is painted by THIS node's own _draw(), not a child ColorRect —
 # a child always draws ON TOP of its parent's _draw() output regardless of
 # child order, so an opaque full-rect ColorRect child would silently cover
@@ -134,6 +140,11 @@ func _ready() -> void:
     resized.connect(_update_shape_layout)
     gui_input.connect(_on_gui_input)
     set_process(true)
+    _awaiting_choice = true
+
+
+func is_awaiting_vessel_choice() -> bool:
+    return _awaiting_choice
 
 
 ## Split out of _ready() so it can be exercised directly — _ready() itself
@@ -249,6 +260,7 @@ func _draw_star_graph(key: String, col: Color) -> void:
 
 func _confirm_vessel(vessel_key: String) -> void:
     _confirmed_vessel = vessel_key
+    _awaiting_choice = false
     _input_locked = true
     _hovered_vessel = vessel_key
     queue_redraw()

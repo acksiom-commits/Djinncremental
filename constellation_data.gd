@@ -1228,12 +1228,16 @@ const BUILT_IN = [
                     15,11,  11,7,  7,5,  5,1,  1,0,      # outer loop
                     2,6,  6,10,  10,14,  14,12,  12,8,  8,3,  3,2,  # inner loop
                 ],
-                # Beginner-mode outline (2026-10-01, user-drawn): an outer
-                # 7-star loop plus two internal chords -- B-C near the top,
-                # and a single centre star (4) bridging the far-left and
-                # far-right sides. Digitized the same way as every other
-                # easy_layout: centre on the shape's own bounding box, scale
-                # so the larger axis spans +/-0.13, no rotation.
+                # Beginner-mode outline (2026-10-01, user-drawn): a lens of
+                # four arcs between the far-left (3) and far-right (5)
+                # stars -- an outer upper arc through the top star (0), an
+                # inner upper arc through the two inner stars (1, 2), a
+                # straight arc through the centre star (4), and a lower arc
+                # through the bottom pair (6, 7). The top star is joined to
+                # the far-left/far-right stars, NOT to the inner pair.
+                # Digitized the same way as every other easy_layout: centre
+                # on the shape's own bounding box, scale so the larger axis
+                # spans +/-0.13, no rotation.
                 "easy_layout": {
                     "star_count": 8,
                     "fixed_star_positions": [
@@ -1247,10 +1251,10 @@ const BUILT_IN = [
                         [ 0.057658,  0.063030,  0.996345],  # 7: bottom-right
                     ],
                     "line_pairs": [
-                        0,1,  0,2,  1,2,              # top + inner chord
-                        1,3,  2,5,                     # outer loop, upper
-                        3,6,  6,7,  7,5,               # outer loop, lower
-                        3,4,  4,5,                     # centre chord
+                        3,0,  0,5,                     # outer upper arc through the top star
+                        3,1,  1,2,  2,5,               # inner upper arc
+                        3,4,  4,5,                     # centre arc
+                        3,6,  6,7,  7,5,               # lower arc
                     ],
                 },
             },
