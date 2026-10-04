@@ -28,6 +28,20 @@ func ok(c: bool, s: String) -> void:
 		fails += 1
 
 
+## {"lo","hi"} (hi -1 = open) for a graded phrase, {} for the exact wording.
+func _graded_range(text: String) -> Dictionary:
+	var m = RegEx.create_from_string("repeats? at least (once|\\d+ times)").search(text)
+	if m:
+		return {"lo": 1 if m.get_string(1) == "once" else int(m.get_string(1)), "hi": -1}
+	m = RegEx.create_from_string("repeats? at most (once|\\d+ times)").search(text)
+	if m:
+		return {"lo": 0, "hi": 1 if m.get_string(1) == "once" else int(m.get_string(1))}
+	m = RegEx.create_from_string("repeats? between (\\d+) and (\\d+) times").search(text)
+	if m:
+		return {"lo": int(m.get_string(1)), "hi": int(m.get_string(2))}
+	return {}
+
+
 func run() -> void:
 	var cd = load("res://constellation_data.gd").new()
 	var gc = load("res://game_context.gd").new()
@@ -76,7 +90,16 @@ func run() -> void:
 		var subject_star: int = int(subject_ch.get("star", -1))
 		var def_star: int = int(group_ch.get("star", -1))
 		var is_positive: bool = text.contains(" is one of ")
-		var same_group: bool = int(g.repeat_count[subject_star]) == int(g.repeat_count[def_star])
+		# The group is either the exact count of def_star or a graded
+		# predicate ("repeat at least once"); judge each by its own words.
+		# Graded phrases are covered in depth by test_repeat_predicates.gd.
+		var same_group: bool
+		var graded: Dictionary = _graded_range(text)
+		if graded.is_empty():
+			same_group = int(g.repeat_count[subject_star]) == int(g.repeat_count[def_star])
+		else:
+			var rc: int = int(g.repeat_count[subject_star])
+			same_group = rc >= int(graded["lo"]) and (int(graded["hi"]) < 0 or rc <= int(graded["hi"]))
 		if same_group != is_positive:
 			bad_truth += 1
 			print("    FALSE claim: '%s' (subject repeat=%d, group repeat=%d)" % [text, g.repeat_count[subject_star], g.repeat_count[def_star]])

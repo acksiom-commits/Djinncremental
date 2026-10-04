@@ -189,7 +189,71 @@ static func _ordinal(n: int) -> String:
         2: return "%dnd note" % n
         3: return "%drd note" % n
         _: return "%dth note" % n
- 
+
+
+## True when the melody has more note-events than stars, i.e. some star fires
+## more than once (every Beginner constellation). The melody's repeat shape --
+## which notes are the same star -- is PUBLIC (the staff shows it), so a clue may
+## name a star by any one of its notes. In a 1:1 melody (every hard-mode
+## constellation) this is false and every wording below is the original.
+func _melody_repeats() -> bool:
+    return melody_star_sequence.size() > star_count
+
+
+var _first_tick_cache: Array[int] = []
+
+## _star_ticks_cache[star] = every note (1-indexed, ascending) that star fires
+## on; see _star_ticks. Reset beside _first_tick_cache wherever the melody is set.
+var _star_ticks_cache: Array = []
+
+
+## The first melody note (1-indexed) a star fires on -- the number a clue prints
+## when it names the star ("the star that fires 15th note"). For a star that
+## repeats this is the first of its notes; any of them would name it, and the
+## first is deterministic, so no RNG is consumed. Falls back to rank + 1 when
+## there is no melody to read (an old cache, or a clean 1:1 melody where note
+## and rank coincide).
+func _seq_first_tick(star: int) -> int:
+    if _first_tick_cache.size() != star_count:
+        _first_tick_cache = []
+        _first_tick_cache.resize(star_count)
+        for i in star_count:
+            _first_tick_cache[i] = -1
+        for t in melody_star_sequence.size():
+            var s: int = int(melody_star_sequence[t])
+            if s >= 0 and s < star_count and _first_tick_cache[s] == -1:
+                _first_tick_cache[s] = t + 1
+    var ft: int = _first_tick_cache[star] if star >= 0 and star < star_count else -1
+    if ft > 0:
+        return ft
+    return int(sequence_rank_solution[star]) + 1
+
+
+## The Sequence descriptor's wording. `noun_phrase` true is "the star that fires
+## 10th note"; false is the predicate "fires 10th note".
+func _seq_tick_phrase(star: int, noun_phrase: bool) -> String:
+    var ord_text: String = _ordinal(_seq_first_tick(star))
+    if noun_phrase:
+        return "the star that fires %s" % ord_text
+    return "fires %s" % ord_text
+
+
+## Order between stars is FIRST-firing order (it is the rank order, which is what
+## the ordinal facts encode), so a clue about order must say "first" whenever any
+## star it mentions fires more than once -- otherwise "A fires before B" is
+## ambiguous about which of A's several notes is meant. Stars that fire once
+## keep the plain verb.
+func _seq_fire_verb(stars: Array) -> String:
+    for s in stars:
+        if int(repeat_count[int(s)]) > 0:
+            return "first fires"
+    return "fires"
+
+
+## The bare form for "Exactly 2 of them ___ before it".
+func _seq_fire_base(stars: Array) -> String:
+    return "first fire" if _seq_fire_verb(stars) == "first fires" else "fire"
+
  
 # ── Puzzle state ─────────────────────────────────────────────────────────
 var star_count: int = 0
@@ -364,6 +428,8 @@ func setup(p_star_count: int, line_pairs: Array, correct_star_sequence: Array,
     melody_star_sequence = []
     for v in correct_star_sequence:
         melody_star_sequence.append(int(v))
+    _first_tick_cache = []
+    _star_ticks_cache = []
     _set_sequence_ranks_from_order(correct_star_sequence)
 
     # PRECOMPUTED HERE, not resolved on demand by the player-side deduction/
@@ -1953,6 +2019,8 @@ func from_cache_dict(data: Dictionary) -> bool:
     melody_star_sequence = []
     for v in _coerce_array(data.get("melody_star_sequence"), []):
         melody_star_sequence.append(_coerce_int(v, 0))
+    _first_tick_cache = []
+    _star_ticks_cache = []
 
     melody_seq_pos_sequence = []
     for v in _coerce_array(data.get("melody_seq_pos_sequence"), []):
@@ -2318,8 +2386,8 @@ func _characteristic_label(ch: Dictionary) -> String:
             _note_rendered_term("N", star_names[s])
             return star_names[s]
         Category.SEQUENCE:
-            _note_rendered_term("S", sequence_rank_solution[s] + 1)
-            return "the star that fires %s" % _ordinal(sequence_rank_solution[s] + 1)
+            _note_rendered_term("S", _seq_first_tick(s))
+            return _seq_tick_phrase(s, true)
         Category.COLOR:
             # The sub-rank letter ("marked B") is internal bookkeeping with
             # no player-facing meaning, so the searchable term is the colour
@@ -2392,8 +2460,8 @@ func _characteristic_predicate(ch: Dictionary) -> String:
             _note_rendered_term("N", star_names[s])
             return "is %s" % star_names[s]
         Category.SEQUENCE:
-            _note_rendered_term("S", sequence_rank_solution[s] + 1)
-            return "fires %s" % _ordinal(sequence_rank_solution[s] + 1)
+            _note_rendered_term("S", _seq_first_tick(s))
+            return _seq_tick_phrase(s, false)
         Category.COLOR:
             if _group_size(Category.COLOR, s) > 1:
                 return ""
@@ -2432,6 +2500,121 @@ func _group_predicate(cat: int, star: int) -> String:
     var pname: String = note_name_for_freq(_freq_for_star(star))
     _note_rendered_term("P", pname)
     return "plays %s" % pname
+
+
+# ── Graded Repeat predicates (Forms 23 and 24) ──────────────────────────
+#
+# "repeats at least once", "at most twice", "between 1 and 3 times", on top of
+# the exact "repeats N times" the Forms already said. A predicate is a SET OF
+# REPEAT VALUES, not a new fact kind. "X is one of P" is, cell for cell, "X is
+# not in the group of any present value outside P"; "X is not one of P" is "X
+# is not in the group of any value inside P". Both are conjunctions of the
+# exact-value name_group_neg / descriptor_not_in_group facts every consumer
+# (Name closure, the player's board, coverage scoring) already understands, so
+# nothing downstream needs to learn about ranges. The unit is the VALUE (a
+# column of the Repeat axis), never a star and its characteristics.
+
+## Probability that a REPEAT group draws a graded predicate rather than the
+## exact value. Exact stays reachable so the old wording keeps appearing.
+const REPEAT_GRADED_PREDICATE_WEIGHT: float = 0.6
+
+
+## Distinct real repeat counts (>= 0) in this constellation, ascending.
+func _repeat_values_present() -> Array:
+    var seen: Dictionary = {}
+    for s in star_count:
+        if int(repeat_count[s]) >= 0:
+            seen[int(repeat_count[s])] = true
+    var out: Array = seen.keys()
+    out.sort()
+    return out
+
+
+## Any star carrying repeat count `v` (-1 when none) -- a handle for the
+## exact-value fact encoders, which key a group by one of its members.
+func _repeat_rep_star(v: int) -> int:
+    for s in star_count:
+        if int(repeat_count[s]) == v:
+            return s
+    return -1
+
+
+## A random graded predicate whose value set contains `v`, or {} when none
+## qualifies. {"kind": "at_least"|"at_most"|"between", "lo", "hi", "values"}.
+## "values" is the PRESENT values it covers, always a non-empty PROPER subset
+## of them (a predicate covering every star says nothing). Needs two distinct
+## present values, so it is inert for the degenerate hard-mode melody.
+func _repeat_predicate_containing(v: int) -> Dictionary:
+    var present: Array = _repeat_values_present()
+    if present.size() < 2 or not present.has(v):
+        return {}
+    var max_v: int = int(present[present.size() - 1])
+    var raw_options: Array = []
+    for k in range(1, v + 1):
+        raw_options.append({"kind": "at_least", "lo": k, "hi": max_v})
+    for k2 in range(maxi(v, 1), max_v):
+        raw_options.append({"kind": "at_most", "lo": 0, "hi": k2})
+    for a in range(1, v + 1):
+        for b in range(maxi(v, a + 1), max_v):
+            raw_options.append({"kind": "between", "lo": a, "hi": b})
+    var options: Array = []
+    for o in raw_options:
+        var covered: Array = []
+        for x in present:
+            if int(x) >= int(o["lo"]) and int(x) <= int(o["hi"]):
+                covered.append(int(x))
+        if covered.is_empty() or covered.size() >= present.size():
+            continue
+        (o as Dictionary)["values"] = covered
+        options.append(o)
+    if options.is_empty():
+        return {}
+    return options[_rng.randi_range(0, options.size() - 1)]
+
+
+func _repeat_times_word(n: int) -> String:
+    return "once" if n == 1 else "%d times" % n
+
+
+## After "is one of" / "is not one of": "the stars that repeat at least once".
+func _repeat_predicate_group_phrase(pred: Dictionary) -> String:
+    match str(pred["kind"]):
+        "at_least":
+            return "the stars that repeat at least %s" % _repeat_times_word(int(pred["lo"]))
+        "at_most":
+            return "the stars that repeat at most %s" % _repeat_times_word(int(pred["hi"]))
+    return "the stars that repeat between %d and %d times" % [int(pred["lo"]), int(pred["hi"])]
+
+
+## Inside "Neither X nor Y ___": "repeats at least once".
+func _repeat_predicate_verb_phrase(pred: Dictionary) -> String:
+    match str(pred["kind"]):
+        "at_least":
+            return "repeats at least %s" % _repeat_times_word(int(pred["lo"]))
+        "at_most":
+            return "repeats at most %s" % _repeat_times_word(int(pred["hi"]))
+    return "repeats between %d and %d times" % [int(pred["lo"]), int(pred["hi"])]
+
+
+## Search terms for every count a predicate mentions, so SEARCH finds the
+## clue by "repeats 2" the same way it finds the exact phrasing.
+func _note_repeat_predicate_terms(pred: Dictionary) -> void:
+    for v in (pred["values"] as Array):
+        _note_rendered_term("R", int(v))
+
+
+## The facts a graded predicate states about one Name/Sequence subject, as
+## exact-value negations (see the header above). `want_positive` true is "is
+## one of P": the subject is in no present value OUTSIDE P. False is "is not
+## one of P": the subject is in no value INSIDE P.
+func _repeat_predicate_neg_facts(subject_id: Dictionary, pred: Dictionary, want_positive: bool) -> Array:
+    var out: Array = []
+    for v in _repeat_values_present():
+        var inside: bool = (pred["values"] as Array).has(int(v))
+        if inside == want_positive:
+            continue
+        out.append_array(_name_group_facts(subject_id, {"cat": Category.REPEAT, "star": _repeat_rep_star(int(v))}, false))
+    return out
 
 
 func _hop_word(d: int) -> String:
@@ -2938,6 +3121,14 @@ func _order_verb(cat: int) -> String:
     return "is pitched"
 
 
+## _order_verb for a clue that names specific stars: a Sequence verb becomes
+## "first fires" when any of them fires more than once (see _seq_fire_verb).
+func _order_verb_for(cat: int, stars: Array) -> String:
+    if cat == Category.SEQUENCE:
+        return _seq_fire_verb(stars)
+    return _order_verb(cat)
+
+
 ## `_cat` is deliberately kept despite being unused: every call site passes
 ## the axis, and the other _order_* helpers (_order_word, _order_verb,
 ## _order_chain_word) all genuinely need it. It stopped being read on
@@ -3067,6 +3258,15 @@ func _validate_sequence_fact(f: Dictionary) -> String:
             var hi: int = int(f["hi"])
             if sequence_rank_solution[rs] < lo or sequence_rank_solution[rs] > hi:
                 return "ordinal_range s=%d claims rank in [%d,%d] but true rank=%d" % [rs, lo, hi, sequence_rank_solution[rs]]
+        "value_in_set":
+            var vs: int = int(f["s"])
+            var held: bool = false
+            for a in f["allowed"]:
+                if int(a) == int(sequence_rank_solution[vs]):
+                    held = true
+                    break
+            if not held:
+                return "value_in_set s=%d claims rank in %s but true rank=%d" % [vs, str(f["allowed"]), sequence_rank_solution[vs]]
         "ordinal_either_or":
             var es: int = int(f["s"])
             var r1: int = int(f["r1"])
@@ -3311,7 +3511,7 @@ func _validate_name_extreme_in_group_fact(f: Dictionary) -> String:
 # ==================================================
 
 const NAME_POSITION_PRED_KINDS: Array = [
-    "name_rank_range", "name_nbr_count", "name_nbr_extreme",
+    "name_rank_range", "name_nbr_count", "name_nbr_extreme", "name_rank_set",
 ]
 
 
@@ -3327,6 +3527,13 @@ func _name_position_allowed_stars(fd: Dictionary, ranks: Array) -> Array:
             "name_rank_range":
                 if r >= int(fd["lo"]) and r <= int(fd["hi"]):
                     out.append(s)
+            "name_rank_set":
+                # An arbitrary set of ranks (Form 25, Firing Position): the
+                # ranks whose stars' firings fit the clue's sentence.
+                for allowed_rank in fd["allowed"]:
+                    if int(allowed_rank) == r:
+                        out.append(s)
+                        break
             "name_nbr_count":
                 var nbrs: Array = proximity[s]
                 if nbrs.is_empty():
@@ -3372,6 +3579,12 @@ func _name_rank_range_facts(subject_id: Dictionary, lo: int, hi: int) -> Array:
     if int(subject_id["cat"]) != Category.NAME:
         return []
     return [{"kind": "name_rank_range", "name_star": int(subject_id["star"]), "lo": lo, "hi": hi}]
+
+
+func _name_rank_set_facts(subject_id: Dictionary, allowed: Array) -> Array:
+    if int(subject_id["cat"]) != Category.NAME:
+        return []
+    return [{"kind": "name_rank_set", "name_star": int(subject_id["star"]), "allowed": allowed.duplicate()}]
 
 
 func _name_nbr_count_facts(subject_id: Dictionary, k: int) -> Array:
@@ -3676,11 +3889,15 @@ const FORM_NAMES := {
     17: "Betweenness", 18: "Degree Fact", 19: "Non-Adjacency",
     20: "Cross-Domain Bridge", 21: "Pseudo-True Pair (Aligned)",
     22: "Pseudo-True Pair (Staggered)", 23: "Group Membership",
-    24: "Group Negation",
+    24: "Group Negation", 25: "Firing Position",
 }
 
+# Form 25 (Firing Position) is listed here but only DRAWN when the melody
+# repeats -- see _firing_position_available and _forms_in_tier. A 1:1 melody
+# never offers it, so every hard-mode constellation's Form pool, and therefore
+# its seeded RNG stream, is unchanged.
 const AUTOMATED_FORM_IDS: Array[int] = [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24, 25,
 ]
 # Form 18 (Degree Fact) deliberately excluded from automatic generation —
 # Degree stays hand-tuned per constellation (topology varies too much; some
@@ -3714,6 +3931,7 @@ func _build_form(form_id: int, chain: Dictionary) -> Dictionary:
         22: return _build_form_pseudo_true_pair_staggered(chain)
         23: return _build_form_group_membership(chain)
         24: return _build_form_group_negation(chain)
+        25: return _build_form_firing_position(chain)
     return {}
 
 
@@ -3923,12 +4141,29 @@ func _build_form_range(chain: Dictionary) -> Dictionary:
     var id_ch: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
     var seq_ch: Dictionary = {"cat": Category.SEQUENCE, "star": subject_star}
     var word: String = "first" if want_first else "last"
-    var text: String = "%s is among the %s %d." % [_characteristic_label(id_ch), word, n]
+    var lo: int = 0 if want_first else star_count - n
+    var hi: int = n - 1 if want_first else star_count - 1
+    var text: String
+    if not _melody_repeats():
+        text = "%s is among the %s %d." % [_characteristic_label(id_ch), word, n]
+    else:
+        # A repeating melody has more notes than stars, so "the last 5" would
+        # be ambiguous between 5 stars and 5 notes. The window is on the star's
+        # FIRST note, stated in notes: every star ranked inside [lo, hi] first
+        # fires inside the window and every other star outside it, because
+        # first notes rise with rank. So the sentence says exactly what the
+        # ordinal_range fact below says. The star at a rank comes straight off
+        # the Sequence axis (value index IS the rank).
+        var verb: String = _seq_fire_verb([subject_star])
+        if want_first:
+            var edge_star: int = int(_cat_value_to_star[Category.SEQUENCE][hi])
+            text = "%s %s within the first %d notes." % [_characteristic_label(id_ch), verb, _seq_first_tick(edge_star)]
+        else:
+            var edge_star2: int = int(_cat_value_to_star[Category.SEQUENCE][lo])
+            text = "%s %s no earlier than note %d." % [_characteristic_label(id_ch), verb, _seq_first_tick(edge_star2)]
     # Only id_ch is ever rendered via _characteristic_label — seq_ch is
     # bookkeeping (chars/chaining) only, never itself disclosed as an exact
     # rank. What's actually asserted is range membership, not an exact value.
-    var lo: int = 0 if want_first else star_count - n
-    var hi: int = n - 1 if want_first else star_count - 1
     var solver_facts: Array = _seq_fact_for_label(id_ch)
     solver_facts.append({"kind": "ordinal_range", "s": subject_star, "lo": lo, "hi": hi})
     # A RANGE IS A DOMAIN RESTRICTION — same correction as Forms 4/21/22/23.
@@ -3976,6 +4211,272 @@ func _build_form_range(chain: Dictionary) -> Dictionary:
         # The same [lo, hi] the Sequence solver gets, keyed on the Name
         # instead of the star — the only ABSOLUTE-rank fact the closure has.
         "value_facts": _name_rank_range_facts(id_ch, lo, hi),
+    }
+
+
+# ── Form 25: Firing Position -- what a star's OWN firings do ─────────────
+#
+# In a repeating melody a star fires several times and the staff shows every
+# note, so a clue may talk about WHEN a star fires, not only which star it is.
+# The Form is generated from two abstract parts rather than listed sentences:
+#
+#   SELECTOR   reads one integer off a star's notes T = [t1 < t2 < ...]
+#       nth(k)      the note of its k-th firing (k = 2, 3, ... or the last)
+#       count(W)    how many of its firings fall inside a window W of notes
+#       span(i, j)  how many notes lie between its i-th and j-th firings
+#   PREDICATE  an interval [lo, hi] on that integer -- exactly, at most, at
+#       least or between -- worded to suit the selector.
+#
+# A star for which the selector is undefined (no k-th firing, fewer than two
+# firings for a span) fails the predicate, so the sentence also tells the
+# reader how often the star fires: "fires for the third time ..." says it fires
+# at least three times.
+#
+# Every sentence reduces to ONE object: the set of Sequence ranks whose stars
+# satisfy it, read off the PUBLIC note -> rank table the staff shows (never off
+# the answer). That set is a plain value_in_set for the Sequence solver and a
+# name_rank_set for the Name closure, so no solver learns anything new, and
+# the cells it rules out are exactly the ranks outside the set.
+const FIRING_POSITION_FORM_ID: int = 25
+const FIRING_ORDINALS: Array = ["first", "second", "third", "fourth", "fifth",
+    "sixth", "seventh", "eighth", "ninth", "tenth"]
+
+
+## Offered only when the melody repeats AND stars differ in how often they fire;
+## on a 1:1 melody every star fires once and there is nothing to say.
+func _firing_position_available() -> bool:
+    return _melody_repeats() and not _repeat_count_is_degenerate()
+
+
+## Every note (1-indexed, ascending) a star fires on, from the melody the staff
+## shows. [] for an unknown star.
+func _star_ticks(star: int) -> Array:
+    if _star_ticks_cache.size() != star_count:
+        _star_ticks_cache = []
+        for i in star_count:
+            _star_ticks_cache.append([])
+        for t in melody_star_sequence.size():
+            var s: int = int(melody_star_sequence[t])
+            if s >= 0 and s < star_count:
+                (_star_ticks_cache[s] as Array).append(t + 1)
+    if star < 0 or star >= star_count:
+        return []
+    return _star_ticks_cache[star]
+
+
+func _firing_ordinal(k: int) -> String:
+    if k == -1:
+        return "last"
+    if k >= 1 and k <= FIRING_ORDINALS.size():
+        return str(FIRING_ORDINALS[k - 1])
+    return "%dth" % k
+
+
+func _firing_times_word(n: int) -> String:
+    match n:
+        1: return "once"
+        2: return "twice"
+    return "%d times" % n
+
+
+func _firing_notes_word(n: int) -> String:
+    return "1 note" if n == 1 else "%d notes" % n
+
+
+## A window of notes [lo, hi], however it is bounded.
+func _firing_window_phrase(lo: int, hi: int) -> String:
+    if lo == hi:
+        return "on note %d" % lo
+    if lo <= 1:
+        return "within the first %d notes" % hi
+    if hi >= melody_star_sequence.size():
+        return "from note %d onwards" % lo
+    return "from note %d to note %d" % [lo, hi]
+
+
+## The integer a selector reads off a star's notes, or -1 when it is undefined
+## for that star (every defined value is >= 0).
+func _firing_value(ticks: Array, sel: Dictionary) -> int:
+    var m: int = ticks.size()
+    var kind: String = str(sel["kind"])
+    if kind == "nth":
+        var k: int = m if int(sel["k"]) == -1 else int(sel["k"])
+        if k < 1 or k > m:
+            return -1
+        return int(ticks[k - 1])
+    if kind == "count":
+        var c: int = 0
+        for t in ticks:
+            if int(t) >= int(sel["lo"]) and int(t) <= int(sel["hi"]):
+                c += 1
+        return c
+    if kind == "span":
+        var i: int = int(sel["i"])
+        var j: int = m if int(sel["j"]) == -1 else int(sel["j"])
+        if i < 1 or j > m or i >= j:
+            return -1
+        return int(ticks[j - 1]) - int(ticks[i - 1])
+    return -1
+
+
+## [lowest, highest] value the selector can take, so a predicate touching an end
+## of it is worded as "at most" / "at least" rather than a pair of bounds.
+func _firing_domain(sel: Dictionary) -> Array:
+    var n: int = melody_star_sequence.size()
+    var kind: String = str(sel["kind"])
+    if kind == "nth":
+        return [1, n]
+    if kind == "span":
+        return [1, n - 1]
+    var most: int = 0
+    for s in star_count:
+        most = maxi(most, _star_ticks(s).size())
+    return [0, most]
+
+
+## The predicate interval [lo, hi] around the true value v: exactly, at most,
+## at least, or between. Clamped to the selector's domain.
+func _firing_pick_interval(v: int, dlo: int, dhi: int) -> Array:
+    var lo: int = v
+    var hi: int = v
+    match _rng.randi_range(0, 3):
+        1:
+            lo = dlo
+            hi = mini(dhi, v + _rng.randi_range(0, 4))
+        2:
+            lo = maxi(dlo, v - _rng.randi_range(0, 4))
+            hi = dhi
+        3:
+            lo = maxi(dlo, v - _rng.randi_range(0, 3))
+            hi = mini(dhi, v + _rng.randi_range(0, 3))
+    return [lo, hi]
+
+
+## The 0-based Sequence ranks whose stars satisfy the selector + interval. The
+## star at a rank comes off the Sequence axis (value index IS the rank).
+func _firing_allowed_ranks(sel: Dictionary, lo: int, hi: int) -> Array:
+    var out: Array = []
+    for r in star_count:
+        var st: int = int(_cat_value_to_star[Category.SEQUENCE][r])
+        var v: int = _firing_value(_star_ticks(st), sel)
+        if v >= 0 and v >= lo and v <= hi:
+            out.append(r)
+    return out
+
+
+func _firing_sentence(label: String, sel: Dictionary, lo: int, hi: int) -> String:
+    var dom: Array = _firing_domain(sel)
+    var kind: String = str(sel["kind"])
+    if kind == "nth":
+        return "%s fires for the %s time %s." % [label, _firing_ordinal(int(sel["k"])), _firing_window_phrase(lo, hi)]
+    if kind == "count":
+        var win: String = _firing_window_phrase(int(sel["lo"]), int(sel["hi"]))
+        if lo == hi:
+            if lo == 0:
+                return "%s does not fire %s." % [label, win]
+            return "%s fires exactly %s %s." % [label, _firing_times_word(lo), win]
+        if hi >= int(dom[1]):
+            return "%s fires at least %s %s." % [label, _firing_times_word(lo), win]
+        if lo <= int(dom[0]):
+            return "%s fires at most %s %s." % [label, _firing_times_word(hi), win]
+        return "%s fires between %d and %d times %s." % [label, lo, hi, win]
+    var pair: String = "%s and %s" % [_firing_ordinal(int(sel["i"])), _firing_ordinal(int(sel["j"]))]
+    var gap: String
+    if lo == hi:
+        gap = "exactly %s" % _firing_notes_word(lo)
+    elif hi >= int(dom[1]):
+        gap = "at least %s" % _firing_notes_word(lo)
+    elif lo <= int(dom[0]):
+        gap = "at most %s" % _firing_notes_word(hi)
+    else:
+        gap = "between %d and %d notes" % [lo, hi]
+    return "The %s times %s fires are %s apart." % [pair, label, gap]
+
+
+func _build_form_firing_position(chain: Dictionary) -> Dictionary:
+    if not _firing_position_available():
+        return {}
+    var n: int = melody_star_sequence.size()
+    if n < 4:
+        return {}
+    var a: Dictionary = _sample_identity_axis_cell(Category.SEQUENCE, chain, -1)
+    if a.is_empty():
+        return {}
+    var subject_star: int = int(a["star"])
+    var ticks: Array = _star_ticks(subject_star)
+    var m: int = ticks.size()
+    if m < 1:
+        return {}
+    # Only the selectors this star can answer: a star that fires once has no
+    # second firing and no span, so it is described by what it does in a window.
+    var kinds: Array = ["count"]
+    if m >= 2:
+        kinds.append("nth")
+        kinds.append("span")
+    var kind: String = str(kinds[_rng.randi_range(0, kinds.size() - 1)])
+    var sel: Dictionary = {"kind": kind}
+    if kind == "nth":
+        var ks: Array = []
+        for k in range(2, m + 1):
+            ks.append(k)
+        if m >= 3:
+            ks.append(-1)
+        sel["k"] = int(ks[_rng.randi_range(0, ks.size() - 1)])
+    elif kind == "span":
+        var si: int = _rng.randi_range(1, m - 1)
+        var sj: int = _rng.randi_range(si + 1, m)
+        sel["i"] = si
+        sel["j"] = -1 if (sj == m and _rng.randf() < 0.5) else sj
+    else:
+        var wa: int = 1
+        var wb: int = n
+        match _rng.randi_range(0, 2):
+            0:
+                wb = _rng.randi_range(2, n - 1)
+            1:
+                wa = _rng.randi_range(2, n - 1)
+            _:
+                wa = _rng.randi_range(1, n - 1)
+                wb = _rng.randi_range(wa + 1, n)
+        if wa <= 1 and wb >= n:
+            return {}   # the whole melody: says nothing a plain repeat count doesn't
+        sel["lo"] = wa
+        sel["hi"] = wb
+    var v: int = _firing_value(ticks, sel)
+    if v < 0:
+        return {}
+    var dom: Array = _firing_domain(sel)
+    var iv: Array = _firing_pick_interval(v, int(dom[0]), int(dom[1]))
+    var lo: int = int(iv[0])
+    var hi: int = int(iv[1])
+    var allowed: Array = _firing_allowed_ranks(sel, lo, hi)
+    # A clue that every star satisfies tells the reader nothing, and the subject
+    # must satisfy it (true by construction; checked so a bug fails loudly here).
+    if allowed.is_empty() or allowed.size() >= star_count:
+        return {}
+    if not allowed.has(int(sequence_rank_solution[subject_star])):
+        return {}
+    var id_ch: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
+    var seq_ch: Dictionary = {"cat": Category.SEQUENCE, "star": subject_star}
+    var grid_updates: Array = []
+    for r in star_count:
+        if allowed.has(r):
+            continue
+        grid_updates.append({
+            "cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]),
+            "cat_b": Category.SEQUENCE, "val_b": int(r), "is_true": false,
+        })
+    if not _any_cell_fresh(grid_updates):
+        return {}   # the subject is already confined to this set
+    var text: String = _firing_sentence(_characteristic_label(id_ch), sel, lo, hi)
+    var solver_facts: Array = _seq_fact_for_label(id_ch)
+    solver_facts.append({"kind": "value_in_set", "s": subject_star, "allowed": allowed.duplicate()})
+    return {
+        "chars": [id_ch, seq_ch],
+        "text": text,
+        "grid_updates": grid_updates,
+        "solver_facts": solver_facts,
+        "value_facts": _name_rank_set_facts(id_ch, allowed),
     }
 
 
@@ -4057,7 +4558,7 @@ func _build_form_pairwise_order(chain: Dictionary) -> Dictionary:
     var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
     var axis_a: Dictionary = {"cat": axis, "star": star_a}
     var axis_b: Dictionary = {"cat": axis, "star": star_b}
-    var text: String = "%s %s %s than %s." % [_characteristic_label(id_a), _order_verb(axis), _order_word(axis, a_gt_b), _characteristic_label(id_b)]
+    var text: String = "%s %s %s than %s." % [_characteristic_label(id_a), _order_verb_for(axis, [star_a, star_b]), _order_word(axis, a_gt_b), _characteristic_label(id_b)]
     # id_a/id_b are the only labels actually rendered — axis_a/axis_b back
     # the comparison itself but are never textually disclosed as exact
     # values (see the header note on _seq_fact_for_label). The comparison
@@ -4131,6 +4632,13 @@ func _build_form_pairwise_order(chain: Dictionary) -> Dictionary:
 
 func _build_form_exact_offset(chain: Dictionary) -> Dictionary:
     var axis: int = Category.SEQUENCE if _rng.randf() < 0.7 else Category.PITCH
+    # "exactly 3 steps later" is arithmetic in melody NOTES, but the Sequence
+    # facts count first-firing ranks, and in a repeating melody those differ.
+    # Until the solver can carry a note-difference fact, a repeating melody
+    # offers the Pitch version only. The draw above is still made, so no RNG
+    # stream moves.
+    if axis == Category.SEQUENCE and _melody_repeats():
+        axis = Category.PITCH
     var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
     if a.is_empty():
         return {}
@@ -4180,6 +4688,11 @@ func _identity_cell_for_known_star(star: int, axis_cat: int, bias_name: bool = f
 
 
 func _build_form_adjacency(chain: Dictionary) -> Dictionary:
+    # "immediately after" means the very next NOTE, but the Sequence facts
+    # count first-firing ranks; in a repeating melody the next rank is not the
+    # next note. Off until the solver can carry a note-difference fact.
+    if _melody_repeats():
+        return {}
     var axis: int = Category.SEQUENCE
     var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
     if a.is_empty():
@@ -4226,7 +4739,7 @@ func _build_form_adjacency(chain: Dictionary) -> Dictionary:
     # bypassed the shared helper, which is exactly why it could drift while
     # Pairwise Order, Exact Offset and Betweenness all stayed correct.
     var word: String = _order_chain_word(axis, val_a > target_val)
-    var text: String = "%s fires immediately %s %s." % [_characteristic_label(id_a), word, _characteristic_label(id_b)]
+    var text: String = "%s %s immediately %s %s." % [_characteristic_label(id_a), _order_verb(Category.SEQUENCE), word, _characteristic_label(id_b)]
     var solver_facts: Array = _seq_fact_for_label(id_a) + _seq_fact_for_label(id_b)
     var higher_star: int = star_a if val_a > target_val else star_b
     var lower_star: int = star_b if val_a > target_val else star_a
@@ -5489,7 +6002,15 @@ func _build_form_group_comparison(chain: Dictionary) -> Dictionary:
             solver_facts.append({"kind": "ordinal_cmp", "a": subject_star, "b": int(g["star"]), "a_gt_b": s_more})
     var noun: String = _group_comparison_noun(axis)
     var word: String = "higher" if s_more else "lower"
-    var text: String = "%s has a %s %s than %s." % [_characteristic_label(subject_id), word, noun, _join_names_and(_sort_labels_for_join(label_items))]
+    var text: String
+    if axis == Category.SEQUENCE and _melody_repeats():
+        # "sequence position" does not say which of a repeating star's notes is
+        # meant. Say it as an order of firing, like Pairwise Order does.
+        text = "%s %s %s than %s." % [
+            _characteristic_label(subject_id), _seq_fire_verb([subject_star] + group_stars),
+            _order_word(axis, s_more), _join_names_and(_sort_labels_for_join(label_items))]
+    else:
+        text = "%s has a %s %s than %s." % [_characteristic_label(subject_id), word, noun, _join_names_and(_sort_labels_for_join(label_items))]
     return {"chars": chars, "text": text, "grid_updates": grid_updates, "solver_facts": solver_facts}
 
 
@@ -5589,7 +6110,14 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
     # handle it.
     var group_phrase: String = _group_noun_phrase(group_cat, def_star, true)
     var verb_word: String = "precedes" if precedes else "follows"
-    var text: String = "%s %s %s." % [_characteristic_label(subject_id), verb_word, group_phrase]
+    var text: String
+    if _seq_fire_verb([subject_star] + group_stars) == "fires":
+        text = "%s %s %s." % [_characteristic_label(subject_id), verb_word, group_phrase]
+    else:
+        # "precedes" is ambiguous when a star fires more than once; say whose
+        # note is compared on both sides.
+        text = "%s first fires %s %s first fires." % [
+            _characteristic_label(subject_id), "before" if precedes else "after", group_phrase]
     # Group members are never individually labeled (group_phrase is a raw
     # collective description, not built via _characteristic_label) — only
     # the disclosed relation matters: subject precedes/follows EVERY member.
@@ -5637,7 +6165,8 @@ func _build_form_extreme(chain: Dictionary) -> Dictionary:
     var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
     var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
     var word: String = "earliest" if want_lowest else "latest"
-    var text: String = "%s is the %s to fire among its connected stars." % [_characteristic_label(subject_id), word]
+    var text: String = "%s is the %s to %s among its connected stars." % [
+        _characteristic_label(subject_id), word, _seq_fire_base([subject_star] + neighbors)]
     var solver_facts: Array = _seq_fact_for_label(subject_id)
     solver_facts.append({"kind": "ordinal_extreme", "s": subject_star, "want_lowest": want_lowest, "neighbors": neighbors})
     return {
@@ -5668,7 +6197,8 @@ func _build_form_count(chain: Dictionary) -> Dictionary:
             k += 1
     var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
     var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
-    var text: String = "Exactly %d of %s's connected stars fire before it." % [k, _characteristic_label(subject_id)]
+    var text: String = "Exactly %d of %s's connected stars %s before it." % [
+        k, _characteristic_label(subject_id), _seq_fire_base([subject_star] + neighbors)]
     var solver_facts: Array = _seq_fact_for_label(subject_id)
     solver_facts.append({"kind": "ordinal_count_before", "s": subject_star, "k": k, "neighbors": neighbors})
     return {
@@ -6059,7 +6589,7 @@ func _betweenness_render_triple(participants: Array, axis: int) -> Dictionary:
     var axis_lo: Dictionary = {"cat": axis, "star": lo}
     var axis_mid: Dictionary = {"cat": axis, "star": mid}
     var axis_hi: Dictionary = {"cat": axis, "star": hi}
-    var verb: String = _order_verb(axis)
+    var verb: String = _order_verb_for(axis, [lo, mid, hi])
     var text: String
     match _rng.randi() % 3:
         0:
@@ -6160,7 +6690,11 @@ func _build_form_cross_domain_bridge(chain: Dictionary) -> Dictionary:
     var group_def_ch: Dictionary = {"cat": group_cat, "star": def_star}
     _note_group_value_term(group_cat, def_star)
     var group_phrase: String = ("the %s stars" % COLOR_NAMES[star_colors[def_star]].to_lower()) if group_cat == Category.COLOR else ("the stars that play %s" % note_name_for_freq(_freq_for_star(def_star)))
-    var extreme_word: String = "earliest-firing" if want_lowest else "latest-firing"
+    var extreme_word: String
+    if _seq_fire_verb(group_stars) == "first fires":
+        extreme_word = "earliest first-firing" if want_lowest else "latest first-firing"
+    else:
+        extreme_word = "earliest-firing" if want_lowest else "latest-firing"
     var text: String = "Among %s, the %s one is %s." % [group_phrase, extreme_word, _characteristic_label(d2_ch)]
     # group_phrase is a raw custom string, never through _characteristic_
     # label; d1_ch (the Sequence node) is bookkeeping only, never rendered
@@ -6272,9 +6806,20 @@ func _build_form_group_membership(chain: Dictionary) -> Dictionary:
     # same guard Equality Pair's own axis draw uses.
     if group_cat == Category.REPEAT and int(raw_val) < 0:
         return {}
+    # A REPEAT group may be a graded predicate ("repeat at least once")
+    # instead of the exact count -- see the Graded Repeat predicates header.
+    # Drawn only inside the REPEAT branch, which a degenerate (hard-mode)
+    # puzzle never reaches, so no existing RNG stream shifts.
+    var pred: Dictionary = {}
+    if group_cat == Category.REPEAT and _rng.randf() < REPEAT_GRADED_PREDICATE_WEIGHT:
+        pred = _repeat_predicate_containing(int(raw_val))
+    var in_group_fn: Callable = func(s) -> bool:
+        if not pred.is_empty():
+            return (pred["values"] as Array).has(int(repeat_count[s]))
+        return raw_of.call(s) == raw_val
     var group_stars: Array = []
     for s in star_count:
-        if raw_of.call(s) == raw_val:
+        if bool(in_group_fn.call(s)):
             group_stars.append(s)
     # A singleton "group" makes "one of" degenerate — same guard
     # Cross-Domain Bridge uses (group_stars.size() < 2).
@@ -6332,10 +6877,15 @@ func _build_form_group_membership(chain: Dictionary) -> Dictionary:
     var subj_axis_val: int = int(_cat_star_to_value[group_cat][subject_star])
     var subject_id: Dictionary = {"cat": subj_id_cat, "star": subject_star}
     var group_def_ch: Dictionary = {"cat": group_cat, "star": def_star}
-    _note_group_value_term(group_cat, def_star)
+    if pred.is_empty():
+        _note_group_value_term(group_cat, def_star)
+    else:
+        _note_repeat_predicate_terms(pred)
     var group_phrase: String
     if group_cat == Category.COLOR:
         group_phrase = "the %s stars" % COLOR_NAMES[star_colors[def_star]].to_lower()
+    elif group_cat == Category.REPEAT and not pred.is_empty():
+        group_phrase = _repeat_predicate_group_phrase(pred)
     elif group_cat == Category.REPEAT:
         var def_rc: int = int(repeat_count[def_star])
         group_phrase = "the stars whose note never repeats" if def_rc == 0 \
@@ -6354,7 +6904,8 @@ func _build_form_group_membership(chain: Dictionary) -> Dictionary:
     # raw value, different star." That claim lives in value_facts instead,
     # same as Cross-Domain Bridge's own group membership.
     var solver_facts: Array = _seq_fact_for_label(subject_id)
-    var value_facts: Array = _name_group_facts(subject_id, group_def_ch, want_positive)
+    var value_facts: Array = _name_group_facts(subject_id, group_def_ch, want_positive) if pred.is_empty() \
+        else _repeat_predicate_neg_facts(subject_id, pred, want_positive)
 
     # ── WHAT THE SENTENCE ALSO RULES OUT ────────────────────────────────
     # Reported from a live puzzle: these two shipped together —
@@ -6386,11 +6937,10 @@ func _build_form_group_membership(chain: Dictionary) -> Dictionary:
         {"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": group_cat, "val_b": int(g["axis_val"]), "is_true": true},
         {"cat_a": subj_id_cat, "val_a": subj_id_val, "cat_b": group_cat, "val_b": subj_axis_val, "is_true": true},
     ]
-    var group_key: int = _name_group_key(group_cat, def_star)
     for m in star_count:
         if m == subject_star:
             continue   # the subject's own cell is the True marker above
-        var in_group: bool = _name_group_key(group_cat, m) == group_key
+        var in_group: bool = bool(in_group_fn.call(m))
         if in_group != want_positive:
             grid_updates.append({
                 "cat_a": subj_id_cat, "val_a": subj_id_val,
@@ -6501,12 +7051,29 @@ func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
         if pool.is_empty():
             continue   # every value on this axis is a singleton here — nothing to negate against
         var def_star: int = int(pool[_rng.randi_range(0, pool.size() - 1)])
-        group_defs.append({"cat": int(gc), "star": def_star})
+        var gdef: Dictionary = {"cat": int(gc), "star": def_star}
         var members: Array = []
         for s2 in star_count:
             if _name_group_key(int(gc), s2) == _name_group_key(int(gc), def_star):
-                excluded[s2] = true
                 members.append(int(s2))
+        # A REPEAT group may be a graded predicate ("repeats at least once")
+        # rather than one exact count -- see the Graded Repeat predicates
+        # header. Drawn only for REPEAT, which a degenerate (hard-mode)
+        # puzzle never has, so no existing RNG stream shifts. A predicate
+        # that would cover fewer than two stars falls back to the exact group.
+        if int(gc) == Category.REPEAT and _rng.randf() < REPEAT_GRADED_PREDICATE_WEIGHT:
+            var pred24: Dictionary = _repeat_predicate_containing(int(repeat_count[def_star]))
+            if not pred24.is_empty():
+                var pred_members: Array = []
+                for s4 in star_count:
+                    if (pred24["values"] as Array).has(int(repeat_count[s4])):
+                        pred_members.append(int(s4))
+                if pred_members.size() >= 2:
+                    members = pred_members
+                    gdef["pred"] = pred24
+        group_defs.append(gdef)
+        for mm in members:
+            excluded[int(mm)] = true
         group_members.append(members)
     if group_defs.is_empty():
         return {}
@@ -6581,6 +7148,10 @@ func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
     var subj_names: Array = _sort_labels_for_join(subj_items)
     var preds: Array = []
     for gd in group_defs:
+        if gd.has("pred"):
+            _note_repeat_predicate_terms(gd["pred"])
+            preds.append(_repeat_predicate_verb_phrase(gd["pred"]))
+            continue
         _note_group_value_term(int(gd["cat"]), int(gd["star"]))
         preds.append(_group_predicate(int(gd["cat"]), int(gd["star"])))
     var pred_text: String = str(preds[0]) if preds.size() == 1 \
@@ -6603,12 +7174,9 @@ func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
     for sub in subjects:
         var s_cat: int = int(sub["cat"])
         var s_val: int = int(_cat_star_to_value[s_cat][int(sub["star"])])
-        for gd in group_defs:
-            var g_cat: int = int(gd["cat"])
-            var g_key: int = _name_group_key(g_cat, int(gd["star"]))
-            for m in star_count:
-                if _name_group_key(g_cat, m) != g_key:
-                    continue
+        for gi2 in group_defs.size():
+            var g_cat: int = int(group_defs[gi2]["cat"])
+            for m in (group_members[gi2] as Array):
                 var m_val: int = int(_cat_star_to_value[g_cat][m])
                 if not bool(_matrix_cell(s_cat, s_val, g_cat, m_val)["used"]):
                     any_fresh = true
@@ -6634,6 +7202,20 @@ func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
             # with no cells and no scoreable disclosure can never be
             # credited as Used Up, which is what the first cut of this Form
             # shipped.
+            if gd2.has("pred"):
+                # One exact-value negation per count the predicate covers:
+                # "not one of the stars that repeat at least once" is "not in
+                # the group of 1, and not in the group of 2".
+                for pv in (gd2["pred"]["values"] as Array):
+                    value_facts.append_array(_name_group_facts(sub2,
+                        {"cat": Category.REPEAT, "star": _repeat_rep_star(int(pv))}, false))
+                    value_facts.append({
+                        "kind": "descriptor_not_in_group",
+                        "cat": int(sub2["cat"]), "star": int(sub2["star"]),
+                        "group_cat": Category.REPEAT,
+                        "group_key": int(pv),
+                    })
+                continue
             value_facts.append_array(_name_group_facts(sub2, gd2, false))
             value_facts.append({
                 "kind": "descriptor_not_in_group",
@@ -6642,7 +7224,7 @@ func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
                 "group_key": _name_group_key(int(gd2["cat"]), int(gd2["star"])),
             })
     for gd3 in group_defs:
-        chars.append(gd3)
+        chars.append({"cat": int(gd3["cat"]), "star": int(gd3["star"])})
     return {
         "chars": chars,
         "text": text,
@@ -6820,7 +7402,7 @@ func _build_form_pseudo_true_pair_staggered(chain: Dictionary) -> Dictionary:
     var vx_ch: Dictionary = {"cat": axis, "star": s_x}
     var vy_ch: Dictionary = {"cat": axis, "star": s_y}
     var order_word: String = _order_word(axis, _order_value(axis, s_x) > _order_value(axis, s_y))
-    var verb: String = _order_verb(axis)
+    var verb: String = _order_verb_for(axis, [s_x, s_y])
     var text: String = "%s can be %s or %s, %s can be %s or %s, and %s %s %s than %s." % [
         _characteristic_label(id_x), _characteristic_label(vx_ch), _characteristic_label(decoy_ch),
         _characteristic_label(id_y), _characteristic_label(decoy_ch), _characteristic_label(vy_ch),
@@ -6911,7 +7493,7 @@ func _build_form_pseudo_true_pair_staggered(chain: Dictionary) -> Dictionary:
 # Non-Adjacency (19), the least confident placement.
 const FORM_TIER := {
     1: 1, 2: 1, 4: 1, 6: 1, 8: 1, 10: 1, 11: 1,             # Entry Anchors
-    5: 2, 7: 2, 12: 2, 15: 2, 16: 2, 17: 2, 19: 2, 21: 2, 22: 2, 23: 2,  # Relational Workhorses
+    5: 2, 7: 2, 12: 2, 15: 2, 16: 2, 17: 2, 19: 2, 21: 2, 22: 2, 23: 2, 25: 2,  # Relational Workhorses
     3: 3, 9: 3, 13: 3, 14: 3, 20: 3, 24: 3,                 # Systemic Constraints
 }
 # Single target composition for the finished clueset (collapsed from the
@@ -7095,7 +7677,13 @@ const DIFFICULTY_PROFILES := {
             {"form": 13, "prefer_true": false, "min_elements": 3, "max_elements": 3, "tries": 12},
             {"form": 17, "axis": Category.SEQUENCE, "paired": true},
             {"form": 17, "axis": Category.PITCH, "paired": true},
-            1, 1, 1, 11, 8, 1,
+            # 25 (Firing Position) is skipped unless the melody repeats, and is an
+            # anchor because, like Range, it needs cells the main loop's cheap
+            # negations use up: measured on Beginner it ships ~1% of clues when left
+            # to the loop and survives pruning far better than Range does, so one
+            # early guaranteed instance is what puts the family in front of the
+            # player at all.
+            1, 1, 1, 11, 8, 25, 1,
         ],
     },
 }
@@ -7192,6 +7780,8 @@ func _forms_in_tier(tier: int, form_counts: Dictionary = {}) -> Array:
         if int(FORM_TIER.get(int(form_id), 2)) != tier:
             continue
         if excluded.has(int(form_id)):
+            continue
+        if int(form_id) == FIRING_POSITION_FORM_ID and not _firing_position_available():
             continue
         if caps.has(int(form_id)) and int(form_counts.get(int(form_id), 0)) >= int(caps[int(form_id)]):
             continue
@@ -7823,6 +8413,12 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
     # Forms that either fit the sampled cell or do not.
     for slot in anchors:
         var form_id: int = int(slot["form"]) if slot is Dictionary else int(slot)
+        # Firing Position needs a repeating melody. Skipped BEFORE anything is
+        # attempted, because an attempt draws a chain characteristic from the
+        # RNG even when the Form then builds nothing, which would shift every
+        # seeded draw on a 1:1 melody that merely listed the slot.
+        if form_id == FIRING_POSITION_FORM_ID and not _firing_position_available():
+            continue
         # Start every slot from the defaults. The four transient overrides are
         # otherwise set only AFTER the paired-Betweenness branch below, which
         # `continue`s past that code -- so it would render under the PREVIOUS
@@ -7912,7 +8508,7 @@ const VALUE_FACT_KINDS: Array = [
     # Position-predicate kinds (Range/Count/Extreme) — see
     # NAME_POSITION_PRED_KINDS, kept in sync with it by
     # test_value_fact_kinds_complete.
-    "name_rank_range", "name_nbr_count", "name_nbr_extreme",
+    "name_rank_range", "name_nbr_count", "name_nbr_extreme", "name_rank_set",
     # Equality Pair's "these two stars share an axis value" and Mutual
     # Exclusion's "these stars all differ on this axis". The RAW kinds are
     # still never read by the Sequence solver or the Name closure — but

@@ -33,7 +33,13 @@ extends "res://dev_tests/test_base.gd"
 
 const SEEDS := [11, 4242, 31337]
 const CONSTELLATIONS := [0, 2]
+const BEGINNER_CONSTELLATIONS := [0, 1]
 
+var repeat_seen: int = 0      # Beginner sentences using repeating-melody wording ("first fires", note windows)
+var repeat_judged: int = 0    # ...of which a parser resolved and judged
+var note_label_seen: int = 0  # Beginner sentences naming a star by a note ("the star that fires 12th note")
+var note_label_judged: int = 0
+var beginner_puzzles: int = 0
 var fails: int = 0
 var checked: int = 0
 var wrong: int = 0
@@ -50,6 +56,9 @@ var _re_off: RegEx
 var _re_btw: RegEx
 var _re_chain: RegEx
 var _re_range: RegEx
+var _re_range_first: RegEx
+var _re_range_late: RegEx
+var _re_gorder_first: RegEx
 var _re_extr: RegEx
 var _re_count: RegEx
 var _re_gorder: RegEx
@@ -86,22 +95,28 @@ func _rx(p: String) -> RegEx:
 
 
 func _compile() -> void:
-	_re_gap     = _rx("(.+) fires immediately (after|before) (.+)\\.$")
-	_re_off     = _rx("(.+?) (?:fires|is pitched|is) exactly (\\d+) (?:steps?|pitch ranks?) (later|earlier|higher|lower) than (.+)\\.$")
-	_re_cmp     = _rx("(.+?) (?:fires|is pitched|is) (later|earlier|higher|lower) than (.+)\\.$")
-	_re_btw     = _rx("(.+?) (?:fires|is pitched) between (.+) and (.+)\\.$")
-	_re_chain   = _rx("(.+?) (?:fires|is pitched) (before|after|higher than|lower than) (.+), which (?:fires|is pitched) (?:before|after|higher than|lower than) (.+)\\.$")
+	# "first fires" is the repeating-melody wording of "fires" for ORDER claims
+	# (order is first-firing order); see ConstellationLogicPuzzle._seq_fire_verb.
+	_re_gap     = _rx("(.+) (?:first fires|fires) immediately (after|before) (.+)\\.$")
+	_re_off     = _rx("(.+?) (?:first fires|fires|is pitched|is) exactly (\\d+) (?:steps?|pitch ranks?) (later|earlier|higher|lower) than (.+)\\.$")
+	_re_cmp     = _rx("(.+?) (?:first fires|fires|is pitched|is) (later|earlier|higher|lower) than (.+)\\.$")
+	_re_btw     = _rx("(.+?) (?:first fires|fires|is pitched) between (.+) and (.+)\\.$")
+	_re_chain   = _rx("(.+?) (?:first fires|fires|is pitched) (before|after|higher than|lower than) (.+), which (?:first fires|fires|is pitched) (?:before|after|higher than|lower than) (.+)\\.$")
 	_re_range   = _rx("(.+) is among the (first|last) (\\d+)\\.$")
-	_re_extr    = _rx("(.+) is the (earliest|latest) to fire among its connected stars\\.$")
-	_re_count   = _rx("^Exactly (\\d+) of (.+)'s connected stars fire before it\\.$")
-	_re_bridge  = _rx("^Among (the .+), the (earliest|latest)-firing one is (.+)\\.$")
+	# Repeating-melody Range: a window of NOTES on the star's first note.
+	_re_range_first = _rx("^(.+?) (?:first fires|fires) within the first (\\d+) notes\\.$")
+	_re_range_late  = _rx("^(.+?) (?:first fires|fires) no earlier than note (\\d+)\\.$")
+	_re_extr    = _rx("(.+) is the (earliest|latest) to (?:first fire|fire) among its connected stars\\.$")
+	_re_count   = _rx("^Exactly (\\d+) of (.+)'s connected stars (?:first fire|fire) before it\\.$")
+	_re_bridge  = _rx("^Among (the .+), the (earliest|latest)(?:-firing| first-firing) one is (.+)\\.$")
+	_re_gorder_first = _rx("^(.+?) first fires (before|after) ((?:every|the) .+?) first fires\\.$")
 	# Group Order renders its group as "every yellow star" / "every star that
 	# plays A#4" (_group_noun_phrase with plural=true), NOT "the ...".
 	_re_gorder  = _rx("(.+?) (precedes|follows) ((?:every|the) .+)\\.$")
 	# Pseudo-True Pair (Staggered) states three conjuncts at once; it must be
 	# tried BEFORE _re_cmp, whose "fires earlier than" would otherwise claim
 	# the sentence and then fail to resolve its overlong left side.
-	_re_stag    = _rx("^(.+?) can be (.+?) or (.+?), (.+?) can be (.+?) or (.+?), and (.+?) fires (earlier|later) than (.+)\\.$")
+	_re_stag    = _rx("^(.+?) can be (.+?) or (.+?), (.+?) can be (.+?) or (.+?), and (.+?) (?:first fires|fires) (earlier|later) than (.+)\\.$")
 	_re_member  = _rx("(.+?) is (one of|not one of) (the .+)\\.$")
 	_re_same    = _rx("(.+) and (.+) have the same (pitch|color|colour)\\.$")
 	_re_diff    = _rx("(.+) all have different (pitches|colors|colours)\\.$")
@@ -264,9 +279,13 @@ func _predicate_star(verb: String, rest: String) -> int:
 					break
 			if digits == "":
 				return -1
-			var pos: int = int(digits) - 1
+			# "fires 12th note" names the star AT melody note 12, whichever of
+			# its notes that is. With no melody to read, note == rank + 1.
+			var note: int = int(digits)
+			if note >= 1 and note <= _g.melody_star_sequence.size():
+				return int(_g.melody_star_sequence[note - 1])
 			for s2 in _g.star_count:
-				if _seq(s2) == pos:
+				if _seq(s2) == note - 1:
 					return s2
 			return -1
 		"is":
@@ -350,6 +369,23 @@ func _judge(form: String, text: String, holds: bool, detail: String) -> void:
 func _try_parse(clue: Dictionary, text: String, form: String) -> void:
 	var m: Dictionary = _label_map(clue)
 	var mm: RegExMatch
+
+	# Firing Position (Form 25): when a star's OWN firings fit a window. The
+	# sentence grammar and its truth table live in test_firing_position.gd (one
+	# parser, not two to drift apart); here the SUBJECT is resolved through the
+	# label map and the sentence is checked against the melody for that star.
+	if form == "Firing Position":
+		var fp = load("res://dev_tests/test_firing_position.gd").new()
+		var parsed: Dictionary = fp._parse(text, _g.melody_star_sequence.size())
+		if not parsed.is_empty():
+			var subject: int = _one_star(str(parsed["label"]), m)
+			if subject < 0:
+				_judge(form, text, false, "label '%s' does not denote one star" % str(parsed["label"]))
+				return
+			var v: int = int(parsed["value"].call(fp._ticks_of(_g.melody_star_sequence, subject)))
+			_judge(form, text, v >= 0 and v >= int(parsed["lo"]) and v <= int(parsed["hi"]),
+				"the star's own firings give %d, outside [%d, %d]" % [v, int(parsed["lo"]), int(parsed["hi"])])
+			return
 
 	# Staggered pair: "A can be P or Q, B can be R or S, and A fires earlier
 	# than B." All three conjuncts are checkable, so all three are checked.
@@ -461,15 +497,25 @@ func _try_parse(clue: Dictionary, text: String, form: String) -> void:
 	mm = _re_cmp.search(text)
 	if mm:
 		var a3: int = _one_star(mm.get_string(1), m)
-		var b3: int = _one_star(mm.get_string(3), m)
+		# The right-hand side is ONE star for Pairwise Order and a LIST for
+		# Group Comparison ("X fires later than A, B and C"); the claim must
+		# hold against every one of them.
+		var rhs3: Array = _stars_in(mm.get_string(3), m)
 		var w3: String = mm.get_string(2)
 		var ax3: String = "pitch" if (w3 == "higher" or w3 == "lower") else "seq"
-		if a3 >= 0 and b3 >= 0:
+		if a3 >= 0 and not rhs3.is_empty():
 			var gt3: bool = (w3 == "later" or w3 == "higher")
-			var hold3: bool = (_axis_val(a3, ax3) > _axis_val(b3, ax3)) if gt3 \
-				else (_axis_val(a3, ax3) < _axis_val(b3, ax3))
+			var hold3: bool = true
+			for b3v in rhs3:
+				var b3: int = int(b3v)
+				if b3 == a3:
+					continue
+				var one_ok: bool = (_axis_val(a3, ax3) > _axis_val(b3, ax3)) if gt3 \
+					else (_axis_val(a3, ax3) < _axis_val(b3, ax3))
+				if not one_ok:
+					hold3 = false
 			_judge(form, text, hold3,
-				"%s %d vs %d" % [ax3, _axis_val(a3, ax3), _axis_val(b3, ax3)])
+				"%s %d vs %d listed" % [ax3, _axis_val(a3, ax3), rhs3.size()])
 		return
 
 	# ── three labels ────────────────────────────────────────────────────
@@ -488,6 +534,25 @@ func _try_parse(clue: Dictionary, text: String, form: String) -> void:
 		return
 
 	# ── one label + a computed property ─────────────────────────────────
+	# Repeating-melody Range, judged on the star's FIRST NOTE straight from the
+	# melody (not through the rank the generator's own fact uses).
+	mm = _re_range_first.search(text)
+	if mm:
+		var sw1: int = _one_star(mm.get_string(1), m)
+		if sw1 >= 0:
+			var limit1: int = int(mm.get_string(2))
+			_judge(form, text, _g._seq_first_tick(sw1) <= limit1,
+				"first note %d, window ends at note %d" % [_g._seq_first_tick(sw1), limit1])
+		return
+	mm = _re_range_late.search(text)
+	if mm:
+		var sw2: int = _one_star(mm.get_string(1), m)
+		if sw2 >= 0:
+			var floor2: int = int(mm.get_string(2))
+			_judge(form, text, _g._seq_first_tick(sw2) >= floor2,
+				"first note %d, window starts at note %d" % [_g._seq_first_tick(sw2), floor2])
+		return
+
 	mm = _re_range.search(text)
 	if mm:
 		var sr: int = _one_star(mm.get_string(1), m)
@@ -538,6 +603,25 @@ func _try_parse(clue: Dictionary, text: String, form: String) -> void:
 				if not lowb and _seq(int(gs)) > _seq(sb):
 					holdb = false
 			_judge(form, text, holdb, "subject position %d, group of %d" % [_seq(sb), gb.size()])
+		return
+
+	# Repeating-melody Group Order: "X first fires before every blue star first
+	# fires." Judged on first-firing order, which is rank order.
+	mm = _re_gorder_first.search(text)
+	if mm:
+		var sgf: int = _one_star(mm.get_string(1), m)
+		var ggf: Array = _group_stars(mm.get_string(3))
+		if sgf >= 0 and not ggf.is_empty():
+			var before_f: bool = mm.get_string(2) == "before"
+			var holdgf: bool = true
+			for gsf in ggf:
+				if int(gsf) == sgf:
+					continue
+				if before_f and _seq(int(gsf)) < _seq(sgf):
+					holdgf = false
+				if not before_f and _seq(int(gsf)) > _seq(sgf):
+					holdgf = false
+			_judge(form, text, holdgf, "subject rank %d vs %d members" % [_seq(sgf), ggf.size()])
 		return
 
 	mm = _re_gorder.search(text)
@@ -759,6 +843,33 @@ func _try_parse(clue: Dictionary, text: String, form: String) -> void:
 		return
 
 
+## Judges every clue of the puzzle currently in _g, tallying per Form and,
+## separately, how many repeating-melody sentences were actually judged.
+func _judge_current_puzzle() -> void:
+	for clue in _g.chosen_form_clues:
+		var text: String = str(clue.get("text", ""))
+		var form: String = str(clue.get("form_name", "?"))
+		seen_forms[form] = int(seen_forms.get(form, 0)) + 1
+		var before: int = int(by_form.get(form, 0))
+		_try_parse(clue, text, form)
+		var was_judged: bool = int(by_form.get(form, 0)) != before
+		if not _g._melody_repeats():
+			if not was_judged and unjudged.size() < 14:
+				unjudged.append("%s | %s" % [form, text])
+			continue
+		if text.contains("first fire") or text.contains("first-firing") \
+				or text.contains("within the first") or text.contains("no earlier than note"):
+			repeat_seen += 1
+			if was_judged:
+				repeat_judged += 1
+		if text.contains(" note"):
+			note_label_seen += 1
+			if was_judged:
+				note_label_judged += 1
+		if not was_judged and unjudged.size() < 14:
+			unjudged.append("%s | %s" % [form, text])
+
+
 func run() -> void:
 	_compile()
 	var cd = load("res://constellation_data.gd").new()
@@ -778,15 +889,34 @@ func run() -> void:
 				cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
 			_g.prune_enabled = false
 			await _g.generate_clues_forms()
+			_judge_current_puzzle()
 
-			for clue in _g.chosen_form_clues:
-				var text: String = str(clue.get("text", ""))
-				var form: String = str(clue.get("form_name", "?"))
-				seen_forms[form] = int(seen_forms.get(form, 0)) + 1
-				var before: int = int(by_form.get(form, 0))
-				_try_parse(clue, text, form)
-				if int(by_form.get(form, 0)) == before and unjudged.size() < 14:
-					unjudged.append("%s | %s" % [form, text])
+	# ── Beginner pass: repeating melody ─────────────────────────────────────
+	# Every sentence above is hard mode (a 1:1 melody, so a star's note is its
+	# rank). A Beginner puzzle names a star by one of its NOTES, which is not
+	# its rank, and says "first fires" / gives note windows for order claims --
+	# wording no sentence above exercises. Same independent parser; a note
+	# resolves to a star through the melody itself.
+	var gcb = load("res://game_context.gd").new()
+	var cdb = load("res://constellation_data.gd").new()
+	cdb._game_context = gcb
+	var eng = load("res://click_sequence_puzzle_engine.gd").new()
+	for cidb in BEGINNER_CONSTELLATIONS:
+		gcb.constellation_difficulty[cidb] = "easy"
+		for seedb in SEEDS:
+			cdb.player_seed = seedb
+			var bdef: Dictionary = cdb.get_constellation_def(cidb)
+			var bscn: int = int(bdef["star_count"])
+			eng.set_constellation(cidb, cdb, gcb)
+			var bsq: Array = eng.get_correct_star_sequence(cidb)
+			_g = load("res://constellation_logic_puzzle.gd").new()
+			_g.difficulty = "easy"
+			_g.setup(bscn, bdef["line_pairs"], bsq, seedb, cidb, bdef.get("name_theme", {}),
+				cdb.get_note_assignment(cidb), cdb.get_note_freqs(cidb), null)
+			_g.prune_enabled = false
+			await _g.generate_clues_forms()
+			beginner_puzzles += 1
+			_judge_current_puzzle()
 
 	# ── report ──────────────────────────────────────────────────────────
 	var forms: Array = seen_forms.keys()
@@ -820,6 +950,14 @@ func run() -> void:
 	ok(unverified.is_empty(),
 		"every Form that appeared has at least one judged sentence (unverified: %s)"
 			% ("none" if unverified.is_empty() else ", ".join(unverified)))
+	print("  Beginner pass: %d puzzles; %d repeating-melody sentences (%d judged); %d note-naming sentences (%d judged)"
+		% [beginner_puzzles, repeat_seen, repeat_judged, note_label_seen, note_label_judged])
+	ok(repeat_seen > 0,
+		"Beginner puzzles produce repeating-melody wording (%d) -- otherwise it is untested" % repeat_seen)
+	ok(repeat_judged > 0,
+		"some repeating-melody sentences were parsed and judged (%d of %d)" % [repeat_judged, repeat_seen])
+	ok(note_label_seen > 0 and note_label_judged > 0,
+		"sentences naming a star by one of its notes were judged against the melody (%d of %d)" % [note_label_judged, note_label_seen])
 	ok(wrong == 0,
 		"every judged sentence agrees with the real solution (%d contradict it)" % wrong)
 

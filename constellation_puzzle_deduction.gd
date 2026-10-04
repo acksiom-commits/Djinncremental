@@ -586,7 +586,8 @@ func _record_display_name(record_idx: int) -> String:
     var lo: int = int(r.get("seq_lo", 0))
     var hi: int = int(r.get("seq_hi", 0))
     if lo > 0 and lo == hi:
-        return "The star that fires %s" % _ordinal(lo)
+        var phrase: String = _seq_noun(lo)
+        return phrase.substr(0, 1).to_upper() + phrase.substr(1)
     var si: int = _effective_star_idx(record_idx)
     if si >= 0 and si < _host._star_names.size():
         return str(_host._star_names[si])
@@ -1589,6 +1590,12 @@ func _new_match_record(overrides: Dictionary = {}) -> Dictionary:
     var r: Dictionary = {
         "name": "",
         "seq_lo": 0, "seq_hi": 0,
+        # DISPLAY ONLY: the staff note numbers the player typed into the
+        # lower / upper Sequence boxes, so a box can keep showing what was
+        # typed. The bound itself lives in seq_lo / seq_hi (rank space); these
+        # are shown only while they still agree with it (see
+        # _exclusive_display_lo / _hi). 0 = nothing typed.
+        "seq_tick_lo": 0, "seq_tick_hi": 0,
         "seq_candidates": [],
         "color_states": {},
         "pitch_states": {},
@@ -1747,10 +1754,25 @@ func _find_match_record_by_melody_tick(tick: int) -> int:
 
 
 func _get_or_create_match_record_for_melody_tick(tick: int) -> int:
-    var idx: int = _find_match_record_by_melody_tick(tick)
-    if idx >= 0:
-        return idx
-    _match_records.append(_new_match_record({"melody_ticks": [tick]}))
+    # The repeat shape is public, so every note of the star at `tick` shares ONE
+    # record from the first click: a name or colour marked on one note is marked
+    # on all of them. The record's Sequence stays unpinned (seq_lo/seq_hi 0), so
+    # nothing about WHICH star it is gets pre-filled. A record from an older
+    # save may already hold only some of the star's notes; adopt it and add the
+    # rest, so no two records ever claim the same note.
+    var group: Array = _melody_ticks_for_rank(_seq_pos_for_melody_tick(tick))
+    if not group.has(tick):
+        group.append(tick)
+    for t in group:
+        var found: int = _find_match_record_by_melody_tick(int(t))
+        if found >= 0:
+            var have: Array = _match_records[found].get("melody_ticks", [])
+            for g in group:
+                if not have.has(g):
+                    have.append(g)
+            _match_records[found]["melody_ticks"] = have
+            return found
+    _match_records.append(_new_match_record({"melody_ticks": group.duplicate()}))
     _sync_derived_size()
     return _match_records.size() - 1
 
@@ -1951,6 +1973,11 @@ func _merge_match_records(target_idx: int, source_idx: int, allow_await: bool = 
             new_hi = t_hi
         target["seq_lo"] = new_lo
         target["seq_hi"] = new_hi
+    # The typed-note memory belongs to ONE record's own entry; two merged
+    # records' bounds were just intersected, so neither typed value is known
+    # to describe the result. Forget both and let the boxes show the bound.
+    target["seq_tick_lo"] = 0
+    target["seq_tick_hi"] = 0
 
     var target_cand: Array = target.get("seq_candidates", [])
     var source_cand: Array = source.get("seq_candidates", [])
@@ -2467,6 +2494,7 @@ func _load_match_records(data: Array) -> void:
         _match_records.append(_new_match_record({
             "name": str(e.get("name", "")),
             "seq_lo": _coerce_int(e.get("seq_lo"), 0), "seq_hi": _coerce_int(e.get("seq_hi"), 0),
+            "seq_tick_lo": _coerce_int(e.get("seq_tick_lo"), 0), "seq_tick_hi": _coerce_int(e.get("seq_tick_hi"), 0),
             "seq_candidates": seq_candidates,
             "color_states": color_states,
             "pitch_states": pitch_states,
@@ -2792,12 +2820,12 @@ func _propagate_name_states_confirmed_same_record(record_idx: int, confirmed_nam
 
 
 
-## The list itself is melody TICK numbers, not ranks -- see
-## _melody_ticks_for_rank. "No info" (blank) is still judged in RANK space
-## (every rank still open, before expansion): expanding first and comparing
-## tick-list size against star_count would falsely read "narrowed" the
-## moment any candidate rank repeats, since repeats make the tick list
-## longer than the rank list even with zero real progress.
+## The list is melody TICK numbers: every note of every star still possible,
+## compressed into ranges. The repeat shape is public (the staff draws it), so
+## listing all of a candidate star's notes tells the player nothing new. "No
+## info" (blank) is judged in RANK space (every rank still open, before
+## expansion): comparing a tick list's size against star_count would falsely
+## read "narrowed" the moment any candidate repeats.
 func _compressed_possible_positions_str(record_idx: int) -> String:
     var candidates: Array = _effective_seq_candidates(record_idx)
     if candidates.is_empty():
@@ -5002,6 +5030,23 @@ func _disclosure_satisfied(f: Dictionary) -> bool:
                 if int(x) < lo or int(x) > hi:
                     return false
             return true
+        "value_in_set":
+            # Form 25 (Firing Position): the star's rank is one of an allowed
+            # set. Entailed when every position the player still allows for it
+            # is in that set (positions are 1-based, the fact's ranks 0-based).
+            var vp: Array = _player_positions_for_star(int(f.get("s", -1)))
+            if vp.is_empty():
+                return false
+            var allowed_set: Array = f.get("allowed", [])
+            for x in vp:
+                var in_set: bool = false
+                for al in allowed_set:
+                    if int(al) + 1 == int(x):
+                        in_set = true
+                        break
+                if not in_set:
+                    return false
+            return true
         "ordinal_either_or":
             var ep: Array = _player_positions_for_star(int(f.get("s", -1)))
             if ep.is_empty():
@@ -5154,7 +5199,7 @@ func _disclosure_satisfied(f: Dictionary) -> bool:
 ## 1.0 forever, which is exactly the failure mode raw `cells` had.
 const SCOREABLE_DISCLOSURE_KINDS: Array = [
     "ordinal_exact", "ordinal_neg", "ordinal_cmp", "ordinal_chain",
-    "ordinal_adjacent", "ordinal_offset", "ordinal_range",
+    "ordinal_adjacent", "ordinal_offset", "ordinal_range", "value_in_set",
     "ordinal_either_or", "ordinal_extreme", "ordinal_count_before",
     "values_all_different", "values_same", "descriptor_either_or",
     # Group Negation (Form 24). Descriptor-keyed so a Sequence subject
@@ -5435,7 +5480,7 @@ func _describe_descriptor(cat: int, star: int) -> String:
     var val: String = t.substr(2)
     match cat:
         ConstellationLogicPuzzle.Category.NAME: return val
-        ConstellationLogicPuzzle.Category.SEQUENCE: return "the star that fires %s" % ConstellationLogicPuzzle._ordinal(int(val))
+        ConstellationLogicPuzzle.Category.SEQUENCE: return _seq_noun(int(val))
         ConstellationLogicPuzzle.Category.COLOR: return "the %s star" % val.to_lower()
         ConstellationLogicPuzzle.Category.PITCH: return "the star with pitch %s" % val
     return val
@@ -5459,32 +5504,39 @@ func _describe_disclosure(f: Dictionary) -> String:
     var kind: String = str(f.get("kind", ""))
     match kind:
         "ordinal_exact":
-            return "%s fires %s." % [_describe_star(int(f.get("s", -1))), ConstellationLogicPuzzle._ordinal(int(f.get("r", -1)) + 1)]
+            return "%s %s %s." % [_describe_star(int(f.get("s", -1))), _seq_verb(), _seq_ord(int(f.get("r", -1)) + 1)]
         "ordinal_neg":
-            return "%s does NOT fire %s." % [_describe_star(int(f.get("s", -1))), ConstellationLogicPuzzle._ordinal(int(f.get("r", -1)) + 1)]
+            return "%s does NOT %s %s." % [_describe_star(int(f.get("s", -1))), _seq_verb_base(), _seq_ord(int(f.get("r", -1)) + 1)]
         "ordinal_cmp":
             var a: String = _describe_star(int(f.get("a", -1)))
             var b: String = _describe_star(int(f.get("b", -1)))
-            return "%s fires %s %s." % [a, "after" if bool(f.get("a_gt_b", false)) else "before", b]
+            return "%s %s %s %s." % [a, _seq_rel_verb(), "after" if bool(f.get("a_gt_b", false)) else "before", b]
         "ordinal_chain":
-            return "%s fires before %s, which fires before %s." % [
-                _describe_star(int(f.get("a", -1))), _describe_star(int(f.get("mid", -1))), _describe_star(int(f.get("b", -1)))]
+            return "%s %s before %s, which %s before %s." % [
+                _describe_star(int(f.get("a", -1))), _seq_rel_verb(), _describe_star(int(f.get("mid", -1))),
+                _seq_rel_verb(), _describe_star(int(f.get("b", -1)))]
         "ordinal_adjacent", "ordinal_offset":
-            return "%s fires %d after %s." % [
-                _describe_star(int(f.get("a", -1))), int(f.get("offset", 1)), _describe_star(int(f.get("b", -1)))]
+            return "%s %s %d after %s." % [
+                _describe_star(int(f.get("a", -1))), _seq_rel_verb(), int(f.get("offset", 1)), _describe_star(int(f.get("b", -1)))]
         "ordinal_range":
-            return "%s fires between the %d and %d positions." % [
-                _describe_star(int(f.get("s", -1))), int(f.get("lo", 0)) + 1, int(f.get("hi", 0)) + 1]
+            if _seq_repeats():
+                return "%s %s between note %d and note %d." % [
+                    _describe_star(int(f.get("s", -1))), _seq_rel_verb(),
+                    _first_tick_for_rank(int(f.get("lo", 0)) + 1), _first_tick_for_rank(int(f.get("hi", 0)) + 1)]
+            return "%s %s between the %d and %d positions." % [
+                _describe_star(int(f.get("s", -1))), _seq_verb(), int(f.get("lo", 0)) + 1, int(f.get("hi", 0)) + 1]
+        "value_in_set":
+            return "%s %s." % [_describe_star(int(f.get("s", -1))), _firing_set_phrase(f.get("allowed", []))]
         "ordinal_either_or":
-            return "%s fires %s or %s." % [_describe_star(int(f.get("s", -1))),
-                ConstellationLogicPuzzle._ordinal(int(f.get("r1", -1)) + 1), ConstellationLogicPuzzle._ordinal(int(f.get("r2", -1)) + 1)]
+            return "%s %s %s or %s." % [_describe_star(int(f.get("s", -1))), _seq_verb(),
+                _seq_ord(int(f.get("r1", -1)) + 1), _seq_ord(int(f.get("r2", -1)) + 1)]
         "ordinal_extreme":
-            return "%s fires %s of: %s." % [_describe_star(int(f.get("s", -1))),
+            return "%s %s %s of: %s." % [_describe_star(int(f.get("s", -1))), _seq_rel_verb(),
                 "before all" if bool(f.get("want_lowest", false)) else "after all",
                 _describe_star_list(f.get("neighbors", []))]
         "ordinal_count_before":
-            return "Exactly %d of [%s] fire before %s." % [int(f.get("k", -1)),
-                _describe_star_list(f.get("neighbors", [])), _describe_star(int(f.get("s", -1)))]
+            return "Exactly %d of [%s] %s before %s." % [int(f.get("k", -1)),
+                _describe_star_list(f.get("neighbors", [])), _seq_rel_verb_base(), _describe_star(int(f.get("s", -1)))]
         "values_all_different":
             return "These all differ in %s: %s." % [_category_word(int(f.get("cat", -1))), _describe_star_list(f.get("stars", []))]
         "values_same":
@@ -6056,7 +6108,7 @@ func _group_phrase(cat: int, key: int, handle: int) -> String:
             var tp: String = _descriptor_term(cat, handle)
             return "a star with pitch %s" % tp.substr(2) if tp != "" else "a star with that pitch"
         ConstellationLogicPuzzle.Category.SEQUENCE:
-            return "the star that fires %s" % ConstellationLogicPuzzle._ordinal(key + 1)
+            return _seq_noun(key + 1)
     return "a star in that group"
 
 
@@ -6138,6 +6190,21 @@ func _stars_allowed_by_position_fact(fd: Dictionary) -> Array:
                     if int(p) >= lo and int(p) <= hi:
                         out.append(s)
                         break
+            "name_rank_set":
+                var set_pos: Array = _player_positions_for_star(s)
+                if set_pos.is_empty():
+                    out.append(s)
+                    continue
+                var fits: bool = false
+                for p2 in set_pos:
+                    for al in (fd.get("allowed", []) as Array):
+                        if int(al) + 1 == int(p2):
+                            fits = true
+                            break
+                    if fits:
+                        break
+                if fits:
+                    out.append(s)
             "name_nbr_count":
                 # Exactly k of its connected stars fire before it. Bound the
                 # count by what is certain (definitely before) and what is
@@ -6165,15 +6232,34 @@ func _stars_allowed_by_position_fact(fd: Dictionary) -> Array:
     return out
 
 
+## What a Firing Position fact (Form 25) says of its star, as a verb phrase:
+## the notes it could FIRST fire on, read off the public note table, or -- when
+## the set is too long to list -- that its firing pattern fits the clue. The
+## clue's own sentence is the precise statement; this only names the allowed set.
+func _firing_set_phrase(allowed: Array) -> String:
+    if allowed.is_empty() or allowed.size() > 6:
+        return "has a firing pattern that fits the clue"
+    var notes: Array[String] = []
+    for r in allowed:
+        notes.append(str(_first_tick_for_rank(int(r) + 1)))
+    return "%s on one of notes %s" % [_seq_rel_verb(), ", ".join(notes)]
+
+
 func _position_fact_phrase(fd: Dictionary) -> String:
     match str(fd.get("kind", "")):
         "name_rank_range":
-            return "a star that fires %s to %s" % [ConstellationLogicPuzzle._ordinal(int(fd.get("lo", 0)) + 1),
-                ConstellationLogicPuzzle._ordinal(int(fd.get("hi", 0)) + 1)]
+            if _seq_repeats():
+                return "a star that first fires between note %d and note %d" % [
+                    _first_tick_for_rank(int(fd.get("lo", 0)) + 1), _first_tick_for_rank(int(fd.get("hi", 0)) + 1)]
+            return "a star that %s %s to %s" % [_seq_verb(), _seq_ord(int(fd.get("lo", 0)) + 1),
+                _seq_ord(int(fd.get("hi", 0)) + 1)]
+        "name_rank_set":
+            return "a star that %s" % _firing_set_phrase(fd.get("allowed", []))
         "name_nbr_count":
-            return "a star with exactly %d of its connected stars firing before it" % int(fd.get("k", 0))
+            return "a star with exactly %d of its connected stars %s before it" % [
+                int(fd.get("k", 0)), "first firing" if _seq_repeats() else "firing"]
         "name_nbr_extreme":
-            return "a star that fires %s all of its connected stars" % ("before" if bool(fd.get("want_lowest", false)) else "after")
+            return "a star that %s %s all of its connected stars" % [_seq_rel_verb(), "before" if bool(fd.get("want_lowest", false)) else "after"]
     return "a star that fits"
 
 
@@ -6205,7 +6291,9 @@ func _stars_allowed_by_group_order_fact(fd: Dictionary) -> Dictionary:
                     break
             if not beaten:
                 allowed.append(int(s))
-        return {"allowed": allowed, "phrase": "the %s-firing %s" % ["earliest" if want_lowest else "latest", noun]}
+        var extreme_word: String = "earliest" if want_lowest else "latest"
+        var extreme_phrase: String = ("%s first-firing %s" if _seq_repeats() else "%s-firing %s") % [extreme_word, noun]
+        return {"allowed": allowed, "phrase": "the %s" % extreme_phrase}
     var precedes: bool = kind == "name_precedes_group"
     for s2 in _host._star_count:
         var violated: bool = false
@@ -6219,7 +6307,7 @@ func _stars_allowed_by_group_order_fact(fd: Dictionary) -> Dictionary:
                 break
         if not violated:
             allowed.append(s2)
-    return {"allowed": allowed, "phrase": "a star that fires %s every %s" % ["before" if precedes else "after", noun]}
+    return {"allowed": allowed, "phrase": "a star that %s %s every %s" % [_seq_rel_verb(), "before" if precedes else "after", noun]}
 
 
 ## Each star's group on Colour or Pitch as the PLAYER knows it: Colour is
@@ -6288,7 +6376,7 @@ func _name_constraints_for_clue(clue: Dictionary) -> Array:
                 out.append({"row": row_e, "allowed": allowed_e, "positive": true,
                     "phrase": "one of the two stars the clue names"})
             continue
-        elif kind == "name_rank_range" or kind == "name_nbr_count" or kind == "name_nbr_extreme":
+        elif kind == "name_rank_range" or kind == "name_nbr_count" or kind == "name_nbr_extreme" or kind == "name_rank_set":
             var row_p: int = int(fd.get("name_star", -1))
             if row_p < 0 or not terms.has(_descriptor_term(ConstellationLogicPuzzle.Category.NAME, row_p)):
                 continue
@@ -6716,40 +6804,22 @@ func _record_has_unpromoted_name_claim(record_idx: int) -> bool:
     return false
 
 
-## Melody TICK numbers (1-indexed, matching _draw_melody_staff's own domain
-## in constellation_puzzle_widgets.gd) that resolve to a given SEQ_POS
-## (RANK, 1-indexed) -- the inverse of that file's own _melody_rank_for_tick.
-## Reads ONLY the PRE-TRANSLATED _host._melody_seq_pos_sequence (a plain
-## array of already-resolved seq_pos values, one per tick) -- never
-## sequence_rank_solution directly. That split is load-bearing, not style:
-## an earlier draft of this function subscripted sequence_rank_solution[
-## star_idx] right here, which the matrix-up lint correctly caught (D1: "a
-## position read an identity off ground truth") -- see
-## melody_seq_pos_sequence's own comment in constellation_logic_puzzle.gd
-## for why the translation belongs in the generator instead. A rank whose
-## star fires more than once in the melody (a repeated note) maps to more
-## than one tick here (2026-09-28, per user direction: the Sort tabs' Seq.
-## field must read the same ground truth as the staff's ticks, not the
-## collapsed rank count). Falls back to [seq_pos] when there is no
-## precomputed array to search (old cache, or a clean 1:1 melody where tick
-## and rank coincide).
-func _melody_ticks_for_rank(seq_pos: int) -> Array:
-    if _host._melody_seq_pos_sequence.is_empty():
-        return [seq_pos]
-    var ticks: Array = []
-    for i in _host._melody_seq_pos_sequence.size():
-        if int(_host._melody_seq_pos_sequence[i]) == seq_pos:
-            ticks.append(i + 1)
-    return ticks if not ticks.is_empty() else [seq_pos]
-
-
-## Inverse direction: resolves a typed/clicked melody TICK number to its
-## seq_pos (RANK) via the same precomputed _host._melody_seq_pos_sequence
-## _melody_ticks_for_rank reads (see its own comment for why) -- same
-## mapping constellation_puzzle_widgets.gd's own _melody_rank_for_tick
-## computes for the staff, so typing either occurrence of a repeated note's
-## tick number here lands on the SAME rank, exactly like clicking either
-## occurrence on the staff opens the same popup.
+## Resolves a CLICKED melody TICK on the staff to its seq_pos (RANK) via the
+## PRE-TRANSLATED _host._melody_seq_pos_sequence (a plain array of already-
+## resolved seq_pos values, one per tick) -- never sequence_rank_solution
+## directly. That split is load-bearing, not style: an earlier draft
+## subscripted sequence_rank_solution[star_idx] right here, which the
+## matrix-up lint correctly caught (D1: "a position read an identity off
+## ground truth") -- see melody_seq_pos_sequence's own comment in
+## constellation_logic_puzzle.gd for why the translation belongs in the
+## generator instead.
+##
+## The melody's repeat shape (which notes are the same star) is PUBLIC: the
+## staff draws it from the start. So this table is a plain fact of the board
+## the player is looking at, usable by the staff popups AND by the Seq. boxes
+## (typed notes map to a star's rank through it). Falls back to the tick
+## itself when there is no precomputed array (old cache, or a clean 1:1 melody
+## where tick and rank coincide).
 func _seq_pos_for_melody_tick(tick: int) -> int:
     if _host._melody_seq_pos_sequence.is_empty():
         return tick
@@ -6768,33 +6838,131 @@ func _melody_tick_count() -> int:
     return _host._melody_seq_pos_sequence.size() if not _host._melody_seq_pos_sequence.is_empty() else _host._star_count
 
 
-## Returns a melody TICK number, not a raw rank -- see _melody_ticks_for_rank.
-## The exclusive-bound arithmetic itself (inclusive_lo - 1) stays in RANK
-## space and is unchanged: rank order and first-tick order are identical by
-## construction (a rank IS that star's first-occurrence position, so ranks
-## sort exactly the way their first ticks do), which is what keeps "N < x"
-## as meaningful in tick-space as it always was in rank-space. Only the
-## FIRST tick of the resulting rank is shown -- this box holds one number,
-## and a repeat's later ticks would only restate the same boundary.
-func _exclusive_display_lo(inclusive_lo: int, inclusive_hi: int) -> int:
+## True when the melody has more notes than stars (every Beginner
+## constellation): some star fires more than once, so a Sequence statement
+## about ORDER means the star's FIRST note.
+func _seq_repeats() -> bool:
+    return _melody_tick_count() > _host._star_count
+
+
+## Melody TICK numbers (1-indexed) that resolve to a given SEQ_POS (RANK,
+## 1-indexed): every note that star fires on. The inverse of
+## _seq_pos_for_melody_tick; falls back to [seq_pos] with no table.
+func _melody_ticks_for_rank(seq_pos: int) -> Array:
+    if _host._melody_seq_pos_sequence.is_empty():
+        return [seq_pos]
+    var ticks: Array = []
+    for i in _host._melody_seq_pos_sequence.size():
+        if int(_host._melody_seq_pos_sequence[i]) == seq_pos:
+            ticks.append(i + 1)
+    return ticks if not ticks.is_empty() else [seq_pos]
+
+
+## The first note a rank fires on -- the number a clue prints to name it.
+func _first_tick_for_rank(seq_pos: int) -> int:
+    return int(_melody_ticks_for_rank(seq_pos)[0])
+
+
+## How many stars have fired for the first time by note `tick` (inclusive): the
+## highest rank among notes 1..tick, because ranks first appear in rank order.
+## "Fires after note N" therefore means rank >= this + 1. With no table, rank
+## and note coincide.
+func _stars_begun_by_tick(tick: int) -> int:
+    var table: Array = _host._melody_seq_pos_sequence
+    if table.is_empty():
+        return clampi(tick, 0, _host._star_count)
+    var best: int = 0
+    for i in mini(maxi(tick, 0), table.size()):
+        best = maxi(best, int(table[i]))
+    return best
+
+
+## Wording for a Sequence value, in staff notes. A star is named by its FIRST
+## note, matching ConstellationLogicPuzzle._seq_first_tick; a 1:1 melody gives
+## exactly the original text.
+func _seq_verb() -> String:
+    return "fires"
+
+
+## The bare form, for "does NOT ___".
+func _seq_verb_base() -> String:
+    return "fire"
+
+
+## Relational wording (order between stars is FIRST-firing order): "first
+## fires" when the melody repeats, so "A fires before B" is never ambiguous.
+func _seq_rel_verb() -> String:
+    return "first fires" if _seq_repeats() else "fires"
+
+
+func _seq_rel_verb_base() -> String:
+    return "first fire" if _seq_repeats() else "fire"
+
+
+## "10th note" -- the star's first note.
+func _seq_ord(rank1: int) -> String:
+    return ConstellationLogicPuzzle._ordinal(_first_tick_for_rank(rank1))
+
+
+## "the star that fires 10th note".
+func _seq_noun(rank1: int) -> String:
+    return "the star that fires %s" % _seq_ord(rank1)
+
+
+## Every note a rank fires on: "8th note" or "notes 8, 10, 12".
+func _seq_ticks_phrase(rank1: int) -> String:
+    var ticks: Array = _melody_ticks_for_rank(rank1)
+    if ticks.size() == 1:
+        return ConstellationLogicPuzzle._ordinal(int(ticks[0]))
+    var parts := PackedStringArray()
+    for t in ticks:
+        parts.append(str(t))
+    return "notes %s" % ", ".join(parts)
+
+
+## Inclusive RANK bounds [lo, hi] for typed staff notes, non-exact entries
+## only: the lower box "N <" means the star first fires AFTER note N, the
+## upper box "< M" means it first fires BEFORE note M. 0 = no bound; callers
+## must reject M == 1 (nothing fires before note 1) and a lo past the last
+## rank, both of which come back as an unusable bound. In a 1:1 melody this is
+## exactly [N + 1, M - 1], the original arithmetic.
+func _seq_bounds_for_ticks(typed_lo: int, typed_hi: int) -> Array:
+    var lo: int = 0 if typed_lo <= 0 else _stars_begun_by_tick(typed_lo) + 1
+    var hi: int = 0 if typed_hi <= 0 else _stars_begun_by_tick(typed_hi - 1)
+    return [lo, hi]
+
+
+## The note the lower bound box shows. The player's own typed note is shown
+## while it still describes the bound (the star's first note must be after it,
+## which is `_stars_begun_by_tick(typed) == inclusive_lo - 1`); otherwise the
+## last first-note at or before the bound, so a bound narrowed by deduction
+## still reads as a real note on the staff.
+func _exclusive_display_lo(inclusive_lo: int, inclusive_hi: int, typed_tick: int = 0) -> int:
     if inclusive_lo <= 0:
         return 0
-    var rank: int = inclusive_lo if inclusive_lo == inclusive_hi else inclusive_lo - 1
+    if inclusive_lo == inclusive_hi:
+        return _first_tick_for_rank(inclusive_hi)
+    var rank: int = inclusive_lo - 1
     if rank <= 0:
         return 0
-    return int(_melody_ticks_for_rank(rank)[0])
+    if typed_tick > 0 and _stars_begun_by_tick(typed_tick) == rank:
+        return typed_tick
+    return _first_tick_for_rank(rank)
 
 
-## See _exclusive_display_lo's own comment -- same reasoning, upper bound.
-func _exclusive_display_hi(inclusive_lo: int, inclusive_hi: int) -> int:
+## Upper-bound counterpart of _exclusive_display_lo: the typed note is kept
+## while `_stars_begun_by_tick(typed - 1) == inclusive_hi`.
+func _exclusive_display_hi(inclusive_lo: int, inclusive_hi: int, typed_tick: int = 0) -> int:
     if inclusive_hi <= 0:
         return 0
     if inclusive_lo == inclusive_hi:
-        return int(_melody_ticks_for_rank(inclusive_hi)[0])
+        return _first_tick_for_rank(inclusive_hi)
     var shown: int = inclusive_hi + 1
     if shown > _host._star_count:
         return 0
-    return int(_melody_ticks_for_rank(shown)[0])
+    if typed_tick > 0 and _stars_begun_by_tick(typed_tick - 1) == inclusive_hi:
+        return typed_tick
+    return _first_tick_for_rank(shown)
 
 
 func _parse_exclusive_bounds(raw_lo: int, raw_hi: int) -> Array:

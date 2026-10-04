@@ -89,8 +89,8 @@ func _clamp_popup_screen_pos(screen_pos: Vector2) -> Vector2:
 ## than the enumeration it stands for, so this is a true upper bound.
 func _max_candidate_list_length() -> int:
     # Melody TICK count, not star_count: the list can hold more entries than
-    # there are stars once a candidate rank repeats (2026-09-28, per user
-    # direction — the box now displays the same ground truth as the staff).
+    # there are stars once a candidate star repeats (it shows every note of
+    # every candidate), so it is sized by the melody.
     var n: int = _deduction._melody_tick_count()
     if n <= 0:
         return 32
@@ -702,12 +702,12 @@ func _step_sentence(step: Dictionary) -> String:
         return _name_step_sentence(step, who)
     var resolved: int = int(step.get("resolved_rank", -1))
     if resolved >= 0:
-        return "With what you know, %s must fire %s." % [who, ConstellationLogicPuzzle._ordinal(resolved + 1)]
+        return "With what you know, %s must %s %s." % [who, _deduction._seq_verb_base(), _deduction._seq_ord(resolved + 1)]
     var parts: Array[String] = []
     for r in (step.get("eliminated_ranks", []) as Array):
-        parts.append(ConstellationLogicPuzzle._ordinal(int(r) + 1))
+        parts.append(_deduction._seq_ord(int(r) + 1))
     var listed: String = parts[0] if parts.size() == 1 else ", ".join(parts.slice(0, parts.size() - 1)) + " or " + parts[parts.size() - 1]
-    return "With what you know, %s cannot fire %s." % [who, listed]
+    return "With what you know, %s cannot %s %s." % [who, _deduction._seq_verb_base(), listed]
 
 
 func _make_hint_button(text: String, tier: int, handler: Callable) -> Button:
@@ -2140,6 +2140,32 @@ func _on_record_degree_eliminate(record_idx: int, degree: int, btn: Button) -> v
     _deduction._full_propagation_refresh()
 
 
+## The tint of a Sort row's Sequence label and boxes, the same rule the staff
+## uses (_staff_tick_color) applied to what the ROW is known to be. A row whose
+## colour is known keeps that colour (row_color already is it). Until then, on a
+## repeating melody: if every star the row could still be fires only once it is
+## DIM, if every one repeats it is the lit not-yet-known green, and if it could
+## be either (or nothing is known) it keeps its neutral tint -- a row must not
+## claim more than the board shows. A 1:1 melody keeps the original tint.
+func _seq_row_color(record_idx: int, row_color: Color) -> Color:
+    if not _deduction._seq_repeats():
+        return row_color
+    if row_color != STATE_COLORS.unresolved_fallback:
+        return row_color
+    var any_repeats: bool = false
+    var any_once: bool = false
+    for c in _deduction._effective_seq_candidates(record_idx):
+        if _deduction._melody_ticks_for_rank(int(c)).size() > 1:
+            any_repeats = true
+        else:
+            any_once = true
+    if any_repeats and not any_once:
+        return _host.UNKNOWN_SEQ_COLOR
+    if any_once and not any_repeats:
+        return STATE_COLORS.muted
+    return row_color
+
+
 func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> HBoxContainer:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
@@ -2258,10 +2284,10 @@ func _refresh_range_edits(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit
     if lo > 0 and lo == hi:
         lo_edit.text = ""
         hi_edit.text = ""
-        # ALL ticks this rank fires at (2026-09-28, per user direction), not
-        # just its first -- a repeated note is one star, but "= 1" alone
-        # would look like a contradiction next to a staff clearly showing
-        # that same star at both tick 1 and tick 9.
+        # ALL ticks this star fires at, not just its first -- a repeated star
+        # is one star, but "= 8" alone would look like a contradiction next to
+        # a staff clearly showing that same star at 8, 10 and 12. The repeat
+        # shape is public, so listing them reveals nothing.
         # PackedStringArray, not a plain Array: String.join() is typed, and
         # handing it an untyped Array is the silent-abort class this project
         # has hit before (see _copy_open_items_to_notes's own comment).
@@ -2271,8 +2297,9 @@ func _refresh_range_edits(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit
             tick_strs.append(str(t))
         mid_edit.text = "= %s" % ",".join(tick_strs)
         return
-    var lo_val: int = _deduction._exclusive_display_lo(lo, hi)
-    var hi_val: int = _deduction._exclusive_display_hi(lo, hi)
+    var rec: Dictionary = _deduction.record_at(record_idx)
+    var lo_val: int = _deduction._exclusive_display_lo(lo, hi, int(rec.get("seq_tick_lo", 0)))
+    var hi_val: int = _deduction._exclusive_display_hi(lo, hi, int(rec.get("seq_tick_hi", 0)))
     lo_edit.text = str(lo_val) if lo_val > 0 else ""
     hi_edit.text = str(hi_val) if hi_val > 0 else ""
     mid_edit.text = _deduction._compressed_possible_positions_str(record_idx)
@@ -2296,13 +2323,13 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEd
     var typed_lo: int = int(raw_lo) if raw_lo.is_valid_int() else 0
     var typed_hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
 
-    # Typed numbers are melody TICKS (2026-09-28, per user direction — the
-    # same ground truth as the staff), not ranks, so the valid range is the
-    # melody's own length. Each valid tick converts to its RANK below,
-    # before the existing rank-based bound logic runs unchanged — typing
-    # EITHER occurrence of a repeated note's tick lands on the same rank,
-    # exactly like clicking either occurrence on the staff opens the same
-    # popup (see _seq_pos_for_melody_tick's own comment).
+    # Typed numbers are staff NOTES -- the same numbers the clues and the staff
+    # use -- so the valid range is the melody's own length. The repeat shape is
+    # public, so a note maps to its star's rank through the staff's own table:
+    #   * the same note in both boxes, or "= N", pins the star that fires there
+    #     (typing ANY of a repeating star's notes lands on the same star);
+    #   * the lower box "N <" means the star FIRST fires after note N, the
+    #     upper box "< M" before note M (see _seq_bounds_for_ticks).
     var tick_count: int = _deduction._melody_tick_count()
     if typed_lo < 1 or typed_lo > tick_count: typed_lo = 0
     if typed_hi < 1 or typed_hi > tick_count: typed_hi = 0
@@ -2316,12 +2343,20 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEd
     if typed_lo > 0 and typed_hi > 0 and typed_lo > typed_hi:
         var tmp := typed_lo; typed_lo = typed_hi; typed_hi = tmp
 
-    var rank_lo: int = _deduction._seq_pos_for_melody_tick(typed_lo) if typed_lo > 0 else 0
-    var rank_hi: int = _deduction._seq_pos_for_melody_tick(typed_hi) if typed_hi > 0 else 0
-
-    var converted: Array = _deduction._parse_exclusive_bounds(rank_lo, rank_hi)
-    var lo: int = int(converted[0])
-    var hi: int = int(converted[1])
+    var is_exact_entry: bool = typed_lo > 0 and typed_lo == typed_hi
+    var lo: int
+    var hi: int
+    if is_exact_entry:
+        lo = _deduction._seq_pos_for_melody_tick(typed_lo)
+        hi = lo
+    else:
+        var converted: Array = _deduction._seq_bounds_for_ticks(typed_lo, typed_hi)
+        lo = int(converted[0])
+        hi = int(converted[1])
+    # What the player typed, remembered so the box can keep showing it. An
+    # exact pin renders in the centre box, so it keeps none.
+    var new_tick_lo: int = 0 if is_exact_entry else typed_lo
+    var new_tick_hi: int = 0 if is_exact_entry else typed_hi
 
     var r: Dictionary = _deduction.record_at(record_idx)
 
@@ -2338,30 +2373,31 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEd
     # re-render either.
     if lo == int(r.get("seq_lo", 0)) and hi == int(r.get("seq_hi", 0)) \
             and (r.get("seq_candidates", []) as Array).is_empty():
+        # Same bound, but the player may have typed a different note that maps
+        # to it (10 instead of 11): remember the latest so the box keeps it.
+        if int(r.get("seq_tick_lo", 0)) != new_tick_lo or int(r.get("seq_tick_hi", 0)) != new_tick_hi:
+            r["seq_tick_lo"] = new_tick_lo
+            r["seq_tick_hi"] = new_tick_hi
+            _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
+            _deduction._save_puzzle_notes()
         return
 
     # Reject an entry whose CONVERTED bounds can't be satisfied, instead of
-    # writing a meaningless range. Checked on rank_lo/rank_hi (RANK space,
-    # the domain _parse_exclusive_bounds' own arithmetic operates in), not
-    # the raw typed ticks — a tick number this large or small says nothing
-    # about whether the resulting rank bound is reachable; two different
-    # tick numbers can still convert to the SAME rank (a repeat), which
-    # must be judged exact, not as a pair of ordinary bounds. The two
-    # extremes used to fail silently in opposite directions:
-    #   * "< 1" (typing rank 1 in the high box) converts to hi = 0, which is
-    #     the sentinel for NO upper bound — an impossible constraint
+    # writing a meaningless range. The two extremes used to fail silently in
+    # opposite directions:
+    #   * "< note 1" converts to hi = 0, which is the sentinel for NO upper
+    #     bound -- an impossible constraint (no star fires before note 1)
     #     silently became "any position", the exact inverse of the request.
-    #   * "> star_count" (typing the last rank in the low box) converts to
-    #     lo = star_count + 1, giving an empty candidate set that reads as
-    #     "no information" in _record_descriptor_state but as a genuinely
-    #     empty set in _effective_seq_bounds.
+    #   * "N <" with N at or past the last star's first note converts to
+    #     lo = star_count + 1, an empty candidate set that reads as "no
+    #     information" in _record_descriptor_state but as a genuinely empty
+    #     set in _effective_seq_bounds.
     # Same shape as _merge_match_records' "bounds contradict once
     # intersected" guard: keep what was there and re-render it, so the row
     # visibly snaps back rather than appearing to accept the entry.
-    var is_exact_entry: bool = rank_lo > 0 and rank_lo == rank_hi
     if not is_exact_entry:
-        var impossible_hi: bool = rank_hi > 0 and rank_hi <= 1
-        var impossible_lo: bool = rank_lo > 0 and rank_lo >= _host._star_count
+        var impossible_hi: bool = typed_hi == 1
+        var impossible_lo: bool = typed_lo > 0 and lo > _host._star_count
         if impossible_hi or impossible_lo or (lo > 0 and hi > 0 and lo > hi):
             _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
             return
@@ -2382,6 +2418,8 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEd
 
     r["seq_lo"] = lo
     r["seq_hi"] = hi
+    r["seq_tick_lo"] = new_tick_lo
+    r["seq_tick_hi"] = new_tick_hi
     r["seq_candidates"] = []
 
     _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
@@ -2416,6 +2454,8 @@ func _undo_sequence_entry(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit
     if lo > 0 and lo == hi:
         r["seq_lo"] = 0
         r["seq_hi"] = 0
+        r["seq_tick_lo"] = 0
+        r["seq_tick_hi"] = 0
     _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
     if (lo > 0 and lo == hi) or had_candidates:
         _deduction._save_puzzle_notes()
@@ -2430,10 +2470,10 @@ func _commit_sequence_candidates(record_idx: int, lo_edit: LineEdit, mid_edit: L
         _undo_sequence_entry(record_idx, lo_edit, mid_edit, hi_edit)
         return
 
-    # Parsed numbers are melody TICKS, same domain as the range boxes (see
+    # Parsed numbers are staff NOTES, same domain as the range boxes (see
     # _commit_sequence_range's own comment) -- converted to their RANKS and
-    # DEDUPED here, since two ticks of the same repeated note collapse to
-    # one rank (one star), not two candidates.
+    # DEDUPED here, since two notes of the same repeating star are one star,
+    # not two candidates.
     var parsed: Array = _deduction._parse_candidate_list(raw)
     var tick_count: int = _deduction._melody_tick_count()
     var valid_ranks: Dictionary = {}
@@ -2448,7 +2488,7 @@ func _commit_sequence_candidates(record_idx: int, lo_edit: LineEdit, mid_edit: L
         return
 
     if valid.size() == 1:
-        var one_tick: int = int(_deduction._melody_ticks_for_rank(int(valid[0]))[0])
+        var one_tick: int = _deduction._first_tick_for_rank(int(valid[0]))
         lo_edit.text = str(one_tick)
         hi_edit.text = str(one_tick)
         _commit_sequence_range(record_idx, lo_edit, mid_edit, hi_edit)
@@ -2457,6 +2497,8 @@ func _commit_sequence_candidates(record_idx: int, lo_edit: LineEdit, mid_edit: L
     _deduction.record_at(record_idx)["seq_candidates"] = valid
     _deduction.record_at(record_idx)["seq_lo"] = 0
     _deduction.record_at(record_idx)["seq_hi"] = 0
+    _deduction.record_at(record_idx)["seq_tick_lo"] = 0
+    _deduction.record_at(record_idx)["seq_tick_hi"] = 0
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
 
@@ -2680,10 +2722,10 @@ func _build_sequence_slot_row(slot: int) -> void:
     _host._markers_content.add_child(row)
 
     var seq_lbl := Label.new()
-    seq_lbl.text = _ordinal(slot)
+    seq_lbl.text = _deduction._seq_ticks_phrase(slot)
     seq_lbl.custom_minimum_size = Vector2(64, 0)
     seq_lbl.add_theme_font_size_override("font_size", 19)
-    seq_lbl.add_theme_color_override("font_color", row_color)
+    seq_lbl.add_theme_color_override("font_color", _seq_row_color(record_idx, row_color))
     row.add_child(seq_lbl)
 
     var facts_vbox := VBoxContainer.new()
@@ -2725,7 +2767,9 @@ func _build_color_group_row(color_idx: int, position_in_group: int) -> void:
     row.add_child(facts_vbox)
 
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Seq.",
+        _make_sequence_range_row_for_record(record_idx, _seq_row_color(record_idx, row_color)),
+        _seq_row_color(record_idx, row_color)))
     facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Repeats:", _make_repeat_checklist_row_for_record(record_idx), row_color))
 
@@ -2787,7 +2831,9 @@ func _build_pitch_group_row(pitch_freq: float, position_in_group: int) -> void:
     # handling above), so a separate manual Color entry here was pure UI
     # clutter, never adding information the row wasn't already showing.
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Seq.",
+        _make_sequence_range_row_for_record(record_idx, _seq_row_color(record_idx, row_color)),
+        _seq_row_color(record_idx, row_color)))
     facts_vbox.add_child(_make_fact_row("Repeats:", _make_repeat_checklist_row_for_record(record_idx), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
@@ -2844,7 +2890,9 @@ func _build_degree_group_row(degree: int, position_in_group: int) -> void:
     row.add_child(facts_vbox)
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Seq.",
+        _make_sequence_range_row_for_record(record_idx, _seq_row_color(record_idx, row_color)),
+        _seq_row_color(record_idx, row_color)))
     facts_vbox.add_child(_make_fact_row("Repeats:", _make_repeat_checklist_row_for_record(record_idx), row_color))
     _host._markers_content.add_child(HSeparator.new())
 
@@ -2882,7 +2930,9 @@ func _build_name_row(name_str: String) -> void:
     row.add_child(facts_vbox)
 
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Seq.",
+        _make_sequence_range_row_for_record(record_idx, _seq_row_color(record_idx, row_color)),
+        _seq_row_color(record_idx, row_color)))
     facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Repeats:", _make_repeat_checklist_row_for_record(record_idx), row_color))
 
@@ -2929,7 +2979,9 @@ func _build_repeat_bucket_row(value: int, position_in_group: int) -> void:
 
     facts_vbox.add_child(_make_fact_row("Name:", _make_name_checklist_trigger_button(record_idx), row_color))
     facts_vbox.add_child(_make_fact_row("Color:", _make_color_toggle_row_for_record(record_idx), row_color))
-    facts_vbox.add_child(_make_fact_row("Seq.", _make_sequence_range_row_for_record(record_idx, row_color), row_color))
+    facts_vbox.add_child(_make_fact_row("Seq.",
+        _make_sequence_range_row_for_record(record_idx, _seq_row_color(record_idx, row_color)),
+        _seq_row_color(record_idx, row_color)))
     facts_vbox.add_child(_make_fact_row("Pitch:", _make_pitch_checklist_row_for_record(record_idx), row_color))
 
     _host._markers_content.add_child(HSeparator.new())
@@ -3047,6 +3099,53 @@ const STAFF_TOP_PAD: float = 10.0
 const NUMERAL_BASELINE_PAD: float = 8.0
 const NUMERAL_BLOCK_H: float = 22.0
 
+## Extra height reserved ABOVE the numerals, only on a repeating melody, for the
+## arcs that join the notes of one star (see _draw_repeat_arcs). Taken out of the
+## staff's own height, so the pitch plot just compresses a little.
+const REPEAT_ARC_BAND_H: float = 16.0
+
+
+## The colour a staff tick's marks take. A star's colour once it is deduced,
+## for every one of its notes. Until then, on a repeating melody, a note of a
+## star that fires only once stays DIM and a note of a star that repeats is lit
+## in the not-yet-known green -- so the repeat shape reads at a glance, and the
+## colour never says more than the board already shows. A 1:1 melody has no
+## repeats to show, so every note stays the original green.
+func _staff_tick_color(seq_pos: int, known_color: int) -> Color:
+    if known_color >= 0:
+        return _host.STAR_COLORS_BY_IDX[known_color]
+    if _deduction._seq_repeats() and _deduction._melody_ticks_for_rank(seq_pos).size() < 2:
+        return STATE_COLORS.muted
+    return _host.UNKNOWN_SEQ_COLOR
+
+
+## Thin arcs joining consecutive notes of each star that fires more than once,
+## in that star's colour (green until its colour is known). One arc per
+## consecutive pair, peak height growing with the span, drawn in the band
+## reserved just above the numerals.
+func _draw_repeat_arcs(margin_x: float, step_x: float, base_y: float) -> void:
+    var table: Array = _host._melody_seq_pos_sequence
+    var seen: Dictionary = {}
+    for t in range(1, table.size() + 1):
+        var rank: int = _deduction._seq_pos_for_melody_tick(t)
+        if seen.has(rank):
+            continue
+        seen[rank] = true
+        var ticks: Array = _deduction._melody_ticks_for_rank(rank)
+        if ticks.size() < 2:
+            continue
+        var col: Color = _staff_tick_color(rank, _deduction._known_color_for_seq_position(rank))
+        col.a = 0.85
+        for i in range(ticks.size() - 1):
+            var xa: float = margin_x + step_x * float(int(ticks[i]) - 1)
+            var xb: float = margin_x + step_x * float(int(ticks[i + 1]) - 1)
+            var peak: float = clampf(3.0 + (xb - xa) * 0.12, 4.0, REPEAT_ARC_BAND_H - 2.0)
+            var pts := PackedVector2Array()
+            for s in range(0, 13):
+                var u: float = float(s) / 12.0
+                pts.append(Vector2(lerpf(xa, xb, u), base_y - 4.0 * peak * u * (1.0 - u)))
+            _host._melody_staff_panel.draw_polyline(pts, col, 1.5, true)
+
 
 ## `text` shortened with a trailing ellipsis until it fits `max_w`.
 ##
@@ -3089,7 +3188,7 @@ func _draw_melody_staff() -> void:
     # Taken out of the staff's own height, not the panel's, so the .tscn
     # stays untouched and the pitch spread just compresses.
     var staff_top: float = NAME_ROW_LOW_DY + STAFF_TOP_PAD
-    var staff_bottom_pad: float = NUMERAL_BLOCK_H
+    var staff_bottom_pad: float = NUMERAL_BLOCK_H + (REPEAT_ARC_BAND_H if _deduction._seq_repeats() else 0.0)
     var usable_w: float = panel_size.x - margin_x * 2.0
     var usable_h: float = panel_size.y - staff_top - staff_bottom_pad
     var step_x: float = usable_w / float(maxi(tick_count - 1, 1))
@@ -3139,7 +3238,7 @@ func _draw_melody_staff() -> void:
         # Colour is a GIVEN axis (painted on the map), so tinting by it
         # reveals nothing the player has not already got.
         var known_color: int = _deduction._known_color_for_seq_position(seq_pos)
-        var pos_col: Color = _host.STAR_COLORS_BY_IDX[known_color] if known_color >= 0 else _host.UNKNOWN_SEQ_COLOR
+        var pos_col: Color = _staff_tick_color(seq_pos, known_color)
 
         # NAME, on one of two staggered rows, above the staff. "?" until
         # identified, then the name itself.
@@ -3190,6 +3289,11 @@ func _draw_melody_staff() -> void:
         _host._melody_staff_panel.draw_string(font,
             Vector2(x - nw * 0.5, panel_size.y - NUMERAL_BASELINE_PAD),
             num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, pos_col)
+
+    # The repeat shape is public: join the notes of every star that fires more
+    # than once, just above the numerals.
+    if _deduction._seq_repeats():
+        _draw_repeat_arcs(margin_x, step_x, panel_size.y - NUMERAL_BLOCK_H - 1.0)
 
 
 ## Resolves a melody TICK (1-indexed staff position, 1..tick_count in
@@ -4014,10 +4118,12 @@ func _ordinal(n: int) -> String:
         _: return "%dth note" % n
 
 
+## A star tag's Sequence text from the star's confirmed rank: every note it
+## fires on ("7th note", or "notes 8, 10, 12" for a star that repeats).
 func _ordinal_str(raw: String) -> String:
     if raw == "?" or not raw.is_valid_int():
         return raw
-    return _ordinal(int(raw))
+    return _deduction._seq_ticks_phrase(int(raw))
 
 
 func _note_name_for_star(star_idx: int) -> String:
