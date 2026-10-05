@@ -416,6 +416,45 @@ func run() -> void:
 	ok(shipped_total > 0, "the generator actually ships Form 25 clues (%d across the runs)" % shipped_total)
 	ok(shipped_bad.is_empty(), "every shipped Form 25 clue judges clean from its stored form (%d bad) %s" % [shipped_bad.size(), str(shipped_bad.slice(0, 3))])
 
+	print("\n=== pruning never removes Firing Position / Firing Relation clues ===")
+	# Same seed, same draws: the pruned run is the unpruned run minus whatever
+	# pruning removed, so every Form 25/26 clue of the unpruned set must survive.
+	# Without the exemption these are dropped as redundant almost every time
+	# (measured: 22 unpruned -> 1 shipped over 18 puzzles).
+	var kept_total: int = 0
+	var lost: Array = []
+	var shrunk: int = 0
+	var gates_ok: int = 0
+	var runs_p: int = 0
+	var f26_seen: int = 0
+	for cidp in [0, 1, 2, 3, 4, 5]:
+		for seedp in [11, 12]:
+			var gu = _beginner_puzzle(cidp, seedp)
+			gu.prune_enabled = false
+			await gu.generate_clues_forms()
+			var gpr = _beginner_puzzle(cidp, seedp)
+			await gpr.generate_clues_forms()
+			runs_p += 1
+			if gpr.gate_passed:
+				gates_ok += 1
+			if gpr.chosen_form_clues.size() < gu.chosen_form_clues.size():
+				shrunk += 1
+			var pruned_texts: Dictionary = {}
+			for cl in gpr.chosen_form_clues:
+				pruned_texts[str(cl["text"])] = true
+			for cl in gu.chosen_form_clues:
+				if int(cl["form_id"]) == 25 or int(cl["form_id"]) == 26:
+					kept_total += 1
+					if int(cl["form_id"]) == 26:
+						f26_seen += 1
+					if not pruned_texts.has(str(cl["text"])):
+						lost.append("c%d s%d F%d: %s" % [cidp, seedp, int(cl["form_id"]), str(cl["text"])])
+	print("    %d puzzles; %d Form 25/26 clues in the unpruned sets (%d of them Form 26); %d lost" % [runs_p, kept_total, f26_seen, lost.size()])
+	ok(kept_total >= 8, "the unpruned sets contain enough of them to test with (%d)" % kept_total)
+	ok(lost.is_empty(), "every one of them survives pruning (%d lost) %s" % [lost.size(), str(lost.slice(0, 2))])
+	ok(shrunk == runs_p, "pruning still shrinks every puzzle (%d of %d), so this is not 'pruning is off'" % [shrunk, runs_p])
+	ok(gates_ok == runs_p, "every pruned puzzle still passes the ship gate (%d of %d)" % [gates_ok, runs_p])
+
 	print("\n=== the player-side engine reads the set ===")
 	# 4 stars, notes -> ranks [1,2,2,3,4,1]; the set {rank 0, rank 2} = 1-based 1 and 3.
 	var host = await _host([1, 2, 2, 3, 4, 1])

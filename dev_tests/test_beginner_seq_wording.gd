@@ -18,9 +18,10 @@ extends "res://dev_tests/test_base.gd"
 #    Count, Group Order).
 #  - Range states a note window whose stars are exactly the ones its rank fact
 #    covers.
-#  - Exact Offset and Adjacency, whose arithmetic is in notes the solver cannot
-#    yet carry, are absent from Sequence in a repeating melody and present in
-#    hard mode.
+#  - Exact Offset and Adjacency, whose arithmetic is in NOTES, never print the
+#    rank wording ("fires exactly N steps later") in a repeating melody -- they
+#    become note-gap / melody-adjacency sentences (test_firing_relation judges
+#    those) -- and keep the original wording in hard mode.
 #  - The player-side text (deduction/widgets) agrees with the generator's label.
 
 const PuzzleScript = preload("res://constellation_logic_puzzle.gd")
@@ -78,6 +79,14 @@ func _draw(g, builder: String, tries: int) -> Array:
 		if not c.is_empty():
 			out.append(c)
 	return out
+
+
+func _count_containing(clues: Array, frag: String) -> int:
+	var n: int = 0
+	for c in clues:
+		if str(c["text"]).contains(frag):
+			n += 1
+	return n
 
 
 func _stars_of(clue: Dictionary) -> Array:
@@ -232,23 +241,33 @@ func run() -> void:
 			h_range_ok = false
 	ok(h_range_ok, "hard-mode Range keeps 'is among the first/last N'")
 
-	print("\n=== note-arithmetic Forms are off for Sequence in a repeating melody ===")
+	print("\n=== note-arithmetic Forms speak in notes in a repeating melody ===")
 	var offsets_b: Array = _draw(g, "_build_form_exact_offset", 300)
 	var seq_offsets_b: int = 0
+	var note_offsets_b: int = 0
 	var pitch_offsets_b: int = 0
 	for c6 in offsets_b:
 		if str(c6["text"]).contains("fires exactly"):
 			seq_offsets_b += 1
+		if str(c6["text"]).contains(" notes after ") or str(c6["text"]).contains(" notes before "):
+			note_offsets_b += 1
 		if str(c6["text"]).contains("is pitched exactly"):
 			pitch_offsets_b += 1
-	ok(seq_offsets_b == 0, "Beginner Exact Offset never offers a Sequence offset (%d)" % seq_offsets_b)
+	ok(seq_offsets_b == 0, "Beginner Exact Offset never prints the rank wording 'fires exactly' (%d)" % seq_offsets_b)
+	ok(note_offsets_b > 0, "Beginner Exact Offset's Sequence version is a gap in notes (%d)" % note_offsets_b)
 	ok(pitch_offsets_b > 0, "Beginner Exact Offset still offers the Pitch version (%d)" % pitch_offsets_b)
 	var seq_offsets_h: int = 0
 	for c7 in _draw(h, "_build_form_exact_offset", 300):
 		if str(c7["text"]).contains("fires exactly"):
 			seq_offsets_h += 1
 	ok(seq_offsets_h > 0, "hard-mode Exact Offset still offers Sequence offsets (%d)" % seq_offsets_h)
-	ok(_draw(g, "_build_form_adjacency", 300).size() == 0, "Beginner Adjacency produces nothing")
+	var adj_b: Array = _draw(g, "_build_form_adjacency", 300)
+	var adj_plain: int = 0
+	for c8 in adj_b:
+		if str(c8["text"]).contains("immediately after") and not str(c8["text"]).contains("first fires"):
+			adj_plain += 1
+	ok(adj_b.size() > 0, "Beginner Adjacency is back, as melody adjacency (%d clues)" % adj_b.size())
+	ok(adj_b.size() == 0 or adj_plain + _count_containing(adj_b, "immediately before") == adj_b.size(), "every Beginner Adjacency clue says 'immediately after/before'")
 	ok(_draw(h, "_build_form_adjacency", 300).size() > 0, "hard-mode Adjacency still produces clues")
 
 	print("\n=== the player-side text agrees with the generator's label ===")

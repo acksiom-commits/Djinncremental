@@ -950,6 +950,31 @@ func _propagate(possible: Array, cmp_clues: Array[Dictionary], adj_clues: Array[
         for clue in adj_clues:
             var a2: int = clue["a"]
             var b2: int = clue["b"]
+            if clue.has("fwd"):
+                # ordinal_pair_set (see _pair_clue_runtime): a rank of one star
+                # survives only while some partner rank that the table allows
+                # is still open for the other.
+                for r in star_count:
+                    if possible[a2][r]:
+                        var has_partner: bool = false
+                        for rb in clue["fwd"][r]:
+                            if possible[b2][int(rb)]:
+                                has_partner = true
+                                break
+                        if not has_partner:
+                            possible[a2][r] = false
+                            changed = true
+                for r in star_count:
+                    if possible[b2][r]:
+                        var has_partner2: bool = false
+                        for ra in clue["bwd"][r]:
+                            if possible[a2][int(ra)]:
+                                has_partner2 = true
+                                break
+                        if not has_partner2:
+                            possible[b2][r] = false
+                            changed = true
+                continue
             var off: int = int(clue.get("offset", 1))
             for r in star_count:
                 if possible[a2][r]:
@@ -1216,6 +1241,27 @@ func _validate_count_clues(solution: Array, count_clues: Array[Dictionary]) -> b
     return true
  
  
+## An ordinal_pair_set fact ({a, b, pairs: [[rank of a, rank of b], ...]}) as the
+## solver runs it: for each rank of a the ranks of b it may sit with (fwd) and
+## the reverse (bwd). Rebuilt per solve rather than stored on the fact, so the
+## fact stays plain JSON-safe data. Rank-space offset facts are the special case
+## pairs = {(r + off, r)}; this one carries ANY relation between two stars'
+## ranks, which is what an arithmetic on melody NOTES needs.
+func _pair_clue_runtime(clue: Dictionary) -> Dictionary:
+    var fwd: Array = []
+    var bwd: Array = []
+    for i in star_count:
+        fwd.append([])
+        bwd.append([])
+    for p in clue["pairs"]:
+        var ra: int = int(p[0])
+        var rb: int = int(p[1])
+        if ra >= 0 and ra < star_count and rb >= 0 and rb < star_count:
+            (fwd[ra] as Array).append(rb)
+            (bwd[rb] as Array).append(ra)
+    return {"kind": "ordinal_pair_set", "a": int(clue["a"]), "b": int(clue["b"]), "fwd": fwd, "bwd": bwd}
+
+
 ## The pure constraint-propagation prefix of _solve(), split out
 ## 2026-09-20 so an explanation/difficulty-scoring pass can ask "what does
 ## propagation ALONE force from this fact set" without the backtracking
@@ -1238,6 +1284,8 @@ func _propagate_only(clues: Array[Dictionary], rank_restriction: Array = []) -> 
     for clue in clues:
         if clue["kind"] == "ordinal_adjacent" or clue["kind"] == "ordinal_offset":
             adj_clues.append(clue)
+        elif clue["kind"] == "ordinal_pair_set":
+            adj_clues.append(_pair_clue_runtime(clue))
         elif clue["kind"] == "ordinal_count_before":
             count_clues.append(clue)
 
@@ -1399,6 +1447,24 @@ func _forward_check(var_idx: int, val: int, domains: Array,
     for clue in adj_clues:
         var a: int = clue["a"]
         var b: int = clue["b"]
+        if clue.has("fwd"):
+            if a == var_idx:
+                var kept_b: Array = []
+                for v in nd[b]:
+                    if (clue["fwd"][val] as Array).has(v):
+                        kept_b.append(v)
+                if kept_b.is_empty():
+                    return null
+                nd[b] = kept_b
+            elif b == var_idx:
+                var kept_a: Array = []
+                for v in nd[a]:
+                    if (clue["bwd"][val] as Array).has(v):
+                        kept_a.append(v)
+                if kept_a.is_empty():
+                    return null
+                nd[a] = kept_a
+            continue
         var off2: int = int(clue.get("offset", 1))
         if a == var_idx:
             var new_b: Array = []
@@ -3258,6 +3324,16 @@ func _validate_sequence_fact(f: Dictionary) -> String:
             var hi: int = int(f["hi"])
             if sequence_rank_solution[rs] < lo or sequence_rank_solution[rs] > hi:
                 return "ordinal_range s=%d claims rank in [%d,%d] but true rank=%d" % [rs, lo, hi, sequence_rank_solution[rs]]
+        "ordinal_pair_set":
+            var pa: int = int(f["a"])
+            var pb: int = int(f["b"])
+            var pair_held: bool = false
+            for p in f["pairs"]:
+                if int(p[0]) == int(sequence_rank_solution[pa]) and int(p[1]) == int(sequence_rank_solution[pb]):
+                    pair_held = true
+                    break
+            if not pair_held:
+                return "ordinal_pair_set a=%d b=%d does not allow the true ranks (%d, %d)" % [pa, pb, sequence_rank_solution[pa], sequence_rank_solution[pb]]
         "value_in_set":
             var vs: int = int(f["s"])
             var held: bool = false
@@ -3889,7 +3965,7 @@ const FORM_NAMES := {
     17: "Betweenness", 18: "Degree Fact", 19: "Non-Adjacency",
     20: "Cross-Domain Bridge", 21: "Pseudo-True Pair (Aligned)",
     22: "Pseudo-True Pair (Staggered)", 23: "Group Membership",
-    24: "Group Negation", 25: "Firing Position",
+    24: "Group Negation", 25: "Firing Position", 26: "Firing Relation",
 }
 
 # Form 25 (Firing Position) is listed here but only DRAWN when the melody
@@ -3897,7 +3973,7 @@ const FORM_NAMES := {
 # never offers it, so every hard-mode constellation's Form pool, and therefore
 # its seeded RNG stream, is unchanged.
 const AUTOMATED_FORM_IDS: Array[int] = [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24, 25,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24, 25, 26,
 ]
 # Form 18 (Degree Fact) deliberately excluded from automatic generation —
 # Degree stays hand-tuned per constellation (topology varies too much; some
@@ -3932,6 +4008,7 @@ func _build_form(form_id: int, chain: Dictionary) -> Dictionary:
         23: return _build_form_group_membership(chain)
         24: return _build_form_group_negation(chain)
         25: return _build_form_firing_position(chain)
+        26: return _build_form_firing_relation(chain)
     return {}
 
 
@@ -4480,6 +4557,238 @@ func _build_form_firing_position(chain: Dictionary) -> Dictionary:
     }
 
 
+# ── Form 26: Firing Relation -- how two stars' firings sit against each other ──
+#
+# The two-star counterpart of Form 25, and the note-arithmetic that Exact Offset
+# (6) and Adjacency (7) could not do in a repeating melody: "exactly 3 steps
+# later" there counted first-firing RANKS, which are not melody NOTES once a star
+# repeats. Built from the same abstract parts:
+#
+#   PICK       which of a star's firings is meant -- any one of them, its first,
+#              its last, or its k-th. A pick names a SET of notes.
+#   RELATION   on d = (note of A) - (note of B): exactly n notes after/before
+#              (n = 1 reads "immediately"), at least n notes after/before, or
+#              within n notes of each other. An "any" pick means SOME pair of
+#              notes satisfies it; a negated relation is only built between two
+#              specific firings, where "not" has one reading.
+#
+# A pick with no such firing (no k-th firing) fails, so the sentence also says the
+# star fires that often. The whole sentence reduces to the set of (rank of A,
+# rank of B) pairs it allows -- an ordinal_pair_set -- worked out from the PUBLIC
+# note -> rank table, never from the answer. Forms 6 and 7 route here when the
+# melody repeats: 6 as a gap between two specific firings, 7 as melody adjacency
+# (one firing of A directly beside one of B).
+const FIRING_RELATION_FORM_ID: int = 26
+
+
+func _firing_pick_notes(ticks: Array, pick: Dictionary) -> Array:
+    var m: int = ticks.size()
+    var kind: String = str(pick["kind"])
+    if kind == "any":
+        return ticks.duplicate()
+    if kind == "first":
+        return [ticks[0]] if m >= 1 else []
+    if kind == "last":
+        return [ticks[m - 1]] if m >= 1 else []
+    var k: int = int(pick["k"])
+    return [ticks[k - 1]] if k >= 1 and k <= m else []
+
+
+func _firing_rel_value_ok(d: int, spec: Dictionary) -> bool:
+    var rel: String = str(spec["rel"])
+    var n: int = int(spec["n"])
+    if rel == "exact":
+        return int(spec["dir"]) * d == n
+    if rel == "atleast":
+        return int(spec["dir"]) * d >= n
+    return absi(d) <= n   # within
+
+
+## Does the relation hold between two stars' note sets? Empty on either side
+## fails (the sentence presupposes the firing exists), negated or not.
+func _firing_rel_holds(notes_a: Array, notes_b: Array, spec: Dictionary) -> bool:
+    if notes_a.is_empty() or notes_b.is_empty():
+        return false
+    var found: bool = false
+    for ta in notes_a:
+        for tb in notes_b:
+            if _firing_rel_value_ok(int(ta) - int(tb), spec):
+                found = true
+                break
+        if found:
+            break
+    return (not found) if bool(spec["neg"]) else found
+
+
+## Every (rank of A, rank of B) pair, 0-based, whose stars satisfy the sentence.
+func _firing_allowed_pairs(pick_a: Dictionary, pick_b: Dictionary, spec: Dictionary) -> Array:
+    var notes_a: Array = []
+    var notes_b: Array = []
+    for r in star_count:
+        var st: int = int(_cat_value_to_star[Category.SEQUENCE][r])
+        notes_a.append(_firing_pick_notes(_star_ticks(st), pick_a))
+        notes_b.append(_firing_pick_notes(_star_ticks(st), pick_b))
+    var out: Array = []
+    for ra in star_count:
+        if (notes_a[ra] as Array).is_empty():
+            continue
+        for rb in star_count:
+            if rb != ra and _firing_rel_holds(notes_a[ra], notes_b[rb], spec):
+                out.append([ra, rb])
+    return out
+
+
+func _firing_random_pick(m: int, specific_only: bool) -> Dictionary:
+    var kinds: Array = ["first", "last"] if specific_only else ["any", "any", "first", "last"]
+    if m >= 2:
+        kinds.append("nth")
+    var kind: String = str(kinds[_rng.randi_range(0, kinds.size() - 1)])
+    if kind == "nth":
+        return {"kind": "nth", "k": _rng.randi_range(2, m)}
+    return {"kind": kind}
+
+
+func _firing_pick_phrase(label: String, pick: Dictionary) -> String:
+    var kind: String = str(pick["kind"])
+    if kind == "any":
+        return "one of the firings of %s" % label
+    if kind == "first":
+        return "the first firing of %s" % label
+    if kind == "last":
+        return "the last firing of %s" % label
+    return "the %s firing of %s" % [_firing_ordinal(int(pick["k"])), label]
+
+
+func _firing_relation_sentence(label_a: String, pick_a: Dictionary, label_b: String, pick_b: Dictionary, spec: Dictionary) -> String:
+    var rel: String = str(spec["rel"])
+    var n: int = int(spec["n"])
+    var dir_word: String = "after" if int(spec["dir"]) > 0 else "before"
+    var phrase: String
+    if rel == "exact":
+        phrase = "immediately %s" % dir_word if n == 1 else "exactly %s %s" % [_firing_notes_word(n), dir_word]
+    elif rel == "atleast":
+        phrase = "at least %s %s" % [_firing_notes_word(n), dir_word]
+    else:
+        phrase = "within %s of" % _firing_notes_word(n)
+    return "%s is %s%s %s." % [_firing_pick_phrase(label_a, pick_a), "not " if bool(spec["neg"]) else "",
+        phrase, _firing_pick_phrase(label_b, pick_b)]
+
+
+## mode: "free" (Form 26), "offset" (Form 6 in a repeating melody: a gap between
+## two specific firings) or "adjacent" (Form 7: one firing directly beside one).
+func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
+    if not _firing_position_available():
+        return {}
+    var n_notes: int = melody_star_sequence.size()
+    var a: Dictionary = _sample_identity_axis_cell(Category.SEQUENCE, chain, -1)
+    if a.is_empty():
+        return {}
+    var star_a: int = int(a["star"])
+    var ticks_a: Array = _star_ticks(star_a)
+    var b: Dictionary
+    var star_b: int
+    if mode == "adjacent":
+        # The partner is decided by the melody, as Adjacency's always was: some
+        # star firing directly beside one of this star's notes.
+        var beside: Array = []
+        for t in ticks_a:
+            for dt in [-1, 1]:
+                var u: int = int(t) + dt
+                if u >= 1 and u <= n_notes:
+                    var s_u: int = int(melody_star_sequence[u - 1])
+                    if s_u != star_a and not beside.has(s_u):
+                        beside.append(s_u)
+        if beside.is_empty():
+            return {}
+        star_b = int(beside[_rng.randi_range(0, beside.size() - 1)])
+        b = _identity_cell_for_known_star(star_b, Category.SEQUENCE)
+    else:
+        b = _sample_identity_axis_cell(Category.SEQUENCE, {}, star_a)
+        if not b.is_empty():
+            star_b = int(b["star"])
+    if b.is_empty():
+        return {}
+    var ticks_b: Array = _star_ticks(star_b)
+    if ticks_a.is_empty() or ticks_b.is_empty():
+        return {}
+    var neg: bool = mode == "free" and _rng.randf() < 0.2
+    var pick_a: Dictionary = {"kind": "any"}
+    var pick_b: Dictionary = {"kind": "any"}
+    if mode != "adjacent":
+        pick_a = _firing_random_pick(ticks_a.size(), neg or mode == "offset")
+        pick_b = _firing_random_pick(ticks_b.size(), neg or mode == "offset")
+    var notes_a: Array = _firing_pick_notes(ticks_a, pick_a)
+    var notes_b: Array = _firing_pick_notes(ticks_b, pick_b)
+    if notes_a.is_empty() or notes_b.is_empty():
+        return {}
+    var spec: Dictionary
+    if neg:
+        # A claim that must be FALSE of the real pair to be true as a negation.
+        var exact_neg: bool = _rng.randf() < 0.5
+        spec = {"rel": "exact" if exact_neg else "within", "n": _rng.randi_range(1, 4 if exact_neg else 3),
+            "dir": 1 if _rng.randf() < 0.5 else -1, "neg": true}
+    else:
+        # Anchor on a real pair of notes so the sentence is true by construction.
+        var pairs_d: Array = []
+        for ta in notes_a:
+            for tb in notes_b:
+                var d0: int = int(ta) - int(tb)
+                if mode == "adjacent" and absi(d0) != 1:
+                    continue
+                pairs_d.append(d0)
+        if pairs_d.is_empty():
+            return {}
+        var d: int = int(pairs_d[_rng.randi_range(0, pairs_d.size() - 1)])
+        var ad: int = absi(d)
+        var dir: int = 1 if d > 0 else -1
+        if mode == "adjacent":
+            spec = {"rel": "exact", "n": 1, "dir": dir, "neg": false}
+        elif mode == "offset":
+            if ad < 2:
+                return {}
+            spec = {"rel": "exact", "n": ad, "dir": dir, "neg": false}
+        else:
+            match _rng.randi_range(0, 2):
+                0:
+                    spec = {"rel": "exact", "n": ad, "dir": dir, "neg": false}
+                1:
+                    spec = {"rel": "atleast", "n": maxi(1, ad - _rng.randi_range(0, 2)), "dir": dir, "neg": false}
+                _:
+                    spec = {"rel": "within", "n": ad + _rng.randi_range(0, 3), "dir": dir, "neg": false}
+    var rank_a: int = int(sequence_rank_solution[star_a])
+    var rank_b: int = int(sequence_rank_solution[star_b])
+    if not _firing_rel_holds(notes_a, notes_b, spec):
+        return {}   # a negation the real pair breaks (or, defensively, any untrue draw)
+    var pairs: Array = _firing_allowed_pairs(pick_a, pick_b, spec)
+    var all_pairs: int = star_count * (star_count - 1)
+    var cap: int = all_pairs - 1 if neg else int(0.6 * float(all_pairs))
+    if pairs.is_empty() or pairs.size() > cap:
+        return {}   # too weak to be worth a sentence
+    var holds_true: bool = false
+    for p in pairs:
+        if int(p[0]) == rank_a and int(p[1]) == rank_b:
+            holds_true = true
+            break
+    if not holds_true:
+        return {}
+    var id_a: Dictionary = {"cat": int(a["id_cat"]), "star": star_a}
+    var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
+    var text: String = _firing_relation_sentence(_characteristic_label(id_a), pick_a, _characteristic_label(id_b), pick_b, spec)
+    return {
+        "chars": [id_a, id_b, {"cat": Category.SEQUENCE, "star": star_a}, {"cat": Category.SEQUENCE, "star": star_b}],
+        "text": text,
+        "grid_updates": [
+            {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": Category.SEQUENCE, "val_b": int(a["axis_val"]), "is_true": true},
+            {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": Category.SEQUENCE, "val_b": int(b["axis_val"]), "is_true": true},
+        ],
+        "solver_facts": [{"kind": "ordinal_pair_set", "a": star_a, "b": star_b, "pairs": pairs}],
+    }
+
+
+func _build_form_firing_relation(chain: Dictionary) -> Dictionary:
+    return _build_firing_relation(chain, "free")
+
+
 # ── Shape B: two-star relational fact (Forms 5, 6, 7, 12) ────────────────
 
 
@@ -4632,13 +4941,13 @@ func _build_form_pairwise_order(chain: Dictionary) -> Dictionary:
 
 func _build_form_exact_offset(chain: Dictionary) -> Dictionary:
     var axis: int = Category.SEQUENCE if _rng.randf() < 0.7 else Category.PITCH
-    # "exactly 3 steps later" is arithmetic in melody NOTES, but the Sequence
-    # facts count first-firing ranks, and in a repeating melody those differ.
-    # Until the solver can carry a note-difference fact, a repeating melody
-    # offers the Pitch version only. The draw above is still made, so no RNG
-    # stream moves.
+    # "exactly 3 steps later" is arithmetic in melody NOTES, which in a repeating
+    # melody is not arithmetic on first-firing ranks. The Sequence version is
+    # therefore built as a gap between two specific firings, carried by an
+    # ordinal_pair_set (see _build_firing_relation). The draw above is still
+    # made first, so a 1:1 melody's RNG stream is untouched.
     if axis == Category.SEQUENCE and _melody_repeats():
-        axis = Category.PITCH
+        return _build_firing_relation(chain, "offset")
     var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
     if a.is_empty():
         return {}
@@ -4688,11 +4997,11 @@ func _identity_cell_for_known_star(star: int, axis_cat: int, bias_name: bool = f
 
 
 func _build_form_adjacency(chain: Dictionary) -> Dictionary:
-    # "immediately after" means the very next NOTE, but the Sequence facts
-    # count first-firing ranks; in a repeating melody the next rank is not the
-    # next note. Off until the solver can carry a note-difference fact.
+    # "immediately after" means the very next NOTE, and in a repeating melody the
+    # next rank is not the next note: the clue is melody adjacency between one
+    # firing of each star, carried by an ordinal_pair_set.
     if _melody_repeats():
-        return {}
+        return _build_firing_relation(chain, "adjacent")
     var axis: int = Category.SEQUENCE
     var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
     if a.is_empty():
@@ -7493,7 +7802,7 @@ func _build_form_pseudo_true_pair_staggered(chain: Dictionary) -> Dictionary:
 # Non-Adjacency (19), the least confident placement.
 const FORM_TIER := {
     1: 1, 2: 1, 4: 1, 6: 1, 8: 1, 10: 1, 11: 1,             # Entry Anchors
-    5: 2, 7: 2, 12: 2, 15: 2, 16: 2, 17: 2, 19: 2, 21: 2, 22: 2, 23: 2, 25: 2,  # Relational Workhorses
+    5: 2, 7: 2, 12: 2, 15: 2, 16: 2, 17: 2, 19: 2, 21: 2, 22: 2, 23: 2, 25: 2, 26: 2,  # Relational Workhorses
     3: 3, 9: 3, 13: 3, 14: 3, 20: 3, 24: 3,                 # Systemic Constraints
 }
 # Single target composition for the finished clueset (collapsed from the
@@ -7781,7 +8090,8 @@ func _forms_in_tier(tier: int, form_counts: Dictionary = {}) -> Array:
             continue
         if excluded.has(int(form_id)):
             continue
-        if int(form_id) == FIRING_POSITION_FORM_ID and not _firing_position_available():
+        if (int(form_id) == FIRING_POSITION_FORM_ID or int(form_id) == FIRING_RELATION_FORM_ID) \
+                and not _firing_position_available():
             continue
         if caps.has(int(form_id)) and int(form_counts.get(int(form_id), 0)) >= int(caps[int(form_id)]):
             continue
@@ -8736,13 +9046,13 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
     for f in prune_first_forms:
         var j: int = chosen_form_clues.size() - 1
         while j >= protected_count:
-            if int(chosen_form_clues[j].get("form_id", -1)) == int(f):
+            if int(chosen_form_clues[j].get("form_id", -1)) == int(f) and not _prune_skips_form(int(f)):
                 order.append(str(chosen_form_clues[j].get("text", "")))
             j -= 1
     var k: int = chosen_form_clues.size() - 1
     while k >= protected_count:
         var t: String = str(chosen_form_clues[k].get("text", ""))
-        if not order.has(t):
+        if not order.has(t) and not _prune_skips_form(int(chosen_form_clues[k].get("form_id", -1))):
             order.append(t)
         k -= 1
     for text in order:
@@ -8829,8 +9139,24 @@ func _recheck_anchors_for_redundancy(anchor_texts: Array, name_revealed: Array) 
 ##       later main-loop-drawn Betweenness clue keeping company it
 ##       didn't strictly need is a smaller cost than the pair sometimes
 ##       silently becoming a single.
+##
+##   25 (Firing Position), 26 (Firing Relation) — the Beginner clues about WHEN a
+##       star fires. Nothing guarantees a shipped puzzle contains one unless they
+##       are exempt: measured 2026-10-05 over 18 Beginner puzzles, Form 25 drew 22
+##       clues unpruned and 1 survived pruning, because by the end the rest of
+##       the set implies what they say. They are the point of a repeating
+##       melody, so they are kept even when redundant (see _prune_skips_form
+##       for the main pass, which does not read this function).
 func _is_redundancy_exempt_form(form_id: int) -> bool:
-    return form_id == 13 or form_id == 17
+    return form_id == 13 or form_id == 17 or _prune_skips_form(form_id)
+
+
+## Forms the MAIN pruning pass (_prune_redundant_clues) never tries to remove.
+## Deliberately only the Firing forms: Mutex and Betweenness are exempt from the
+## anchor recheck and the safety net but their main-loop instances have always
+## been prunable here, and hard-mode output must not move.
+func _prune_skips_form(form_id: int) -> bool:
+    return form_id == FIRING_POSITION_FORM_ID or form_id == FIRING_RELATION_FORM_ID
 
 
 ## Final whole-clue-set safety net, run after BOTH _prune_redundant_clues

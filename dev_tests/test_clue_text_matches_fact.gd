@@ -370,6 +370,23 @@ func _try_parse(clue: Dictionary, text: String, form: String) -> void:
 	var m: Dictionary = _label_map(clue)
 	var mm: RegExMatch
 
+	# Note relations (Form 26, and Forms 6/7 in a repeating melody): "the first
+	# firing of A is exactly 3 notes after one of the firings of B". Same
+	# approach as Firing Position below: one shared parser, both labels resolved
+	# through the label map, and the sentence checked against the melody.
+	if text.contains(" firing of ") or text.contains(" firings of "):
+		var fr = load("res://dev_tests/test_firing_relation.gd").new()
+		var rel: Dictionary = fr._parse(text)
+		if not rel.is_empty():
+			var star_l: int = _one_star(str(rel["left"]["label"]), m)
+			var star_r: int = _one_star(str(rel["right"]["label"]), m)
+			if star_l < 0 or star_r < 0 or star_l == star_r:
+				_judge(form, text, false, "labels '%s' / '%s' do not denote two distinct stars" % [str(rel["left"]["label"]), str(rel["right"]["label"])])
+				return
+			_judge(form, text, fr._holds(rel, fr._ticks_of(_g.melody_star_sequence, star_l), fr._ticks_of(_g.melody_star_sequence, star_r)),
+				"the melody does not support the stated relation between the two stars")
+			return
+
 	# Firing Position (Form 25): when a star's OWN firings fit a window. The
 	# sentence grammar and its truth table live in test_firing_position.gd (one
 	# parser, not two to drift apart); here the SUBJECT is resolved through the

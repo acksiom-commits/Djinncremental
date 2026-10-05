@@ -5030,6 +5030,17 @@ func _disclosure_satisfied(f: Dictionary) -> bool:
                 if int(x) < lo or int(x) > hi:
                     return false
             return true
+        "ordinal_pair_set":
+            # Form 26 (Firing Relation): the two stars' ranks are one of an allowed
+            # list of pairs. Entailed when every position pair the player still
+            # allows is on that list (positions 1-based, the pairs' ranks 0-based).
+            var pair_a: Array = _player_positions_for_star(int(f.get("a", -1)))
+            var pair_b: Array = _player_positions_for_star(int(f.get("b", -1)))
+            var allowed_pairs: Dictionary = {}
+            for pr in f.get("pairs", []):
+                allowed_pairs[int(pr[0]) * 1000 + int(pr[1])] = true
+            return _all_position_pairs_satisfy(pair_a, pair_b,
+                func(x: int, y: int) -> bool: return allowed_pairs.has((x - 1) * 1000 + (y - 1)))
         "value_in_set":
             # Form 25 (Firing Position): the star's rank is one of an allowed
             # set. Entailed when every position the player still allows for it
@@ -5199,7 +5210,7 @@ func _disclosure_satisfied(f: Dictionary) -> bool:
 ## 1.0 forever, which is exactly the failure mode raw `cells` had.
 const SCOREABLE_DISCLOSURE_KINDS: Array = [
     "ordinal_exact", "ordinal_neg", "ordinal_cmp", "ordinal_chain",
-    "ordinal_adjacent", "ordinal_offset", "ordinal_range", "value_in_set",
+    "ordinal_adjacent", "ordinal_offset", "ordinal_range", "value_in_set", "ordinal_pair_set",
     "ordinal_either_or", "ordinal_extreme", "ordinal_count_before",
     "values_all_different", "values_same", "descriptor_either_or",
     # Group Negation (Form 24). Descriptor-keyed so a Sequence subject
@@ -5525,6 +5536,9 @@ func _describe_disclosure(f: Dictionary) -> String:
                     _first_tick_for_rank(int(f.get("lo", 0)) + 1), _first_tick_for_rank(int(f.get("hi", 0)) + 1)]
             return "%s %s between the %d and %d positions." % [
                 _describe_star(int(f.get("s", -1))), _seq_verb(), int(f.get("lo", 0)) + 1, int(f.get("hi", 0)) + 1]
+        "ordinal_pair_set":
+            return "The firings of %s and %s stand in the relation the clue describes." % [
+                _describe_star(int(f.get("a", -1))), _describe_star(int(f.get("b", -1)))]
         "value_in_set":
             return "%s %s." % [_describe_star(int(f.get("s", -1))), _firing_set_phrase(f.get("allowed", []))]
         "ordinal_either_or":
