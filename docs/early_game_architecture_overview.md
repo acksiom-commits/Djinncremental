@@ -1,5 +1,7 @@
 # Early-Game Architecture Overview
 
+> **Historical refactor survey (last substantive update 2026-07-27).** For current design intent and system structure, start with [SYSDOC_overview.md](SYSDOC_overview.md). Content below is stale in places (e.g. it says 6 constellations; there are 7).
+
 **Written:** 2026-07-22, ahead of the first refactor pass since the Mote-based Expansion change and the Simon-says → zebra-grid puzzle rewrite. **Refreshed:** 2026-07-25, after that first refactor pass landed (the two outgrown files were split/de-duplicated, four branches merged — see the "Done" items below) and a fresh full re-read of every file in scope.
 **Scope:** everything from Sparks through Expansion/prestige, plus the full Constellation puzzle system.
 **Purpose:** orientation for a returning developer navigating this codebase's ongoing refactor. This is a living survey, not a changelog or a one-time audit — treat file:line references as approximate anchors, not exact contracts, and expect this doc to be refreshed again as more of the "Suggested refactor order" list gets executed.
