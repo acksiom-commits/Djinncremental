@@ -280,19 +280,20 @@ func _sync_derived_size() -> void:
 # ground truth: it says "every star is ruled out", never which star was
 # right.
 #
-# KNOWN GAP — contradictions that get absorbed before this runs. If a
-# record's marks identify a star UNIQUELY, _settle_identical_records merges
-# it into that star's record, and every axis then reads ground truth, which
-# overrides the offending mark. The impossible state disappears instead of
-# being reported, and the player's wrong mark silently vanishes with it.
-# Found while testing this: a fixture whose confirmed colour had exactly
-# one star merged and reported nothing, and only stopped doing so once the
-# colour covered two. The save that prompted all this escaped absorption
-# purely because its confirmed colour had several stars.
+# FORMER GAP, NOW CLOSED — contradictions that get absorbed before this
+# runs. If a record's marks identify a star UNIQUELY, _settle_identical_records
+# merges it into that star's record, and every axis then reads ground truth,
+# which overrides the offending mark. The impossible state used to disappear
+# instead of being reported, and the player's wrong mark silently vanished
+# with it. Found while testing this: a fixture whose confirmed colour had
+# exactly one star merged and reported nothing, and only stopped doing so
+# once the colour covered two.
 #
-# Not fixed here. Detecting it means comparing player marks against the
-# ground truth a merge just imported, which is a different question from
-# "is this set empty" and belongs with the identity work in Phase 3.
+# Both halves are now handled below: _marks_contradicting_star compares a
+# settled record's own marks against its star's ground truth (the confirmed
+# half), and _settle_identical_records refuses a merge whose records clash
+# (_merge_value_clashes, recorded in _merge_refusals) so the detector can
+# report the pair (the merge half).
 var _contradictions: Array[Dictionary] = []
 
 
@@ -327,9 +328,10 @@ func _detect_contradictions() -> void:
         # truth just overruled the mark in silence.
         #
         # That is the confirmed half of the merge-absorption hole from
-        # d4bebd5. The merge half is still open: _merge_match_records
-        # unions two records' state, and a mark the union drops is gone
-        # before anything here can compare it.
+        # d4bebd5. The merge half is closed separately: the merge pass
+        # refuses a merge whose records clash (_merge_value_clashes), so no
+        # mark is dropped by a union, and the refused pair is reported
+        # through _merge_refusals further down this function.
         var eff_star: int = _effective_star_idx(i)
         if eff_star >= 0:
             var clash: Array = _marks_contradicting_star(i, eff_star)

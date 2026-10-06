@@ -9026,6 +9026,12 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
     # reported perfect health: they measured name_unique_closure, and the
     # thing that actually gates generation is name_unique.
     #
+    # (Historical: that was the gate as of that measurement. Since 2026-09-20
+    # the gate needs seq_unique AND name_unique AND name_unique_closure --
+    # see _gate_result_passes -- and an attempt that fails it is now refused
+    # rather than shipped. The guard below is still needed: name_unique is
+    # still one of the three.)
+    #
     # A removal must now leave every currently-bound name still bound. Not
     # "all names bound" -- if coverage was already incomplete this attempt
     # is doomed regardless, and demanding the impossible would just disable
