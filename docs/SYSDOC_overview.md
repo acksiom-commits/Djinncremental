@@ -48,6 +48,8 @@ Cumulative Spark cost of one finished unit: Uonite 28,801; Grain 16,825 (`UONITE
 
 **Tetrads — 15 varieties** (`game_data.gd` `TETRADS`): Fundaments (Adaemant 4S, Aquae 4L, Aethyr 4G); Elements (Earth, Water, Air); Symmetrics (Mud, Dust, Cloud); Medials (Silt, Sand, Haze, Mist, Ooze, Foam). Letters are Solid/Liquid/Gas counts. Note **Silt** (was "Dirt"; a save migration exists) and **Aquae** (spelling).
 
+**Vertex-matching rule.** Tetrads, Particles, Iotas and Motes are welded at shared vertices, and a shared vertex must carry one Monad type (Solid/Liquid/Gas). `archai_lattice.gd` satisfies it by construction (types assigned per unique lattice position after welding); `production_manager.gd` (`_tetrad_covers_needs`, ~1486) enforces it when drawing real Tetrads from the live pool. [CODE for the rule's existence; how fully the production side enforces it for the Grain-branch automation was not read closely.] Its role in mid-game Grain composition is open: the author intends the Fundament requirement to be a *minimum that gates whether a Grain is Persistent*, not a Solid/Liquid/Gas flavour tag, but expects flavour may emerge anyway from procedural construction. [INTENT, undecided until composition is defined]
+
 **Why two branches (author's rationale, 2026-10-05).** The original recipe (Uonite from 20 *Grains*, each Grain dense-packed) made the first Prestiges far too slow. Sourcing Uonites from 20 *Motes* instead, with Iota/Mote left bare and unpacked, brought the early prestige rate to roughly 3+ per session depending on play activity, which keeps early players interested. Grains moved to their own, expensive, dense-packed branch: only 4 Motes, but those Iotas and Motes must be packed with real smaller resources. [INTENT]
 
 **Where the recipe reasoning is written down:**
@@ -185,6 +187,34 @@ Design:
 - Archon **allocates Uonites** to tasks against player-set goals.
 - **Purity locks**: hold chosen resources in storage so higher-tier items are built from them. This protects Fundament percentages, needed for high-purity Ingots/Gems and for achievements that raise Foci/Volitions. A minimum Fundament percentage per Grain is planned as the survival condition for stored resources across resets.
 - **Endgame**: sufficiently pure, Fundament-rich Grains build **World Layers** (Earth, Water, Air), then ecologies, villages, towns, and finally Material-themed **Cities** (the City of Brass is the first).
+
+### 7.1 Initial mid-game alchemy (design in progress, drafted 2026-10-06) [INTENT / NOT BUILT]
+
+**Settled by the author:**
+- **Terminology.** In-game, the prestige is an **Oscillation**. **Expansion** is the sub-category used only when the Satchel is active at Tier 3 and Storage grows +5%. Every Expansion is an Oscillation; not every Oscillation is an Expansion. (Code, UI and §1-§5 above still say "Expansion"; no rename has been done.)
+- **Starting mid-game materials are Mud, Dust and Cloud variations**, not Medial/Symmetric mixtures. Balanced Medial pairs sum to a Symmetric: Silt + Ooze = 2 Mud, Sand + Haze = 2 Dust, Foam + Mist = 2 Cloud. Combinations of Elements and Medials with Fundaments and Symmetrics are *second-order* creation.
+- **Pure track.** Persistent Mud Grains Oscillate to **Clay**, Dust to **Grit**, Cloud to **Vapor**. (The "Archai" name for this category is unresolved: `archai_lattice.gd` already uses it for Particle/Iota/Mote geometry.)
+- **Persistent Grain rule.** Every Particle in the Grain has at least 1 Fundament Tetrad, of any variety. Clay/Grit/Vapor *definition*: the rest of the composition is at least 25% Mud, Dust or Cloud plus its Aligned Medials (Silt + Ooze, Sand + Haze, Foam + Mist in sufficiently equal amounts). Purity runs 50-100%.
+- **Only Persistent Grains survive an Oscillation.** Particles, Iotas, Motes and all other material reset. So hoards (locked Monads/Tetrads) reset too: a Clay -> Vapor -> Grit rotation must fit inside one cycle for now.
+- **Imbalanced track (scratch table, not definitive).** Fundament + Symmetric + lopsided Medials give: Ooze + Mud/Dust/Cloud = Coal/Tar/Oil; Sand + Mud/Dust/Cloud = Rock/Crystal/Glass; the other 12 cells are blank. Three pairs of cells have identical S/L/G composition (Silt+Cloud = Ooze+Dust, Sand+Cloud = Haze+Mud, Foam+Dust = Mist+Mud), so the table may really be a composition table.
+- **Intended lock scheme.** With the Archon at Tier 3, the second Parent Volition and its children can Purity Lock 1 Fundament, 1 Aligned Symmetric and 2 Aligned Medials (plus one spare) so the player stocks one family while Disposable Grains build from the unlocked rest. Alternatively, lock Gas Monads + Aquae so the unlocked pool is exactly Adaemant/Mud/Silt/Ooze (the Clay family); locked Gas Monads and Aquae then hoard as the next phase's head start. Storage clog from locked stock is **design**.
+- **Persistent Grains are the first persistent building material.** Once stockpiled, the player Fuses them (mid-game UI) into Persistent building materials for **storage containers** for early-game Disposable/Aligned resources. **DEV NOTE: the first container blueprint is the player's own Vessel (Lamp, Ring or Jar, chosen at the Start Screen, `GameContext.chosen_vessel`).**
+
+**Measured / derived facts to design against** [CODE-derived; the weld model reproduced the one measured value, 14.05% vs 14.2%; the restricted-pool figures are model-only, not measured in game]:
+- Tetrad weld rule: a Particle is 4 Tetrads welded K4 (one shared Monad per pair), so a Particle holds at most one Fundament *variety*. Of 1,206 reachable Particle compositions, 333 contain a Fundament.
+- A Grain holds **112 Particles** (16 loose + 96 inside Motes/Iotas), **320** loose cavity Tetrads, **64** loose Monads.
+- A random Particle draw contains a Fundament only ~14% of the time (23.7% with Elements and one family locked out; 21% for the Adaemant/Mud/Silt/Ooze pool). 0.14^112 is effectively zero, so "every Particle has a Fundament" cannot happen by chance; a **constructive Fundament-first draw** is required.
+- Unrestricted, 112 Adaemant needs ~9,072 Tetrads (1/81 each); with Gas Monads locked ~1,792 (1/16 each), ~55,500 Sparks.
+- Monad generation ignores locks (locked Gas still rolls at 1/3); locked stock counts against storage. Gas hoard can be compacted 16:1 (4 Gas Monads -> Aethyr Tetrad -> Particle).
+- **Per-unit weld-aware Particle draw costs ~1.4 ms (up to ~6.7 ms Fundament-only)**, and `RANDOM_DRAW_THRESHOLD` is 1000 (`production_manager.gd:29`), so a 1,000-Particle batch can take ~1.4 s. Measured headless; threshold for Particle/Iota/Mote probably needs lowering.
+- Existing prototype: `_sample_grain_purity` / `_manifold_output_key` (EMA of Tetrad-pool category fractions) still uses "clay" as the lowest tier; likely superseded.
+
+**Open, not decided** (author is still working these out):
+- How composition is tracked (typed stocks vs per-stock fraction vector vs derived); whether Fundament Particles become a typed stock.
+- Whether hoarded Fundament Particles are drawn as plain stock or placed explicitly into a Grain build. The author is considering a new Constellation (a "Pipe" or "Lens") that Kaleb can use to partition the Stoctagon so correct stock is drawn for Aligned/Persistent Grains.
+- Whether the Gas hoard is compacted mid-cycle into Aethyr Particles.
+- Persistence scope (all 112 Particles vs 16 loose), the "sufficiently equal" Medial tolerance, tie-break when two families qualify, expected-value vs random sampling for passive Persistent yield, and whether the proportional path should respect the weld rule.
+- The 12 blank cells of the imbalanced table, and where the products fall among Earth/Water/Air Grains (§7 above lists Earth: Clay, Stones, Ores etc., which this redesign changes).
 
 Other designed-not-built items live in the project memory index (Archai/Particle lattice geometry, Uonite neurology, Sigils and Runes, Repeat Count clue axis, Kaleb-voiced hints). Check there before proposing anything in these areas, and treat each as a prototype unless its note says shipped.
 
