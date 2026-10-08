@@ -19,6 +19,7 @@ const LINE_W_INACTIVE := 1.5
 var gc: Node = null
 var cd: Node = null
 var _game_loaded: bool = false
+var _saved_row_state: Dictionary = {}   # ProgressBar -> [mouse_filter, tooltip_text]
 
 
 func _ready() -> void:
@@ -28,6 +29,12 @@ func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_STOP
     tooltip_text = "Direct Hourglass here"
     visible = false
+    # The whole genbar row is the click target, not just this mini-icon: the
+    # row's HBox receives clicks that fall through its children (see
+    # _set_row_clickable) and routes them here.
+    var row := get_parent() as Control
+    if row:
+        row.gui_input.connect(_gui_input)
     if sm and sm.has_signal("game_loaded"):
         sm.game_loaded.connect(_on_game_loaded)
 
@@ -36,8 +43,31 @@ func _on_game_loaded(_elapsed: float) -> void:
     _game_loaded = true
     var unlocked := _hourglass_unlocked()
     visible = unlocked
+    _set_row_clickable(unlocked)
     if unlocked:
         queue_redraw()
+
+
+## While the Hourglass is unlocked, make the row's ProgressBars (MOUSE_FILTER_STOP
+## by default, so they swallow clicks) pass clicks up to the row, and give them
+## this toggle's tooltip. Original filters/tooltips are restored when locked.
+func _set_row_clickable(on: bool) -> void:
+    var row := get_parent() as Control
+    if not row:
+        return
+    for sib in row.get_children():
+        var bar := sib as ProgressBar
+        if not bar:
+            continue
+        if on:
+            if not _saved_row_state.has(bar):
+                _saved_row_state[bar] = [bar.mouse_filter, bar.tooltip_text]
+            bar.mouse_filter = Control.MOUSE_FILTER_PASS
+            bar.tooltip_text = tooltip_text
+        elif _saved_row_state.has(bar):
+            bar.mouse_filter = _saved_row_state[bar][0]
+            bar.tooltip_text = _saved_row_state[bar][1]
+            _saved_row_state.erase(bar)
 
 
 func _is_targeted() -> bool:
@@ -65,6 +95,7 @@ func _process(_delta: float) -> void:
     var unlocked := _hourglass_unlocked()
     if visible != unlocked:
         visible = unlocked
+        _set_row_clickable(unlocked)
     if unlocked:
         queue_redraw()
 
@@ -73,7 +104,7 @@ func _gui_input(event: InputEvent) -> void:
     if not event is InputEventMouseButton: return
     if not (event as InputEventMouseButton).pressed: return
     if (event as InputEventMouseButton).button_index != MOUSE_BUTTON_LEFT: return
-    if not gc: return
+    if not gc or not _hourglass_unlocked(): return
     var cap: int = _get_hourglass_volition_cap()
     var current_ops: Array[String] = gc.hourglass_target_ops
     if current_ops.has(operation_key):
