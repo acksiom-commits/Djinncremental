@@ -663,15 +663,30 @@ func _setup_dialogue() -> void:
         push_warning("RootUI: DialoguePanelContainer not found for click wiring")
 
 
+## True while the Uonite name picker is on screen. The picker sits INSIDE the
+## dialogue panel, so every click that lands on it but not on one of its two
+## buttons -- the prompt text, the name label, the gaps between rows -- falls
+## through to the panel's own click handler, and Enter reaches the global key
+## handler. Either one used to advance the dialogue underneath the picker,
+## skipping past the name choice. The only ways out of the picker are its own
+## Confirm button (which advances the dialogue itself).
+func _name_picker_open() -> bool:
+    return _name_picker_vbox != null and _name_picker_vbox.visible
+
+
 func _on_dialogue_panel_clicked(event: InputEvent) -> void:
     if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+        if _name_picker_open():
+            return
         if archon_dialogue_manager:
             archon_dialogue_manager.advance_dialogue()
-            
-            
+
+
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo:
         if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+            if _name_picker_open():
+                return
             if archon_dialogue_manager and archon_dialogue_manager.current_index >= 0:
                 archon_dialogue_manager.advance_dialogue()
                 get_viewport().set_input_as_handled()
