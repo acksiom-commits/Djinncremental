@@ -2932,6 +2932,13 @@ func _update_button_tooltips() -> void:
                 _fmt_recipe(op_map[btn_name]),
                 _fmt(total_map[btn_name]),
             ]
+    var uonite_btn: Control = _tooltip_buttons.get("CreateUoniteButton")
+    if uonite_btn:
+        # Same binding cap the strip bar uses (smaller of the Fibonacci
+        # per-Expansion limit and the storage headroom), in Uonites: the bar's
+        # max is that cap x 20 Motes, or (0, 1) when nothing fits.
+        var cap_uonites: int = game_context.get_uonite_cycle_progress().y / 20
+        uonite_btn.tooltip_text += "\nCurrent cap: %d" % cap_uonites
     var monad_btn: Control = _tooltip_buttons.get("MonadCompressButton")
     if monad_btn:
         monad_btn.tooltip_text = "%s\nSolid:  %s\nLiquid: %s\nGas:    %s" % [
