@@ -109,12 +109,20 @@ const FEED_COLORS: Array = [
     Color(0.25, 0.60, 0.90, 1.0),   # on  — blue
 ]
 
+# [scene node name, amount]. -2 = CSTM (editable, defaults to
+# DEFAULT_CUSTOM_AMOUNT), -1 = ALL, -3 = CLEAR (an action, not a multiplier).
 const MULTI_GRID: Array = [
-    ["10X",  10],
-    ["100X", 100],
-    ["CSTM", -2],
-    ["ALL",  -1],
+    ["10XButton",   10],
+    # DEV: 100X replaced by CSTM (defaults to 100) in its slot. The scene node
+    # "100XButton" is kept but hidden, so restoring means un-commenting this
+    # line and making that node visible again.
+    # ["100XButton", 100],
+    ["CSTMButton",  -2],
+    ["ALLButton",   -1],
+    ["CLEARButton", -3],
 ]
+
+const DEFAULT_CUSTOM_AMOUNT: int = 100
 
 const COLOR_MULTI_SEL:  Color = Color(UIAccentColors.CREAM, 1.00)
 const COLOR_MULTI_NORM: Color = Color(UIAccentColors.CREAM, 0.40)
@@ -136,6 +144,11 @@ var _selected_octant: int = 0
 var _feed_buttons:  Array = []
 var _selected_multiplier: int  = 1
 var _multi_buttons:       Array = []
+var _custom_amount:       int   = DEFAULT_CUSTOM_AMOUNT
+var _custom_selected:     bool  = false
+## Built in code (see _build_custom_input_row): the scene had no input field.
+var _custom_row:          HBoxContainer = null
+var _custom_line_edit:    LineEdit = null
 var _show_sparks_numeric:   bool = true
 
 const SlotBorderFx = preload("res://slot_border_fx.gd")
@@ -205,13 +218,14 @@ func _ready() -> void:
     _spark_counter_label.gui_input.connect(_on_spark_counter_input)
     var multi_grid = get_node_or_null(ALLOCATION_BASE_PATH + "/MultiRedistributeHBox/MultiGrid")
     if multi_grid:
-        for i in MULTI_GRID.size():
-            var amount: int = MULTI_GRID[i][1]
-            var btn: Button = multi_grid.get_child(i)
+        for entry in MULTI_GRID:
+            var amount: int = entry[1]
+            var btn: Button = multi_grid.get_node_or_null(entry[0])
             if btn:
                 _multi_buttons.append([btn, amount])
                 var captured := amount
                 btn.pressed.connect(func(): _on_multi_pressed(captured))
+    _build_custom_input_row()
     _update_multi_button_states()
     call_deferred("_init_panel_position")
     get_viewport().size_changed.connect(_init_panel_position)
@@ -730,12 +744,85 @@ func _refresh_redistribute_button() -> void:
         Color(0.85, 0.78, 1.0) if usable else Color(0.40, 0.38, 0.48))
 
 
+## Hidden row (LineEdit + OK) shown while CSTM is open. Appended as the last
+## child of the allocation VBox so nothing existing moves.
+func _build_custom_input_row() -> void:
+    var vbox = get_node_or_null(ALLOCATION_BASE_PATH)
+    if not vbox:
+        return
+    _custom_row = HBoxContainer.new()
+    _custom_row.visible = false
+    _custom_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _custom_line_edit = LineEdit.new()
+    _custom_line_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _custom_line_edit.text_submitted.connect(_on_custom_submitted)
+    _custom_row.add_child(_custom_line_edit)
+    var ok_btn := Button.new()
+    ok_btn.text = "OK"
+    ok_btn.pressed.connect(func(): _on_custom_submitted(_custom_line_edit.text))
+    _custom_row.add_child(ok_btn)
+    vbox.add_child(_custom_row)
+
+
+func _on_custom_submitted(text: String) -> void:
+    var value := text.to_int()
+    if value > 0:
+        _custom_amount = value
+        _selected_multiplier = value
+    if _custom_row:
+        _custom_row.visible = false
+    if _custom_line_edit:
+        _custom_line_edit.text = ""
+    _update_multi_button_states()
+
+
+## CLEAR: return every Focus and Volition assigned to the SELECTED
+## constellation to the unassigned pools. Other constellations, and wheel,
+## Volumition, Stoctagon and purity-lock volitions, are left alone.
+func _clear_all_assignments() -> void:
+    if not _gc or _selected_slot < 0:
+        return
+    var foci_key := "constellation_%d_foci" % _selected_slot
+    if _gc._assignment_int(foci_key, 0) > 0:
+        _gc.assignments[foci_key] = 0
+    # Same order as _on_vol_minus: bonus (child) volitions first, then parents.
+    _gc.begin_batch_volition_update()
+    while _gc.unassign_last_child_with_target("constellation", _selected_slot):
+        pass
+    while true:
+        var idx: int = _gc.get_first_parent_index_with_target("constellation", _selected_slot)
+        if idx < 0:
+            break
+        _gc.unassign_parent_volition(idx)
+    _gc.end_batch_volition_update()
+
+
 func _on_multi_pressed(amount: int) -> void:
+    if amount == -3:
+        _clear_all_assignments()
+        return
     if amount == -2:
-        # DEV: CSTM requires a custom LineEdit node in the panel scene — not
-        # yet added. Toggle visual only until the input field exists.
+        if _custom_selected and _custom_row and _custom_row.visible:
+            # Toggle off
+            _custom_selected = false
+            _custom_row.visible = false
+            _selected_multiplier = 1
+            _update_multi_button_states()
+            return
+        # Active immediately at the current custom amount (100 by default);
+        # the input stays open so it can be edited.
+        _custom_selected = true
+        _selected_multiplier = _custom_amount
+        if _custom_row:
+            _custom_line_edit.text = str(_custom_amount)
+            _custom_row.visible = true
+            _custom_line_edit.grab_focus()
+            _custom_line_edit.select_all()
         _update_multi_button_states()
         return
+    _custom_selected = false
+    if _custom_row:
+        _custom_row.visible = false
     if _selected_multiplier == amount:
         _selected_multiplier = 1
         _update_multi_button_states()
@@ -748,9 +835,9 @@ func _update_multi_button_states() -> void:
     for entry in _multi_buttons:
         var btn: Button = entry[0]
         var amount: int = entry[1]
-        var is_custom_active: bool = _selected_multiplier not in [1, 10, 100, -1]
-        var is_active: bool = is_custom_active if amount == -2 \
-            else (amount != 1 and amount == _selected_multiplier)
+        var is_active: bool = _custom_selected if amount == -2 \
+            else (amount > 0 and amount == _selected_multiplier) or \
+                 (amount == -1 and _selected_multiplier == -1)
         btn.add_theme_color_override("font_color",
             COLOR_MULTI_SEL if is_active else COLOR_MULTI_NORM)
             

@@ -142,12 +142,6 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "10X"
 
-[node name="100XButton" type="Button" parent="CenterVBox/MultiGrid" unique_id=668660059]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-text = "100X"
-
 [node name="CSTMButton" type="Button" parent="CenterVBox/MultiGrid" unique_id=348842211]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -159,6 +153,19 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "ALL"
+
+[node name="CLEARButton" type="Button" parent="CenterVBox/MultiGrid" unique_id=1204857311]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "CLEAR"
+
+[node name="100XButton" type="Button" parent="CenterVBox/MultiGrid" unique_id=668660059]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "100X"
 
 [node name="CustomInputContainerHBox" type="HBoxContainer" parent="CenterVBox" unique_id=1011984957]
 visible = false

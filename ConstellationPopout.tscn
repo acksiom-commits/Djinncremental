@@ -289,12 +289,6 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "10X"
 
-[node name="100XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=1920818803]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-text = "100X"
-
 [node name="CSTMButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=783236587]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -306,6 +300,19 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "ALL"
+
+[node name="CLEARButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=1204857312]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "CLEAR"
+
+[node name="100XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=1920818803]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "100X"
 
 [node name="RedistributeButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox" unique_id=1600000020]
 custom_minimum_size = Vector2(0, 75)

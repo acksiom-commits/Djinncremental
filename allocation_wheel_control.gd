@@ -65,12 +65,21 @@ const POOL_SUFFIXES = ["uonites", "foci", "volitions"]
 # First Particle/Iota/Mote/Grain triggers themselves already key off of.
 const EVER_PRODUCED_GATED_RESOURCES = ["particle", "iota_uonite", "mote_uonite", "grain"]
 
+# [scene node name, amount]. -2 = CSTM (editable, defaults to
+# DEFAULT_CUSTOM_AMOUNT), -1 = ALL, -3 = CLEAR (an action, not a multiplier).
+# Looked up by node name so the scene's visual order is free to differ.
 const MULTI_GRID = [
-    ["10X",  10],
-    ["100X", 100],
-    ["CSTM", -2],
-    ["ALL",  -1],
+    ["10XButton",   10],
+    # DEV: 100X replaced by CSTM (defaults to 100) in its slot. The scene node
+    # "100XButton" is kept but hidden, so restoring means un-commenting this
+    # line and making that node visible again.
+    # ["100XButton", 100],
+    ["CSTMButton",  -2],
+    ["ALLButton",   -1],
+    ["CLEARButton", -3],
 ]
+
+const DEFAULT_CUSTOM_AMOUNT := 100
 
 const COLOR_SELECTED    = Color(1.00, 1.00, 1.00, 1.00)
 const COLOR_ALLOCATED   = Color(1.00, 1.00, 1.00, 0.85)
@@ -87,6 +96,8 @@ var game_data: Node = null
 # === STATE ===
 var selected_resource: String = "sparks"
 var selected_multiplier: int = 1
+var _custom_amount: int = DEFAULT_CUSTOM_AMOUNT
+var _custom_selected: bool = false
 
 # === SCENE NODE REFS ===
 @onready var _selected_label: RichTextLabel = $CenterVBox/SelectedLabel
@@ -163,10 +174,9 @@ func _ready() -> void:
 
     var multi_grid = get_node_or_null("CenterVBox/MultiGrid")
     if multi_grid:
-        for i in MULTI_GRID.size():
-            var entry = MULTI_GRID[i]
+        for entry in MULTI_GRID:
             var amount: int = entry[1]
-            var btn = multi_grid.get_child(i)
+            var btn = multi_grid.get_node_or_null(entry[0])
             if btn:
                 _multi_buttons.append([btn, amount])
                 var captured_amount = amount
@@ -314,16 +324,32 @@ func _select_resource(key: String) -> void:
 # MULTISELECTOR
 # ==================================================
 func _on_multi_pressed(amount: int) -> void:
-    if amount == -2:
-        if _custom_container.visible:
-            _custom_container.visible = false
-            selected_multiplier = 1
-            _update_multi_button_states()
-            return
-        _custom_container.visible = true
-        _custom_line_edit.grab_focus()
+    if amount == -3:
+        _clear_all_assignments()
         return
 
+    if amount == -2:
+        if _custom_selected and _custom_container.visible:
+            # Toggle off
+            _custom_selected = false
+            _custom_container.visible = false
+            selected_multiplier = 1
+            emit_signal("multiplier_changed", 1)
+            _update_multi_button_states()
+            return
+        # Active immediately at the current custom amount (100 by default);
+        # the input stays open so it can be edited.
+        _custom_selected = true
+        selected_multiplier = _custom_amount
+        emit_signal("multiplier_changed", _custom_amount)
+        _custom_line_edit.text = str(_custom_amount)
+        _custom_container.visible = true
+        _custom_line_edit.grab_focus()
+        _custom_line_edit.select_all()
+        _update_multi_button_states()
+        return
+
+    _custom_selected = false
     _custom_container.visible = false
 
     if selected_multiplier == amount:
@@ -340,11 +366,42 @@ func _on_multi_pressed(amount: int) -> void:
 func _on_custom_submitted(text: String) -> void:
     var value = text.to_int()
     if value > 0:
+        _custom_amount = value
         selected_multiplier = value
         emit_signal("multiplier_changed", value)
     _custom_container.visible = false
     _custom_line_edit.text = ""
     _update_multi_button_states()
+
+
+## CLEAR: return every wheel-assigned Uonite, Focus and Volition (including
+## bonus volitions) to the unassigned pools. Only touches the wheel's own
+## operations — constellation/volumition/stoctagon/purity-lock volitions and
+## other foci/uonite assignments are left alone.
+func _clear_all_assignments() -> void:
+    if not game_context:
+        return
+    for key in RESOURCE_OPERATIONS:
+        var op: String = RESOURCE_OPERATIONS[key]
+        if op == "":
+            continue
+        var u_key := op + "_uonites"
+        var u = game_context.assignments.get(u_key, BigNum.zero())
+        if u is BigNum and not u.is_zero():
+            game_context.assignments[u_key] = BigNum.zero()
+            if production_manager and production_manager.has_method("update_assignment"):
+                production_manager.update_assignment(u_key, BigNum.zero())
+        var f_key := op + "_foci"
+        if game_context._assignment_int(f_key, 0) > 0:
+            game_context.assignments[f_key] = 0
+            if production_manager and production_manager.has_method("update_assignment"):
+                production_manager.update_assignment(f_key, 0)
+
+    game_context.begin_batch_volition_update()
+    for i in game_context.volition_slots.size():
+        if game_context.volition_slots[i]["category"] == "allocation_wheel":
+            game_context.unassign_parent_volition(i)
+    game_context.end_batch_volition_update()
 
 
 func _update_multi_button_states() -> void:
@@ -353,12 +410,9 @@ func _update_multi_button_states() -> void:
         var amount: int = entry[1]
         var is_active = false
         if amount == -2:
-            is_active = _custom_container.visible or (
-                selected_multiplier != 1 and
-                selected_multiplier != 10 and
-                selected_multiplier != 100 and
-                selected_multiplier != -1
-            )
+            is_active = _custom_selected
+        elif amount == -3:
+            is_active = false
         elif amount != 1:
             is_active = (amount == selected_multiplier)
         btn.add_theme_color_override("font_color",
