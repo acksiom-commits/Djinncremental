@@ -27,9 +27,12 @@ func run() -> void:
 	var p = PopoutScene.instantiate()
 	root.add_child(p)
 	await process_frame
-	for uid in [0, 1]:
-		if not cd.unlocked.has(uid):
-			cd.unlocked.append(uid)
+	# Exactly constellations 0 and 1, whatever the loaded save has unlocked.
+	# The button-count checks below used to read the live save's unlock list
+	# (they counted 2, then 3, 4, 6, 7 as the player progressed), and the test
+	# also left its additions behind. Restored at the end.
+	var saved_unlocked = cd.unlocked.duplicate()
+	cd.unlocked = [0, 1]
 	p._build_slots()
 	await process_frame
 
@@ -119,6 +122,7 @@ func run() -> void:
 
 	gc.volition_slots = saved_slots
 	gc.assignments = saved_assign
+	cd.unlocked = saved_unlocked
 	if fails == 0:
 		print("ALL PASS (0 failures)")
 	else:
