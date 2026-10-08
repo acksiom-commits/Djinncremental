@@ -3765,19 +3765,18 @@ func _parse_candidate_list(raw: String) -> Array:
 func _effective_seq_candidates(record_idx: int) -> Array:
     if record_idx < 0 or record_idx >= _match_records.size():
         return []
-    var r: Dictionary = _match_records[record_idx]
-    var explicit: Array = r.get("seq_candidates", [])
-    var base: Array = []
-    if not explicit.is_empty():
-        base = explicit.duplicate()
-    else:
-        var lo: int = int(r.get("seq_lo", 0))
-        var hi: int = int(r.get("seq_hi", 0))
-        if lo <= 0:
-            lo = 1
-        if hi <= 0:
-            hi = _host._star_count
-        for p in range(lo, hi + 1):
+    # Through _seq_candidate_set_for, NOT the record's own fields: that is the
+    # committed view (own marks narrowed by what this refresh derived), and
+    # this reader used to bypass it. A narrowing that lived only in the
+    # derived layer -- a group bound, or a position shared from another record
+    # for the same star -- therefore never reached any Sequence display or
+    # _player_positions_for_star, although every other cross-record reader saw
+    # it. Same own-field-read-of-a-derivable-value mistake as
+    # _seq_singleton_owners and _find_match_record_by_exact_seq.
+    # Empty from there means "no sequence information", i.e. fully open.
+    var base: Array = _seq_candidate_set_for(record_idx).duplicate()
+    if base.is_empty():
+        for p in range(1, _host._star_count + 1):
             base.append(p)
 
     # Dictionary, not the returned Array: this filter runs once per record
@@ -3856,6 +3855,43 @@ func _settle_singleton_sequences() -> void:
         _narrow_derived_seq(i, result)
 
 
+## A record keyed by a staff NOTE (the Staff popup's) is, by that fact alone,
+## the star that fires at that note: the player chose the note. Its position
+## is therefore known without any Sequence entry, but nothing recorded it --
+## the record carried melody_ticks and seq_lo/seq_hi = 0, so a Sort row pinned
+## to the same note and the popup for that note were two unconnected halves of
+## one star. Found by test_widget_path_independence (family F): a name, colour
+## and position entered on the Sort row never reached the popup for that note.
+##
+## Written to the DERIVED layer, so it is wiped and re-derived every refresh
+## and can never outlive its premise; the same-position pass then shares facts
+## between the popup and every other record on that position. Skipped when the
+## record's own marks already exclude the rank (a contradiction the player
+## made, which this must not paper over), and when its notes disagree about
+## which star they are.
+##
+## DEPENDS ON THE REPEAT SHAPE BEING PUBLIC (the staff draws which notes are
+## one star -- see _seq_pos_for_melody_tick). If a hidden-shape difficulty is
+## ever added, a note's position would no longer be known to the player and
+## this must be gated on it.
+func _settle_melody_tick_positions() -> void:
+    for i in _match_records.size():
+        var ticks: Array = _match_records[i].get("melody_ticks", [])
+        if ticks.is_empty():
+            continue
+        var rank: int = _seq_pos_for_melody_tick(int(ticks[0]))
+        var consistent: bool = rank >= 1 and rank <= _host._star_count
+        for t in ticks:
+            if _seq_pos_for_melody_tick(int(t)) != rank:
+                consistent = false
+        if not consistent:
+            continue
+        var raw: Array = _raw_seq_candidate_set(_match_records[i])
+        if not raw.is_empty() and not raw.has(rank):
+            continue
+        _narrow_derived_seq(i, [rank])
+
+
 ## Sequence is alldiff — exactly one star per position — so two records
 ## whose surviving position sets are BOTH the same single position describe
 ## the same star, whatever route each of them reached it by.
@@ -3891,8 +3927,47 @@ func _settle_same_position_identity() -> void:
             at_position[p] = []
         (at_position[p] as Array).append(i)
 
-    for p in at_position:
-        var group: Array = at_position[p]
+    _share_within_groups(at_position)
+
+    # The same rule keyed on a confirmed NAME, which is alldiff exactly as
+    # position is: two records that both (effectively) confirm one name are one
+    # star. Raw-name pairs are merged by _settle_identical_records; the case
+    # left over is a name confirmed only by DERIVATION -- most commonly the
+    # last name standing after the player X'd every other one on a Sort row --
+    # which cannot drive a merge (the derived layer is wiped every refresh) and
+    # used to share nothing at all. Found by
+    # test_widget_path_independence: a position/colour slot whose every other
+    # name was X'd read Pyrios from its own row, while Pyrios's own Sort:Name
+    # row showed no position and no colour, because nothing linked the two.
+    # Reads _effective_name_state, which never consults star_idx, so an
+    # unconfirmed star-widget stub cannot appear here by way of ground truth.
+    var at_name: Dictionary = {}
+    for i in _match_records.size():
+        for n in _host._star_names:
+            if _effective_name_state(i, str(n)) == 1:
+                if not at_name.has(str(n)):
+                    at_name[str(n)] = []
+                (at_name[str(n)] as Array).append(i)
+                break
+    _share_within_groups(at_name)
+
+    # Deliberately does NOT invalidate _distinct_pair_cache /
+    # _distinct_profile_cache the way _settle_derived_eliminations does.
+    # Everything downstream of this pass reads the derived layer through
+    # _effective_*_state, which consults it directly and never those caches,
+    # and the fixpoint loop clears them at the end of every round anyway. A
+    # mid-round clear here only costs a full re-warm (measured at ~590 ms
+    # cold on a full board) to buy a conclusion the next round reaches for
+    # free — it made a 57-record refresh 312 ms -> 482 ms on its own.
+
+
+## Shares what each record knows with every other record in the same group,
+## where a group is a set of records that all pin one alldiff value (a
+## position, a name) and so are one star. Both directions, via the derived
+## layer.
+func _share_within_groups(groups: Dictionary) -> void:
+    for key in groups:
+        var group: Array = groups[key]
         if group.size() < 2:
             continue
         for a in group:
@@ -3911,15 +3986,16 @@ func _settle_same_position_identity() -> void:
                 if _records_provably_distinct(int(a), int(b)):
                     continue
                 _share_derived_facts(int(a), int(b))
-
-    # Deliberately does NOT invalidate _distinct_pair_cache /
-    # _distinct_profile_cache the way _settle_derived_eliminations does.
-    # Everything downstream of this pass reads the derived layer through
-    # _effective_*_state, which consults it directly and never those caches,
-    # and the fixpoint loop clears them at the end of every round anyway. A
-    # mid-round clear here only costs a full re-warm (measured at ~590 ms
-    # cold on a full board) to buy a conclusion the next round reaches for
-    # free — it made a 57-record refresh 312 ms -> 482 ms on its own.
+                # _share_derived_facts carries the value axes only. For a
+                # group keyed on POSITION the sequence already agrees by
+                # construction, but a group keyed on NAME can hold one record
+                # that knows the position and one that does not. Same star,
+                # so the narrower set holds for both. Skipped when it says
+                # nothing (the whole range), which would only churn the
+                # derived layer.
+                var cs: Array = _seq_candidate_set_for(int(a))
+                if not cs.is_empty() and cs.size() < _host._star_count:
+                    _narrow_derived_seq(int(b), cs)
 
 
 ## Records that denote the SAME STAR must agree about that star.
@@ -7075,6 +7151,7 @@ func _full_propagation_refresh() -> void:
         # narrowing they imply lands on the same frame instead of waiting
         # for the next round.
         _settle_distance_constraints()
+        _settle_melody_tick_positions()
         _settle_star_identity_from_candidates()
         # The column half, immediately after the row half — the same pair a
         # grid player scans after every mark, and neither implies the other.

@@ -2166,7 +2166,191 @@ func _seq_row_color(record_idx: int, row_color: Color) -> Color:
     return row_color
 
 
+# ==================================================
+# SEQUENCE CHECKER ROW -- alternative to the typed lo < list < hi boxes
+# (2026-10-07). One on/off button per Sequence position; ON = still possible,
+# OFF = ruled out. Chosen per player with the "Seq entry" toggle at the end
+# of the Sort: tab bar (persisted in user://study_prefs.cfg). Writes through
+# the SAME record fields as the typed boxes (seq_candidates / an exact pin),
+# by way of _commit_sequence_candidates, so the two entry styles are fully
+# interchangeable and every downstream rule (merge, conflict dialog,
+# propagation) is shared.
+#
+# Positions are RANKS (the order stars first fire), labelled with each one's
+# FIRST staff note so the labels match the clues and the typed boxes; the
+# tooltip lists every note on a repeating melody. The strip scrolls
+# horizontally inside the width the typed row used to take (the scroll area
+# only has a small minimum width and otherwise fills what the row is given),
+# so 15+ buttons never widen the panel.
+# ==================================================
+const STUDY_PREFS_PATH := "user://study_prefs.cfg"
+var _seq_checker_loaded: bool = false
+var _seq_checker_mode: bool = false
+
+
+func _seq_checker_enabled() -> bool:
+    if not _seq_checker_loaded:
+        _seq_checker_loaded = true
+        var cfg := ConfigFile.new()
+        if cfg.load(STUDY_PREFS_PATH) == OK:
+            _seq_checker_mode = bool(cfg.get_value("sort", "seq_checker", false))
+    return _seq_checker_mode
+
+
+func set_seq_checker_enabled(on: bool) -> void:
+    _seq_checker_loaded = true
+    _seq_checker_mode = on
+    var cfg := ConfigFile.new()
+    cfg.load(STUDY_PREFS_PATH)   # keep any other prefs; missing file is fine
+    cfg.set_value("sort", "seq_checker", on)
+    cfg.save(STUDY_PREFS_PATH)
+
+
+## The player's own candidate ranks for a record BEFORE deduction narrows
+## them: the explicit list, else the lo..hi bounds (whole range when unset).
+func _seq_manual_ranks(record_idx: int) -> Array:
+    var r: Dictionary = _deduction.record_at(record_idx)
+    var explicit: Array = r.get("seq_candidates", [])
+    var out: Array = []
+    if not explicit.is_empty():
+        for p in explicit:
+            out.append(int(p))
+        return out
+    var lo: int = int(r.get("seq_lo", 0))
+    var hi: int = int(r.get("seq_hi", 0))
+    if lo <= 0:
+        lo = 1
+    if hi <= 0:
+        hi = _host._star_count
+    for p in range(lo, hi + 1):
+        out.append(p)
+    return out
+
+
+func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 2)
+    # _make_fact_row adds this as a plain child of an HBox, which gives a
+    # non-expanding control only its MINIMUM width. Without this the scroll
+    # strip below stayed at its 110px minimum (~3 buttons) no matter how
+    # much room the row actually had, so most positions sat off-screen.
+    row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+    var scroll := ScrollContainer.new()
+    scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+    scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    scroll.custom_minimum_size = Vector2(110, 24)
+    row.add_child(scroll)
+
+    var strip := HBoxContainer.new()
+    strip.add_theme_constant_override("separation", 2)
+    scroll.add_child(strip)
+
+    # Throwaway edits for the shared commit path (it reads/refreshes three
+    # LineEdits). Hidden children of the row so they live exactly as long as
+    # the row does, which is what the typed row's own edits do too.
+    var lo_edit := LineEdit.new()
+    var mid_edit := LineEdit.new()
+    var hi_edit := LineEdit.new()
+    for e in [lo_edit, mid_edit, hi_edit]:
+        (e as LineEdit).visible = false
+        row.add_child(e)
+
+    var effective: Array = _deduction._effective_seq_candidates(record_idx)
+    var manual: Array = _seq_manual_ranks(record_idx)
+    var pinned: bool = effective.size() == 1
+    var tint: Color = _seq_row_color(record_idx, row_color)
+    # One button per staff NOTE (every note 1..N, the same numbers the typed
+    # boxes and the clues use). On a repeating melody several notes are the
+    # same star, so those buttons are linked: they share one state and a
+    # click on any of them toggles that star. Labelling by each star's FIRST
+    # note only (the earlier version) left gaps in the numbering -- 1 2 3 4 8
+    # 9 12 14 -- that read as missing checks.
+    for tick in range(1, _deduction._melody_tick_count() + 1):
+        var p: int = _deduction._seq_pos_for_melody_tick(tick)
+        var btn := Button.new()
+        btn.text = str(tick)
+        btn.custom_minimum_size = Vector2(26, 24)
+        btn.focus_mode = Control.FOCUS_NONE
+        btn.add_theme_font_size_override("font_size", 14)
+        var ticks: Array = _deduction._melody_ticks_for_rank(p)
+        var tick_strs := PackedStringArray()
+        for t in ticks:
+            tick_strs.append(str(t))
+        var is_on: bool = effective.has(p)
+        if is_on:
+            btn.add_theme_color_override("font_color", tint)
+            if pinned:
+                btn.modulate = STATE_COLORS.confirmed
+            btn.tooltip_text = "Note%s %s: still possible" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
+        elif manual.has(p):
+            # In the player's own set but removed by deduction: shown off and
+            # not togglable, since clicking could not bring it back.
+            btn.modulate = STATE_COLORS.eliminated
+            btn.disabled = true
+            btn.tooltip_text = "Note%s %s: ruled out by deduction" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
+        else:
+            btn.modulate = STATE_COLORS.eliminated
+            btn.tooltip_text = "Note%s %s: ruled out (click to restore)" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
+        var ridx := record_idx
+        var rank := p
+        btn.pressed.connect(func(): _on_seq_checker_toggle(ridx, rank, lo_edit, mid_edit, hi_edit))
+        strip.add_child(btn)
+
+    var copy_btn := Button.new()
+    copy_btn.text = "⎘"
+    copy_btn.custom_minimum_size = Vector2(26, 24)
+    copy_btn.focus_mode = Control.FOCUS_NONE
+    copy_btn.tooltip_text = "Write the still-possible sequence positions into the Notes tab"
+    var cridx := record_idx
+    copy_btn.pressed.connect(func(): _on_staff_copy(cridx, "sequence"))
+    row.add_child(copy_btn)
+    return row
+
+
+func _on_seq_checker_toggle(record_idx: int, rank: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var manual: Array = _seq_manual_ranks(record_idx)
+    var effective: Array = _deduction._effective_seq_candidates(record_idx)
+    var new_set: Array = manual.duplicate()
+    if effective.has(rank):
+        new_set.erase(rank)
+    elif not manual.has(rank):
+        new_set.append(rank)
+    else:
+        return   # deduction-ruled-out; the button is disabled anyway
+    # Ruling out every position would be a contradiction, not information.
+    if new_set.is_empty():
+        return
+    new_set.sort()
+
+    if new_set.size() >= _host._star_count:
+        # Everything possible again == no Sequence information at all.
+        var r: Dictionary = _deduction.record_at(record_idx)
+        r["seq_candidates"] = []
+        r["seq_lo"] = 0
+        r["seq_hi"] = 0
+        r["seq_tick_lo"] = 0
+        r["seq_tick_hi"] = 0
+        _deduction._save_puzzle_notes()
+        _deduction._full_propagation_refresh()
+        return
+
+    # The shared commit takes staff NOTES and maps them back to ranks, so a
+    # repeating star's other notes dedupe to the same rank.
+    var ticks: PackedStringArray = PackedStringArray()
+    for p in new_set:
+        for t in _deduction._melody_ticks_for_rank(int(p)):
+            ticks.append(str(t))
+    mid_edit.text = ",".join(ticks)
+    _commit_sequence_candidates(record_idx, lo_edit, mid_edit, hi_edit)
+
+
 func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> HBoxContainer:
+    if _seq_checker_enabled():
+        return _make_sequence_checker_row_for_record(record_idx, row_color)
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
 

@@ -57,6 +57,7 @@ const MARKERS_BASE_PATH:    String = PANE1_BASE_PATH + "/MarkersVBox"
 ## distinguishes "the difficulty toggle opened this dialog" from a plain
 ## RESET press, since both now share one confirmed signal.
 var _difficulty_btn: Button = null
+var _seq_mode_btn: Button = null
 var _pending_difficulty_change: String = ""
 const _RESET_DIALOG_TEXT := "Generate a brand new arrangement for this constellation?\nStar names, colors, and which star plays which note will all reshuffle. Your clues, deduction notes, and current progress on this constellation will be lost.\nThis cannot be undone."
 @onready var _selected_clue_display: RichTextLabel = get_node(HEADER_BASE_PATH + "/SelectedClueDisplay")
@@ -1107,6 +1108,26 @@ func _build_difficulty_toggle() -> void:
     bar.add_child(_difficulty_btn)
     bar.move_child(_difficulty_btn, _reset_btn.get_index())
     _refresh_difficulty_button()
+
+    # Sequence entry style (typed boxes / on-off checker per position) --
+    # between HINT and EASY. See constellation_puzzle_widgets.gd's
+    # _make_sequence_checker_row_for_record.
+    _seq_mode_btn = Button.new()
+    _seq_mode_btn.focus_mode = Control.FOCUS_NONE
+    _seq_mode_btn.add_theme_font_size_override("font_size", 16)
+    _seq_mode_btn.tooltip_text = "Switch the Sort tabs' Sequence entry between typed boxes and an on/off checker for each position"
+    _seq_mode_btn.pressed.connect(func():
+        _widgets.set_seq_checker_enabled(not _widgets._seq_checker_enabled())
+        _refresh_seq_mode_button()
+        _widgets.request_markers_rebuild())
+    bar.add_child(_seq_mode_btn)
+    bar.move_child(_seq_mode_btn, _difficulty_btn.get_index())
+    _refresh_seq_mode_button()
+
+
+func _refresh_seq_mode_button() -> void:
+    if _seq_mode_btn:
+        _seq_mode_btn.text = "Seq: Checks" if _widgets._seq_checker_enabled() else "Seq: Typed"
 
 
 ## Reflects this constellation's CURRENT stored difficulty -- called from
