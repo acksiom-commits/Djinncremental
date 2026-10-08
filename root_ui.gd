@@ -3121,7 +3121,14 @@ func _update_counters() -> void:
             # an unconditional every-frame assignment here (harmless when
             # that rebuild was a few flat triangles) became a real per-frame
             # cost once it started building full wireframe Mote lattices.
-            if mote_display_changed:
+            # ...or when the node's own count has drifted from the tracked
+            # one. _icosa_mote_display always starts at 0, but the node
+            # starts at whatever current_motes the scene file saved (it
+            # was 16, a stale editor value), and with a 0 target nothing
+            # ever "changed", so the icosahedron sat nearly full with no
+            # Motes made. An int compare per frame is cheap; the setter's
+            # mesh rebuild still only runs on an actual mismatch.
+            if mote_display_changed or _uonite_icosa.current_motes != _icosa_mote_display:
                 _uonite_icosa.current_motes = _icosa_mote_display
         if _uonite_strip_bar and game_context.ui_unlocks.get("uonite_creation", false):
             # Real (non-cosmetic) progress toward whichever Uonite cap is
@@ -3150,7 +3157,7 @@ func _update_counters() -> void:
             elif g_target > _grain_mote_display:
                 _grain_mote_display += 1
                 g_display_changed = true
-            if g_display_changed:
+            if g_display_changed or _grain_tetra.current_motes != _grain_mote_display:
                 _grain_tetra.current_motes = _grain_mote_display
         if _grain_strip_bar and game_context.ui_unlocks.get("grain_creation", false):
             # Real progress toward the storage-derived Grain cap -- see
