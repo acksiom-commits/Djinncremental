@@ -228,6 +228,28 @@ func run() -> void:
 	w5._clear_sequence_info(rec5)
 	ok(d5._effective_seq_candidates(rec5).size() == 6, "and undo releases it as well")
 
+	print("\n=== ruled-out notes are hidden until the return button is pressed ===")
+	d5._load_match_records([])
+	var rec6: int = d5._get_or_create_match_record_for_name("Zeta")
+	await w5._on_seq_checker_toggle(rec6, 3, l5, m5, h5)
+	var row6: Control = w5._make_sequence_range_row_for_record(rec6, Color.WHITE)
+	host5.add_child(row6)
+	var s6: Array = _strip_buttons(row6)
+	ok(not (s6[2] as Button).visible and (s6[1] as Button).visible, "note 3 (ruled out) is hidden, its neighbours are shown")
+	var ret6: Button = null
+	for c6 in row6.get_children():
+		if c6 is Button and (c6 as Button).text == "→":
+			ret6 = c6
+	ok(ret6 != null and not ret6.disabled, "the straight-arrow return button is available")
+	ret6.pressed.emit()
+	await process_frame
+	var row7: Control = w5._make_sequence_range_row_for_record(rec6, Color.WHITE)
+	host5.add_child(row7)
+	ok(((_strip_buttons(row7))[2] as Button).visible, "pressing it brings note 3 back into view")
+	_strip_buttons(row7)[2].pressed.emit()
+	await process_frame
+	ok(d5._effective_seq_candidates(rec6).size() == 6, "and clicking it restores the position")
+
 	print("\n=== the Star Map widget shows the checker too ===")
 	var host4 = await _make_host()
 	var d4 = host4._deduction

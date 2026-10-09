@@ -126,6 +126,52 @@ func run() -> void:
 	w._on_repeat_checker_toggle(slot_rec, 1)
 	ok(d._effective_repeat_state(slot_rec, 0) == 1, "and its slot confirmation is untouched")
 
+	print("\n=== ruled-out values are hidden; the return button brings them back ===")
+	d.record_at(rec)["pitch_states"] = {}
+	d.record_at(rec)["manual_pitch_blocks"] = {}
+	d._full_propagation_refresh()
+	var row_a: Control = w._make_pitch_checklist_row_for_record(rec)
+	host.add_child(row_a)
+	var ret_a: Button = null
+	for cb in row_a.get_children():
+		if cb is Button and (cb as Button).text == "→":
+			ret_a = cb
+	ok(ret_a != null, "the row has a straight right-arrow return button (not the curved undo)")
+	ok(ret_a != null and ret_a.disabled, "greyed out while nothing is ruled out")
+	var all_shown: bool = true
+	for sb in _strip(row_a):
+		if not (sb as Button).visible:
+			all_shown = false
+	ok(all_shown, "with nothing ruled out every value is shown")
+	w._on_pitch_checker_toggle(rec, str(notes[0]))
+	row_a.free()
+	row_a = w._make_pitch_checklist_row_for_record(rec)
+	host.add_child(row_a)
+	var strip_a: Array = _strip(row_a)
+	ok(not (strip_a[0] as Button).visible and (strip_a[1] as Button).visible and (strip_a[2] as Button).visible,
+		"a note ruled out disappears and the others stay")
+	for cb2 in row_a.get_children():
+		if cb2 is Button and (cb2 as Button).text == "→":
+			ret_a = cb2
+	ok(not ret_a.disabled, "the return button is available once something is ruled out")
+	ret_a.pressed.emit()
+	await process_frame
+	var row_b: Control = w._make_pitch_checklist_row_for_record(rec)
+	host.add_child(row_b)
+	ok((_strip(row_b)[0] as Button).visible, "pressing it shows the ruled-out note again")
+	var strip_b: Array = _strip(row_b)
+	strip_b[0].pressed.emit()
+	await process_frame
+	ok(d._effective_pitch_state(rec, str(notes[0])) == 0, "and clicking it restores the value")
+	# the reveal state survives the rebuild every click causes, then hides again
+	for cb3 in row_b.get_children():
+		if cb3 is Button and (cb3 as Button).text == "→":
+			cb3.pressed.emit()
+	await process_frame
+	var row_c: Control = w._make_pitch_checklist_row_for_record(rec)
+	host.add_child(row_c)
+	ok(not w._checker_show_off.get("off:p%d" % rec, true), "pressing return again hides them (state kept per row)")
+
 	if fails == 0:
 		print("\nALL PASS (0 failures)")
 	else:

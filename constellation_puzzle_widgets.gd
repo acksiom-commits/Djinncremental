@@ -2354,6 +2354,9 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, sc
     var manual: Array = _seq_manual_ranks(record_idx)
     var pinned: bool = effective.size() == 1
     var tint: Color = _seq_row_color(record_idx, row_color)
+    var off_key: String = "off:%s" % str(scroll_key)
+    var show_off: bool = bool(_checker_show_off.get(off_key, false))
+    var any_hidden: bool = false
     # One button per staff NOTE (every note 1..N, the same numbers the typed
     # boxes and the clues use). On a repeating melody several notes are the
     # same star, so those buttons are linked: they share one state and a
@@ -2389,7 +2392,14 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, sc
         var ridx := record_idx
         var rank := p
         btn.pressed.connect(func(): _on_seq_checker_toggle(ridx, rank, lo_edit, mid_edit, hi_edit))
+        # Ruled-out notes (the player's own AND deduced) are hidden unless the
+        # row's return button has been pressed.
+        if not is_on:
+            any_hidden = true
+            btn.visible = show_off
         strip.add_child(btn)
+
+    row.add_child(_make_return_button(off_key, show_off, any_hidden))
 
     var copy_btn := Button.new()
     copy_btn.text = "⎘"
@@ -2412,6 +2422,35 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, sc
     undo_btn.pressed.connect(func(): _clear_sequence_info(cridx))
     row.add_child(undo_btn)
     return row
+
+
+## Per checker row (keyed by the row, see the builders): whether its ruled-out
+## values are currently shown. Hidden by default; the row's return button
+## flips it. Kept in this dictionary, not on the row, because every click
+## rebuilds the rows.
+var _checker_show_off: Dictionary = {}
+
+
+## The "return" button at the end of a checker strip: a straight right-pointing
+## arrow (the Undo button is the curved ↶). Shows the ruled-out values again so
+## any one of them can be clicked back in, and hides them again on a second
+## press. Greyed out while nothing is ruled out, since there is nothing to bring
+## back.
+func _make_return_button(off_key: String, showing: bool, any_ruled_out: bool) -> Button:
+    var btn := Button.new()
+    btn.text = "→"
+    btn.custom_minimum_size = Vector2(26, 24)
+    btn.focus_mode = Control.FOCUS_NONE
+    btn.add_theme_font_size_override("font_size", 16)
+    btn.tooltip_text = "Hide the ruled-out values" if showing else "Bring back the ruled-out values so you can restore them"
+    btn.disabled = not any_ruled_out and not showing
+    if showing:
+        btn.modulate = STATE_COLORS.confirmed
+    btn.pressed.connect(func():
+        _checker_show_off[off_key] = not bool(_checker_show_off.get(off_key, false))
+        request_markers_rebuild()
+        _build_star_widgets())
+    return btn
 
 
 ## Wipes everything the player entered for this record's Sequence -- pin,
@@ -2498,6 +2537,9 @@ func _make_value_checker_row(record_idx: int, ctx: String, values: Array, labels
     else:
         _track_checker_scroll(scroll, scroll_key)
 
+    var off_key: String = "off:%s" % scroll_key
+    var show_off: bool = bool(_checker_show_off.get(off_key, false))
+    var any_hidden: bool = false
     var confirmed_only: bool = false
     var on_count: int = 0
     for st in states:
@@ -2522,7 +2564,14 @@ func _make_value_checker_row(record_idx: int, ctx: String, values: Array, labels
         btn.disabled = locked
         var v = values[i]
         btn.pressed.connect(func(): on_toggle.call(v))
+        # Ruled-out values (the player's own AND deduced) are hidden unless the
+        # row's return button has been pressed.
+        if not possible:
+            any_hidden = true
+            btn.visible = show_off
         strip.add_child(btn)
+
+    row.add_child(_make_return_button(off_key, show_off, any_hidden))
 
     var copy_btn := Button.new()
     copy_btn.text = "⎘"
