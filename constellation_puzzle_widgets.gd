@@ -1179,7 +1179,10 @@ func _populate_name_markers() -> void:
         {"label": "Name",  "mode": 0},
         {"label": "Color", "mode": 2},
         {"label": "Pitch", "mode": 3},
-        {"label": "Repeats", "mode": 5},
+        # DEV: Sort:Repeats hidden -- not sufficiently useful yet. Mode 5 and
+        # its rows (_populate_repeat_bucket_rows) are untouched and still
+        # reachable through _sort_matches(5); un-comment to bring the tab back.
+        # {"label": "Repeats", "mode": 5},
     ]
     for entry in sort_entries:
         var btn := Button.new()
@@ -2227,6 +2230,29 @@ func _seq_manual_ranks(record_idx: int) -> Array:
     return out
 
 
+## record index -> the checker strip's horizontal scroll, kept across the row
+## rebuilds every click triggers.
+var _seq_checker_scroll: Dictionary = {}
+
+
+func _track_checker_scroll(scroll: ScrollContainer, key: int) -> void:
+    scroll.get_h_scroll_bar().value_changed.connect(func(v: float): _seq_checker_scroll[key] = int(v))
+
+
+## Runs after the rebuilt row has been laid out (a ScrollContainer clamps
+## scroll_horizontal to its content width, which is 0 until then). Tracking
+## starts only AFTER the restore, so the initial 0 can never overwrite the
+## remembered position.
+func _restore_checker_scroll(scroll: ScrollContainer, key: int, value: int) -> void:
+    if not is_instance_valid(scroll) or not scroll.is_inside_tree():
+        return
+    await scroll.get_tree().process_frame
+    if not is_instance_valid(scroll):
+        return
+    scroll.scroll_horizontal = value
+    _track_checker_scroll(scroll, key)
+
+
 func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color) -> HBoxContainer:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
@@ -2246,6 +2272,17 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color) ->
     var strip := HBoxContainer.new()
     strip.add_theme_constant_override("separation", 2)
     scroll.add_child(strip)
+
+    # Every click ends in a full rebuild of the Sort rows, which makes a brand
+    # new ScrollContainer at scroll 0 -- so toggling a button far along the
+    # strip threw the view back to the start. Remember where each record's
+    # strip was scrolled and put the new one back there.
+    var scroll_key: int = record_idx
+    var saved_scroll: int = int(_seq_checker_scroll.get(scroll_key, 0))
+    if saved_scroll > 0:
+        _restore_checker_scroll.call_deferred(scroll, scroll_key, saved_scroll)
+    else:
+        _track_checker_scroll(scroll, scroll_key)
 
     # Throwaway edits for the shared commit path (it reads/refreshes three
     # LineEdits). Hidden children of the row so they live exactly as long as
@@ -3283,12 +3320,6 @@ const STAFF_TOP_PAD: float = 10.0
 const NUMERAL_BASELINE_PAD: float = 8.0
 const NUMERAL_BLOCK_H: float = 22.0
 
-## Extra height reserved ABOVE the numerals, only on a repeating melody, for the
-## arcs that join the notes of one star (see _draw_repeat_arcs). Taken out of the
-## staff's own height, so the pitch plot just compresses a little.
-const REPEAT_ARC_BAND_H: float = 16.0
-
-
 ## The colour a staff tick's marks take. A star's colour once it is deduced,
 ## for every one of its notes. Until then, on a repeating melody, a note of a
 ## star that fires only once stays DIM and a note of a star that repeats is lit
@@ -3301,34 +3332,6 @@ func _staff_tick_color(seq_pos: int, known_color: int) -> Color:
     if _deduction._seq_repeats() and _deduction._melody_ticks_for_rank(seq_pos).size() < 2:
         return STATE_COLORS.muted
     return _host.UNKNOWN_SEQ_COLOR
-
-
-## Thin arcs joining consecutive notes of each star that fires more than once,
-## in that star's colour (green until its colour is known). One arc per
-## consecutive pair, peak height growing with the span, drawn in the band
-## reserved just above the numerals.
-func _draw_repeat_arcs(margin_x: float, step_x: float, base_y: float) -> void:
-    var table: Array = _host._melody_seq_pos_sequence
-    var seen: Dictionary = {}
-    for t in range(1, table.size() + 1):
-        var rank: int = _deduction._seq_pos_for_melody_tick(t)
-        if seen.has(rank):
-            continue
-        seen[rank] = true
-        var ticks: Array = _deduction._melody_ticks_for_rank(rank)
-        if ticks.size() < 2:
-            continue
-        var col: Color = _staff_tick_color(rank, _deduction._known_color_for_seq_position(rank))
-        col.a = 0.85
-        for i in range(ticks.size() - 1):
-            var xa: float = margin_x + step_x * float(int(ticks[i]) - 1)
-            var xb: float = margin_x + step_x * float(int(ticks[i + 1]) - 1)
-            var peak: float = clampf(3.0 + (xb - xa) * 0.12, 4.0, REPEAT_ARC_BAND_H - 2.0)
-            var pts := PackedVector2Array()
-            for s in range(0, 13):
-                var u: float = float(s) / 12.0
-                pts.append(Vector2(lerpf(xa, xb, u), base_y - 4.0 * peak * u * (1.0 - u)))
-            _host._melody_staff_panel.draw_polyline(pts, col, 1.5, true)
 
 
 ## `text` shortened with a trailing ellipsis until it fits `max_w`.
@@ -3372,7 +3375,7 @@ func _draw_melody_staff() -> void:
     # Taken out of the staff's own height, not the panel's, so the .tscn
     # stays untouched and the pitch spread just compresses.
     var staff_top: float = NAME_ROW_LOW_DY + STAFF_TOP_PAD
-    var staff_bottom_pad: float = NUMERAL_BLOCK_H + (REPEAT_ARC_BAND_H if _deduction._seq_repeats() else 0.0)
+    var staff_bottom_pad: float = NUMERAL_BLOCK_H
     var usable_w: float = panel_size.x - margin_x * 2.0
     var usable_h: float = panel_size.y - staff_top - staff_bottom_pad
     var step_x: float = usable_w / float(maxi(tick_count - 1, 1))
@@ -3473,11 +3476,6 @@ func _draw_melody_staff() -> void:
         _host._melody_staff_panel.draw_string(font,
             Vector2(x - nw * 0.5, panel_size.y - NUMERAL_BASELINE_PAD),
             num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, pos_col)
-
-    # The repeat shape is public: join the notes of every star that fires more
-    # than once, just above the numerals.
-    if _deduction._seq_repeats():
-        _draw_repeat_arcs(margin_x, step_x, panel_size.y - NUMERAL_BLOCK_H - 1.0)
 
 
 ## Resolves a melody TICK (1-indexed staff position, 1..tick_count in
@@ -4302,12 +4300,18 @@ func _ordinal(n: int) -> String:
         _: return "%dth note" % n
 
 
-## A star tag's Sequence text from the star's confirmed rank: every note it
-## fires on ("7th note", or "notes 8, 10, 12" for a star that repeats).
+## A star tag's Sequence text from the star's confirmed rank: just the staff
+## numbers of every note it fires on ("7", or "8, 10, 12" for a star that
+## repeats). No "note"/"notes" wording -- the numbers are the staff's own and
+## the player knows what they mean. (_seq_ticks_phrase keeps its wording for
+## clue and hint text.)
 func _ordinal_str(raw: String) -> String:
     if raw == "?" or not raw.is_valid_int():
         return raw
-    return _deduction._seq_ticks_phrase(int(raw))
+    var parts := PackedStringArray()
+    for t in _deduction._melody_ticks_for_rank(int(raw)):
+        parts.append(str(t))
+    return ", ".join(parts)
 
 
 func _note_name_for_star(star_idx: int) -> String:

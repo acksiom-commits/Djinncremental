@@ -7,7 +7,7 @@ extends "res://dev_tests/test_base.gd"
 #   - a note of a star that repeats is the not-yet-known GREEN until its colour
 #     is known, so the repeating stars stand out;
 #   - once a colour is known every note of that star takes it;
-#   - thin arcs join the notes of each repeating star (drawn above the numerals).
+#   (The thin arcs that once joined the notes of a repeating star were removed.)
 # A 1:1 melody has nothing to show, so every note keeps the original green.
 #
 # Clicking any note of a star opens the SAME record, so a name or colour marked
@@ -124,7 +124,7 @@ func run() -> void:
 	host._melody_staff_panel.queue_redraw()
 	await process_frame
 	await process_frame
-	ok(true, "the staff drew with repeat arcs and the arc band without aborting")
+	ok(true, "the staff drew on a repeating melody without aborting")
 
 	host.queue_free()
 	await process_frame

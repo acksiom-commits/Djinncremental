@@ -150,6 +150,46 @@ func run() -> void:
 	ok((b2[0] as Button).modulate == (b2[3] as Button).modulate and (b2[0] as Button).modulate != (b2[1] as Button).modulate,
 		"notes 1 and 4 (same star) now share the off look; note 2 does not")
 
+	print("\n=== the scroll position survives a rebuild ===")
+	# A click rebuilds the whole row; the strip must come back where it was.
+	var host3 = await _make_host()
+	var d3 = host3._deduction
+	var w3 = host3._widgets
+	host3._star_count = 6
+	d3._load_match_records([])
+	var rec3: int = d3._get_or_create_match_record_for_name("Pyrios")
+	w3._seq_checker_loaded = true
+	w3._seq_checker_mode = true
+	var holder := Control.new()
+	holder.size = Vector2(300, 40)
+	host3.add_child(holder)
+	var rowa: Control = w3._make_sequence_range_row_for_record(rec3, Color.WHITE)
+	rowa.size = Vector2(60, 30)    # narrower than its six buttons, so it scrolls
+	holder.add_child(rowa)
+	await process_frame
+	await process_frame
+	var scrolla: ScrollContainer = null
+	for c in rowa.get_children():
+		if c is ScrollContainer:
+			scrolla = c
+	scrolla.scroll_horizontal = 25
+	await process_frame
+	var moved: int = scrolla.scroll_horizontal
+	ok(moved > 0, "precondition: the strip could be scrolled (at %d)" % moved)
+	rowa.queue_free()
+	await process_frame
+	var rowb: Control = w3._make_sequence_range_row_for_record(rec3, Color.WHITE)
+	rowb.size = Vector2(60, 30)
+	holder.add_child(rowb)
+	await process_frame
+	await process_frame
+	await process_frame
+	var scrollb: ScrollContainer = null
+	for c2 in rowb.get_children():
+		if c2 is ScrollContainer:
+			scrollb = c2
+	ok(scrollb.scroll_horizontal == moved, "the rebuilt strip is back at %d (got %d)" % [moved, scrollb.scroll_horizontal])
+
 	if fails == 0:
 		print("\nALL PASS (0 failures)")
 	else:
