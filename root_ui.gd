@@ -2494,6 +2494,34 @@ func _update_click_vol_label() -> void:
         _click_vol_label.remove_theme_color_override("font_color")
     _refresh_click_vol_buttons()
 
+## What the Volumitions panel was last drawn from. The label and +/- buttons
+## used to be redrawn only from their own click handlers, load and Expansion,
+## so anything that changed the numbers elsewhere left a stale display until
+## the player unassigned and reassigned a Volition: the Archon crossing a tier
+## (it resizes every Volition's bonus children), the Archon or a click-bonus
+## constellation going active/inactive, or a Volition freed or spent elsewhere.
+var _click_vol_sig: Array = []
+
+
+## Cheap per-frame check (a few dictionary reads and one pass over the eight
+## octants) that redraws the Volumitions panel when what it shows has changed.
+## It compares the READ values, not the events behind them, so every path that
+## can move them is covered without each needing to remember to call in.
+func _check_click_vol_display() -> void:
+    if not game_context or not _click_vol_label:
+        return
+    var sig: Array = [
+        _get_click_multiplier(),
+        _coerce_assignment_int("click_volitions", 0),
+        _coerce_assignment_int("click_bonus_volitions", 0),
+        game_context.get_volitions_free(),
+    ]
+    if sig == _click_vol_sig:
+        return
+    _click_vol_sig = sig
+    _update_click_vol_label()
+
+
 func _on_click_vol_minus_pressed() -> void:
     if not game_context: return
     var idx = game_context.get_first_parent_index_with_target("volumitions", "")
@@ -3011,6 +3039,7 @@ func _process(delta: float) -> void:
     _run_simple_triggers()
     _check_uonite_fibonacci_foci()
     _check_oscillation_fibonacci_foci()
+    _check_click_vol_display()
     _check_constellation_identity_reveals()
     _check_totals_milestones()
     _check_star_in_view_trigger(delta)
