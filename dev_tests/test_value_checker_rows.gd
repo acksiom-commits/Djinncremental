@@ -126,6 +126,43 @@ func run() -> void:
 	w._on_repeat_checker_toggle(slot_rec, 1)
 	ok(d._effective_repeat_state(slot_rec, 0) == 1, "and its slot confirmation is untouched")
 
+	print("\n=== left-click selects as true, right-click rules out ===")
+	d.record_at(rec)["pitch_states"] = {}
+	d.record_at(rec)["manual_pitch_blocks"] = {}
+	d._full_propagation_refresh()
+	var click_row: Control = w._make_pitch_checklist_row_for_record(rec)
+	host.add_child(click_row)
+	var click_btns: Array = _strip(click_row)
+	var rc := InputEventMouseButton.new()
+	rc.button_index = MOUSE_BUTTON_RIGHT
+	rc.pressed = true
+	(click_btns[0] as Button).gui_input.emit(rc)
+	ok(d._effective_pitch_state(rec, str(notes[0])) == 2, "a right-click on the button rules the pitch out")
+	ok(d._effective_pitch_state(rec, str(notes[1])) == 0, "and touches nothing else")
+	(click_btns[1] as Button).pressed.emit()
+	ok(d._effective_pitch_state(rec, str(notes[1])) == 1, "a left-click selects the pitch as true")
+	ok(d._effective_pitch_state(rec, str(notes[2])) == 2, "which rules the siblings out")
+	ok(bool((d.record_at(rec).get("manual_pitch_blocks", {}) as Dictionary).get(str(notes[0]), false)), "keeping the player's own block")
+	# a right-click on a swept sibling must not wipe the selection
+	w._on_pitch_checker_toggle(rec, str(notes[2]))
+	ok(d._effective_pitch_state(rec, str(notes[1])) == 1, "right-clicking a swept sibling leaves the selection standing")
+	# left again lets go, and releases the swept siblings but not the own block
+	w._on_pitch_checker_select(rec, str(notes[1]))
+	ok(d._effective_pitch_state(rec, str(notes[1])) == 0, "a second left-click deselects it")
+	ok(d._effective_pitch_state(rec, str(notes[2])) == 0, "and un-sweeps the siblings")
+	ok(d._effective_pitch_state(rec, str(notes[0])) == 2, "but the player's right-click block stays")
+	# left-click on a value the player ruled out selects it
+	w._on_pitch_checker_select(rec, str(notes[0]))
+	ok(d._effective_pitch_state(rec, str(notes[0])) == 1, "a left-click on a ruled-out value selects it")
+	w._on_pitch_checklist_undo_all_no_popup(rec)
+	# repeats: same split
+	w._on_repeat_checker_select(rec, int(buckets[1]))
+	ok(d._effective_repeat_state(rec, int(buckets[1])) == 1, "left-click selects a repeat count")
+	w._on_repeat_checker_select(rec, int(buckets[1]))
+	ok(d._effective_repeat_state(rec, int(buckets[1])) == 0, "and again lets go of it")
+	w._repeat_undo(rec, true, true)
+	click_row.free()
+
 	print("\n=== ruled-out values are hidden; the return button brings them back ===")
 	d.record_at(rec)["pitch_states"] = {}
 	d.record_at(rec)["manual_pitch_blocks"] = {}
@@ -160,9 +197,9 @@ func run() -> void:
 	host.add_child(row_b)
 	ok((_strip(row_b)[0] as Button).visible, "pressing it shows the ruled-out note again")
 	var strip_b: Array = _strip(row_b)
-	strip_b[0].pressed.emit()
+	strip_b[0].gui_input.emit(rc)
 	await process_frame
-	ok(d._effective_pitch_state(rec, str(notes[0])) == 0, "and clicking it restores the value")
+	ok(d._effective_pitch_state(rec, str(notes[0])) == 0, "and right-clicking it restores the value")
 	# the reveal state survives the rebuild every click causes, then hides again
 	for cb3 in row_b.get_children():
 		if cb3 is Button and (cb3 as Button).text == "→":

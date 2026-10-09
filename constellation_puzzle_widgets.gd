@@ -2379,7 +2379,7 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, sc
             btn.add_theme_color_override("font_color", tint)
             if pinned:
                 btn.modulate = STATE_COLORS.confirmed
-            btn.tooltip_text = "Note%s %s: still possible" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
+            btn.tooltip_text = "Note%s %s: still possible (left-click: this is the one; right-click: rule out)" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
         elif manual.has(p):
             # In the player's own set but removed by deduction: shown off and
             # not togglable, since clicking could not bring it back.
@@ -2388,10 +2388,17 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, sc
             btn.tooltip_text = "Note%s %s: ruled out by deduction" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
         else:
             btn.modulate = STATE_COLORS.eliminated
-            btn.tooltip_text = "Note%s %s: ruled out (click to restore)" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
+            btn.tooltip_text = "Note%s %s: ruled out (right-click to restore)" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
         var ridx := record_idx
         var rank := p
-        btn.pressed.connect(func(): _on_seq_checker_toggle(ridx, rank, lo_edit, mid_edit, hi_edit))
+        # Left-click selects this position as the true one; right-click rules
+        # it out (and restores it again) -- the same split the colour, degree
+        # and name check buttons use.
+        btn.pressed.connect(func(): _on_seq_checker_select(ridx, rank, lo_edit, mid_edit, hi_edit))
+        btn.gui_input.connect(func(event: InputEvent):
+            if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+                _on_seq_checker_toggle(ridx, rank, lo_edit, mid_edit, hi_edit)
+                btn.accept_event())
         # Ruled-out notes (the player's own AND deduced) are hidden unless the
         # row's return button has been pressed.
         if not is_on:
@@ -2471,6 +2478,28 @@ func _clear_sequence_info(record_idx: int) -> void:
     _deduction._full_propagation_refresh()
 
 
+## Left-click on a position: mark it as THE position (pins the candidate set to
+## it). Clicking the already-pinned position again lets go of the pin, the same
+## click-again-to-deselect the colour buttons have.
+func _on_seq_checker_select(record_idx: int, rank: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var manual: Array = _seq_manual_ranks(record_idx)
+    var effective: Array = _deduction._effective_seq_candidates(record_idx)
+    if not effective.has(rank) and manual.has(rank):
+        return   # in the player's set but ruled out by deduction
+    if manual.size() == 1 and manual[0] == rank:
+        _clear_sequence_info(record_idx)
+        return
+    var ticks: PackedStringArray = PackedStringArray()
+    for t in _deduction._melody_ticks_for_rank(rank):
+        ticks.append(str(t))
+    mid_edit.text = ",".join(ticks)
+    _commit_sequence_candidates(record_idx, lo_edit, mid_edit, hi_edit)
+
+
+## Right-click on a position: rule it out, or bring it back if the player had
+## already ruled it out. (The left-click is _on_seq_checker_select.)
 func _on_seq_checker_toggle(record_idx: int, rank: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
@@ -2515,7 +2544,7 @@ func _on_seq_checker_toggle(record_idx: int, rank: int, lo_edit: LineEdit, mid_e
 # ==================================================
 func _make_value_checker_row(record_idx: int, ctx: String, values: Array, labels: Array,
         tips: Array, states: Array, locked: bool, copy_section: String, copy_tip: String,
-        on_toggle: Callable, on_undo: Callable, undo_enabled: bool) -> HBoxContainer:
+        on_select: Callable, on_eliminate: Callable, on_undo: Callable, undo_enabled: bool) -> HBoxContainer:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
     row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2557,13 +2586,17 @@ func _make_value_checker_row(record_idx: int, ctx: String, values: Array, labels
         if possible:
             if st == 1 or confirmed_only:
                 btn.modulate = STATE_COLORS.confirmed
-            btn.tooltip_text = "%s: still possible" % str(tips[i])
+            btn.tooltip_text = "%s: still possible%s" % [str(tips[i]), "" if locked else " (left-click: this is the one; right-click: rule out)"]
         else:
             btn.modulate = STATE_COLORS.eliminated
-            btn.tooltip_text = "%s: ruled out%s" % [str(tips[i]), "" if locked else " (click to restore)"]
+            btn.tooltip_text = "%s: ruled out%s" % [str(tips[i]), "" if locked else " (right-click to restore)"]
         btn.disabled = locked
         var v = values[i]
-        btn.pressed.connect(func(): on_toggle.call(v))
+        btn.pressed.connect(func(): on_select.call(v))
+        btn.gui_input.connect(func(event: InputEvent):
+            if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+                on_eliminate.call(v)
+                btn.accept_event())
         # Ruled-out values (the player's own AND deduced) are hidden unless the
         # row's return button has been pressed.
         if not possible:
@@ -2605,30 +2638,84 @@ func _own_off_set(record_idx: int, states_key: String) -> Array:
     return out
 
 
-## Shared write: make exactly `off` the ruled-out values on this record's axis,
-## then confirm the lone survivor if there is one. `all_values` is the axis's
-## full value list.
-func _apply_axis_off_set(record_idx: int, states_key: String, manual_key: String,
-        all_values: Array, off: Array, confirm_fn: Callable, slot_label_key: String) -> void:
+## Left-click on a value: mark it as the true one on this record's axis
+## (siblings are ruled out by the confirm's own propagation). Clicking the
+## confirmed value again lets go of it and of the sibling eliminations that
+## came from it, keeping the player's own right-click rule-outs -- the same
+## shape as the colour buttons. `eff` is the value's effective state; a value
+## ruled out by deduction (not by the player) cannot be selected. Rows holding
+## a slot label are locked by the callers.
+func _axis_select(record_idx: int, states_key: String, manual_key: String, protected_key: String,
+        all_values: Array, v, eff: int, confirm_fn: Callable) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     var r: Dictionary = _deduction.record_at(record_idx)
-    var states: Dictionary = {}
-    var manual: Dictionary = {}
-    for v in off:
+    var states: Dictionary = r.get(states_key, {})
+    var manual: Dictionary = r.get(manual_key, {})
+    var cur: int = int(states.get(v, 0))
+    if cur == 1:
+        _deduction._undo_category_selects(record_idx, states_key, manual_key, protected_key, all_values)
+    else:
+        if cur == 2 and not manual.has(v):
+            return   # swept out by a confirm elsewhere on the row; release that one first
+        if cur != 2 and (eff == 2 or eff == 3):
+            return   # ruled out by deduction
+        if cur == 2:
+            states.erase(v)
+            manual.erase(v)
+            r[states_key] = states
+            r[manual_key] = manual
+        confirm_fn.call(record_idx, v)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+
+
+## Right-click on a value: rule it out as the player's own block, or lift that
+## block again. Ruling out all but one value confirms the survivor, as the
+## checklist does. A confirmed value has to be deselected first.
+func _axis_eliminate(record_idx: int, states_key: String, manual_key: String,
+        all_values: Array, v, eff: int, confirm_fn: Callable) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var r: Dictionary = _deduction.record_at(record_idx)
+    var states: Dictionary = r.get(states_key, {})
+    var manual: Dictionary = r.get(manual_key, {})
+    var cur: int = int(states.get(v, 0))
+    if cur == 1:
+        return
+    var survivor_to_confirm = null
+    if cur == 2:
+        if not manual.has(v):
+            return   # a confirm's sweep, not the player's block
+        # Lifting a block reopens a value that was the lone survivor of the
+        # player's own rule-outs (the confirm came from those blocks, so it goes
+        # with them). A value the player selected with a left-click has swept
+        # its siblings itself; that selection has to be let go of first.
+        for w in all_values:
+            if int(states.get(w, 0)) == 1:
+                for u in all_values:
+                    if u != w and not (int(states.get(u, 0)) == 2 and manual.has(u)):
+                        return
+                states[w] = 0
+        states.erase(v)
+        manual.erase(v)
+    else:
+        if eff == 2 or eff == 3:
+            return   # already ruled out by deduction
+        var survivors: Array = []
+        for w in all_values:
+            if w != v and int(states.get(w, 0)) != 2:
+                survivors.append(w)
+        if survivors.is_empty():
+            return   # ruling out every value is a contradiction, not information
         states[v] = 2
         manual[v] = true
+        if survivors.size() == 1 and int(states.get(survivors[0], 0)) != 1:
+            survivor_to_confirm = survivors[0]
     r[states_key] = states
     r[manual_key] = manual
-    var survivors: Array = []
-    for v in all_values:
-        if not off.has(v):
-            survivors.append(v)
-    # Rows holding a slot label (a Sort:Pitch / Repeats bucket slot) are locked
-    # in the checker, so `slot_label_key` is never set here; it stays in the
-    # signature only so a future caller cannot forget the question.
-    if survivors.size() == 1:
-        confirm_fn.call(record_idx, survivors[0])
+    if survivor_to_confirm != null:
+        confirm_fn.call(record_idx, survivor_to_confirm)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
 
@@ -2650,6 +2737,7 @@ func _make_pitch_checker_row_for_record(record_idx: int) -> HBoxContainer:
     var ridx := record_idx
     return _make_value_checker_row(record_idx, "p", notes, notes, notes, states, revealed,
         "pitch", "Write the still-possible pitches into the Notes tab",
+        func(note): _on_pitch_checker_select(ridx, str(note)),
         func(note): _on_pitch_checker_toggle(ridx, str(note)),
         func(): _on_pitch_checklist_undo_all_no_popup(ridx),
         not _own_off_set(record_idx, "pitch_states").is_empty() \
@@ -2664,25 +2752,36 @@ func _any_state(record_idx: int, states_key: String, want: int) -> bool:
     return false
 
 
-func _on_pitch_checker_toggle(record_idx: int, note: String) -> void:
+## Locked rows: Listened, or a Sort:Pitch slot -- see the row builder.
+func _pitch_checker_locked(record_idx: int) -> bool:
     if record_idx < 0 or record_idx >= _deduction.record_count():
-        return
+        return true
     var rec_t: Dictionary = _deduction.record_at(record_idx)
-    if bool(rec_t.get("pitch_revealed", false)) or str(rec_t.get("pitch_slot_label", "")) != "":
-        return   # locked rows (Listened, or a Sort:Pitch slot) -- see the row builder
+    return bool(rec_t.get("pitch_revealed", false)) or str(rec_t.get("pitch_slot_label", "")) != ""
+
+
+## Left-click: this is the pitch.
+func _on_pitch_checker_select(record_idx: int, note: String) -> void:
+    if _pitch_checker_locked(record_idx):
+        return
     var notes: Array = []
     for n in _distinct_note_names():
         notes.append(str(n))
-    var off: Array = _own_off_set(record_idx, "pitch_states")
-    if off.has(note):
-        off.erase(note)
-    else:
-        off.append(note)
-    if off.size() >= notes.size():
-        return   # ruling out every note is a contradiction, not information
-    _apply_axis_off_set(record_idx, "pitch_states", "manual_pitch_blocks", notes, off,
-        func(rec, n): _deduction._propagate_pitch_confirmed_same_record(rec, str(n)),
-        "pitch_slot_label")
+    _axis_select(record_idx, "pitch_states", "manual_pitch_blocks", "protected_pitch_notes", notes, note,
+        _deduction._effective_pitch_state(record_idx, note, false),
+        func(rec, n): _deduction._propagate_pitch_confirmed_same_record(rec, str(n)))
+
+
+## Right-click: rule the pitch out / bring it back.
+func _on_pitch_checker_toggle(record_idx: int, note: String) -> void:
+    if _pitch_checker_locked(record_idx):
+        return
+    var notes: Array = []
+    for n in _distinct_note_names():
+        notes.append(str(n))
+    _axis_eliminate(record_idx, "pitch_states", "manual_pitch_blocks", notes, note,
+        _deduction._effective_pitch_state(record_idx, note, false),
+        func(rec, n): _deduction._propagate_pitch_confirmed_same_record(rec, str(n)))
 
 
 func _on_pitch_checklist_undo_all_no_popup(record_idx: int) -> void:
@@ -2712,30 +2811,35 @@ func _make_repeat_checker_row_for_record(record_idx: int) -> HBoxContainer:
     var ridx := record_idx
     return _make_value_checker_row(record_idx, "r", values, labels, tips, states, slotted,
         "repeat", "Write the still-possible repeat counts into the Notes tab",
+        func(v): _on_repeat_checker_select(ridx, int(v)),
         func(v): _on_repeat_checker_toggle(ridx, int(v)),
         func(): _repeat_undo(ridx, true, true),
         not _own_off_set(record_idx, "repeat_states").is_empty() \
             or _any_state(record_idx, "repeat_states", 1))
 
 
+## Left-click: this is the repeat count.
+func _on_repeat_checker_select(record_idx: int, value: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    if str(_deduction.record_at(record_idx).get("repeat_slot_label", "")) != "":
+        return
+    _axis_select(record_idx, "repeat_states", "manual_repeat_blocks", "protected_repeat_values",
+        _deduction._get_repeat_bucket_values(), value,
+        _deduction._effective_repeat_state(record_idx, value, false),
+        func(rec, v): _deduction._propagate_repeat_confirmed_same_record(rec, int(v)))
+
+
+## Right-click: rule the repeat count out / bring it back.
 func _on_repeat_checker_toggle(record_idx: int, value: int) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     if str(_deduction.record_at(record_idx).get("repeat_slot_label", "")) != "":
         return
-    var values: Array = _deduction._get_repeat_bucket_values()
-    var off: Array = []
-    for k in _own_off_set(record_idx, "repeat_states"):
-        off.append(int(k))
-    if off.has(value):
-        off.erase(value)
-    else:
-        off.append(value)
-    if off.size() >= values.size():
-        return
-    _apply_axis_off_set(record_idx, "repeat_states", "manual_repeat_blocks", values, off,
-        func(rec, v): _deduction._propagate_repeat_confirmed_same_record(rec, int(v)),
-        "repeat_slot_label")
+    _axis_eliminate(record_idx, "repeat_states", "manual_repeat_blocks",
+        _deduction._get_repeat_bucket_values(), value,
+        _deduction._effective_repeat_state(record_idx, value, false),
+        func(rec, v): _deduction._propagate_repeat_confirmed_same_record(rec, int(v)))
 
 
 func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> HBoxContainer:

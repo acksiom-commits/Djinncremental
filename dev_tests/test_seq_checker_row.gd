@@ -246,9 +246,12 @@ func run() -> void:
 	var row7: Control = w5._make_sequence_range_row_for_record(rec6, Color.WHITE)
 	host5.add_child(row7)
 	ok(((_strip_buttons(row7))[2] as Button).visible, "pressing it brings note 3 back into view")
-	_strip_buttons(row7)[2].pressed.emit()
+	var rc_a := InputEventMouseButton.new()
+	rc_a.button_index = MOUSE_BUTTON_RIGHT
+	rc_a.pressed = true
+	_strip_buttons(row7)[2].gui_input.emit(rc_a)
 	await process_frame
-	ok(d5._effective_seq_candidates(rec6).size() == 6, "and clicking it restores the position")
+	ok(d5._effective_seq_candidates(rec6).size() == 6, "and right-clicking it restores the position")
 
 	print("\n=== the Star Map widget shows the checker too ===")
 	var host4 = await _make_host()
@@ -289,10 +292,32 @@ func run() -> void:
 	ok(strip4.size() == 6, "checks mode: one button per note on the star widget (%d)" % strip4.size())
 	if strip4.size() == 6:
 		var rec4: int = d4._get_or_create_match_record_for_star_idx(0)
-		(strip4[2] as Button).pressed.emit()
+		var rc_b := InputEventMouseButton.new()
+		rc_b.button_index = MOUSE_BUTTON_RIGHT
+		rc_b.pressed = true
+		(strip4[2] as Button).gui_input.emit(rc_b)
 		await process_frame
-		ok(not d4._effective_seq_candidates(rec4).has(3), "pressing note 3 on the widget rules it out for that star's record")
+		ok(not d4._effective_seq_candidates(rec4).has(3), "right-clicking note 3 on the widget rules it out for that star's record")
 	ok(visible_edits == 0, "and the typed boxes are not shown (%d)" % visible_edits)
+
+	print("\n=== left-click selects the position as true ===")
+	var host8 = await _make_host()
+	var d8 = host8._deduction
+	var w8 = host8._widgets
+	d8._load_match_records([])
+	var rec8: int = d8._get_or_create_match_record_for_name("Pyrios")
+	var l8 := LineEdit.new()
+	var m8 := LineEdit.new()
+	var h8 := LineEdit.new()
+	host8.add_child(l8)
+	host8.add_child(m8)
+	host8.add_child(h8)
+	w8._on_seq_checker_select(rec8, 4, l8, m8, h8)
+	await process_frame
+	ok(d8._effective_seq_candidates(rec8) == [4], "a left-click pins the position (got %s)" % str(d8._effective_seq_candidates(rec8)))
+	w8._on_seq_checker_select(rec8, 4, l8, m8, h8)
+	await process_frame
+	ok(d8._effective_seq_candidates(rec8).size() == 6, "a second left-click lets go of the pin")
 
 	if fails == 0:
 		print("\nALL PASS (0 failures)")
