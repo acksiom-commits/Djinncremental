@@ -126,6 +126,9 @@ var refinements_completed: int = 0
 ## already been handed out. Saved, so a reload never re-grants and an older
 ## save with Uonites already made catches up on its first check.
 var uonite_fibonacci_foci_granted: int = 0
+## The same bookkeeping for the Fibonacci Bonus Foci by Oscillation count
+## (claim_oscillation_fibonacci_foci).
+var oscillation_fibonacci_foci_granted: int = 0
 var expansions:            int = 0
 var archon_foci_spent:     int = 0
 var volitions_spent:       int = 0
@@ -525,6 +528,19 @@ func claim_uonite_fibonacci_foci() -> int:
     if owed <= 0:
         return 0
     uonite_fibonacci_foci_granted += owed
+    return owed
+
+
+## The same Fibonacci ladder keyed on the number of Oscillations (prestiges)
+## completed -- `expansions`, which every Oscillation increments and nothing
+## ever lowers. +1 Focus at the 2nd, 3rd, 5th, 8th, 13th, 21st, ... Oscillation;
+## the 1st is already paid by the Expansion milestone (root_ui.gd,
+## next_expansion_foci_exp), so, like the Uonite ladder, this starts at 2.
+func claim_oscillation_fibonacci_foci() -> int:
+    var owed: int = fibonacci_foci_for_total(expansions) - oscillation_fibonacci_foci_granted
+    if owed <= 0:
+        return 0
+    oscillation_fibonacci_foci_granted += owed
     return owed
 
 
@@ -1673,6 +1689,7 @@ func get_save_data() -> Dictionary:
     data["volitions"]             = volitions
     data["refinements_completed"] = refinements_completed
     data["uonite_fibonacci_foci_granted"] = uonite_fibonacci_foci_granted
+    data["oscillation_fibonacci_foci_granted"] = oscillation_fibonacci_foci_granted
     data["expansions"]            = expansions
     data["next_expansion_foci_exp"] = next_expansion_foci_exp
     data["purity_locks_unlocked"] = purity_locks_unlocked
@@ -1937,6 +1954,7 @@ func load_save_data(data: Dictionary) -> void:
     volitions               = _coerce_int(data.get("volitions"), 0)
     refinements_completed   = _coerce_int(data.get("refinements_completed"), 0)
     uonite_fibonacci_foci_granted = maxi(0, _coerce_int(data.get("uonite_fibonacci_foci_granted"), 0))
+    oscillation_fibonacci_foci_granted = maxi(0, _coerce_int(data.get("oscillation_fibonacci_foci_granted"), 0))
     expansions               =_coerce_int(data.get("expansions"), 0)
     next_expansion_foci_exp = _coerce_int(data.get("next_expansion_foci_exp"), 0)
     purity_locks_unlocked   = _coerce_bool(data.get("purity_locks_unlocked"), false)

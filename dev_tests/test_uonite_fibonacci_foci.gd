@@ -59,6 +59,32 @@ func run() -> void:
 	ok(reloaded.uonite_fibonacci_foci_granted == 6, "the granted count is saved and restored (%d)" % reloaded.uonite_fibonacci_foci_granted)
 	ok(reloaded.claim_uonite_fibonacci_foci() == 0, "a reload re-grants nothing")
 
+	print("\n=== the same ladder on Oscillations (expansions) ===")
+	var og = GC.new()
+	ok(og.claim_oscillation_fibonacci_foci() == 0, "nothing owed before any Oscillation")
+	og.expansions = 1
+	ok(og.claim_oscillation_fibonacci_foci() == 0, "the 1st Oscillation is paid by the Expansion milestone, not this ladder")
+	og.expansions = 2
+	ok(og.claim_oscillation_fibonacci_foci() == 1, "the 2nd owes 1")
+	ok(og.claim_oscillation_fibonacci_foci() == 0, "and is not paid again")
+	og.expansions = 5
+	ok(og.claim_oscillation_fibonacci_foci() == 2, "going from 2 to 5 crosses 3 and 5: owes 2")
+	og.expansions = 7
+	ok(og.claim_oscillation_fibonacci_foci() == 0, "7 owes nothing new")
+	og.expansions = 8
+	ok(og.claim_oscillation_fibonacci_foci() == 1, "the 8th owes 1")
+	var ofresh = GC.new()
+	ofresh.expansions = 21
+	ok(ofresh.claim_oscillation_fibonacci_foci() == 6, "an existing save at 21 Oscillations catches up on all 6")
+	var osaved: Dictionary = ofresh.get_save_data()
+	var oreload = GC.new()
+	oreload.load_save_data(osaved)
+	ok(oreload.oscillation_fibonacci_foci_granted == 6 and oreload.claim_oscillation_fibonacci_foci() == 0, "and a reload re-grants nothing")
+	var both = GC.new()
+	both.totals_created["uonite"] = BigNum.from_int(5)
+	both.expansions = 5
+	ok(both.claim_uonite_fibonacci_foci() == 3 and both.claim_oscillation_fibonacci_foci() == 3, "the two ladders are tracked independently")
+
 	if fails == 0:
 		print("\nALL PASS (0 failures)")
 	else:

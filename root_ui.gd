@@ -775,6 +775,22 @@ func _check_uonite_fibonacci_foci() -> void:
         archon_dialogue_manager.try_show_next_notification()
 
 
+## Bonus Foci at Fibonacci counts of Oscillations (2, 3, 5, 8, 13, ...), the
+## same ladder as the Uonite one. The first Oscillation is paid by the
+## Expansion milestone in _do_prestige_reset(), so this starts at 2.
+func _check_oscillation_fibonacci_foci() -> void:
+    if not game_context:
+        return
+    var owed: int = game_context.claim_oscillation_fibonacci_foci()
+    if owed <= 0:
+        return
+    _grant_foci(owed)
+    if archon_dialogue_manager:
+        archon_dialogue_manager.enqueue_notification(
+            "Oscillation %d: +%d %s." % [game_context.expansions, owed, "Focus" if owed == 1 else "Foci"])
+        archon_dialogue_manager.try_show_next_notification()
+
+
 func _on_monad_random_dialogue_ended() -> void:
     _reveal_panel("allocation_wheel")
 
@@ -2994,6 +3010,7 @@ func _process(delta: float) -> void:
     _check_monad_upgrade_trigger()
     _run_simple_triggers()
     _check_uonite_fibonacci_foci()
+    _check_oscillation_fibonacci_foci()
     _check_constellation_identity_reveals()
     _check_totals_milestones()
     _check_star_in_view_trigger(delta)
