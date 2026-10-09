@@ -172,3 +172,49 @@ text = "Undo all"
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
+
+[node name="Sep4" type="HSeparator" parent="VBox"]
+layout_mode = 2
+
+[node name="RepeatHeader" type="Label" parent="VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.55, 0.50, 0.65, 1)
+text = "REPEATS"
+
+[node name="RepeatUndoRow" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+theme_override_constants/separation = 3
+
+[node name="RepeatBtnUndoSelects" type="Button" parent="VBox/RepeatUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "Undo selects"
+
+[node name="RepeatBtnUndoBlocks" type="Button" parent="VBox/RepeatUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "Undo blocks"
+
+[node name="RepeatBtnUndoAll" type="Button" parent="VBox/RepeatUndoRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 26)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_font_sizes/font_size = 13
+text = "Undo all"
+
+[node name="RepeatColumns" type="HBoxContainer" parent="VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6

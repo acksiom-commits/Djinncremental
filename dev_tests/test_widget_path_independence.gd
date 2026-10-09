@@ -510,6 +510,89 @@ func _family_link_later() -> void:
 	ok(sigs[0] == sigs[1], "linking two records by name afterwards yields what one record would hold")
 
 
+# ── H. the Repeats section on the new surfaces ─────────────────────────────
+# The Staff popup and the Star Map widget edit the repeat-count axis too (added
+# 2026-10-08). A repeat count entered on one record of a star must be what every
+# other record of that star shows: the Sort row, the popup for its note, and the
+# star's own widget record.
+func _repeat_line(host, rec: int) -> String:
+	var d = host._deduction
+	var out: Array = []
+	for v in d._get_repeat_bucket_values():
+		out.append(d._effective_repeat_state(rec, int(v)))
+	return str(out)
+
+
+func _family_repeats() -> void:
+	print("\n=== H Repeats on every surface ===")
+	var s: int = 2
+	var want: int = 1   # _repeat_count[2]
+	# H1: entered on the Sort row, read on the popup for that note
+	var host = await _make_host()
+	var d = host._deduction
+	var w = host._widgets
+	d._load_match_records([])
+	var row: int = d._get_or_create_match_record_for_name(_t_name(host, s))
+	await _do(host, row, s, ["name_select"])
+	await _do(host, d._find_match_record_by_name(_t_name(host, s)), s, ["seq_typed"])
+	w._on_repeat_checklist_check(d._find_match_record_by_name(_t_name(host, s)), want, null)
+	d._full_propagation_refresh()
+	var pop: int = d._get_or_create_match_record_for_melody_tick(d._first_tick_for_rank(_t_pos(host, s)))
+	d._full_propagation_refresh()
+	var r_row: String = _repeat_line(host, d._find_match_record_by_name(_t_name(host, s)))
+	var r_pop: String = _repeat_line(host, pop)
+	print("  Sort row: %s   Staff popup: %s" % [r_row, r_pop])
+	scenarios_judged += 1
+	var same1: bool = r_row == r_pop
+	if same1:
+		scenarios_equal += 1
+	ok(same1, "H1 a repeat count entered on the Sort row shows on the Staff popup for that note")
+	host.queue_free()
+
+	# H2: entered on the popup, read on the Sort row
+	var host2 = await _make_host()
+	var d2 = host2._deduction
+	var w2 = host2._widgets
+	d2._load_match_records([])
+	var tick: int = d2._first_tick_for_rank(_t_pos(host2, s))
+	var pop2: int = d2._get_or_create_match_record_for_melody_tick(tick)
+	w2._open_staff_popup(tick, Vector2.ZERO)
+	w2._on_staff_repeat_check(pop2, want, null)
+	var row2: int = d2._get_or_create_match_record_for_name(_t_name(host2, s))
+	await _do(host2, row2, s, ["name_select"])
+	await _do(host2, d2._find_match_record_by_name(_t_name(host2, s)), s, ["seq_typed"])
+	d2._full_propagation_refresh()
+	var r_row2: String = _repeat_line(host2, d2._find_match_record_by_name(_t_name(host2, s)))
+	var r_pop2: String = _repeat_line(host2, d2._get_or_create_match_record_for_melody_tick(tick))
+	print("  Sort row: %s   Staff popup: %s" % [r_row2, r_pop2])
+	scenarios_judged += 1
+	var same2: bool = r_row2 == r_pop2 and r_row2.contains("1")
+	if same2:
+		scenarios_equal += 1
+	ok(same2, "H2 a repeat count entered on the Staff popup shows on the Sort row for that star")
+	host2.queue_free()
+
+	# H3: entered on the star's own widget record, read on the name row
+	var host3 = await _make_host()
+	var d3 = host3._deduction
+	var w3 = host3._widgets
+	d3._load_match_records([])
+	await w3._on_name_check(s, _t_name(host3, s), Label.new(), Button.new(), Button.new())
+	var star_rec: int = d3._get_or_create_match_record_for_star_idx(s)
+	w3._repeat_toggle_confirm(star_rec, want)
+	d3._full_propagation_refresh()
+	var name_rec: int = d3._find_match_record_by_name(_t_name(host3, s))
+	var r_name: String = _repeat_line(host3, name_rec)
+	var r_star: String = _repeat_line(host3, d3._get_or_create_match_record_for_star_idx(s))
+	print("  name record: %s   star widget record: %s" % [r_name, r_star])
+	scenarios_judged += 1
+	var same3: bool = r_name == r_star and r_name.contains("1")
+	if same3:
+		scenarios_equal += 1
+	ok(same3, "H3 a repeat count entered on the star widget shows on the star's name row")
+	host3.queue_free()
+
+
 func run() -> void:
 	await process_frame
 
@@ -591,6 +674,7 @@ func run() -> void:
 
 	await _family_staff_link()
 	await _family_staff_to_row()
+	await _family_repeats()
 	await _family_location()
 	await _family_link_later()
 

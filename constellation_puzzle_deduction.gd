@@ -4076,7 +4076,8 @@ func _share_player_marks(src: int, dst: int) -> void:
         return
     var s: Dictionary = _match_records[src]
     for pair in [["name_states", "name_states"], ["color_states", "color_states"],
-            ["pitch_states", "pitch_states"], ["degree_states", "degree_states"]]:
+            ["pitch_states", "pitch_states"], ["degree_states", "degree_states"],
+            ["repeat_states", "repeat_states"]]:
         var key: String = str(pair[0])
         for v in (s.get(key, {}) as Dictionary):
             var st: int = int((s.get(key, {}) as Dictionary)[v])
@@ -4138,6 +4139,18 @@ func _share_derived_facts(src: int, dst: int) -> void:
         var sd: int = _effective_degree_state(src, int(deg))
         if sd != 0 and _effective_degree_state(dst, int(deg)) == 0:
             _add_derived_state(dst, "degree_states", int(deg), sd)
+
+    # Repeat count: a single-valued property of the star like the others, so
+    # two records of one star must agree on it. It has no ground-truth tier
+    # (it is hidden, like Name), so reading it through the effective reader
+    # cannot leak anything. Missing until the Repeats section reached the
+    # Staff popup and the star widget, which made it enterable on records
+    # that share a star: a count entered on the Sort row never showed on the
+    # popup for that note.
+    for rv in _get_repeat_bucket_values():
+        var srep: int = _effective_repeat_state(src, int(rv))
+        if srep != 0 and _effective_repeat_state(dst, int(rv)) == 0:
+            _add_derived_state(dst, "repeat_states", int(rv), srep)
 
     # Pitch is NOT public. _effective_pitch_state reads ground truth off
     # star_idx, and a bare auto-created star-widget record holds a star_idx

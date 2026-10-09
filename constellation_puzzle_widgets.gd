@@ -22,6 +22,7 @@ var _deduction: ConstellationPuzzleDeduction = null
 # muted) — see puzzle_state_colors.gd for the full rationale. Single
 # Inspector-editable source instead of ~25 duplicated Color(...) literals.
 const STATE_COLORS: PuzzleStateColors = preload("res://puzzle_state_colors.tres")
+const StaffPopupRowScene: PackedScene = preload("res://StaffPopupRow.tscn")
 
 # Staff popup column scaling — see _open_staff_popup()'s call sites and
 # staff_popup.gd's _rebuild_columns(). Tune these if a section still
@@ -1864,7 +1865,10 @@ func _open_repeat_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     _host._repeat_checklist_popup.open(record_idx, _clamp_popup_screen_pos(screen_pos))
 
 
-func _on_repeat_checklist_check(record_idx: int, value: int, _row: StaffPopupRow) -> void:
+# ── Repeat-count mutations, WITHOUT any popup reopen. The Sort-row checklist
+# popup, the Staff popup and the Star Map widget all edit the same record
+# axis; each wraps these and then redraws its own surface.
+func _repeat_toggle_confirm(record_idx: int, value: int) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     var repeat_states: Dictionary = _deduction.record_at(record_idx).get("repeat_states", {})
@@ -1878,10 +1882,9 @@ func _on_repeat_checklist_check(record_idx: int, value: int, _row: StaffPopupRow
         _deduction._propagate_repeat_confirmed_same_record(record_idx, value)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
 
 
-func _on_repeat_checklist_x(record_idx: int, value: int, _row: StaffPopupRow) -> void:
+func _repeat_toggle_block(record_idx: int, value: int) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     var r: Dictionary = _deduction.record_at(record_idx)
@@ -1897,10 +1900,9 @@ func _on_repeat_checklist_x(record_idx: int, value: int, _row: StaffPopupRow) ->
     r["manual_repeat_blocks"] = manual
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
-    _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
 
 
-func _on_repeat_checklist_protect(record_idx: int, value: int) -> void:
+func _repeat_toggle_protect(record_idx: int, value: int) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     var r: Dictionary = _deduction.record_at(record_idx)
@@ -1915,41 +1917,91 @@ func _on_repeat_checklist_protect(record_idx: int, value: int) -> void:
     r["protected_repeat_values"] = protected
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
+
+
+func _repeat_undo(record_idx: int, selects: bool, blocks: bool) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    if selects:
+        _deduction._undo_category_selects(record_idx, "repeat_states", "manual_repeat_blocks", "protected_repeat_values", _deduction._get_repeat_bucket_values())
+        var r: Dictionary = _deduction.record_at(record_idx)
+        if str(r.get("repeat_slot_label", "")) != "":
+            r["repeat_slot_label"] = ""
+    if blocks:
+        _deduction._undo_category_blocks(record_idx, "repeat_states", "manual_repeat_blocks")
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+
+
+## The state a repeat row should show for a record: the effective state with
+## the cross-record exclusion laid over a neutral/protected row, exactly as the
+## checklist popup does. Shared by every surface that lists the values.
+func _repeat_row_state(record_idx: int, value: int, excluded: Array) -> int:
+    var state: int = _deduction._effective_repeat_state(record_idx, value, false)
+    if (state == 0 or state == 4) and excluded.has(value):
+        state = 2
+    return state
+
+
+func _on_repeat_checklist_check(record_idx: int, value: int, _row: StaffPopupRow) -> void:
+    _repeat_toggle_confirm(record_idx, value)
+    _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
+
+
+func _on_repeat_checklist_x(record_idx: int, value: int, _row: StaffPopupRow) -> void:
+    _repeat_toggle_block(record_idx, value)
+    _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
+
+
+func _on_repeat_checklist_protect(record_idx: int, value: int) -> void:
+    _repeat_toggle_protect(record_idx, value)
     _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
 
 
 func _on_repeat_checklist_undo_selects(record_idx: int) -> void:
-    if record_idx < 0 or record_idx >= _deduction.record_count():
-        return
-    _deduction._undo_category_selects(record_idx, "repeat_states", "manual_repeat_blocks", "protected_repeat_values", _deduction._get_repeat_bucket_values())
-    var r: Dictionary = _deduction.record_at(record_idx)
-    if str(r.get("repeat_slot_label", "")) != "":
-        r["repeat_slot_label"] = ""
-    _deduction._save_puzzle_notes()
-    _deduction._full_propagation_refresh()
+    _repeat_undo(record_idx, true, false)
     _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
 
 
 func _on_repeat_checklist_undo_blocks(record_idx: int) -> void:
-    if record_idx < 0 or record_idx >= _deduction.record_count():
-        return
-    _deduction._undo_category_blocks(record_idx, "repeat_states", "manual_repeat_blocks")
-    _deduction._save_puzzle_notes()
-    _deduction._full_propagation_refresh()
+    _repeat_undo(record_idx, false, true)
     _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
 
 
 func _on_repeat_checklist_undo_all(record_idx: int) -> void:
-    if record_idx < 0 or record_idx >= _deduction.record_count():
-        return
-    _deduction._undo_category_selects(record_idx, "repeat_states", "manual_repeat_blocks", "protected_repeat_values", _deduction._get_repeat_bucket_values())
-    _deduction._undo_category_blocks(record_idx, "repeat_states", "manual_repeat_blocks")
-    var r: Dictionary = _deduction.record_at(record_idx)
-    if str(r.get("repeat_slot_label", "")) != "":
-        r["repeat_slot_label"] = ""
-    _deduction._save_puzzle_notes()
-    _deduction._full_propagation_refresh()
+    _repeat_undo(record_idx, true, true)
     _open_repeat_checklist_popup(record_idx, _host._repeat_checklist_popup.position)
+
+
+# ── Staff popup's Repeats section: same mutations, then reopen the staff popup.
+func _on_staff_repeat_check(record_idx: int, value: int, _row: StaffPopupRow) -> void:
+    _repeat_toggle_confirm(record_idx, value)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
+
+
+func _on_staff_repeat_x(record_idx: int, value: int, _row: StaffPopupRow) -> void:
+    _repeat_toggle_block(record_idx, value)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
+
+
+func _on_staff_repeat_protect(record_idx: int, value: int) -> void:
+    _repeat_toggle_protect(record_idx, value)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
+
+
+func _on_staff_repeat_undo_selects(record_idx: int) -> void:
+    _repeat_undo(record_idx, true, false)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
+
+
+func _on_staff_repeat_undo_blocks(record_idx: int) -> void:
+    _repeat_undo(record_idx, false, true)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
+
+
+func _on_staff_repeat_undo_all(record_idx: int) -> void:
+    _repeat_undo(record_idx, true, true)
+    _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
 func _on_repeat_checklist_copy(record_idx: int) -> void:
@@ -2235,7 +2287,7 @@ func _seq_manual_ranks(record_idx: int) -> Array:
 var _seq_checker_scroll: Dictionary = {}
 
 
-func _track_checker_scroll(scroll: ScrollContainer, key: int) -> void:
+func _track_checker_scroll(scroll: ScrollContainer, key) -> void:
     scroll.get_h_scroll_bar().value_changed.connect(func(v: float): _seq_checker_scroll[key] = int(v))
 
 
@@ -2243,7 +2295,7 @@ func _track_checker_scroll(scroll: ScrollContainer, key: int) -> void:
 ## scroll_horizontal to its content width, which is 0 until then). Tracking
 ## starts only AFTER the restore, so the initial 0 can never overwrite the
 ## remembered position.
-func _restore_checker_scroll(scroll: ScrollContainer, key: int, value: int) -> void:
+func _restore_checker_scroll(scroll: ScrollContainer, key, value: int) -> void:
     if not is_instance_valid(scroll) or not scroll.is_inside_tree():
         return
     await scroll.get_tree().process_frame
@@ -2253,7 +2305,7 @@ func _restore_checker_scroll(scroll: ScrollContainer, key: int, value: int) -> v
     _track_checker_scroll(scroll, key)
 
 
-func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color) -> HBoxContainer:
+func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, scroll_ctx: String = "") -> HBoxContainer:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
     # _make_fact_row adds this as a plain child of an HBox, which gives a
@@ -2277,7 +2329,7 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color) ->
     # new ScrollContainer at scroll 0 -- so toggling a button far along the
     # strip threw the view back to the start. Remember where each record's
     # strip was scrolled and put the new one back there.
-    var scroll_key: int = record_idx
+    var scroll_key = (scroll_ctx + str(record_idx)) if scroll_ctx != "" else record_idx
     var saved_scroll: int = int(_seq_checker_scroll.get(scroll_key, 0))
     if saved_scroll > 0:
         _restore_checker_scroll.call_deferred(scroll, scroll_key, saved_scroll)
@@ -2343,7 +2395,37 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color) ->
     var cridx := record_idx
     copy_btn.pressed.connect(func(): _on_staff_copy(cridx, "sequence"))
     row.add_child(copy_btn)
+
+    # UNDO: put every position back. Greyed out when this record has nothing
+    # of the player's own to take back (its own pin / list / bounds), so it
+    # never looks usable on a row that is already fully open.
+    var undo_btn := Button.new()
+    undo_btn.text = "↶"
+    undo_btn.custom_minimum_size = Vector2(26, 24)
+    undo_btn.focus_mode = Control.FOCUS_NONE
+    undo_btn.tooltip_text = "Undo: make every sequence position possible again"
+    undo_btn.disabled = _deduction._raw_seq_candidate_set(_deduction.record_at(record_idx)).is_empty()
+    undo_btn.pressed.connect(func(): _clear_sequence_info(cridx))
+    row.add_child(undo_btn)
     return row
+
+
+## Wipes everything the player entered for this record's Sequence -- pin,
+## candidate list and both bounds -- so every position is possible again, then
+## refreshes. Behind the checker row's UNDO button, and what "all checks on"
+## means. (_undo_sequence_entry, the typed row's release, deliberately leaves
+## a bounds range alone.)
+func _clear_sequence_info(record_idx: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var r: Dictionary = _deduction.record_at(record_idx)
+    r["seq_candidates"] = []
+    r["seq_lo"] = 0
+    r["seq_hi"] = 0
+    r["seq_tick_lo"] = 0
+    r["seq_tick_hi"] = 0
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 func _on_seq_checker_toggle(record_idx: int, rank: int, lo_edit: LineEdit, mid_edit: LineEdit, hi_edit: LineEdit) -> void:
@@ -2365,14 +2447,7 @@ func _on_seq_checker_toggle(record_idx: int, rank: int, lo_edit: LineEdit, mid_e
 
     if new_set.size() >= _host._star_count:
         # Everything possible again == no Sequence information at all.
-        var r: Dictionary = _deduction.record_at(record_idx)
-        r["seq_candidates"] = []
-        r["seq_lo"] = 0
-        r["seq_hi"] = 0
-        r["seq_tick_lo"] = 0
-        r["seq_tick_hi"] = 0
-        _deduction._save_puzzle_notes()
-        _deduction._full_propagation_refresh()
+        _clear_sequence_info(record_idx)
         return
 
     # The shared commit takes staff NOTES and maps them back to ranks, so a
@@ -3608,6 +3683,16 @@ func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
             state = 2
         _host._staff_popup.add_name_row(name_str, state, STATE_COLORS.neutral)
 
+    # Add repeat-count rows -- one column, a handful of buckets. Same
+    # cross-record exclusion as the Sort rows' checklist popup.
+    var bucket_values: Array = _deduction._get_repeat_bucket_values()
+    _host._staff_popup.set_repeat_column_count(1, bucket_values.size())
+    var excluded_repeats: Array[int] = _deduction._compute_excluded_repeats_for(record_idx)
+    for bv in bucket_values:
+        var rv: int = int(bv)
+        _host._staff_popup.add_repeat_row(rv, _deduction._repeat_value_label(rv),
+            _repeat_row_state(record_idx, rv, excluded_repeats), STATE_COLORS.neutral)
+
     # Vertically center the popup within the study panel instead of
     # anchoring its top edge at the click point — the melody staff sits
     # near the bottom of the panel, so a click-anchored top edge left the
@@ -4052,7 +4137,16 @@ func _build_star_widgets_impl() -> void:
         range_copy_btn.pressed.connect(func(): _on_staff_copy(range_copy_rec, "sequence"))
         range_row.add_child(range_copy_btn)
 
-        root.add_child(range_row)
+        # Sequence entry style, the same switch as the Sort rows (the Seq:
+        # Typed/Checks button): one on/off checker per note instead of the
+        # typed boxes. The typed row above is still built either way because
+        # the wiring below refers to its edits; it is simply never shown (and
+        # is freed right after that wiring) when checks are on.
+        var use_checks: bool = _seq_checker_enabled()
+        if use_checks:
+            root.add_child(_make_sequence_checker_row_for_record(existing_record, star_color, "w"))
+        else:
+            root.add_child(range_row)
 
         # ── Pitch label ────────────────────────────────────────────
         # Shows the revealed note once the player has clicked this star
@@ -4087,6 +4181,8 @@ func _build_star_widgets_impl() -> void:
         # Same shared formatter as the Sort:tab row (see there).
         if existing_record >= 0:
             _refresh_range_edits(existing_record, edit_lo, edit_mid, edit_hi)
+        if use_checks:
+            range_row.queue_free()   # never added to the tree; nothing else holds it
 
         # ── Reset buttons ──────────────────────────────────────────
         var reset_row := HBoxContainer.new()
@@ -4231,7 +4327,71 @@ func _build_star_widgets_impl() -> void:
                 var col_vbox: VBoxContainer = name_hbox.get_child(col_i)
                 _refresh_name_widget(i, col_vbox, all_star_names, star_color, col_i * half)
 
+        # ── Repeats ─────────────────────────────────────────────────
+        # How many times this star fires again after its first note, as a
+        # short inline checklist (a handful of buckets). Edits the same
+        # star-bound record as everything else on this widget, through the
+        # same mutations the Sort rows and the Staff popup use.
+        _build_star_widget_repeats(root, si, existing_record, star_color)
+
     _reposition_star_widgets()
+
+
+func _build_star_widget_repeats(root: VBoxContainer, _star_idx: int, record_idx: int, star_color: Color) -> void:
+    var bucket_values: Array = _deduction._get_repeat_bucket_values()
+    if bucket_values.is_empty():
+        return
+    var panel := PanelContainer.new()
+    var sb := StyleBoxFlat.new()
+    sb.bg_color = Color(0.06, 0.04, 0.14, 1.0)
+    sb.border_color = Color(star_color.r * 0.6, star_color.g * 0.6, star_color.b * 0.6, 1.0)
+    sb.set_border_width_all(1)
+    sb.set_corner_radius_all(4)
+    sb.set_content_margin_all(4)
+    panel.add_theme_stylebox_override("panel", sb)
+    panel.custom_minimum_size = Vector2(300, 0)
+    root.add_child(panel)
+
+    var vbox := VBoxContainer.new()
+    vbox.add_theme_constant_override("separation", 2)
+    panel.add_child(vbox)
+
+    var head := HBoxContainer.new()
+    head.add_theme_constant_override("separation", 3)
+    vbox.add_child(head)
+    var title := Label.new()
+    title.text = "REPEATS"
+    title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    title.add_theme_font_size_override("font_size", 14)
+    title.add_theme_color_override("font_color", Color(0.55, 0.50, 0.65, 1))
+    head.add_child(title)
+    var undo_btn := Button.new()
+    undo_btn.text = "Undo all"
+    undo_btn.focus_mode = Control.FOCUS_NONE
+    undo_btn.custom_minimum_size = Vector2(0, 26)
+    undo_btn.add_theme_font_size_override("font_size", 13)
+    undo_btn.pressed.connect(func(): _repeat_undo(record_idx, true, true))
+    head.add_child(undo_btn)
+    var copy_btn := Button.new()
+    copy_btn.text = "⎘"
+    copy_btn.custom_minimum_size = Vector2(26, 26)
+    copy_btn.focus_mode = Control.FOCUS_NONE
+    copy_btn.tooltip_text = "Write the still-possible repeat counts into the Notes tab"
+    copy_btn.pressed.connect(func(): _on_staff_copy(record_idx, "repeat"))
+    head.add_child(copy_btn)
+
+    var excluded: Array[int] = _deduction._compute_excluded_repeats_for(record_idx)
+    for bv in bucket_values:
+        var value: int = int(bv)
+        var row: StaffPopupRow = StaffPopupRowScene.instantiate()
+        row.label_text = _deduction._repeat_value_label(value)
+        row.show_count = false
+        row.label_color = star_color
+        row.set_visual_state(_repeat_row_state(record_idx, value, excluded))
+        row.check_pressed.connect(func(): _repeat_toggle_confirm(record_idx, value))
+        row.x_pressed.connect(func(): _repeat_toggle_block(record_idx, value))
+        row.row_right_clicked.connect(func(): _repeat_toggle_protect(record_idx, value))
+        vbox.add_child(row)
 
 
 func _style_range_edit(edit: LineEdit, star_color: Color) -> void:

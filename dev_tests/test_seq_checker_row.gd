@@ -190,8 +190,97 @@ func run() -> void:
 			scrollb = c2
 	ok(scrollb.scroll_horizontal == moved, "the rebuilt strip is back at %d (got %d)" % [moved, scrollb.scroll_horizontal])
 
+	print("\n=== UNDO on the checker row ===")
+	var host5 = await _make_host()
+	var d5 = host5._deduction
+	var w5 = host5._widgets
+	d5._load_match_records([])
+	w5._seq_checker_loaded = true
+	w5._seq_checker_mode = true
+	var rec5: int = d5._get_or_create_match_record_for_name("Pyrios")
+	var row5: Control = w5._make_sequence_range_row_for_record(rec5, Color.WHITE)
+	host5.add_child(row5)
+	var undo5: Button = row5.get_child(row5.get_child_count() - 1) as Button
+	ok(undo5 != null and undo5.text == "↶", "the row ends with an UNDO button")
+	ok(undo5.disabled, "greyed out while the record has no Sequence entry of its own")
+	var l5 := LineEdit.new()
+	var m5 := LineEdit.new()
+	var h5 := LineEdit.new()
+	host5.add_child(l5)
+	host5.add_child(m5)
+	host5.add_child(h5)
+	await w5._on_seq_checker_toggle(rec5, 2, l5, m5, h5)
+	await w5._on_seq_checker_toggle(rec5, 4, l5, m5, h5)
+	ok(d5._effective_seq_candidates(rec5).size() == 4, "precondition: two positions ruled out")
+	row5.free()
+	row5 = w5._make_sequence_range_row_for_record(rec5, Color.WHITE)
+	host5.add_child(row5)
+	undo5 = row5.get_child(row5.get_child_count() - 1) as Button
+	ok(not undo5.disabled, "enabled once there is something to take back")
+	undo5.pressed.emit()
+	await process_frame
+	ok(d5._effective_seq_candidates(rec5).size() == 6, "pressing it makes every position possible again")
+	var r5: Dictionary = d5.record_at(rec5)
+	ok((r5.get("seq_candidates", []) as Array).is_empty() and int(r5.get("seq_lo", 0)) == 0 and int(r5.get("seq_hi", 0)) == 0, "and leaves no Sequence entry behind")
+	# an exact pin is undone too
+	await w5._commit_sequence_range(rec5, _mk(host5, "3"), _mk(host5, ""), _mk(host5, "3"))
+	ok(d5._effective_seq_candidates(rec5) == [3], "an exact pin is in place")
+	w5._clear_sequence_info(rec5)
+	ok(d5._effective_seq_candidates(rec5).size() == 6, "and undo releases it as well")
+
+	print("\n=== the Star Map widget shows the checker too ===")
+	var host4 = await _make_host()
+	var d4 = host4._deduction
+	var w4 = host4._widgets
+	d4._load_match_records([])
+	host4._star_screen_pos = []
+	for i4 in host4._star_count:
+		host4._star_screen_pos.append(Vector2(40 + i4 * 30, 60))
+	host4._selected_star = 0
+	w4._seq_checker_loaded = true
+	w4._seq_checker_mode = false
+	w4._build_star_widgets_impl()
+	await process_frame
+	var typed_edits: int = 0
+	var stack4: Array = [host4._star_widgets[0]]
+	while not stack4.is_empty():
+		var n4: Node = stack4.pop_back()
+		if n4 is LineEdit:
+			typed_edits += 1
+		stack4.append_array(n4.get_children())
+	ok(typed_edits >= 3, "typed mode: the widget has its three Sequence boxes (%d edits)" % typed_edits)
+
+	w4._seq_checker_mode = true
+	w4._build_star_widgets_impl()
+	await process_frame
+	var strip4: Array = []
+	var visible_edits: int = 0
+	var stack5: Array = [host4._star_widgets[0]]
+	while not stack5.is_empty():
+		var n5: Node = stack5.pop_back()
+		if n5 is ScrollContainer:
+			for b4 in n5.get_child(0).get_children():
+				strip4.append(b4)
+		if n5 is LineEdit and (n5 as LineEdit).visible and (n5 as LineEdit).get_parent() is HBoxContainer and (n5 as LineEdit).get_parent().get_child_count() > 1:
+			visible_edits += 1
+		stack5.append_array(n5.get_children())
+	ok(strip4.size() == 6, "checks mode: one button per note on the star widget (%d)" % strip4.size())
+	if strip4.size() == 6:
+		var rec4: int = d4._get_or_create_match_record_for_star_idx(0)
+		(strip4[2] as Button).pressed.emit()
+		await process_frame
+		ok(not d4._effective_seq_candidates(rec4).has(3), "pressing note 3 on the widget rules it out for that star's record")
+	ok(visible_edits == 0, "and the typed boxes are not shown (%d)" % visible_edits)
+
 	if fails == 0:
 		print("\nALL PASS (0 failures)")
 	else:
 		print("\nFAILURES (%d failures)" % fails)
 	finish()
+
+
+func _mk(host, text: String) -> LineEdit:
+	var e := LineEdit.new()
+	e.text = text
+	host.add_child(e)
+	return e

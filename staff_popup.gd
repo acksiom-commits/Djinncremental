@@ -36,6 +36,14 @@ signal name_undo_selects_pressed(record_idx: int)
 signal name_undo_blocks_pressed(record_idx: int)
 signal name_undo_all_pressed(record_idx: int)
 
+## Repeat-count section (added 2026-10-08): same shape as the other three.
+signal repeat_check_pressed(record_idx: int, value: int, row: StaffPopupRow)
+signal repeat_x_pressed(record_idx: int, value: int, row: StaffPopupRow)
+signal repeat_row_right_clicked(record_idx: int, value: int)
+signal repeat_undo_selects_pressed(record_idx: int)
+signal repeat_undo_blocks_pressed(record_idx: int)
+signal repeat_undo_all_pressed(record_idx: int)
+
 ## COPY — write one section's still-open values into the Notes tab.
 ## `section` is "pitch" / "color" / "name"; the popup does not gather the
 ## values itself, since which states count as "still open" is a rule the
@@ -61,6 +69,7 @@ var current_record_idx: int = -1
 var _pitch_added_count: int = 0
 var _color_added_count: int = 0
 var _name_added_count: int = 0
+var _repeat_added_count: int = 0
 
 ## Expected row count per section, supplied by set_*_column_count(). Drives
 ## the column-major split in _add_row_to_column_array() — see there for why
@@ -68,6 +77,7 @@ var _name_added_count: int = 0
 var _pitch_total_rows: int = 0
 var _color_total_rows: int = 0
 var _name_total_rows: int = 0
+var _repeat_total_rows: int = 0
 
 ## Column VBoxContainers, rebuilt on demand via set_*_column_count() —
 ## see that function's comment for why the column count is dynamic
@@ -75,12 +85,14 @@ var _name_total_rows: int = 0
 var _pitch_columns: Array[VBoxContainer] = []
 var _color_columns: Array[VBoxContainer] = []
 var _name_columns:  Array[VBoxContainer] = []
+var _repeat_columns: Array[VBoxContainer] = []
 
 
 @onready var _title_label: Label = %TitleLabel
 @onready var _pitch_columns_box: HBoxContainer = %PitchColumns
 @onready var _color_columns_box: HBoxContainer = %ColorColumns
 @onready var _name_columns_box:  HBoxContainer = %NameColumns
+@onready var _repeat_columns_box: HBoxContainer = %RepeatColumns
 
 @onready var _pitch_btn_undo_selects: Button = %PitchBtnUndoSelects
 @onready var _pitch_btn_undo_blocks: Button = %PitchBtnUndoBlocks
@@ -91,6 +103,9 @@ var _name_columns:  Array[VBoxContainer] = []
 @onready var _name_btn_undo_selects: Button = %NameBtnUndoSelects
 @onready var _name_btn_undo_blocks: Button = %NameBtnUndoBlocks
 @onready var _name_btn_undo_all: Button = %NameBtnUndoAll
+@onready var _repeat_btn_undo_selects: Button = %RepeatBtnUndoSelects
+@onready var _repeat_btn_undo_blocks: Button = %RepeatBtnUndoBlocks
+@onready var _repeat_btn_undo_all: Button = %RepeatBtnUndoAll
 
 
 func _ready() -> void:
@@ -103,6 +118,9 @@ func _ready() -> void:
     _name_btn_undo_selects.pressed.connect(func(): name_undo_selects_pressed.emit(current_record_idx))
     _name_btn_undo_blocks.pressed.connect(func(): name_undo_blocks_pressed.emit(current_record_idx))
     _name_btn_undo_all.pressed.connect(func(): name_undo_all_pressed.emit(current_record_idx))
+    _repeat_btn_undo_selects.pressed.connect(func(): repeat_undo_selects_pressed.emit(current_record_idx))
+    _repeat_btn_undo_blocks.pressed.connect(func(): repeat_undo_blocks_pressed.emit(current_record_idx))
+    _repeat_btn_undo_all.pressed.connect(func(): repeat_undo_all_pressed.emit(current_record_idx))
     # One COPY per SECTION, per user direction — the header names the
     # section the list came from, so a single popup-wide button could not
     # say which axis a value belonged to. Built in code beside each Undo
@@ -111,6 +129,7 @@ func _ready() -> void:
     _add_copy_button(_pitch_btn_undo_all, "pitch")
     _add_copy_button(_color_btn_undo_all, "color")
     _add_copy_button(_name_btn_undo_all, "name")
+    _add_copy_button(_repeat_btn_undo_all, "repeat")
 
 
 func _add_copy_button(sibling: Button, section: String) -> void:
@@ -161,6 +180,7 @@ func _warn_on_row_count_mismatch() -> void:
         ["Pitch", _pitch_added_count, _pitch_total_rows],
         ["Colour", _color_added_count, _color_total_rows],
         ["Name", _name_added_count, _name_total_rows],
+        ["Repeats", _repeat_added_count, _repeat_total_rows],
     ]
     for s in sections:
         var declared: int = int(s[2])
@@ -178,6 +198,7 @@ func clear_all_rows() -> void:
     _pitch_added_count = 0
     _color_added_count = 0
     _name_added_count = 0
+    _repeat_added_count = 0
 
 
 ## Rebuilds a section's column layout to `count` columns, discarding
@@ -305,3 +326,24 @@ func _add_row_to_column_array(row: StaffPopupRow, columns: Array[VBoxContainer],
     @warning_ignore("integer_division") # deliberate floor-divide: bucket index, not a value
     var col: int = mini(added_index / per_col, columns.size() - 1)
     columns[col].add_child(row)
+
+
+func set_repeat_column_count(count: int, total_rows: int = 0) -> void:
+    _repeat_columns = _rebuild_columns(_repeat_columns_box, count)
+    _repeat_total_rows = total_rows
+
+
+func add_repeat_row(value: int, label_text: String, state: int, label_color: Color) -> StaffPopupRow:
+    var row: StaffPopupRow = _row_scene.instantiate()
+    row.label_text = label_text
+    row.show_count = false
+    row.label_color = label_color
+    row.set_visual_state(state)
+
+    row.check_pressed.connect(func(): repeat_check_pressed.emit(current_record_idx, value, row))
+    row.x_pressed.connect(func(): repeat_x_pressed.emit(current_record_idx, value, row))
+    row.row_right_clicked.connect(func(): repeat_row_right_clicked.emit(current_record_idx, value))
+
+    _add_row_to_column_array(row, _repeat_columns, _repeat_added_count, _repeat_total_rows)
+    _repeat_added_count += 1
+    return row
