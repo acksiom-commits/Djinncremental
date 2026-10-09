@@ -757,6 +757,24 @@ func _grant_foci(amount: int = 1) -> void:
     _check_volition_grant()
 
 
+## Bonus Foci at Fibonacci totals of Uonites created (2, 3, 5, 8, 13, ...).
+## The first Uonite is paid by the "First Uonite" milestone, so this starts at 2.
+## The bookkeeping lives in game_context.claim_uonite_fibonacci_foci(); this
+## only pays it out and says so.
+func _check_uonite_fibonacci_foci() -> void:
+    if not game_context:
+        return
+    var owed: int = game_context.claim_uonite_fibonacci_foci()
+    if owed <= 0:
+        return
+    _grant_foci(owed)
+    if archon_dialogue_manager:
+        var total: int = game_context.totals_created.get("uonite", BigNum.zero()).to_int()
+        archon_dialogue_manager.enqueue_notification(
+            "%s Uonites in all: +%d %s." % [str(total), owed, "Focus" if owed == 1 else "Foci"])
+        archon_dialogue_manager.try_show_next_notification()
+
+
 func _on_monad_random_dialogue_ended() -> void:
     _reveal_panel("allocation_wheel")
 
@@ -2975,6 +2993,7 @@ func _process(delta: float) -> void:
     _update_bars(delta)
     _check_monad_upgrade_trigger()
     _run_simple_triggers()
+    _check_uonite_fibonacci_foci()
     _check_constellation_identity_reveals()
     _check_totals_milestones()
     _check_star_in_view_trigger(delta)

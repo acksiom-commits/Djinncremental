@@ -122,6 +122,10 @@ var archon_foci: int:
 var chosen_vessel:        String = ""
 var volitions:             int = 0
 var refinements_completed: int = 0
+## How many of the Fibonacci Bonus Foci (see claim_uonite_fibonacci_foci) have
+## already been handed out. Saved, so a reload never re-grants and an older
+## save with Uonites already made catches up on its first check.
+var uonite_fibonacci_foci_granted: int = 0
 var expansions:            int = 0
 var archon_foci_spent:     int = 0
 var volitions_spent:       int = 0
@@ -490,6 +494,38 @@ func record_first_creation(key: String) -> void:
 func add_to_total(key: String, amount: BigNum) -> void:
     if totals_created.has(key):
         totals_created[key] = totals_created[key].add(amount)
+
+
+## Bonus Foci by Fibonacci count of TOTAL Uonites (lifetime created, so it
+## never goes backwards): +1 at 2, 3, 5, 8, 13, 21, 34, ... Uonites. It starts
+## at 2, not 1: the first Uonite already pays its own +1 Focus through the
+## "First Uonite" milestone (root_ui.gd), and that milestone is the first
+## step of this ladder rather than something added on top of it. Pure
+## function of the total, so it is testable and the same for every caller.
+static func fibonacci_foci_for_total(total_uonites: int) -> int:
+    var earned: int = 0
+    var a: int = 2
+    var b: int = 3
+    while a <= total_uonites:
+        earned += 1
+        var c: int = a + b
+        a = b
+        b = c
+    return earned
+
+
+## Foci now owed to the player for crossing Fibonacci Uonite totals, which it
+## also records as granted -- the caller adds the returned amount to
+## archon_foci. 0 when nothing new has been crossed. Multiple thresholds
+## crossed at once (a big batch, or a save that predates this rule) are paid in
+## one go.
+func claim_uonite_fibonacci_foci() -> int:
+    var total: int = totals_created.get("uonite", BigNum.zero()).to_int()
+    var owed: int = fibonacci_foci_for_total(total) - uonite_fibonacci_foci_granted
+    if owed <= 0:
+        return 0
+    uonite_fibonacci_foci_granted += owed
+    return owed
 
 
 # ===================== LOCK HELPERS =======================
@@ -1636,6 +1672,7 @@ func get_save_data() -> Dictionary:
     data["archon_foci"]           = archon_foci
     data["volitions"]             = volitions
     data["refinements_completed"] = refinements_completed
+    data["uonite_fibonacci_foci_granted"] = uonite_fibonacci_foci_granted
     data["expansions"]            = expansions
     data["next_expansion_foci_exp"] = next_expansion_foci_exp
     data["purity_locks_unlocked"] = purity_locks_unlocked
@@ -1899,7 +1936,8 @@ func load_save_data(data: Dictionary) -> void:
     archon_foci             = _coerce_int(data.get("archon_foci"), 1)
     volitions               = _coerce_int(data.get("volitions"), 0)
     refinements_completed   = _coerce_int(data.get("refinements_completed"), 0)
-    expansions               = _coerce_int(data.get("expansions"), 0)
+    uonite_fibonacci_foci_granted = maxi(0, _coerce_int(data.get("uonite_fibonacci_foci_granted"), 0))
+    expansions               =_coerce_int(data.get("expansions"), 0)
     next_expansion_foci_exp = _coerce_int(data.get("next_expansion_foci_exp"), 0)
     purity_locks_unlocked   = _coerce_bool(data.get("purity_locks_unlocked"), false)
     will_form_switch_is_will = _coerce_bool(data.get("will_form_switch_is_will"), true)
