@@ -193,6 +193,14 @@ func _do(host, rec: int, s: int, step: Array) -> void:
 		# repeat count
 		"repeat_check":
 			w._on_repeat_checklist_check(rec, int(host._repeat_count[s]), null)
+		"pitch_checker_only":
+			for n3 in _notes(host):
+				if str(n3) != note:
+					w._on_pitch_checker_toggle(rec, str(n3))
+		"repeat_checker_only":
+			for v2 in d._get_repeat_bucket_values():
+				if int(v2) != int(host._repeat_count[s]):
+					w._on_repeat_checker_toggle(rec, int(v2))
 		"repeat_xothers":
 			for v in d._get_repeat_bucket_values():
 				if int(v) != int(host._repeat_count[s]):
@@ -611,6 +619,8 @@ func run() -> void:
 		["colour-slot, name check", "color", [C, ["name_check"], SQ, P]],
 		["colour-slot, checker seq", "color", [C, ["seq_checker_only"], ["name_check"], ["pitch_xothers"]]],
 		["colour-slot, X-others everything", "color", [C, ["seq_list_decoy"], ["pitch_xothers"], ["name_xothers"]]],
+		["name-row, pitch checks", "name", [N, SQ, C, ["pitch_checker_only"]]],
+		["colour-slot, pitch checks, name check", "color", [C, ["pitch_checker_only"], ["name_check"], SQ]],
 	]
 	for es in [[2], [0, 3], [1, 4, 5]]:
 		await _compare("A full facts", es, full)
@@ -653,6 +663,7 @@ func run() -> void:
 		["repeat first", "name", [["repeat_check"], ["name_select"], ["seq_typed"], ["color_toggle"]]],
 		["colour-slot, repeat X-others, name check", "color", [["repeat_xothers"], ["color_toggle"], ["name_check"], ["seq_typed"]]],
 		["seq-slot, repeat confirm, name check", "seq", [["seq_typed"], ["repeat_check"], ["name_check"], ["color_toggle"]]],
+		["name-row, repeat checks", "name", [["name_select"], ["seq_typed"], ["repeat_checker_only"], ["color_toggle"]]],
 	]
 	await _compare("A2 repeat count", [0], rep)
 	await _compare("A2 repeat count", [2, 4], rep)

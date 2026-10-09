@@ -1121,7 +1121,7 @@ func _build_difficulty_toggle() -> void:
     _seq_mode_btn = Button.new()
     _seq_mode_btn.focus_mode = Control.FOCUS_NONE
     _seq_mode_btn.add_theme_font_size_override("font_size", 16)
-    _seq_mode_btn.tooltip_text = "Switch the Sort tabs' Sequence entry between typed boxes and an on/off checker for each position"
+    _seq_mode_btn.tooltip_text = "Switch the Sort tabs' Sequence, Pitch and Repeats entries between the classic controls (typed boxes / checklist popups) and an on/off checker for each value"
     _seq_mode_btn.pressed.connect(func():
         _widgets.set_seq_checker_enabled(not _widgets._seq_checker_enabled())
         _refresh_seq_mode_button()
@@ -1134,7 +1134,7 @@ func _build_difficulty_toggle() -> void:
 
 func _refresh_seq_mode_button() -> void:
     if _seq_mode_btn:
-        _seq_mode_btn.text = "Seq: Checks" if _widgets._seq_checker_enabled() else "Seq: Typed"
+        _seq_mode_btn.text = "Entry: Checks" if _widgets._seq_checker_enabled() else "Entry: Classic"
 
 
 ## Reflects this constellation's CURRENT stored difficulty -- called from
