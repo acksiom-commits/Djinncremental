@@ -99,24 +99,26 @@ func _compile() -> void:
 	# (order is first-firing order); see ConstellationLogicPuzzle._seq_fire_verb.
 	_re_gap     = _rx("(.+) (?:first fires|fires) immediately (after|before) (.+)\\.$")
 	_re_off     = _rx("(.+?) (?:first fires|fires|is pitched|is) exactly (\\d+) (?:steps?|pitch ranks?) (later|earlier|higher|lower) than (.+)\\.$")
-	_re_cmp     = _rx("(.+?) (?:first fires|fires|is pitched|is) (later|earlier|higher|lower) than (.+)\\.$")
-	_re_btw     = _rx("(.+?) (?:first fires|fires|is pitched) between (.+) and (.+)\\.$")
-	_re_chain   = _rx("(.+?) (?:first fires|fires|is pitched) (before|after|higher than|lower than) (.+), which (?:first fires|fires|is pitched) (?:before|after|higher than|lower than) (.+)\\.$")
+	# Per-star wording: an object star that repeats carries an optional
+	# " first fires" tail, which is not part of its label.
+	_re_cmp     = _rx("(.+?) (?:first fires|fires|is pitched|is) (later|earlier|higher|lower) than (.+?)(?: first fires)?\\.$")
+	_re_btw     = _rx("(.+?) (?:first fires|fires|is pitched) between (.+?)(?: first fires)? and (.+?)(?: first fires)?\\.$")
+	_re_chain   = _rx("(.+?) (?:first fires|fires|is pitched) (before|after|higher than|lower than) (.+), which (?:first fires|fires|is pitched) (?:before|after|higher than|lower than) (.+?)(?: first fires)?\\.$")
 	_re_range   = _rx("(.+) is among the (first|last) (\\d+)\\.$")
 	# Repeating-melody Range: a window of NOTES on the star's first note.
 	_re_range_first = _rx("^(.+?) (?:first fires|fires) within the first (\\d+) notes\\.$")
 	_re_range_late  = _rx("^(.+?) (?:first fires|fires) no earlier than note (\\d+)\\.$")
-	_re_extr    = _rx("(.+) is the (earliest|latest) to (?:first fire|fire) among its connected stars\\.$")
-	_re_count   = _rx("^Exactly (\\d+) of (.+)'s connected stars (?:first fire|fire) before it\\.$")
+	_re_extr    = _rx("(.+) is the (earliest|latest) to (?:first fire|fire) among its connected stars(?:, going by each star's first note)?\\.$")
+	_re_count   = _rx("^Exactly (\\d+) of (.+)'s connected stars (?:first fire|fire) before it(?: first fires)?\\.$")
 	_re_bridge  = _rx("^Among (the .+), the (earliest|latest)(?:-firing| first-firing) one is (.+)\\.$")
-	_re_gorder_first = _rx("^(.+?) first fires (before|after) ((?:every|the) .+?) first fires\\.$")
+	_re_gorder_first = _rx("^(.+?) (?:first fires|fires) (before|after) ((?:every|the) .+?)(?: first fires)?\\.$")
 	# Group Order renders its group as "every yellow star" / "every star that
 	# plays A#4" (_group_noun_phrase with plural=true), NOT "the ...".
 	_re_gorder  = _rx("(.+?) (precedes|follows) ((?:every|the) .+)\\.$")
 	# Pseudo-True Pair (Staggered) states three conjuncts at once; it must be
 	# tried BEFORE _re_cmp, whose "fires earlier than" would otherwise claim
 	# the sentence and then fail to resolve its overlong left side.
-	_re_stag    = _rx("^(.+?) can be (.+?) or (.+?), (.+?) can be (.+?) or (.+?), and (.+?) (?:first fires|fires) (earlier|later) than (.+)\\.$")
+	_re_stag    = _rx("^(.+?) can be (.+?) or (.+?), (.+?) can be (.+?) or (.+?), and (.+?) (?:first fires|fires) (earlier|later) than (.+?)(?: first fires)?\\.$")
 	_re_member  = _rx("(.+?) is (one of|not one of) (the .+)\\.$")
 	_re_same    = _rx("(.+) and (.+) have the same (pitch|color|colour)\\.$")
 	_re_diff    = _rx("(.+) all have different (pitches|colors|colours)\\.$")

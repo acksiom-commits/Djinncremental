@@ -5612,18 +5612,18 @@ func _describe_disclosure(f: Dictionary) -> String:
         "ordinal_cmp":
             var a: String = _describe_star(int(f.get("a", -1)))
             var b: String = _describe_star(int(f.get("b", -1)))
-            return "%s %s %s %s." % [a, _seq_rel_verb(), "after" if bool(f.get("a_gt_b", false)) else "before", b]
+            return "%s %s %s %s." % [a, _seq_rel_verb_for(int(f.get("a", -1))), "after" if bool(f.get("a_gt_b", false)) else "before", b]
         "ordinal_chain":
             return "%s %s before %s, which %s before %s." % [
-                _describe_star(int(f.get("a", -1))), _seq_rel_verb(), _describe_star(int(f.get("mid", -1))),
-                _seq_rel_verb(), _describe_star(int(f.get("b", -1)))]
+                _describe_star(int(f.get("a", -1))), _seq_rel_verb_for(int(f.get("a", -1))), _describe_star(int(f.get("mid", -1))),
+                _seq_rel_verb_for(int(f.get("mid", -1))), _describe_star(int(f.get("b", -1)))]
         "ordinal_adjacent", "ordinal_offset":
             return "%s %s %d after %s." % [
-                _describe_star(int(f.get("a", -1))), _seq_rel_verb(), int(f.get("offset", 1)), _describe_star(int(f.get("b", -1)))]
+                _describe_star(int(f.get("a", -1))), _seq_rel_verb_for(int(f.get("a", -1))), int(f.get("offset", 1)), _describe_star(int(f.get("b", -1)))]
         "ordinal_range":
             if _seq_repeats():
                 return "%s %s between note %d and note %d." % [
-                    _describe_star(int(f.get("s", -1))), _seq_rel_verb(),
+                    _describe_star(int(f.get("s", -1))), _seq_rel_verb_for(int(f.get("s", -1))),
                     _first_tick_for_rank(int(f.get("lo", 0)) + 1), _first_tick_for_rank(int(f.get("hi", 0)) + 1)]
             return "%s %s between the %d and %d positions." % [
                 _describe_star(int(f.get("s", -1))), _seq_verb(), int(f.get("lo", 0)) + 1, int(f.get("hi", 0)) + 1]
@@ -5636,7 +5636,7 @@ func _describe_disclosure(f: Dictionary) -> String:
             return "%s %s %s or %s." % [_describe_star(int(f.get("s", -1))), _seq_verb(),
                 _seq_ord(int(f.get("r1", -1)) + 1), _seq_ord(int(f.get("r2", -1)) + 1)]
         "ordinal_extreme":
-            return "%s %s %s of: %s." % [_describe_star(int(f.get("s", -1))), _seq_rel_verb(),
+            return "%s %s %s of: %s." % [_describe_star(int(f.get("s", -1))), _seq_rel_verb_for(int(f.get("s", -1))),
                 "before all" if bool(f.get("want_lowest", false)) else "after all",
                 _describe_star_list(f.get("neighbors", []))]
         "ordinal_count_before":
@@ -6998,6 +6998,16 @@ func _seq_verb_base() -> String:
 ## fires" when the melody repeats, so "A fires before B" is never ambiguous.
 func _seq_rel_verb() -> String:
     return "first fires" if _seq_repeats() else "fires"
+
+
+## The same relational verb for ONE named star: "first fires" only if THAT star
+## actually fires more than once, as in the generator's clue wording
+## (ConstellationLogicPuzzle._seq_verb_for). Used by the dev explainer's lines
+## about named stars; the hint phrases about unnamed stars keep _seq_rel_verb().
+func _seq_rel_verb_for(star: int) -> String:
+    if star >= 0 and star < _host._repeat_count.size() and int(_host._repeat_count[star]) > 0:
+        return "first fires"
+    return "fires"
 
 
 func _seq_rel_verb_base() -> String:

@@ -254,6 +254,40 @@ func _seq_fire_verb(stars: Array) -> String:
 func _seq_fire_base(stars: Array) -> String:
     return "first fire" if _seq_fire_verb(stars) == "first fires" else "fire"
 
+
+## PER-STAR wording (2026-10-08). "first fires" is said of a star only when THAT
+## star actually fires more than once; a star that fires once keeps the plain
+## verb even when another star in the same sentence repeats. A star that is the
+## subject of the verb carries it as its verb; a star named only as the other
+## side of the comparison carries it as a tail (_seq_obj_tail), so every
+## repeating star the sentence mentions is still marked and the order claim
+## stays unambiguous.
+func _seq_verb_for(star: int) -> String:
+    return "first fires" if star >= 0 and star < repeat_count.size() and int(repeat_count[star]) > 0 else "fires"
+
+
+func _seq_base_for(star: int) -> String:
+    return "first fire" if _seq_verb_for(star) == "first fires" else "fire"
+
+
+## The verb for the subject of an order clue on `cat` (Sequence is per-star,
+## every other axis keeps its own verb).
+func _order_verb_for_subject(cat: int, star: int) -> String:
+    if cat == Category.SEQUENCE:
+        return _seq_verb_for(star)
+    return _order_verb(cat)
+
+
+## " first fires" after the label of a star that is only the OBJECT of the
+## comparison and repeats. Empty for a star that fires once, and for a label
+## that is itself a Sequence descriptor ("the star that fires 12th note" already
+## names that star's first note, so adding the words would only repeat them).
+func _seq_obj_tail(ch: Dictionary) -> String:
+    if int(ch.get("cat", -1)) == Category.SEQUENCE:
+        return ""
+    var star: int = int(ch.get("star", -1))
+    return " first fires" if _seq_verb_for(star) == "first fires" else ""
+
  
 # ── Puzzle state ─────────────────────────────────────────────────────────
 var star_count: int = 0
@@ -4867,7 +4901,8 @@ func _build_form_pairwise_order(chain: Dictionary) -> Dictionary:
     var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
     var axis_a: Dictionary = {"cat": axis, "star": star_a}
     var axis_b: Dictionary = {"cat": axis, "star": star_b}
-    var text: String = "%s %s %s than %s." % [_characteristic_label(id_a), _order_verb_for(axis, [star_a, star_b]), _order_word(axis, a_gt_b), _characteristic_label(id_b)]
+    var tail_b: String = _seq_obj_tail(id_b) if axis == Category.SEQUENCE else ""
+    var text: String = "%s %s %s than %s%s." % [_characteristic_label(id_a), _order_verb_for_subject(axis, star_a), _order_word(axis, a_gt_b), _characteristic_label(id_b), tail_b]
     # id_a/id_b are the only labels actually rendered — axis_a/axis_b back
     # the comparison itself but are never textually disclosed as exact
     # values (see the header note on _seq_fact_for_label). The comparison
@@ -6304,7 +6339,8 @@ func _build_form_group_comparison(chain: Dictionary) -> Dictionary:
         var gaxis: Dictionary = {"cat": axis, "star": int(g["star"])}
         chars.append(gid)
         chars.append(gaxis)
-        label_items.append({"cat": int(g["id_cat"]), "star": int(g["star"]), "label": _characteristic_label(gid)})
+        var gtail: String = _seq_obj_tail(gid) if axis == Category.SEQUENCE else ""
+        label_items.append({"cat": int(g["id_cat"]), "star": int(g["star"]), "label": _characteristic_label(gid) + gtail})
         grid_updates.append({"cat_a": int(g["id_cat"]), "val_a": int(g["id_val"]), "cat_b": axis, "val_b": int(g["axis_val"]), "is_true": true})
         solver_facts.append_array(_seq_fact_for_label(gid))
         if axis == Category.SEQUENCE:
@@ -6316,7 +6352,7 @@ func _build_form_group_comparison(chain: Dictionary) -> Dictionary:
         # "sequence position" does not say which of a repeating star's notes is
         # meant. Say it as an order of firing, like Pairwise Order does.
         text = "%s %s %s than %s." % [
-            _characteristic_label(subject_id), _seq_fire_verb([subject_star] + group_stars),
+            _characteristic_label(subject_id), _seq_verb_for(subject_star),
             _order_word(axis, s_more), _join_names_and(_sort_labels_for_join(label_items))]
     else:
         text = "%s has a %s %s than %s." % [_characteristic_label(subject_id), word, noun, _join_names_and(_sort_labels_for_join(label_items))]
@@ -6420,13 +6456,19 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
     var group_phrase: String = _group_noun_phrase(group_cat, def_star, true)
     var verb_word: String = "precedes" if precedes else "follows"
     var text: String
-    if _seq_fire_verb([subject_star] + group_stars) == "fires":
+    var subject_repeats: bool = _seq_verb_for(subject_star) == "first fires"
+    var group_repeats: bool = _seq_fire_verb(group_stars) == "first fires"
+    if not subject_repeats and not group_repeats:
         text = "%s %s %s." % [_characteristic_label(subject_id), verb_word, group_phrase]
     else:
         # "precedes" is ambiguous when a star fires more than once; say whose
-        # note is compared on both sides.
-        text = "%s first fires %s %s first fires." % [
-            _characteristic_label(subject_id), "before" if precedes else "after", group_phrase]
+        # note is compared. Per side: "first fires" only where that side
+        # actually has a repeating star -- the subject's own verb, and a tail
+        # on the group (which repeats if ANY of its members does).
+        text = "%s %s %s %s%s." % [
+            _characteristic_label(subject_id), _seq_verb_for(subject_star),
+            "before" if precedes else "after", group_phrase,
+            " first fires" if group_repeats else ""]
     # Group members are never individually labeled (group_phrase is a raw
     # collective description, not built via _characteristic_label) — only
     # the disclosed relation matters: subject precedes/follows EVERY member.
@@ -6474,8 +6516,11 @@ func _build_form_extreme(chain: Dictionary) -> Dictionary:
     var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
     var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
     var word: String = "earliest" if want_lowest else "latest"
-    var text: String = "%s is the %s to %s among its connected stars." % [
-        _characteristic_label(subject_id), word, _seq_fire_base([subject_star] + neighbors)]
+    # The verb is the subject's own ("first fire" only if IT repeats); if any
+    # neighbour repeats, say the comparison is on each star's first note.
+    var text: String = "%s is the %s to %s among its connected stars%s." % [
+        _characteristic_label(subject_id), word, _seq_base_for(subject_star),
+        ", going by each star's first note" if _seq_fire_verb(neighbors) == "first fires" else ""]
     var solver_facts: Array = _seq_fact_for_label(subject_id)
     solver_facts.append({"kind": "ordinal_extreme", "s": subject_star, "want_lowest": want_lowest, "neighbors": neighbors})
     return {
@@ -6506,8 +6551,12 @@ func _build_form_count(chain: Dictionary) -> Dictionary:
             k += 1
     var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
     var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
-    var text: String = "Exactly %d of %s's connected stars %s before it." % [
-        k, _characteristic_label(subject_id), _seq_fire_base([subject_star] + neighbors)]
+    # "first fire" on the plural only if some connected star repeats, and
+    # "it first fires" only if the subject itself does.
+    var text: String = "Exactly %d of %s's connected stars %s before it%s." % [
+        k, _characteristic_label(subject_id),
+        "first fire" if _seq_fire_verb(neighbors) == "first fires" else "fire",
+        " first fires" if _seq_verb_for(subject_star) == "first fires" else ""]
     var solver_facts: Array = _seq_fact_for_label(subject_id)
     solver_facts.append({"kind": "ordinal_count_before", "s": subject_star, "k": k, "neighbors": neighbors})
     return {
@@ -6898,19 +6947,28 @@ func _betweenness_render_triple(participants: Array, axis: int) -> Dictionary:
     var axis_lo: Dictionary = {"cat": axis, "star": lo}
     var axis_mid: Dictionary = {"cat": axis, "star": mid}
     var axis_hi: Dictionary = {"cat": axis, "star": hi}
-    var verb: String = _order_verb_for(axis, [lo, mid, hi])
+    # Per-star verbs: each star that is the SUBJECT of a verb carries its own
+    # ("first fires" only if it repeats); a star that is only an object carries
+    # the tail instead. In the chains the middle star is a subject (of "which
+    # ...") so it needs none.
+    var is_seq: bool = axis == Category.SEQUENCE
+    var v_lo: String = _order_verb_for_subject(axis, lo)
+    var v_mid: String = _order_verb_for_subject(axis, mid)
+    var v_hi: String = _order_verb_for_subject(axis, hi)
+    var t_lo: String = _seq_obj_tail(lo_id) if is_seq else ""
+    var t_hi: String = _seq_obj_tail(hi_id) if is_seq else ""
     var text: String
     match _rng.randi() % 3:
         0:
-            text = "%s %s between %s and %s." % [_characteristic_label(mid_id), verb, _characteristic_label(lo_id), _characteristic_label(hi_id)]
+            text = "%s %s between %s%s and %s%s." % [_characteristic_label(mid_id), v_mid, _characteristic_label(lo_id), t_lo, _characteristic_label(hi_id), t_hi]
         1:
-            text = "%s %s %s %s, which %s %s %s." % [
-                _characteristic_label(lo_id), verb, _order_chain_word(axis, false), _characteristic_label(mid_id),
-                verb, _order_chain_word(axis, false), _characteristic_label(hi_id)]
+            text = "%s %s %s %s, which %s %s %s%s." % [
+                _characteristic_label(lo_id), v_lo, _order_chain_word(axis, false), _characteristic_label(mid_id),
+                v_mid, _order_chain_word(axis, false), _characteristic_label(hi_id), t_hi]
         _:
-            text = "%s %s %s %s, which %s %s %s." % [
-                _characteristic_label(hi_id), verb, _order_chain_word(axis, true), _characteristic_label(mid_id),
-                verb, _order_chain_word(axis, true), _characteristic_label(lo_id)]
+            text = "%s %s %s %s, which %s %s %s%s." % [
+                _characteristic_label(hi_id), v_hi, _order_chain_word(axis, true), _characteristic_label(mid_id),
+                v_mid, _order_chain_word(axis, true), _characteristic_label(lo_id), t_lo]
     var solver_facts: Array = _seq_fact_for_label(lo_id) + _seq_fact_for_label(mid_id) + _seq_fact_for_label(hi_id)
     if axis == Category.SEQUENCE:
         solver_facts.append({"kind": "ordinal_chain", "a": lo, "mid": mid, "b": hi})
@@ -7711,11 +7769,12 @@ func _build_form_pseudo_true_pair_staggered(chain: Dictionary) -> Dictionary:
     var vx_ch: Dictionary = {"cat": axis, "star": s_x}
     var vy_ch: Dictionary = {"cat": axis, "star": s_y}
     var order_word: String = _order_word(axis, _order_value(axis, s_x) > _order_value(axis, s_y))
-    var verb: String = _order_verb_for(axis, [s_x, s_y])
-    var text: String = "%s can be %s or %s, %s can be %s or %s, and %s %s %s than %s." % [
+    var verb: String = _order_verb_for_subject(axis, s_x)
+    var tail_y: String = _seq_obj_tail(id_y) if axis == Category.SEQUENCE else ""
+    var text: String = "%s can be %s or %s, %s can be %s or %s, and %s %s %s than %s%s." % [
         _characteristic_label(id_x), _characteristic_label(vx_ch), _characteristic_label(decoy_ch),
         _characteristic_label(id_y), _characteristic_label(decoy_ch), _characteristic_label(vy_ch),
-        _characteristic_label(id_x), verb, order_word, _characteristic_label(id_y)]
+        _characteristic_label(id_x), verb, order_word, _characteristic_label(id_y), tail_y]
     # vx_ch/vy_ch are s_x's/s_y's OWN true values; decoy_ch is a third,
     # genuinely different star's own true value — every one of these labels
     # discloses an exact rank on its own star when axis is Sequence (a

@@ -157,51 +157,147 @@ func run() -> void:
 	ok(g._seq_fire_verb([single, repeater]) == "first fires", "one repeater among several is enough")
 	ok(g._seq_fire_base([single]) == "fire" and g._seq_fire_base([repeater]) == "first fire", "the bare forms follow the same rule")
 
-	print("\n=== Forms say it exactly when a mentioned star repeats ===")
-	for f in ["_build_form_pairwise_order", "_build_form_betweenness"]:
-		var seq_clues: int = 0
-		var wrong: int = 0
-		for c in _draw(g, f, 300):
-			var text: String = str(c.get("text", ""))
-			if text.contains("is pitched"):
-				continue   # a Pitch clue, no firing verb at all
-			seq_clues += 1
-			var says_first: bool = text.contains("first fires")
-			if says_first != _any_repeats(g, _stars_of(c)):
-				wrong += 1
-				print("    mismatch: ", text)
-		ok(seq_clues > 0, "%s drew Sequence clues (%d)" % [f, seq_clues])
-		ok(wrong == 0, "%s: 'first fires' appears exactly when a mentioned star repeats (%d wrong of %d)" % [f, wrong, seq_clues])
-	for f2 in ["_build_form_extreme", "_build_form_count"]:
-		var n2: int = 0
-		var wrong2: int = 0
-		for c2 in _draw(g, f2, 300):
-			n2 += 1
-			var subject: int = int((c2["chars"] as Array)[0]["star"])
-			var involved: Array = [subject] + (g.proximity[subject] as Array)
-			if str(c2["text"]).contains("first fire") != _any_repeats(g, involved):
-				wrong2 += 1
-				print("    mismatch: ", c2["text"])
-		ok(n2 > 0, "%s drew clues (%d)" % [f2, n2])
-		ok(wrong2 == 0, "%s: 'first fire' appears exactly when the subject or a neighbour repeats (%d wrong)" % [f2, wrong2])
+	print("\n=== 'first fires' is said of a star only if THAT star repeats ===")
+	# Per-star wording (2026-10-08): a star that fires once never gets the words,
+	# even when another star in the same sentence repeats; every repeating star
+	# the sentence mentions is marked -- as the verb's subject (its own verb) or,
+	# when it is only the other side of the comparison, with a " first fires"
+	# tail. A label that is itself a Sequence descriptor ("the star that fires
+	# 12th note") already names the first note, so it takes no tail.
+	# Each Form below prints judged/parsed counts so a silent 0 cannot pass.
+	var pw_n: int = 0
+	var pw_wrong: int = 0
+	var re_pw := RegEx.create_from_string("^(.+?) (first fires|fires) (?:earlier|later) than (.+?)( first fires)?\\.$")
+	var pw_mixed: int = 0
+	for c in _draw(g, "_build_form_pairwise_order", 400):
+		var text: String = str(c.get("text", ""))
+		if text.contains("is pitched") or text.contains("higher") or text.contains("lower"):
+			continue
+		var m = re_pw.search(text)
+		var fact_pw: Dictionary = {}
+		for sf in c["solver_facts"]:
+			if str((sf as Dictionary).get("kind", "")) == "ordinal_cmp":
+				fact_pw = sf
+		if m == null or fact_pw.is_empty():
+			pw_wrong += 1
+			print("    unparsed: ", text)
+			continue
+		pw_n += 1
+		var a_rep: bool = _rep(g, int(fact_pw["a"]))
+		var b_rep: bool = _rep(g, int(fact_pw["b"]))
+		if a_rep != b_rep:
+			pw_mixed += 1
+		var ok_verb: bool = (m.get_string(2) == "first fires") == a_rep
+		var ok_tail: bool = (m.get_string(4) != "") == (b_rep and not _is_seq_label(m.get_string(3)))
+		if not (ok_verb and ok_tail):
+			pw_wrong += 1
+			print("    mismatch: ", text)
+	ok(pw_n > 0 and pw_mixed > 0, "Pairwise Order drew %d Sequence clues, %d of them mixing a repeating and a single star" % [pw_n, pw_mixed])
+	ok(pw_wrong == 0, "Pairwise Order marks exactly the repeating stars (%d wrong)" % pw_wrong)
+
+	var bt_n: int = 0
+	var bt_wrong: int = 0
+	var bt_mixed: int = 0
+	var re_b0 := RegEx.create_from_string("^(.+?) (first fires|fires) between (.+?)( first fires)? and (.+?)( first fires)?\\.$")
+	var re_b1 := RegEx.create_from_string("^(.+?) (first fires|fires) (?:before|after) (.+?), which (first fires|fires) (?:before|after) (.+?)( first fires)?\\.$")
+	for c5 in _draw(g, "_build_form_betweenness", 400):
+		var t5: String = str(c5.get("text", ""))
+		if t5.contains("is pitched"):
+			continue
+		var chain: Dictionary = {}
+		for sf5 in c5["solver_facts"]:
+			if str((sf5 as Dictionary).get("kind", "")) == "ordinal_chain":
+				chain = sf5
+		var lo: int = int(chain.get("a", -1))
+		var mid: int = int(chain.get("mid", -1))
+		var hi: int = int(chain.get("b", -1))
+		var good: bool = false
+		var m0 = re_b0.search(t5)
+		var m1 = re_b1.search(t5)
+		if chain.is_empty():
+			good = false
+		elif m0 != null:
+			good = (m0.get_string(2) == "first fires") == _rep(g, mid) \
+				and (m0.get_string(4) != "") == (_rep(g, lo) and not _is_seq_label(m0.get_string(3))) \
+				and (m0.get_string(6) != "") == (_rep(g, hi) and not _is_seq_label(m0.get_string(5)))
+		elif m1 != null:
+			# the first star is the chain's lo (before/before) or hi (after/after);
+			# the last is the other end
+			var first_star: int = lo if t5.contains(" before ") else hi
+			var last_star: int = hi if t5.contains(" before ") else lo
+			good = (m1.get_string(2) == "first fires") == _rep(g, first_star) \
+				and (m1.get_string(4) == "first fires") == _rep(g, mid) \
+				and (m1.get_string(6) != "") == (_rep(g, last_star) and not _is_seq_label(m1.get_string(5)))
+		bt_n += 1
+		if int(_rep(g, lo)) + int(_rep(g, mid)) + int(_rep(g, hi)) in [1, 2]:
+			bt_mixed += 1
+		if not good:
+			bt_wrong += 1
+			print("    mismatch: ", t5)
+	ok(bt_n > 0 and bt_mixed > 0, "Betweenness drew %d Sequence clues, %d of them mixing repeating and single stars" % [bt_n, bt_mixed])
+	ok(bt_wrong == 0, "Betweenness marks exactly the repeating stars (%d wrong)" % bt_wrong)
+
+	var ex_n: int = 0
+	var ex_wrong: int = 0
+	var re_ex := RegEx.create_from_string("^(.+) is the (?:earliest|latest) to (first fire|fire) among its connected stars(, going by each star's first note)?\\.$")
+	for c2 in _draw(g, "_build_form_extreme", 300):
+		var m2 = re_ex.search(str(c2["text"]))
+		var subject: int = int((c2["chars"] as Array)[0]["star"])
+		ex_n += 1
+		if m2 == null \
+				or (m2.get_string(2) == "first fire") != _rep(g, subject) \
+				or (m2.get_string(3) != "") != _any_repeats(g, g.proximity[subject]):
+			ex_wrong += 1
+			print("    mismatch: ", c2["text"])
+	ok(ex_n > 0, "Extreme drew clues (%d)" % ex_n)
+	ok(ex_wrong == 0, "Extreme: the verb follows the subject, the 'first note' clause follows the neighbours (%d wrong)" % ex_wrong)
+
+	var ct_n: int = 0
+	var ct_wrong: int = 0
+	var re_ct := RegEx.create_from_string("^Exactly \\d+ of (.+)'s connected stars (first fire|fire) before it( first fires)?\\.$")
+	for c6 in _draw(g, "_build_form_count", 300):
+		var m6 = re_ct.search(str(c6["text"]))
+		var subject6: int = int((c6["chars"] as Array)[0]["star"])
+		ct_n += 1
+		if m6 == null \
+				or (m6.get_string(2) == "first fire") != _any_repeats(g, g.proximity[subject6]) \
+				or (m6.get_string(3) != "") != _rep(g, subject6):
+			ct_wrong += 1
+			print("    mismatch: ", c6["text"])
+	ok(ct_n > 0, "Count drew clues (%d)" % ct_n)
+	ok(ct_wrong == 0, "Count: 'first fire' follows the neighbours, 'it first fires' follows the subject (%d wrong)" % ct_wrong)
+
 	var go_n: int = 0
 	var go_wrong: int = 0
+	var go_mixed: int = 0
+	var re_go_plain := RegEx.create_from_string("^(.+?) (?:precedes|follows) (.+)\\.$")
+	var re_go := RegEx.create_from_string("^(.+?) (first fires|fires) (?:before|after) (.+?)( first fires)?\\.$")
 	for c3 in _draw(g, "_build_form_group_order", 400):
 		go_n += 1
 		var ch: Array = c3["chars"]
 		var def_cat: int = int((ch[2] as Dictionary)["cat"])
 		var def_star: int = int((ch[2] as Dictionary)["star"])
-		var involved3: Array = [int((ch[0] as Dictionary)["star"])]
-		for m in g.star_count:
-			if g._name_group_key(def_cat, m) == g._name_group_key(def_cat, def_star):
-				involved3.append(m)
+		var subj3: int = int((ch[0] as Dictionary)["star"])
+		var members: Array = []
+		for mm in g.star_count:
+			if g._name_group_key(def_cat, mm) == g._name_group_key(def_cat, def_star):
+				members.append(mm)
 		var t3: String = str(c3["text"])
-		var says_first3: bool = t3.contains("first fires")
-		if says_first3 != _any_repeats(g, involved3):
+		var s_rep: bool = _rep(g, subj3)
+		var g_rep: bool = _any_repeats(g, members)
+		if s_rep != g_rep:
+			go_mixed += 1
+		var good3: bool
+		if not s_rep and not g_rep:
+			good3 = re_go_plain.search(t3) != null
+		else:
+			var m3 = re_go.search(t3)
+			good3 = m3 != null and (m3.get_string(2) == "first fires") == s_rep and (m3.get_string(4) != "") == g_rep
+		if not good3:
 			go_wrong += 1
 			print("    mismatch: ", t3)
-	ok(go_n > 0, "Group Order drew clues (%d)" % go_n)
-	ok(go_wrong == 0, "Group Order says 'first fires ... first fires' exactly when a star in it repeats (%d wrong)" % go_wrong)
+	ok(go_n > 0 and go_mixed > 0, "Group Order drew %d clues, %d with a repeating subject xor group" % [go_n, go_mixed])
+	ok(go_wrong == 0, "Group Order: the subject's verb and the group's tail are decided separately (%d wrong)" % go_wrong)
 
 	print("\n=== Range is a note window that matches its rank fact ===")
 	var r_n: int = 0
@@ -303,3 +399,11 @@ func run() -> void:
 	else:
 		print("\nFAILURES (%d failures)" % fails)
 	finish()
+
+
+func _rep(g, star: int) -> bool:
+	return int(g.repeat_count[star]) > 0
+
+
+func _is_seq_label(label: String) -> bool:
+	return label.begins_with("the star that fires")
