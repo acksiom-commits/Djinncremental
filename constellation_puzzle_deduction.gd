@@ -1779,6 +1779,42 @@ func _get_or_create_match_record_for_melody_tick(tick: int) -> int:
     return _match_records.size() - 1
 
 
+## Lets go of a staff note that an identity merge attached to a NAMED record.
+## Merging unions melody_ticks and nothing ever takes them back out, so once a
+## note had been named (and so merged into that star's Sort row) the Staff
+## popup's Name Undo cleared the name marks but left the note on the record:
+## still labelled with the star, still deriving its position, so Undo looked
+## like it did nothing.
+##
+## Moves the star's whole note group (the repeat shape is public, so every note
+## of the star shares one record) onto a fresh, unmarked record and leaves
+## everything else on the named record, which is the Sort row's, as it was.
+## Marks the player entered on the note itself before the merge cannot be told
+## apart from the row's, so they stay with the row; the note starts clean.
+## Returns the fresh record's index, or -1 when there was nothing to detach
+## (the record is not named, or the note is not on it).
+func _detach_melody_ticks_from_named_record(tick: int, record_idx: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return -1
+    var rec: Dictionary = _match_records[record_idx]
+    if str(rec.get("name", "")) == "" and int(rec.get("star_idx", -1)) < 0:
+        return -1
+    var have: Array = rec.get("melody_ticks", [])
+    if not have.has(tick):
+        return -1
+    var group: Array = _melody_ticks_for_rank(_seq_pos_for_melody_tick(tick))
+    if not group.has(tick):
+        group.append(tick)
+    var kept: Array = []
+    for t in have:
+        if not group.has(t):
+            kept.append(t)
+    rec["melody_ticks"] = kept
+    _match_records.append(_new_match_record({"melody_ticks": group.duplicate()}))
+    _sync_derived_size()
+    return _match_records.size() - 1
+
+
 func _get_or_create_match_record_for_star_idx(star_idx: int) -> int:
     var idx: int = _find_match_record_by_star_idx(star_idx)
     if idx >= 0:

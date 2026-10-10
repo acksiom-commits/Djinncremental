@@ -4355,8 +4355,17 @@ func _on_staff_color_undo_all(record_idx: int) -> void:
     _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
 
 
+## Name Undo also lets the note go from a named record it was merged into (see
+## _detach_melody_ticks_from_named_record). Returns true when it did, in which
+## case the named record's own marks are the Sort row's and are left alone.
+func _release_note_from_named_record(record_idx: int) -> bool:
+    var tick: int = int(_host._staff_popup_tick)
+    return tick > 0 and _deduction._detach_melody_ticks_from_named_record(tick, record_idx) >= 0
+
+
 func _on_staff_name_undo_selects(record_idx: int) -> void:
-    _deduction._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _all_star_names_padded())
+    if not _release_note_from_named_record(record_idx):
+        _deduction._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _all_star_names_padded())
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
@@ -4370,8 +4379,9 @@ func _on_staff_name_undo_blocks(record_idx: int) -> void:
 
 
 func _on_staff_name_undo_all(record_idx: int) -> void:
-    _deduction._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _all_star_names_padded())
-    _deduction._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
+    if not _release_note_from_named_record(record_idx):
+        _deduction._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _all_star_names_padded())
+        _deduction._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
     _open_staff_popup(_host._staff_popup_tick, _host._staff_popup.position)
