@@ -487,7 +487,7 @@ func run() -> void:
 		# takes each star's firing COUNT as given (Listen), which the older
 		# _solve_repeat_notes did not, so that older search is no longer the
 		# one a shipped puzzle has to satisfy.
-		var sols: Array = gpr._solve_notes(gpr._seq_facts_from_clues(), 3)
+		var sols: Array = await gpr._solve_notes(gpr._seq_facts_from_clues(), 3)
 		if sols.size() == 1 and not gpr._last_solve_inconclusive and sols[0]["owners"] == gpr.melody_star_sequence:
 			repeats_ok += 1
 		for cl in gpr.chosen_form_clues:

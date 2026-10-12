@@ -70,7 +70,7 @@ func _measure(g, original: Array[Dictionary], scn: int, negations_before_pin: in
 			revealed.append(false)
 		g._recompute_name_revealed(revealed)
 		var count_before: int = g.chosen_form_clues.size()
-		var added: int = g._repair_uniqueness(facts, revealed, {1: 0, 2: 0, 3: 0}, {})
+		var added: int = await g._repair_uniqueness(facts, revealed, {1: 0, 2: 0, 3: 0}, {})
 		m["added"] += added
 		m["max_added"] = maxi(int(m["max_added"]), added)
 
@@ -126,14 +126,14 @@ func run() -> void:
 	]
 	var results: Dictionary = {}
 	for p in policies:
-		var m: Dictionary = _measure(g, original, scn, int(p[1]))
+		var m: Dictionary = await _measure(g, original, scn, int(p[1]))
 		results[p[0]] = m
 		print("    %-32s repaired %2d of %2d | clues added: %3d total, %2d at most | (removals: %d broke Sequence, %d broke only the Name closure, %d changed neither)"
 			% [p[0], m["repaired"], m["broken"], m["added"], m["max_added"], m["seq_broken"], m["name_broken"], m["harmless"]])
 
 	# The SHIPPED default, measured explicitly so the assertions below are about
 	# what actually runs in generation, whichever policy that constant selects.
-	var d: Dictionary = _measure(g, original, scn, PuzzleScript.REPAIR_NEGATIONS_BEFORE_PIN)
+	var d: Dictionary = await _measure(g, original, scn, PuzzleScript.REPAIR_NEGATIONS_BEFORE_PIN)
 	print("    %-32s repaired %2d of %2d | clues added: %3d total, %2d at most"
 		% ["SHIPPED DEFAULT (%d negations first)" % PuzzleScript.REPAIR_NEGATIONS_BEFORE_PIN, d["repaired"], d["broken"], d["added"], d["max_added"]])
 	ok(int(d["seq_broken"]) > 0, "some removals break Sequence uniqueness (%d) -- otherwise that path is untested" % int(d["seq_broken"]))
@@ -177,7 +177,7 @@ func run() -> void:
 		rev2.append(false)
 	g._recompute_name_revealed(rev2)
 	var count0: int = g.chosen_form_clues.size()
-	var added0: int = g._repair_uniqueness(facts2, rev2, {1: 0, 2: 0, 3: 0}, {})
+	var added0: int = await g._repair_uniqueness(facts2, rev2, {1: 0, 2: 0, 3: 0}, {})
 	ok(added0 == 0 and g.chosen_form_clues.size() == count0, "no clue is added to an already-unique puzzle")
 
 	if fails == 0:

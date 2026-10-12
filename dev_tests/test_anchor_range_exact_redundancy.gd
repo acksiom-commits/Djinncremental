@@ -96,7 +96,7 @@ func run() -> void:
 		name_revealed.append(false)
 	g._recompute_name_revealed(name_revealed)
 
-	g._recheck_anchors_for_redundancy([redundant_text], name_revealed)
+	await g._recheck_anchors_for_redundancy([redundant_text], name_revealed)
 
 	var still_present_1: bool = false
 	for c in g.chosen_form_clues:
@@ -109,7 +109,7 @@ func run() -> void:
 	# clue removed, everything else already minimized by real generation).
 	# Running the recheck again must find nothing further to remove. ---
 	var count_before_replay: int = g.chosen_form_clues.size()
-	g._recheck_anchors_for_redundancy([redundant_text], name_revealed)
+	await g._recheck_anchors_for_redundancy([redundant_text], name_revealed)
 	ok(g.chosen_form_clues.size() == count_before_replay,
 		"running the recheck again on an already-settled set removes nothing further (%d -> %d)"
 			% [count_before_replay, g.chosen_form_clues.size()])

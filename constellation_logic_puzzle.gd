@@ -8593,12 +8593,18 @@ var gate_passed: bool = false
 ## returns 2 valid Name-axis solutions for the exact same clue set
 ## mention-coverage called complete (dev_tests/test_mus_explanation_
 ## soundness, same day). See live_gate_is_name_unique_not_closure.md.
+## Set from ANOTHER thread to make a generation running on a worker thread give
+## up promptly (the game is closing). Every long loop checks it; the puzzle is
+## then left with gate_passed false and must not be used.
+var abort_requested: bool = false
+
+
 func generate_clues_forms() -> void:
     var result: Dictionary = {}
     var attempt: int = 0
     var total_attempts: int = MAX_GENERATION_ATTEMPTS * (1 + EXTRA_GENERATION_ROUNDS)
     gate_passed = false
-    while attempt < total_attempts:
+    while attempt < total_attempts and not abort_requested:
         attempt += 1
         result = await _generate_clues_forms_attempt()
         if _gate_result_passes(result):
@@ -8623,6 +8629,9 @@ func generate_clues_forms() -> void:
         # behavior) if no host was set at setup() time.
         if _host:
             await _host.get_tree().process_frame
+    if abort_requested:
+        gate_passed = false
+        return
     if not gate_passed:
         # Nothing here can repair the puzzle, and it is NOT safe to present:
         # it has more than one valid solution, or a name no clue pins down.
@@ -8931,7 +8940,7 @@ func _repair_uniqueness(sequence_solver_facts: Array, name_revealed: Array,
         tier_counts: Dictionary, form_counts: Dictionary) -> int:
     var added: int = 0
     while added < REPAIR_MAX_CLUES:
-        var targets: Array = _repair_targets(sequence_solver_facts)
+        var targets: Array = await _repair_targets(sequence_solver_facts)
         if targets.is_empty():
             break   # unique already, unfinished search, or nothing to aim at
         var pin: bool = added >= repair_negations_before_pin
@@ -8960,7 +8969,7 @@ func _repair_targets(sequence_solver_facts: Array) -> Array:
     # The note proof (_solve_notes): two answers may differ in the firing order
     # or only in the repeat notes. This repair is for the firing order; a
     # difference in the repeat notes alone is _repair_repeat_notes' to settle.
-    var note_sols: Array = _solve_notes(sequence_solver_facts, 2)
+    var note_sols: Array = await _solve_notes(sequence_solver_facts, 2)
     if _last_solve_inconclusive or note_sols.is_empty():
         return out
     var seq_sols: Array = []
@@ -9398,7 +9407,7 @@ func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
     # The note proof: firing order AND repeat notes, together (_solve_notes).
     # An INCONCLUSIVE solve (node budget hit) is not proof of uniqueness, so
     # it must never license a removal: keep the clue.
-    var trial_seq: Array = _unique_note_order(_seq_facts_from_clues())
+    var trial_seq: Array = await _unique_note_order(_seq_facts_from_clues())
     if trial_seq.size() == 1:
         var trial_closure: Array = _solve_name_closure(trial_seq, baseline + 1)
         if trial_closure.size() <= baseline and not _last_solve_inconclusive:
@@ -9432,7 +9441,7 @@ var prune_first_forms: Array = []
 
 func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array[Dictionary]:
     var seq_facts: Array[Dictionary] = _seq_facts_from_clues()
-    var seq_sols: Array = _unique_note_order(seq_facts)
+    var seq_sols: Array = await _unique_note_order(seq_facts)
     if seq_sols.size() != 1:
         return seq_facts   # the notes are not (provably) uniquely solvable — nothing safe to prune against
     var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
@@ -9488,13 +9497,15 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
             order.append(t)
         k -= 1
     for text in order:
+        if abort_requested:
+            break
         var i: int = -1
         for idx in chosen_form_clues.size():
             if str(chosen_form_clues[idx].get("text", "")) == text:
                 i = idx
                 break
         if i >= protected_count:
-            _try_prune_clue_at(i, baseline, cur_revealed)
+            await _try_prune_clue_at(i, baseline, cur_revealed)
         # Same guard the main loop uses: _host is null under the headless
         # test runner, where suspending would be pointless and the whole
         # pass runs synchronously as before.
@@ -9530,7 +9541,7 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
 ## since the anchors were first committed) against the settled survivor
 ## set, touching no non-anchor clue, does remove it.
 func _recheck_anchors_for_redundancy(anchor_texts: Array, name_revealed: Array) -> void:
-    var seq_sols: Array = _unique_note_order(_seq_facts_from_clues())
+    var seq_sols: Array = await _unique_note_order(_seq_facts_from_clues())
     if seq_sols.size() != 1:
         return
     var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
@@ -9547,7 +9558,7 @@ func _recheck_anchors_for_redundancy(anchor_texts: Array, name_revealed: Array) 
                 idx = i
                 break
         if idx >= 0:
-            _try_prune_clue_at(idx, baseline, cur_revealed)
+            await _try_prune_clue_at(idx, baseline, cur_revealed)
     _recompute_name_revealed(name_revealed)
 
 
@@ -9620,7 +9631,7 @@ func _prune_skips_form(form_id: int) -> bool:
 ## general per-cell propagation cascade (see game history 2026-09-22 for
 ## why that would be a separate, larger, disclosure-only rebuild).
 func _final_redundancy_safety_net(name_revealed: Array) -> void:
-    var seq_sols: Array = _unique_note_order(_seq_facts_from_clues())
+    var seq_sols: Array = await _unique_note_order(_seq_facts_from_clues())
     if seq_sols.size() != 1:
         return
     var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
@@ -9634,7 +9645,7 @@ func _final_redundancy_safety_net(name_revealed: Array) -> void:
     var i: int = chosen_form_clues.size() - 1
     while i >= 0:
         if not _is_redundancy_exempt_form(int(chosen_form_clues[i].get("form_id", -1))):
-            _try_prune_clue_at(i, baseline, cur_revealed)
+            await _try_prune_clue_at(i, baseline, cur_revealed)
         i -= 1
         since_yield += 1
         if _host and since_yield >= PRUNE_YIELD_INTERVAL:
@@ -9675,7 +9686,7 @@ func _gate_met_on(sequence_solver_facts: Array) -> bool:
         # loop only needs the cheap signal above to know it has drawn enough.
         if not _repeats_hidden() or _first_notes_hidden():
             return false
-        sols = _unique_note_order(sequence_solver_facts)
+        sols = await _unique_note_order(sequence_solver_facts)
         if sols.is_empty():
             return false
     var names: Array = _solve_name_closure(sols)
@@ -9871,7 +9882,8 @@ func _solve_repeat_notes(cap: int = 2, source_clues = null) -> Array:
 func _repeat_notes_unique() -> bool:
     if not _repeats_hidden():
         return true
-    return _unique_note_order(_seq_facts_from_clues()).size() == 1
+    var order: Array = await _unique_note_order(_seq_facts_from_clues())
+    return order.size() == 1
 
 
 # ==================================================
@@ -9923,7 +9935,7 @@ func _solve_notes(seq_facts: Array, cap: int = 2, source_clues = null) -> Array:
             out.append({"ranks": ranks, "repeats": []})
         return out
     if _first_notes_hidden():
-        return _solve_note_owners(seq_facts, cap, source_clues)
+        return await _solve_note_owners(seq_facts, cap, source_clues)
     if not note_proof_joint:
         # TEST SEAM: the two-stage arrangement of 2026-10-10. The firing order
         # has to be unique from the ordinal facts alone before the repeat notes
@@ -10126,7 +10138,7 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
         (st["owners"] as Array).append(-1)
     _note_owner_nodes = NOTE_OWNER_NODE_BUDGET
     _note_owner_budget_hit = false
-    _note_owner_step(1, st)
+    await _note_owner_search(st)
     var out: Array = []
     var rticks: Array = _repeat_ticks()
     for owners in st["solutions"]:
@@ -10153,25 +10165,94 @@ func _ranks_from_owners(owners: Array) -> Array:
     return ranks
 
 
-func _note_owner_step(t: int, st: Dictionary) -> void:
+## Milliseconds of note-proof search per frame when there is a host to yield
+## to (the running game). Without one (the test runner) it never yields.
+const NOTE_PROOF_SLICE_MSEC: int = 5
+## When the current slice of work began; see _note_owner_search.
+var _note_slice_started_msec: int = 0
+## How many times a note-proof search handed a frame back. A measurement.
+var note_proof_frame_yields: int = 0
+
+
+## The search itself: depth-first over the notes in melody order, written as a
+## LOOP with its own stack instead of a recursion so that it can stop part-way
+## and carry on next frame. In the game this proof was the one piece of
+## generation that could run for over a second without a break, which showed
+## as hitching while the next constellation's puzzle was being pre-generated
+## (reported 2026-10-12); a web build has no thread to move it to. Every
+## NOTE_PROOF_SLICE_MSEC of work it awaits one frame.
+##
+## cursor[t] is the next star to try on note t; a star sitting on note t is
+## taken off again before the next one is tried.
+func _note_owner_search(st: Dictionary) -> void:
+    var n: int = int(st["n"])
+    var cap: int = int(st["cap"])
     var solutions: Array = st["solutions"]
-    if solutions.size() >= int(st["cap"]) or _note_owner_budget_hit:
-        return
-    _note_owner_nodes -= 1
-    if _note_owner_nodes <= 0:
-        _note_owner_budget_hit = true
-        return
+    var owners: Array = st["owners"]
+    var cursor: Array = []
+    cursor.resize(n + 2)
+    cursor.fill(0)
+    var t: int = 1
+    var spins: int = 0
+    while t >= 1:
+        spins += 1
+        if _host and (spins & 63) == 0 \
+                and Time.get_ticks_msec() - _note_slice_started_msec >= NOTE_PROOF_SLICE_MSEC:
+            note_proof_frame_yields += 1
+            await _host.get_tree().process_frame
+            _note_slice_started_msec = Time.get_ticks_msec()
+        if abort_requested:
+            _note_owner_budget_hit = true
+            return
+        if int(owners[t - 1]) >= 0:
+            _note_owner_unplace(t, st)
+        var placed: bool = false
+        var s: int = int(cursor[t])
+        while s < star_count:
+            if _note_owner_place(t, s, st):
+                placed = true
+                break
+            s += 1
+        if not placed:
+            t -= 1
+            continue
+        cursor[t] = s + 1
+        _note_owner_nodes -= 1
+        if _note_owner_nodes <= 0:
+            _note_owner_budget_hit = true
+            return
+        if t == n:
+            if _note_owner_leaf_ok(st):
+                solutions.append(owners.duplicate())
+                if solutions.size() >= cap:
+                    return
+            continue   # stay on the last note: take this star off, try the next
+        t += 1
+        cursor[t] = 0
+
+
+## Takes the star off note t again.
+func _note_owner_unplace(t: int, st: Dictionary) -> void:
+    var owners: Array = st["owners"]
+    var s: int = int(owners[t - 1])
+    ((st["notes"] as Array)[s] as Array).pop_back()
+    owners[t - 1] = -1
+    if int((st["first"] as Array)[s]) == t:
+        (st["first"] as Array)[s] = 0
+
+
+## Puts star `s_try` on note t if no fact forbids it yet. True = it is placed;
+## false = it cannot go there and nothing has changed.
+func _note_owner_place(t: int, s_try: int, st: Dictionary) -> bool:
     var owners: Array = st["owners"]
     var first: Array = st["first"]
     var notes: Array = st["notes"]
     var need: Array = st["need"]
-    if t > int(st["n"]):
-        if _note_owner_leaf_ok(st):
-            solutions.append(owners.duplicate())
-        return
     var deadline: Array = st["deadline"]
     var mask: int = int((st["allowed"] as Array)[t])
-    for s in star_count:
+    # One pass. Kept as a loop so each `continue` below reads "this star
+    # cannot take the note", as it did when this was the body of a for-loop.
+    for s in [s_try]:
         if not (mask & (1 << s)):
             continue
         var mine: Array = notes[s]
@@ -10228,13 +10309,12 @@ func _note_owner_step(t: int, st: Dictionary) -> void:
                     ok = false
                     break
         if ok:
-            _note_owner_step(t + 1, st)
+            return true
         mine.pop_back()
         owners[t - 1] = -1
         if begins:
             first[s] = 0
-        if solutions.size() >= int(st["cap"]) or _note_owner_budget_hit:
-            return
+    return false
 
 
 ## Star `s` has just been given its last note: every fact about its notes can
@@ -10281,7 +10361,7 @@ func _note_owner_leaf_ok(st: Dictionary) -> bool:
 ## [ranks] when the notes have exactly one answer, else []. The shape the Name
 ## closure takes its Sequence solution in.
 func _unique_note_order(seq_facts: Array, source_clues = null) -> Array:
-    var sols: Array = _solve_notes(seq_facts, 2, source_clues)
+    var sols: Array = await _solve_notes(seq_facts, 2, source_clues)
     if sols.size() != 1 or _last_solve_inconclusive:
         return []
     return [sols[0]["ranks"]]
@@ -10301,13 +10381,15 @@ func _build_repeat_note_clues(sequence_solver_facts: Array, name_revealed: Array
     if not _repeats_hidden() or not _firing_position_available():
         return 0
     var added: int = 0
-    if _repeat_notes_unique():
+    if await _repeat_notes_unique():
         return 0
     for attempt in REPEAT_PHASE_ATTEMPTS:
+        if abort_requested:
+            break
         var form_id: int = FIRING_POSITION_FORM_ID if attempt % 2 == 0 else FIRING_RELATION_FORM_ID
         if _try_build_and_commit(form_id, sequence_solver_facts, name_revealed, tier_counts, form_counts):
             added += 1
-            if _repeat_notes_unique():
+            if await _repeat_notes_unique():
                 break
     repeat_phase_clues_added += added
     return added
@@ -10324,12 +10406,12 @@ func _repair_repeat_notes(sequence_solver_facts: Array, name_revealed: Array,
     if not _repeats_hidden():
         return 0
     if _first_notes_hidden():
-        return _repair_note_owners(sequence_solver_facts, name_revealed, tier_counts, form_counts)
+        return await _repair_note_owners(sequence_solver_facts, name_revealed, tier_counts, form_counts)
     var rticks: Array = _repeat_ticks()
     var pinned: Dictionary = {}
     var added: int = 0
     while pinned.size() < rticks.size():
-        var note_sols: Array = _solve_notes(sequence_solver_facts, 2)
+        var note_sols: Array = await _solve_notes(sequence_solver_facts, 2)
         var inconclusive: bool = _last_solve_inconclusive
         if note_sols.size() == 1 and not inconclusive:
             break
@@ -10378,8 +10460,8 @@ func _repair_note_owners(sequence_solver_facts: Array, name_revealed: Array,
     var firsts: Array = _first_fire_ticks()
     var pinned: Dictionary = {}
     var added: int = 0
-    while pinned.size() < n_notes:
-        var sols: Array = _solve_notes(sequence_solver_facts, 2)
+    while pinned.size() < n_notes and not abort_requested:
+        var sols: Array = await _solve_notes(sequence_solver_facts, 2)
         var inconclusive: bool = _last_solve_inconclusive
         if sols.size() == 1 and not inconclusive:
             break
@@ -10560,7 +10642,7 @@ func _generate_clues_forms_attempt() -> Dictionary:
     var _loop_passes: int = 0
     var _build_attempts: int = 0
 
-    while stall_count < max_stall:
+    while stall_count < max_stall and not abort_requested:
         _loop_passes += 1
         var tier_order: Array = _tiers_by_underrepresentation(tier_counts)
         var committed: bool = false
@@ -10592,7 +10674,7 @@ func _generate_clues_forms_attempt() -> Dictionary:
                 var n_now: int = chosen_form_clues.size()
                 if _early_stop_gate_at < 0 and n_now - _early_stop_last_check >= EARLY_STOP_CHECK_INTERVAL:
                     _early_stop_last_check = n_now
-                    if _gate_met_on(sequence_solver_facts):
+                    if await _gate_met_on(sequence_solver_facts):
                         _early_stop_gate_at = n_now
                 if _early_stop_gate_at >= 0 and n_now >= _early_stop_gate_at + early_stop_margin:
                     early_stopped = true
@@ -10637,11 +10719,11 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # and a repeat-note pin each remove one kind of second answer, and the Name
     # repair only starts once the notes have one answer, so they alternate
     # until a round adds nothing.
-    _build_repeat_note_clues(sequence_solver_facts, name_revealed, tier_counts, form_counts)
+    await _build_repeat_note_clues(sequence_solver_facts, name_revealed, tier_counts, form_counts)
     if repair_enabled:
         for _round in 4:
-            var fixed: int = _repair_uniqueness(sequence_solver_facts, name_revealed, tier_counts, form_counts)
-            fixed += _repair_repeat_notes(sequence_solver_facts, name_revealed, tier_counts, form_counts)
+            var fixed: int = await _repair_uniqueness(sequence_solver_facts, name_revealed, tier_counts, form_counts)
+            fixed += await _repair_repeat_notes(sequence_solver_facts, name_revealed, tier_counts, form_counts)
             if fixed == 0 or not _repeats_hidden():
                 break
 
@@ -10662,7 +10744,7 @@ func _generate_clues_forms_attempt() -> Dictionary:
         # walk from protected_count 0 — a second walk's own removals can
         # disturb the very support an anchor's redundancy depends on
         # before the walk ever reaches it.
-        _recheck_anchors_for_redundancy(anchor_texts, name_revealed)
+        await _recheck_anchors_for_redundancy(anchor_texts, name_revealed)
         # Phase B2.6 — whole-clue-set safety net. Neither the pass above
         # nor the main one before it can see a clue made redundant by a
         # change the OTHER made — see _final_redundancy_safety_net's own
@@ -10688,7 +10770,7 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # THE NOTE PROOF (_solve_notes): the firing order and, when they are hidden,
     # the repeat notes, proven together. seq_unique means "one answer for the
     # notes"; on a melody with nothing hidden that is the old Sequence proof.
-    var note_solutions: Array = _solve_notes(sequence_solver_facts, 2)
+    var note_solutions: Array = await _solve_notes(sequence_solver_facts, 2)
     # "Unique" needs the search to have FINISHED: exactly one solution found
     # by a search cut off at the node budget proves nothing (see
     # MAX_BACKTRACK_NODES).

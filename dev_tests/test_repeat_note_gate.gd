@@ -304,7 +304,7 @@ func run() -> void:
 	var jr: Array = gj._repeat_ticks()
 	var note_clues: Array = [{"disclosures": [{"kind": "firing_position", "s": sa,
 		"sel": {"kind": "count", "lo": gj._seq_first_tick(sa), "hi": gj._seq_first_tick(sa)}, "lo": 1, "hi": 1}]}]
-	var loose: Array = gj._solve_notes(seq_facts, 3, note_clues)
+	var loose: Array = await gj._solve_notes(seq_facts, 3, note_clues)
 	var loose_same_order: bool = loose.size() == 3
 	for ls in loose:
 		if ls["ranks"] != gj.sequence_rank_solution:
@@ -314,7 +314,7 @@ func run() -> void:
 		note_clues.append({"disclosures": [{"kind": "firing_position", "s": int(gj.melody_star_sequence[int(jt) - 1]),
 			"sel": {"kind": "count", "lo": int(jt), "hi": int(jt)}, "lo": 1, "hi": 1}]})
 	var settled_before: int = gj.note_proof_order_settled_by_notes
-	var joint: Array = gj._solve_notes(seq_facts, 3, note_clues)
+	var joint: Array = await gj._solve_notes(seq_facts, 3, note_clues)
 	var j_truth: Array = []
 	for jt2 in jr:
 		j_truth.append(int(gj.melody_star_sequence[int(jt2) - 1]))
@@ -328,7 +328,7 @@ func run() -> void:
 	var b_swapped_free: Dictionary = _brute(gj.melody_star_sequence, gj.star_count, jfacts.slice(1), [sa, sb])
 	ok(int(b_swapped_free["count"]) > 0, "and without the first clue the other order does fit (%d), so that clue is what rules it out" % int(b_swapped_free["count"]))
 	gj.note_proof_joint = false
-	var staged: Array = gj._solve_notes(seq_facts, 3, note_clues)
+	var staged: Array = await gj._solve_notes(seq_facts, 3, note_clues)
 	ok(staged.size() != 1, "the old two-stage proof does NOT find it unique (%d), so this section can fail" % staged.size())
 	gj.note_proof_joint = true
 
@@ -378,7 +378,8 @@ func run() -> void:
 	hard.setup(int(def["star_count"]), def["line_pairs"], sq, 11, 0, def.get("name_theme", {}),
 		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
 	ok(not hard._repeats_hidden() and hard._repeat_ticks().is_empty(), "hard mode has no repeat notes and nothing hidden")
-	ok(hard._repeat_notes_unique(), "so its repeat-note gate is trivially met")
+	var hard_unique: bool = await hard._repeat_notes_unique()
+	ok(hard_unique, "so its repeat-note gate is trivially met")
 	ok(not hard._gate_result_passes({"seq_unique": true, "name_unique": true, "name_unique_closure": true}),
 		"the ship gate refuses a result that does not state repeat_unique")
 

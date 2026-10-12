@@ -241,7 +241,7 @@ func run() -> void:
 		ok(_enumerated - before >= 1000, "the brute force really enumerated (%d assignments)" % (_enumerated - before))
 		ok(int(b["count"]) == 1, "exactly ONE assignment of stars to notes satisfies the shipped clues (got %d)" % int(b["count"]))
 		ok(int(b["count"]) >= 1 and (b["kept"] as Array)[0] == melody, "and it is the real melody")
-		var sols: Array = g._solve_notes(g._seq_facts_from_clues(), 3)
+		var sols: Array = await g._solve_notes(g._seq_facts_from_clues(), 3)
 		ok(sols.size() == 1 and not g._last_solve_inconclusive and sols[0]["owners"] == melody,
 			"the generator's solver finds that same single assignment (%d found)" % sols.size())
 
@@ -256,7 +256,7 @@ func run() -> void:
 				if not g.VALUE_FACT_KINDS.has(str(d.get("kind", ""))):
 					rest_seq.append(d)
 			var b_rest: Dictionary = _brute(melody.size(), need, _facts_of(rest), label)
-			var s_rest: Array = g._solve_notes(rest_seq, 3, rest)
+			var s_rest: Array = await g._solve_notes(rest_seq, 3, rest)
 			compared += 1
 			if not g._last_solve_inconclusive and s_rest.size() == mini(3, int(b_rest["count"])):
 				agree += 1
@@ -266,7 +266,7 @@ func run() -> void:
 			if int(b_rest["count"]) > 1:
 				seen_not_unique += 1
 				g.first_notes_hidden = false
-				var old: Array = g._solve_notes(rest_seq, 2, rest)
+				var old: Array = await g._solve_notes(rest_seq, 2, rest)
 				if old.size() == 1 and not g._last_solve_inconclusive:
 					seam_too_generous += 1
 				g.first_notes_hidden = true
