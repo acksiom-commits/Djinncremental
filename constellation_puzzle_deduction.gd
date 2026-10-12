@@ -842,26 +842,67 @@ func _known_name_for_seq_position(seq_pos: int) -> String:
     for i in _match_records.size():
         if not _record_is_at_seq(i, seq_pos):
             continue
-        var own: String = str(_match_records[i].get("name", ""))
-        if own != "":
-            return own
-        var confirmed: String = ""
-        var eliminated_count: int = 0
-        var remaining: String = ""
-        for n in _host._star_names:
-            var nm: String = str(n)
-            var st: int = _effective_name_state(i, nm)
-            if st == 1:
-                confirmed = nm
-            elif st == 2:
-                eliminated_count += 1
-            else:
-                remaining = nm
-        if confirmed != "":
-            return confirmed
-        if eliminated_count == _host._star_names.size() - 1 and remaining != "":
-            return remaining
+        var found: String = _known_name_for_record(i)
+        if found != "":
+            return found
     return ""
+
+
+## One record's name by the same rule, or "". Also what the staff shows for a
+## repeat note the player has not placed on a position yet: such a note has
+## no position to look up, only its own record.
+func _known_name_for_record(record_idx: int) -> String:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return ""
+    var own: String = str(_match_records[record_idx].get("name", ""))
+    if own != "":
+        return own
+    var confirmed: String = ""
+    var eliminated_count: int = 0
+    var remaining: String = ""
+    for n in _host._star_names:
+        var nm: String = str(n)
+        var st: int = _effective_name_state(record_idx, nm)
+        if st == 1:
+            confirmed = nm
+        elif st == 2:
+            eliminated_count += 1
+        else:
+            remaining = nm
+    if confirmed != "":
+        return confirmed
+    if eliminated_count == _host._star_names.size() - 1 and remaining != "":
+        return remaining
+    return ""
+
+
+## One record's colour (confirmed, or the last one standing), or -1. Not
+## _known_color_for_record below, which reads only the record's own confirm.
+func _resolved_color_for_record(record_idx: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return -1
+    var confirmed: int = -1
+    var eliminated_count: int = 0
+    var remaining: int = -1
+    for ci in _host.COLOR_NAME_LABELS.size():
+        var state: int = _effective_color_state(record_idx, ci)
+        if state == 1:
+            confirmed = ci
+        elif state == 2:
+            eliminated_count += 1
+        else:
+            remaining = ci
+    if confirmed >= 0:
+        return confirmed
+    if eliminated_count == _host.COLOR_NAME_LABELS.size() - 1 and remaining >= 0:
+        return remaining
+    return -1
+
+
+## The staff's pitch readout for one record (see _melody_marker_for_position).
+func _melody_marker_for_record(record_idx: int) -> Dictionary:
+    var note: String = _displayable_pitch_for_record(record_idx)
+    return {"has_position": false, "pitch_known": note != "", "note_name": note}
 
 
 func _known_color_for_seq_position(seq_pos: int) -> int:
@@ -880,21 +921,9 @@ func _known_color_for_seq_position(seq_pos: int) -> int:
     for i in _match_records.size():
         if not _record_is_at_seq(i, seq_pos):
             continue
-        var confirmed: int = -1
-        var eliminated_count: int = 0
-        var remaining: int = -1
-        for ci in _host.COLOR_NAME_LABELS.size():
-            var state: int = _effective_color_state(i, ci)
-            if state == 1:
-                confirmed = ci
-            elif state == 2:
-                eliminated_count += 1
-            else:
-                remaining = ci
-        if confirmed >= 0:
-            return confirmed
-        if eliminated_count == _host.COLOR_NAME_LABELS.size() - 1 and remaining >= 0:
-            return remaining
+        var found: int = _resolved_color_for_record(i)
+        if found >= 0:
+            return found
     return -1
 
 
@@ -937,7 +966,7 @@ func _propagate_repeat_confirmed_same_record(record_idx: int, confirmed_value: i
         return
     var r: Dictionary = _match_records[record_idx]
     var repeat_states: Dictionary = r.get("repeat_states", {})
-    for v in _get_repeat_bucket_values():
+    for v in _repeat_values_all():
         var value: int = int(v)
         if value != confirmed_value:
             repeat_states[value] = 2
@@ -1620,6 +1649,12 @@ func _new_match_record(overrides: Dictionary = {}) -> Dictionary:
         "degree_slot_label": "",
         "repeat_slot_label": "",
         "melody_ticks": [],
+        # The player's own "this star does NOT fire on that note" marks, by
+        # staff note (2026-10-12: every note is on the Sequence row). Only
+        # repeat notes ever go here; a first note is ruled out through the
+        # position set above. A record holding one of these notes is then
+        # provably a different star (_compute_records_provably_distinct).
+        "seq_note_blocks": [],
     }
     for k in overrides:
         r[k] = overrides[k]
@@ -1756,25 +1791,15 @@ func _find_match_record_by_melody_tick(tick: int) -> int:
 
 
 func _get_or_create_match_record_for_melody_tick(tick: int) -> int:
-    # The repeat shape is public, so every note of the star at `tick` shares ONE
-    # record from the first click: a name or colour marked on one note is marked
-    # on all of them. The record's Sequence stays unpinned (seq_lo/seq_hi 0), so
-    # nothing about WHICH star it is gets pre-filled. A record from an older
-    # save may already hold only some of the star's notes; adopt it and add the
-    # rest, so no two records ever claim the same note.
-    var group: Array = _melody_ticks_for_rank(_seq_pos_for_melody_tick(tick))
-    if not group.has(tick):
-        group.append(tick)
-    for t in group:
-        var found: int = _find_match_record_by_melody_tick(int(t))
-        if found >= 0:
-            var have: Array = _match_records[found].get("melody_ticks", [])
-            for g in group:
-                if not have.has(g):
-                    have.append(g)
-            _match_records[found]["melody_ticks"] = have
-            return found
-    _match_records.append(_new_match_record({"melody_ticks": group.duplicate()}))
+    # One note, one record. Notes are never grouped on the click (2026-10-10:
+    # repeats are earned, see _seq_pos_for_melody_tick). Two notes come to
+    # share a record only through the ordinary identity merge, once the
+    # player's own marks say they are the same star -- naming both, or placing
+    # a repeat note on a position (the Staff popup's "Same star as note" row).
+    var found: int = _find_match_record_by_melody_tick(tick)
+    if found >= 0:
+        return found
+    _match_records.append(_new_match_record({"melody_ticks": [tick]}))
     _sync_derived_size()
     return _match_records.size() - 1
 
@@ -1786,9 +1811,10 @@ func _get_or_create_match_record_for_melody_tick(tick: int) -> int:
 ## still labelled with the star, still deriving its position, so Undo looked
 ## like it did nothing.
 ##
-## Moves the star's whole note group (the repeat shape is public, so every note
-## of the star shares one record) onto a fresh, unmarked record and leaves
-## everything else on the named record, which is the Sort row's, as it was.
+## Moves THIS note (and only this one: every other note on the record got there
+## by the player's own proof and is not this Undo's to take back) onto a fresh,
+## unmarked record and leaves everything else on the named record, which is
+## the Sort row's, as it was.
 ## Marks the player entered on the note itself before the merge cannot be told
 ## apart from the row's, so they stay with the row; the note starts clean.
 ## Returns the fresh record's index, or -1 when there was nothing to detach
@@ -1799,18 +1825,25 @@ func _detach_melody_ticks_from_named_record(tick: int, record_idx: int) -> int:
     var rec: Dictionary = _match_records[record_idx]
     if str(rec.get("name", "")) == "" and int(rec.get("star_idx", -1)) < 0:
         return -1
+    return _detach_melody_tick(tick, record_idx)
+
+
+## The move itself, with no condition on what the record is: used by the Name
+## Undo above and by the Staff popup's "Same star as note" Undo, which lets a
+## repeat note go from whatever record the player had placed it on.
+func _detach_melody_tick(tick: int, record_idx: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return -1
+    var rec: Dictionary = _match_records[record_idx]
     var have: Array = rec.get("melody_ticks", [])
     if not have.has(tick):
         return -1
-    var group: Array = _melody_ticks_for_rank(_seq_pos_for_melody_tick(tick))
-    if not group.has(tick):
-        group.append(tick)
     var kept: Array = []
     for t in have:
-        if not group.has(t):
+        if int(t) != tick:
             kept.append(t)
     rec["melody_ticks"] = kept
-    _match_records.append(_new_match_record({"melody_ticks": group.duplicate()}))
+    _match_records.append(_new_match_record({"melody_ticks": [tick]}))
     _sync_derived_size()
     return _match_records.size() - 1
 
@@ -2234,6 +2267,13 @@ func _merge_match_records(target_idx: int, source_idx: int, allow_await: bool = 
             target_ticks.append(t)
     target["melody_ticks"] = target_ticks
 
+    # The same star's "does not fire on note N" marks, from either record.
+    var target_blocks: Array = target.get("seq_note_blocks", [])
+    for bt in source.get("seq_note_blocks", []):
+        if not target_blocks.has(bt):
+            target_blocks.append(bt)
+    target["seq_note_blocks"] = target_blocks
+
     var target_label: String = str(target.get("color_slot_label", ""))
     var source_label: String = str(source.get("color_slot_label", ""))
     if target_label == "" and source_label != "":
@@ -2525,6 +2565,10 @@ func _load_match_records(data: Array) -> void:
         for v in _coerce_array(e.get("melody_ticks"), []):
             melody_ticks.append(_coerce_int(v, 0))
 
+        var seq_note_blocks: Array = []
+        for v in _coerce_array(e.get("seq_note_blocks"), []):
+            seq_note_blocks.append(_coerce_int(v, 0))
+
         # Built on _new_match_record() rather than as its own literal, so a
         # save written before some field existed comes back carrying that
         # field's current default instead of missing it entirely — and so
@@ -2555,6 +2599,7 @@ func _load_match_records(data: Array) -> void:
             "degree_slot_label": str(e.get("degree_slot_label", "")),
             "repeat_slot_label": str(e.get("repeat_slot_label", "")),
             "melody_ticks": melody_ticks,
+            "seq_note_blocks": seq_note_blocks,
         }))
     # Sized against the now-FULLY-populated _match_records, not the
     # transiently-empty one right after .clear() above — _reset_derived()
@@ -2858,12 +2903,10 @@ func _propagate_name_states_confirmed_same_record(record_idx: int, confirmed_nam
 
 
 
-## The list is melody TICK numbers: every note of every star still possible,
-## compressed into ranges. The repeat shape is public (the staff draws it), so
-## listing all of a candidate star's notes tells the player nothing new. "No
-## info" (blank) is judged in RANK space (every rank still open, before
-## expansion): comparing a tick list's size against star_count would falsely
-## read "narrowed" the moment any candidate repeats.
+## The list is melody TICK numbers: the FIRST note of every star still
+## possible, compressed into ranges. A candidate's later notes are not listed:
+## they are not given (see _seq_pos_for_melody_tick). "No info" (blank) is
+## judged in RANK space (every rank still open).
 func _compressed_possible_positions_str(record_idx: int) -> String:
     var candidates: Array = _effective_seq_candidates(record_idx)
     if candidates.is_empty():
@@ -2872,8 +2915,7 @@ func _compressed_possible_positions_str(record_idx: int) -> String:
         return ""
     var ticks: Array = []
     for c in candidates:
-        for t in _melody_ticks_for_rank(int(c)):
-            ticks.append(int(t))
+        ticks.append(_first_tick_for_rank(int(c)))
     ticks.sort()
     if ticks.size() == 1:
         return str(ticks[0])
@@ -3066,6 +3108,32 @@ func _effective_degree_state(record_idx: int, degree: int) -> int:
 ## fallback. It is narrowed the exact same way any other Sort-tab checklist
 ## is: raw player marks, then the derived layer, then the soft protect tier
 ## — same three-tier fold _effective_color_state/_effective_pitch_state use.
+## The repeat count Listen has given for this record's star, or -1: the record
+## is bound to a star (its own star_idx, or one the engine has settled for it)
+## AND the player has Listened to that star. Every surface that shows or edits
+## a record's Repeats entry asks this, so a given count is shown the same way
+## and cannot be overwritten on any of them.
+func _repeat_given_for_record(record_idx: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return -1
+    var star_idx: int = _effective_star_idx(record_idx)
+    if star_idx < 0 or star_idx >= _host._repeat_count.size() or not _player_knows_star_pitch(star_idx):
+        return -1
+    return int(_host._repeat_count[star_idx])
+
+
+## Makes sure the player's bucket list reaches `value`, so a count Listen has
+## just given has a row to show on. Buckets stay a contiguous 0..N run.
+func _ensure_repeat_bucket_for(value: int) -> void:
+    _ensure_repeat_buckets_seeded()
+    var top: int = -1
+    for v in _repeat_bucket_values:
+        top = maxi(top, int(v))
+    while top < value:
+        top += 1
+        _repeat_bucket_values.append(top)
+
+
 func _effective_repeat_state(record_idx: int, value: int, collapse_soft: bool = true) -> int:
     if record_idx < 0 or record_idx >= _match_records.size():
         return 0
@@ -3076,6 +3144,14 @@ func _effective_repeat_state(record_idx: int, value: int, collapse_soft: bool = 
     # this is the record's OWN assertion rather than a ground-truth fact —
     # but the effect on this axis's state is identical either way, so it
     # reads the same way here.
+    # LISTEN GIVES THE COUNT (author ruling 2026-10-11). Once the player has
+    # Listened to a star, how often it repeats is known along with its pitch,
+    # so a record that IS that star reads the true count -- the one
+    # ground-truth tier this axis has, gated on Listen exactly as the pitch
+    # tier is, so a star the player has merely identified gives nothing away.
+    var given: int = _repeat_given_for_record(record_idx)
+    if given >= 0:
+        return 1 if given == value else 2
     var label: String = str(_match_records[record_idx].get("repeat_slot_label", ""))
     if label != "":
         var label_value: int = int(label.get_slice(" ", 0).substr(1))
@@ -3399,6 +3475,13 @@ func _merge_value_clashes(idx_a: int, idx_b: int) -> Array[String]:
             var si: int = int(k)
             var nm: String = str(_host._star_names[si]) if si >= 0 and si < _host._star_names.size() else "?"
             out.append("star %s" % nm)
+
+    # One record holds a staff note the other is marked as NOT firing on.
+    for pair in [[a, b], [b, a]]:
+        var held: Array = (pair[1] as Dictionary).get("melody_ticks", [])
+        for blocked in (pair[0] as Dictionary).get("seq_note_blocks", []):
+            if held.has(blocked):
+                out.append("note %d" % int(blocked))
 
     return out
 
@@ -3724,6 +3807,15 @@ func _compute_records_provably_distinct(idx_a: int, idx_b: int) -> bool:
     if a_name != "" and b_name != "" and a_name != b_name:
         return true
 
+    # The player marked one of them as NOT firing on a note the other is the
+    # record of (the Sequence row's right-click on a repeat note). Own fields
+    # on both sides, so the mark is seen whatever else has been derived.
+    for pair in [[a, b], [b, a]]:
+        var held: Array = (pair[1] as Dictionary).get("melody_ticks", [])
+        for blocked in (pair[0] as Dictionary).get("seq_note_blocks", []):
+            if held.has(blocked):
+                return true
+
     # Sequence-range disjointness: if the two records' possible-position
     # sets don't overlap at all, they can't be the same star, regardless of
     # whether either side is pinned to an exact position. This was missing
@@ -3906,26 +3998,101 @@ func _settle_singleton_sequences() -> void:
 ## made, which this must not paper over), and when its notes disagree about
 ## which star they are.
 ##
-## DEPENDS ON THE REPEAT SHAPE BEING PUBLIC (the staff draws which notes are
-## one star -- see _seq_pos_for_melody_tick). If a hidden-shape difficulty is
-## ever added, a note's position would no longer be known to the player and
-## this must be gated on it.
+## ONLY A FIRST FIRING GIVES A POSITION (2026-10-10, repeats are earned -- see
+## _seq_pos_for_melody_tick). A repeat note says less: its star has already
+## been heard, so its position is one of those that first fired before it.
+## That bound is all this derives for it; which of them it is, the player
+## pins. Both readings use only what the staff shows.
 func _settle_melody_tick_positions() -> void:
+    # FIRST NOTES HIDDEN: a note says nothing about where its star comes in the
+    # firing order, so a clicked note's entry stays blank (see _notes_hidden).
+    if _notes_hidden():
+        return
     for i in _match_records.size():
         var ticks: Array = _match_records[i].get("melody_ticks", [])
         if ticks.is_empty():
             continue
-        var rank: int = _seq_pos_for_melody_tick(int(ticks[0]))
-        var consistent: bool = rank >= 1 and rank <= _host._star_count
+        var rank: int = 0
+        var consistent: bool = true
+        var latest: int = _host._star_count   # positions first fired before every repeat note held
         for t in ticks:
-            if _seq_pos_for_melody_tick(int(t)) != rank:
-                consistent = false
+            var tick: int = int(t)
+            if _tick_is_first_fire(tick):
+                var here: int = _seq_pos_for_melody_tick(tick)
+                if here < 1 or here > _host._star_count or (rank > 0 and here != rank):
+                    consistent = false
+                rank = here
+            else:
+                latest = mini(latest, _stars_begun_by_tick(tick - 1))
         if not consistent:
             continue
         var raw: Array = _raw_seq_candidate_set(_match_records[i])
-        if not raw.is_empty() and not raw.has(rank):
+        if rank > 0:
+            if rank > latest or (not raw.is_empty() and not raw.has(rank)):
+                continue
+            _narrow_derived_seq(i, [rank])
+        elif latest < _host._star_count:
+            var open: Array = []
+            for p in range(1, latest + 1):
+                if raw.is_empty() or raw.has(p):
+                    open.append(p)
+            if not open.is_empty():
+                _narrow_derived_seq(i, open)
+
+
+## NOTES PLACED -> REPEATS MARKS (2026-10-11). A star's repeat count is the
+## number of repeat notes that are its own, so the notes the board has settled
+## bound it: at least the notes PLACED on the star's position, at most those
+## plus the notes that could still be it. Every count outside that range is
+## ruled out on the Repeats axis of each record known to sit on that position.
+##
+## Counted per POSITION (a value), from the repeat notes' own candidate sets;
+## a note nobody has opened could be any earlier star, so it only ever widens
+## the upper bound. Derived layer, so it lets go the moment a note is unplaced.
+## The reverse direction (a confirmed count ruling notes in or out) is offered
+## as a hint step, not applied silently.
+func _settle_repeat_counts_from_notes() -> void:
+    if not _seq_repeats():
+        return
+    if _notes_hidden():
+        # No positions to count by. What a record's own notes say is enough: a
+        # star holding k notes repeats at least k - 1 times.
+        var all_counts: Array = _repeat_count_domain()
+        for i0 in _match_records.size():
+            var held: int = (_match_records[i0].get("melody_ticks", []) as Array).size()
+            if held < 2:
+                continue
+            for v0 in all_counts:
+                if int(v0) < held - 1 and _effective_repeat_state(i0, int(v0)) == 0:
+                    _add_derived_state(i0, "repeat_states", int(v0), 2)
+        return
+    var placed: Dictionary = {}     # position -> notes placed on it
+    var possible: Dictionary = {}   # position -> notes placed on it or still open to it
+    for tick in range(1, _melody_tick_count() + 1):
+        if _tick_is_first_fire(tick):
             continue
-        _narrow_derived_seq(i, [rank])
+        var latest: int = _stars_begun_by_tick(tick - 1)
+        var idx: int = _find_match_record_by_melody_tick(tick)
+        var cands: Array = []
+        if idx >= 0:
+            cands = _effective_seq_candidates(idx)
+        else:
+            for p in range(1, latest + 1):
+                cands.append(p)
+        if idx >= 0 and cands.size() == 1:
+            placed[int(cands[0])] = int(placed.get(int(cands[0]), 0)) + 1
+        for c in cands:
+            if int(c) <= latest:
+                possible[int(c)] = int(possible.get(int(c), 0)) + 1
+    var counts: Array = _repeat_count_domain()
+    for entry in _seq_singleton_owners():
+        var i: int = int((entry as Array)[0])
+        var rank: int = int((entry as Array)[1])
+        var lo: int = int(placed.get(rank, 0))
+        var hi: int = int(possible.get(rank, 0))
+        for v in counts:
+            if (int(v) < lo or int(v) > hi) and _effective_repeat_state(i, int(v)) == 0:
+                _add_derived_state(i, "repeat_states", int(v), 2)
 
 
 ## Sequence is alldiff — exactly one star per position — so two records
@@ -4183,7 +4350,7 @@ func _share_derived_facts(src: int, dst: int) -> void:
     # Staff popup and the star widget, which made it enterable on records
     # that share a star: a count entered on the Sort row never showed on the
     # popup for that note.
-    for rv in _get_repeat_bucket_values():
+    for rv in _repeat_values_all():
         var srep: int = _effective_repeat_state(src, int(rv))
         if srep != 0 and _effective_repeat_state(dst, int(rv)) == 0:
             _add_derived_state(dst, "repeat_states", int(rv), srep)
@@ -4295,12 +4462,49 @@ func _build_axis_domain(axis: int) -> Array:
             # -1 (never-fires, an authoring gap) is excluded from the
             # domain -- it is not a legitimate value for the player to
             # confirm/deduce, unlike every real repeat-count.
-            var seen_repeat: Dictionary = {}
-            for s2 in _host._star_count:
-                var rc: int = int(_host._repeat_count[s2]) if s2 < _host._repeat_count.size() else -1
-                if rc >= 0:
-                    seen_repeat[rc] = true
-            out = seen_repeat.keys()
+            out = _repeat_count_domain()
+    return out
+
+
+## THE REPEAT COUNTS THE PLAYER IS SHOWN, which is also the engine's domain for
+## the axis: the counts some star of this puzzle really has, ascending.
+##
+## Author ruling 2026-10-11 (second of the day, and it replaces the first):
+## Listen reveals every star's count, so a count no star has is disproved by
+## the Star Map itself and must not be offered as a button anywhere. For a few
+## hours the domain was "0 up to the number of repeat notes", so the engine
+## would not know which counts occur; with only the occurring counts on
+## screen that would have left the engine unable to see what the player sees.
+## The two must be the same list, so the engine's narrowed-to-one rule fires
+## exactly when the player has one button left.
+##
+## Falls back to the player's own bucket list when the puzzle carries no
+## repeat counts at all (a bare test board).
+func _repeat_values_shown() -> Array:
+    var seen: Dictionary = {}
+    for rc in _host._repeat_count:
+        if int(rc) >= 0:
+            seen[int(rc)] = true
+    if seen.is_empty():
+        return _get_repeat_bucket_values()
+    var out: Array = seen.keys()
+    out.sort()
+    return out
+
+
+func _repeat_count_domain() -> Array:
+    return _repeat_values_shown()
+
+
+## Every count a record could carry a mark for: the shown counts plus whatever
+## the Sort:Repeats bucket list holds. For clearing and sharing marks, where
+## missing a value would strand it.
+func _repeat_values_all() -> Array:
+    var out: Array = _repeat_values_shown()
+    for v in _get_repeat_bucket_values():
+        if not out.has(int(v)):
+            out.append(int(v))
+    out.sort()
     return out
 
 
@@ -4339,9 +4543,10 @@ func _axis_clique_key(axis: int, value) -> String:
 ## earned, so its ground-truth note must not count until Listen has
 ## actually revealed it. Colour and Degree are "given" axes — painted on
 ## the map — so their ground-truth tier is no leak. REPEAT needs no guard
-## either, for the opposite reason: it has NO ground-truth tier at all (see
-## _effective_repeat_state), so a confirm can only ever come from the
-## player's own repeat_states mark — there is nothing un-earned to leak.
+## either: its only ground-truth tier is gated on Listen inside
+## _effective_repeat_state (_repeat_given_for_record, 2026-10-11), so a
+## confirm comes from the player's own mark or from a star they have Listened
+## to — there is nothing un-earned to leak.
 func _axis_confirms(axis: int, record_idx: int, value) -> bool:
     if axis == Axis.PITCH \
             and _record_is_unconfirmed_star_widget_stub(record_idx) \
@@ -5028,6 +5233,10 @@ func _positions_strictly_before(pa: Array, pb: Array) -> bool:
 ## Full value domain for a shared-value axis, read from ground truth (every
 ## colour and every note in the constellation sits on some star).
 func _value_domain(cat: int) -> Array:
+    # Repeat Count is the exception to "read from ground truth": which counts
+    # occur is hidden, so its domain is every count the staff allows.
+    if cat == ConstellationLogicPuzzle.Category.REPEAT:
+        return _repeat_count_domain()
     var out: Array = []
     for s in _host._star_count:
         var v
@@ -5075,7 +5284,11 @@ func _raw_group_key(cat: int, star: int) -> int:
         ConstellationLogicPuzzle.Category.PITCH:
             return int(_host._star_pitch_index[star]) if star < _host._star_pitch_index.size() else -1
         ConstellationLogicPuzzle.Category.REPEAT:
-            return int(_host._repeat_count[star]) if star < _host._repeat_count.size() else -1
+            # -1 = not known, always (2026-10-11). A star's repeat count is
+            # hidden, so no consumer may sort stars into Repeat groups by the
+            # answer the way Colour (painted) and Pitch (Listened) allow.
+            # Every caller already treats -1 as "cannot tell".
+            return -1
     return -1
 
 
@@ -5246,6 +5459,13 @@ func _disclosure_satisfied(f: Dictionary) -> bool:
             var gkey: int = int(f.get("group_key", -1))
             if dstar < 0 or dstar >= _host._star_count:
                 return false
+            if gcat == ConstellationLogicPuzzle.Category.REPEAT:
+                # No star's repeat count can be looked up (it is hidden), so
+                # this is entailed by the player's own Repeats marks instead:
+                # every count they still allow the star differs from the one
+                # the clue denies.
+                var open_counts: Array = _possible_values_for_star(dstar, gcat)
+                return not open_counts.is_empty() and not open_counts.has(gkey)
             var possible: Array = _stars_possible_for_descriptor(dcat, dstar)
             if possible.is_empty():
                 return false
@@ -5328,7 +5548,57 @@ func _disclosure_satisfied(f: Dictionary) -> bool:
             var va: Array = _possible_values_for_star(int(f.get("a", -1)), vcat)
             var vb: Array = _possible_values_for_star(int(f.get("b", -1)), vcat)
             return va.size() == 1 and vb.size() == 1 and va[0] == vb[0]
+        "firing_position":
+            # A Firing Position clue says something about which notes are the
+            # star's. Used up once the board has settled every one of them.
+            return _board_notes_settled_for_star(int(f.get("s", -1)))
+        "firing_relation":
+            return _board_notes_settled_for_star(int(f.get("a", -1))) \
+                and _board_notes_settled_for_star(int(f.get("b", -1)))
+        "repeat_count_range":
+            # "repeats at least once" / "does not repeat twice": entailed when
+            # every repeat count the player still allows the star agrees.
+            var rstar: int = int(f.get("star", -1))
+            if _board_notes_settled_for_star(rstar):
+                return true
+            var counts: Array = _possible_values_for_star(rstar, ConstellationLogicPuzzle.Category.REPEAT)
+            if counts.is_empty():
+                return false
+            var negated: bool = bool(f.get("negated", false))
+            for c in counts:
+                var inside: bool = int(c) >= int(f.get("lo", 0)) and int(c) <= int(f.get("hi", 0))
+                if inside == negated:
+                    return false
+            return true
     return false
+
+
+## Has the player settled which notes are this star's? True when the star's
+## position is known and every repeat note that could be it (any after its
+## first note) has been decided one way or the other on that note's own
+## record: placed on this position, or no longer able to be it. A repeat note
+## nobody has opened is undecided, so an untouched board answers false.
+##
+## The unit is the CELL (repeat note x position), read off the note's record,
+## which is where that cell lives; a star's own Sort row says nothing about it.
+func _board_notes_settled_for_star(star: int) -> bool:
+    if star < 0 or star >= _host._star_count or not _seq_repeats():
+        return false
+    var positions: Array = _player_positions_for_star(star)
+    if positions.size() != 1:
+        return false
+    var rank: int = int(positions[0])
+    var first: int = _first_tick_for_rank(rank)
+    for tick in range(first + 1, _melody_tick_count() + 1):
+        if _tick_is_first_fire(tick):
+            continue
+        var idx: int = _find_match_record_by_melody_tick(tick)
+        if idx < 0:
+            return false
+        var cands: Array = _effective_seq_candidates(idx)
+        if cands.has(rank) and cands.size() != 1:
+            return false
+    return true
 
 
 ## Kinds _disclosure_satisfied() can actually rule on. Anything else (today
@@ -5347,6 +5617,9 @@ const SCOREABLE_DISCLOSURE_KINDS: Array = [
     # generated after that date — older saves' distance clues carry no
     # distance disclosure and score exactly as they did before.
     "distance_hop",
+    # What a clue says about the repeat notes (2026-10-10, repeats are
+    # earned): scored against the notes the player has placed.
+    "firing_position", "firing_relation", "repeat_count_range",
 ]
 
 
@@ -5703,6 +5976,19 @@ func _describe_disclosure(f: Dictionary) -> String:
                 "NOT" if bool(f.get("negated", false)) else "exactly",
                 int(f.get("hops", 1)),
                 _describe_descriptor(int(f.get("target_cat", -1)), int(f.get("target", -1)))]
+        "firing_position":
+            return "The notes %s fires on are as the clue describes." % _describe_star(int(f.get("s", -1)))
+        "firing_relation":
+            return "The notes %s and %s fire on stand in the relation the clue describes." % [
+                _describe_star(int(f.get("a", -1))), _describe_star(int(f.get("b", -1)))]
+        "repeat_count_range":
+            var rlo: int = int(f.get("lo", 0))
+            var rhi: int = int(f.get("hi", 0))
+            var span: String = "exactly %d" % rlo if rlo == rhi \
+                else ("at least %d" % rlo if rhi >= ConstellationLogicPuzzle.REPEAT_COUNT_UNBOUNDED \
+                else ("at most %d" % rhi if rlo <= 0 else "between %d and %d" % [rlo, rhi]))
+            return "%s %s %s time(s)." % [_describe_star(int(f.get("star", -1))),
+                "does NOT repeat" if bool(f.get("negated", false)) else "repeats", span]
     return kind
 
 
@@ -5867,6 +6153,12 @@ func _hint_sequence_steps(clues: Array, solver, grid: Array = []) -> Array[Dicti
     return out
 
 
+## True when the Hint tab has nothing sound to offer on this puzzle: a repeating
+## melody, whose first notes are hidden. The tab says so instead of answering.
+func hints_unavailable() -> bool:
+    return _notes_hidden()
+
+
 ## HINT SUPPORT (tiers 3 and 4, and the per-iteration search inside tier 5's
 ## hint_full_chain). Every clue that gives the player a step RIGHT NOW, best
 ## first, across all four axes.
@@ -5879,11 +6171,19 @@ func _hint_sequence_steps(clues: Array, solver, grid: Array = []) -> Array[Dicti
 ## Ranked: a step that pins something to one position first, then the one that
 ## rules out the most, then clue order, then axis.
 func hint_next_steps(clues: Array, boards: Dictionary = {}) -> Array[Dictionary]:
+    # OFF while the first notes are hidden (author, 2026-10-12): every step
+    # below reasons about firing-order positions, which that board does not
+    # keep and the player is not told. To be re-based on who fires on each note.
+    if hints_unavailable():
+        var none: Array[Dictionary] = []
+        return none
     var solver = _hint_solver_for(_host._star_count)
     var seq_grid: Array = boards["seq"] if boards.has("seq") else _player_sequence_grid()
     var name_grid: Array = boards["name"] if boards.has("name") else _player_name_grid()
     var rank_grid: Array = boards["rank"] if boards.has("rank") else _player_rank_grid()
+    var tick_board: Dictionary = boards["ticks"] if boards.has("ticks") else _player_tick_board()
     var out: Array[Dictionary] = []
+    out.append_array(_hint_note_steps(clues, solver, seq_grid, tick_board))
     out.append_array(_hint_sequence_steps(clues, solver, seq_grid))
     out.append_array(_hint_name_steps(clues, solver, name_grid))
     out.append_array(_hint_position_steps(clues, solver, rank_grid))
@@ -5918,6 +6218,358 @@ func _apply_step_to_boards(step: Dictionary, boards: Dictionary) -> void:
             var row3: Array = boards["rank"][int(step["star"])]
             for s2 in (step["eliminated_stars"] as Array):
                 row3[int(s2)] = false
+        "note":
+            var rank: int = int(step["rank"])
+            for t in (step["must_ticks"] as Array):
+                boards["ticks"][int(t)] = [rank]
+            for t2 in (step["cannot_ticks"] as Array):
+                (boards["ticks"][int(t2)] as Array).erase(rank)
+
+
+# ── REPEAT-NOTE STEPS (2026-10-11) ───────────────────────────────────────
+# "Does this one clue, on top of the player's board, settle whose a repeat
+# note is?" The unit is the CELL (repeat note x position): the board holds, per
+# repeat note, the positions it could still be; a step turns some of those
+# cells off, or leaves a note with one.
+#
+# A clue only yields a step for a star whose POSITION the player already has
+# (the note buttons are positions, so until then there is nothing to click).
+# For that star the notes it could still own are the repeat notes after its
+# first note that the board has not ruled out for it. Every way of choosing
+# among them that the clue's own repeat facts allow is listed; a note in ALL of
+# them must be the star's, a note in NONE cannot be. One clue at a time, no
+# search beyond that list, so the player can follow it. No ground truth: the
+# star index in a fact is only the handle the fact names its star by, exactly
+# as in the Sequence steps.
+
+## The player's board for the repeat notes: note -> positions (1-based) it could
+## still be. A note nobody has opened could be any star heard before it.
+func _player_tick_board() -> Dictionary:
+    var out: Dictionary = {}
+    if not _seq_repeats():
+        return out
+    for tick in range(1, _melody_tick_count() + 1):
+        if _tick_is_first_fire(tick):
+            continue
+        var latest: int = _stars_begun_by_tick(tick - 1)
+        var idx: int = _find_match_record_by_melody_tick(tick)
+        var cands: Array = []
+        if idx >= 0:
+            for c in _effective_seq_candidates(idx):
+                if int(c) <= latest:
+                    cands.append(int(c))
+        else:
+            for p in range(1, latest + 1):
+                cands.append(p)
+        out[tick] = cands
+    return out
+
+
+## The one position a star's row of the Sequence grid allows (1-based), or 0.
+func _single_rank_in_grid(seq_grid: Array, star: int) -> int:
+    if star < 0 or star >= seq_grid.size():
+        return 0
+    var found: int = 0
+    var row: Array = seq_grid[star]
+    for r in row.size():
+        if bool(row[r]):
+            if found > 0:
+                return 0
+            found = r + 1
+    return found
+
+
+## How a note step may name its star: by a Name/Colour/Pitch descriptor the clue
+## itself states, or failing that by the first note the clue states for it.
+## (The first note is not a spoiler here as it is in a Sequence step: the star's
+## position is already on the board, and what is being worked out is a
+## different thing, its repeat notes.)
+func _note_step_descriptor(clue: Dictionary, star: int, rank: int) -> String:
+    var label: String = _clue_descriptor_for_star(clue, star)
+    if label != "":
+        return label
+    var terms: Array = clue["search_terms"] if clue.get("search_terms") is Array else []
+    if terms.has("S:%d" % _first_tick_for_rank(rank)):
+        return _seq_noun(rank)
+    return ""
+
+
+## Most notes a star may have open for the step search (2^n choices are listed).
+const NOTE_STEP_MAX_OPEN: int = 12
+## Most pairs of choices tried for a clue relating two stars.
+const NOTE_STEP_PAIR_BUDGET: int = 20000
+
+
+## {"first", "placed": [notes], "open": [notes]} for a position on a tick board.
+func _note_frame(rank: int, ticks: Dictionary) -> Dictionary:
+    var first: int = _first_tick_for_rank(rank)
+    var placed: Array = []
+    var open: Array = []
+    var keys: Array = ticks.keys()
+    keys.sort()
+    for t in keys:
+        if int(t) <= first:
+            continue
+        var cands: Array = ticks[t]
+        if not cands.has(rank):
+            continue
+        if cands.size() == 1:
+            placed.append(int(t))
+        else:
+            open.append(int(t))
+    return {"first": first, "placed": placed, "open": open}
+
+
+func _note_set_for_mask(frame: Dictionary, mask: int) -> Array:
+    var out: Array = [int(frame["first"])]
+    out.append_array(frame["placed"])
+    var open: Array = frame["open"]
+    for i in open.size():
+        if mask & (1 << i):
+            out.append(int(open[i]))
+    out.sort()
+    return out
+
+
+## THE REVERSE LINK (2026-10-11): what the player's OWN Repeats marks say about
+## the star at a position -- {"exact": count or -1, "not": {count: true}}. Read
+## from the raw marks (and a Sort:Repeats slot) of every record known to sit on
+## that position, never from the derived layer: a hint must rest on what the
+## player entered, and the derived Repeats bounds come from the notes themselves.
+func _player_repeat_marks_for_rank(rank: int) -> Dictionary:
+    var out: Dictionary = {"exact": -1, "not": {}}
+    for entry in _seq_singleton_owners():
+        if int((entry as Array)[1]) != rank:
+            continue
+        var r: Dictionary = _match_records[int((entry as Array)[0])]
+        # A count Listen has given is as much the player's as one they marked.
+        var given: int = _repeat_given_for_record(int((entry as Array)[0]))
+        if given >= 0:
+            out["exact"] = given
+        var label: String = str(r.get("repeat_slot_label", ""))
+        if label != "":
+            out["exact"] = int(label.get_slice(" ", 0).substr(1))
+        var states: Dictionary = r.get("repeat_states", {})
+        for k in states:
+            if int(states[k]) == 1:
+                out["exact"] = int(k)
+            elif int(states[k]) == 2:
+                (out["not"] as Dictionary)[int(k)] = true
+    return out
+
+
+func _repeat_marks_say_something(marks: Dictionary) -> bool:
+    return int(marks.get("exact", -1)) >= 0 or not (marks.get("not", {}) as Dictionary).is_empty()
+
+
+func _note_unary_holds(solver, notes: Array, facts: Array, marks: Dictionary = {}) -> bool:
+    if not marks.is_empty():
+        var repeats: int = notes.size() - 1
+        if int(marks.get("exact", -1)) >= 0 and repeats != int(marks["exact"]):
+            return false
+        if (marks.get("not", {}) as Dictionary).has(repeats):
+            return false
+    for f in facts:
+        var fd: Dictionary = f
+        if str(fd["kind"]) == "firing_position":
+            var v: int = solver._firing_value(notes, fd["sel"])
+            if v < 0 or v < int(fd["lo"]) or v > int(fd["hi"]):
+                return false
+        else:
+            var count: int = notes.size() - 1
+            if (count >= int(fd["lo"]) and count <= int(fd["hi"])) == bool(fd.get("negated", false)):
+                return false
+    return true
+
+
+## Every choice of a star's open notes (as bit masks over frame["open"]) that
+## its own facts in this clue allow.
+func _note_options(solver, frame: Dictionary, facts: Array) -> Array:
+    var out: Array = []
+    for mask in (1 << (frame["open"] as Array).size()):
+        if _note_unary_holds(solver, _note_set_for_mask(frame, mask), facts, frame.get("marks", {})):
+            out.append(mask)
+    return out
+
+
+func _note_pair_holds(solver, fd: Dictionary, notes_of: Dictionary) -> bool:
+    var na: Array = notes_of[int(fd["a"])]
+    var nb: Array = notes_of[int(fd["b"])]
+    if str(fd["kind"]) == "values_same":
+        return na.size() == nb.size()
+    return solver._firing_rel_holds(solver._firing_pick_notes(na, fd["pick_a"]),
+        solver._firing_pick_notes(nb, fd["pick_b"]), fd["spec"])
+
+
+## Turns "which masks survive" into the notes that are in all of them / none.
+func _note_verdict(frame: Dictionary, all_and: int, all_or: int) -> Dictionary:
+    var must: Array = []
+    var cannot: Array = []
+    var open: Array = frame["open"]
+    for i in open.size():
+        if all_and & (1 << i):
+            must.append(int(open[i]))
+        elif not (all_or & (1 << i)):
+            cannot.append(int(open[i]))
+    return {"must": must, "cannot": cannot}
+
+
+func _hint_note_steps(clues: Array, solver, seq_grid: Array, ticks: Dictionary) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    if ticks.is_empty():
+        return out
+    for ci in clue_indices_with_something_to_give(clues):
+        var clue: Dictionary = clues[ci]
+        var unary: Dictionary = {}   # star -> facts about that star alone
+        var binary: Array = []
+        var stars: Dictionary = {}
+        for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
+            if not (f is Dictionary):
+                continue
+            var fd: Dictionary = f
+            var kind: String = str(fd.get("kind", ""))
+            var one: int = -1
+            if kind == "firing_position":
+                one = int(fd.get("s", -1))
+            elif kind == "repeat_count_range":
+                one = int(fd.get("star", -1))
+            elif kind == "firing_relation" or (kind == "values_same" \
+                    and int(fd.get("cat", -1)) == ConstellationLogicPuzzle.Category.REPEAT):
+                binary.append(fd)
+                stars[int(fd.get("a", -1))] = true
+                stars[int(fd.get("b", -1))] = true
+            if one >= 0:
+                if not unary.has(one):
+                    unary[one] = []
+                (unary[one] as Array).append(fd)
+                stars[one] = true
+        if stars.is_empty():
+            continue
+        var frames: Dictionary = {}   # star -> frame, only where the position is known
+        for s in stars:
+            var rank: int = _single_rank_in_grid(seq_grid, int(s))
+            if rank > 0:
+                var fr: Dictionary = _note_frame(rank, ticks)
+                if (fr["open"] as Array).size() <= NOTE_STEP_MAX_OPEN:
+                    fr["rank"] = rank
+                    # The player's own Repeats marks narrow the choices too.
+                    fr["marks"] = _player_repeat_marks_for_rank(rank)
+                    frames[int(s)] = fr
+        var verdicts: Dictionary = {}   # star -> {"must", "cannot"}
+        if not binary.is_empty() and stars.size() == 2 and frames.size() == 2:
+            # Two stars related by the clue: every allowed pair of choices.
+            var pair: Array = frames.keys()
+            var sa: int = int(pair[0])
+            var sb: int = int(pair[1])
+            var opts_a: Array = _note_options(solver, frames[sa], unary.get(sa, []))
+            var opts_b: Array = _note_options(solver, frames[sb], unary.get(sb, []))
+            if opts_a.size() * opts_b.size() > NOTE_STEP_PAIR_BUDGET:
+                continue
+            var and_a: int = -1
+            var or_a: int = 0
+            var and_b: int = -1
+            var or_b: int = 0
+            var any: bool = false
+            for ma in opts_a:
+                var na: Array = _note_set_for_mask(frames[sa], int(ma))
+                for mb in opts_b:
+                    var nb: Array = _note_set_for_mask(frames[sb], int(mb))
+                    var clash: bool = false
+                    for t in nb:
+                        if na.has(t):
+                            clash = true   # one note cannot be two stars
+                            break
+                    if clash:
+                        continue
+                    var notes_of: Dictionary = {sa: na, sb: nb}
+                    var good: bool = true
+                    for bf in binary:
+                        if not _note_pair_holds(solver, bf, notes_of):
+                            good = false
+                            break
+                    if not good:
+                        continue
+                    any = true
+                    and_a &= int(ma)
+                    or_a |= int(ma)
+                    and_b &= int(mb)
+                    or_b |= int(mb)
+            if not any:
+                continue   # the board contradicts the clue: not a hint
+            verdicts[sa] = _note_verdict(frames[sa], and_a, or_a)
+            verdicts[sb] = _note_verdict(frames[sb], and_b, or_b)
+        else:
+            # Otherwise each star on its own facts (a relation the clue also
+            # states is simply not used: weaker, never wrong).
+            for s2 in unary:
+                if not frames.has(int(s2)):
+                    continue
+                var opts: Array = _note_options(solver, frames[int(s2)], unary[s2])
+                if opts.is_empty():
+                    continue
+                var all_and: int = -1
+                var all_or: int = 0
+                for m in opts:
+                    all_and &= int(m)
+                    all_or |= int(m)
+                verdicts[int(s2)] = _note_verdict(frames[int(s2)], all_and, all_or)
+        for s3 in verdicts:
+            var v: Dictionary = verdicts[s3]
+            if (v["must"] as Array).is_empty() and (v["cannot"] as Array).is_empty():
+                continue
+            var rank3: int = int(frames[s3]["rank"])
+            var label: String = _note_step_descriptor(clue, int(s3), rank3)
+            if label == "":
+                continue
+            out.append({
+                "axis": "note",
+                "clue_index": int(ci),
+                "star": int(s3),
+                "rank": rank3,
+                "descriptor": label,
+                "must_ticks": v["must"],
+                "cannot_ticks": v["cannot"],
+                "resolved": not (v["must"] as Array).is_empty(),
+                "gain": (v["must"] as Array).size() + (v["cannot"] as Array).size(),
+            })
+    # FROM THE PLAYER'S OWN REPEATS MARKS ALONE, no clue: a star marked as
+    # repeating twice with exactly two notes still open to it must own both; one
+    # marked as never repeating owns none. clue_index -1 says there is no clue
+    # to show. "star" is a handle for re-finding the step, not a map star: the
+    # position is all this reasons about.
+    for rank2 in range(1, _host._star_count + 1):
+        var marks: Dictionary = _player_repeat_marks_for_rank(rank2)
+        if not _repeat_marks_say_something(marks):
+            continue
+        var fr2: Dictionary = _note_frame(rank2, ticks)
+        if (fr2["open"] as Array).is_empty() or (fr2["open"] as Array).size() > NOTE_STEP_MAX_OPEN:
+            continue
+        fr2["marks"] = marks
+        var opts2: Array = _note_options(solver, fr2, [])
+        if opts2.is_empty():
+            continue   # the marks contradict the notes placed: not a hint
+        var and2: int = -1
+        var or2: int = 0
+        for m2 in opts2:
+            and2 &= int(m2)
+            or2 |= int(m2)
+        var v2: Dictionary = _note_verdict(fr2, and2, or2)
+        if (v2["must"] as Array).is_empty() and (v2["cannot"] as Array).is_empty():
+            continue
+        var who: String = _known_name_for_seq_position(rank2)
+        out.append({
+            "axis": "note",
+            "clue_index": -1,
+            "from_marks": true,
+            "star": -rank2,
+            "rank": rank2,
+            "descriptor": who if who != "" else _seq_noun(rank2),
+            "must_ticks": v2["must"],
+            "cannot_ticks": v2["cannot"],
+            "resolved": not (v2["must"] as Array).is_empty(),
+            "gain": (v2["must"] as Array).size() + (v2["cannot"] as Array).size(),
+        })
+    return out
 
 
 ## Cached result of the last hint_full_chain() computation. Same one-slot,
@@ -5954,7 +6606,8 @@ func hint_full_chain(clues: Array, max_steps: int = 200) -> Array[Dictionary]:
     if _hint_chain_cache_valid:
         return _hint_chain_cache
     hint_chain_computations += 1
-    var boards: Dictionary = {"seq": _player_sequence_grid(), "name": _player_name_grid(), "rank": _player_rank_grid()}
+    var boards: Dictionary = {"seq": _player_sequence_grid(), "name": _player_name_grid(), "rank": _player_rank_grid(),
+        "ticks": _player_tick_board()}
     var chain: Array[Dictionary] = []
     for _i in max_steps:
         var steps: Array[Dictionary] = hint_next_steps(clues, boards)
@@ -6955,20 +7608,147 @@ func _record_has_unpromoted_name_claim(record_idx: int) -> bool:
 ## constellation_logic_puzzle.gd for why the translation belongs in the
 ## generator instead.
 ##
-## The melody's repeat shape (which notes are the same star) is PUBLIC: the
-## staff draws it from the start. So this table is a plain fact of the board
-## the player is looking at, usable by the staff popups AND by the Seq. boxes
-## (typed notes map to a star's rank through it). Falls back to the tick
-## itself when there is no precomputed array (old cache, or a clean 1:1 melody
-## where tick and rank coincide).
+## REPEATS ARE EARNED (author ruling 2026-10-10; this replaces the 2026-10-03
+## "repeat shape is public" behaviour). What the staff gives the player is
+## which notes are a star's FIRST firing, and so the order stars first fire in.
+## Which earlier star a REPEAT note belongs to is not given.
+##
+## So this returns what the BOARD knows about a note: the public rank for a
+## first firing; for a repeat note, the position the player has pinned it to,
+## or 0 while that is still open. Every caller must treat 0 as "not known".
+## Falls back to the tick itself when there is no precomputed array (old
+## cache, or a clean 1:1 melody where tick and rank coincide).
 func _seq_pos_for_melody_tick(tick: int) -> int:
+    if _notes_hidden():
+        return 0   # no note says where its star comes in the firing order
     if _host._melody_seq_pos_sequence.is_empty():
         return tick
     var event_idx: int = tick - 1
     if event_idx < 0 or event_idx >= _host._melody_seq_pos_sequence.size():
         return tick
+    if not _tick_is_first_fire(tick):
+        return _pinned_seq_pos_for_repeat_tick(tick)
     var resolved: int = int(_host._melody_seq_pos_sequence[event_idx])
     return resolved if resolved > 0 else tick
+
+
+## FIRST NOTES ARE HIDDEN (author ruling 2026-10-12). On a repeating melody the
+## player is never told which notes are a star's first firing, and the game
+## must not act on it for them. So the board keeps NO firing-order position on
+## such a melody: what it knows about Sequence is which notes a record holds
+## (melody_ticks) and which it is marked as not firing on (seq_note_blocks),
+## nothing else. While this is true:
+##   - a clicked note opens a blank entry (_settle_melody_tick_positions is off)
+##   - _seq_pos_for_melody_tick answers 0 for every note
+##   - every note is the same kind of button (_repeat_note_state_for_record)
+##   - the hint finder is off (it reasons about firing-order positions)
+## False on a 1:1 melody, where note and position are the same thing and
+## nothing is hidden. `notes_hidden_enabled` false is a TEST SEAM for the
+## older behaviour, which told the player the first notes.
+var notes_hidden_enabled: bool = true
+
+func _notes_hidden() -> bool:
+    return notes_hidden_enabled and _seq_repeats()
+
+
+## Is this note a star's FIRST firing? NOT player-facing since 2026-10-12 (see
+## _notes_hidden): nothing shown or derived for the player may call this on a
+## repeating melody. Kept for the seam, and for a 1:1 melody where it is true
+## of every note.
+func _tick_is_first_fire(tick: int) -> bool:
+    var table: Array = _host._melody_seq_pos_sequence
+    var idx: int = tick - 1
+    if idx < 0 or idx >= table.size():
+        return true
+    var here: int = int(table[idx])
+    for i in idx:
+        if int(table[i]) == here:
+            return false
+    return true
+
+
+## The position the player has pinned a repeat note to, or 0. "Pinned" is the
+## note's own record being down to one position, by typing or by deduction.
+func _pinned_seq_pos_for_repeat_tick(tick: int) -> int:
+    var idx: int = _find_match_record_by_melody_tick(tick)
+    if idx < 0:
+        return 0
+    var s: Array = _seq_candidate_set_for(idx)
+    return int(s[0]) if s.size() == 1 else 0
+
+
+## How many times the board knows this record's star fires, or -1. Known means
+## the count Listen gave, or a Repeats value confirmed on the record.
+func _known_fire_count_for_record(record_idx: int) -> int:
+    var given: int = _repeat_given_for_record(record_idx)
+    if given >= 0:
+        return given + 1
+    for v in _repeat_values_shown():
+        if _effective_repeat_state(record_idx, int(v)) == 1:
+            return int(v) + 1
+    return -1
+
+
+## What the board says about "does this record's star fire on note `tick`?" --
+## for EVERY note when the first notes are hidden (_notes_hidden), for repeat
+## notes only under the seam. The state of that note's button on the record's
+## Sequence row and in the Staff popup's "Same star as note" row
+## (2026-10-12: every note is on the row; a first note is the position set).
+##   0  open
+##   1  yes: the record holds the note, or the note's own record and this one
+##      are both down to the same single position
+##   2  no, by deduction: the note's own record is provably another star, or
+##      shares no position with this one
+##   3  no, by the player's own mark on this record (seq_note_blocks)
+## The reverse link from a known repeat COUNT is deliberately not applied here:
+## it stays a hint step (ruling 2026-10-11).
+func _repeat_note_state_for_record(record_idx: int, tick: int) -> int:
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return 0
+    var r: Dictionary = _match_records[record_idx]
+    if (r.get("melody_ticks", []) as Array).has(tick):
+        return 1
+    if (r.get("seq_note_blocks", []) as Array).has(tick):
+        return 3
+    # THE COUNT CAPS THE ROW (author ruling 2026-10-12, replacing the earlier
+    # "hint step only"): a star known to fire n times that already holds n
+    # notes fires on no other.
+    var fires: int = _known_fire_count_for_record(record_idx)
+    if fires > 0 and (r.get("melody_ticks", []) as Array).size() >= fires:
+        return 2
+    var note_rec: int = _find_match_record_by_melody_tick(tick)
+    if _notes_hidden():
+        # No positions on this board: the only deduction left is identity.
+        return 2 if note_rec >= 0 and _records_provably_distinct(record_idx, note_rec) else 0
+    var mine: Array = _effective_seq_candidates(record_idx)
+    if note_rec >= 0:
+        var theirs: Array = _effective_seq_candidates(note_rec)
+        if mine.size() == 1 and theirs.size() == 1 and int(mine[0]) == int(theirs[0]):
+            return 1
+        if _records_provably_distinct(record_idx, note_rec):
+            return 2
+        var shared: bool = false
+        for p in mine:
+            if theirs.has(p):
+                shared = true
+                break
+        if not shared:
+            return 2
+    # NOT applied (author, 2026-10-12): "this star cannot have first fired
+    # before the note". It made ruling out note 1 on a row silently remove
+    # note 2 as well, on the strength of note 2 being a repeat note -- which
+    # the player is not shown.
+    return 0
+
+
+## Every note the board knows a position fires on: its first note, plus each
+## repeat note the player has pinned to it.
+func _known_ticks_for_rank(seq_pos: int) -> Array:
+    var out: Array = [_first_tick_for_rank(seq_pos)]
+    for tick in range(1, _melody_tick_count() + 1):
+        if not _tick_is_first_fire(tick) and _pinned_seq_pos_for_repeat_tick(tick) == seq_pos:
+            out.append(tick)
+    return out
 
 
 ## The Sort tabs' melody-tick domain size (matches _draw_melody_staff's own
@@ -6986,22 +7766,16 @@ func _seq_repeats() -> bool:
     return _melody_tick_count() > _host._star_count
 
 
-## Melody TICK numbers (1-indexed) that resolve to a given SEQ_POS (RANK,
-## 1-indexed): every note that star fires on. The inverse of
-## _seq_pos_for_melody_tick; falls back to [seq_pos] with no table.
-func _melody_ticks_for_rank(seq_pos: int) -> Array:
-    if _host._melody_seq_pos_sequence.is_empty():
-        return [seq_pos]
-    var ticks: Array = []
-    for i in _host._melody_seq_pos_sequence.size():
-        if int(_host._melody_seq_pos_sequence[i]) == seq_pos:
-            ticks.append(i + 1)
-    return ticks if not ticks.is_empty() else [seq_pos]
-
-
-## The first note a rank fires on -- the number a clue prints to name it.
+## The first note a rank fires on -- the number a clue prints to name it, and
+## public (see _seq_pos_for_melody_tick). Falls back to the rank itself with no
+## table. A position's LATER notes are not readable here on purpose: they are
+## what the player works out (_known_ticks_for_rank is the board's view).
 func _first_tick_for_rank(seq_pos: int) -> int:
-    return int(_melody_ticks_for_rank(seq_pos)[0])
+    var table: Array = _host._melody_seq_pos_sequence
+    for i in table.size():
+        if int(table[i]) == seq_pos:
+            return i + 1
+    return seq_pos
 
 
 ## How many stars have fired for the first time by note `tick` (inclusive): the
@@ -7060,9 +7834,10 @@ func _seq_noun(rank1: int) -> String:
     return "the star that fires %s" % _seq_ord(rank1)
 
 
-## Every note a rank fires on: "8th note" or "notes 8, 10, 12".
+## Every note the board knows a rank fires on: "8th note", or "notes 8, 10, 12"
+## once the player has placed repeat notes 10 and 12 on it.
 func _seq_ticks_phrase(rank1: int) -> String:
-    var ticks: Array = _melody_ticks_for_rank(rank1)
+    var ticks: Array = _known_ticks_for_rank(rank1)
     if ticks.size() == 1:
         return ConstellationLogicPuzzle._ordinal(int(ticks[0]))
     var parts := PackedStringArray()
@@ -7228,6 +8003,7 @@ func _full_propagation_refresh() -> void:
         _settle_star_elim_from_candidates()
         _settle_group_sequence_bounds()
         _settle_singleton_sequences()
+        _settle_repeat_counts_from_notes()
         # AFTER the sequence narrowing above, so a record that only just
         # resolved to a single position is already visible as occupying it.
         _settle_same_position_identity()
@@ -7372,9 +8148,24 @@ func _candidate_stars_for_record(record_idx: int) -> Array:
         _candidate_star_cache[record_idx] = out
         return out
 
+    # Repeat count — only for stars the player has Listened to, whose count
+    # Listen gives (2026-10-11). This is what makes "Helios is one of the stars
+    # that repeat once" a NAME deduction: once the player has marked that on
+    # Helios's row, every Listened star with a different count stops being a
+    # candidate for it. One confirmed count is looked up once, outside the loop.
+    var rep_confirmed: int = -1
+    for rv in _repeat_count_domain():
+        if _effective_repeat_state(record_idx, int(rv)) == 1:
+            rep_confirmed = int(rv)
+            break
+
     for s in _host._star_count:
         if _star_elim_state_for_record(record_idx, s) == 2:
             continue
+        if _player_knows_star_pitch(s) and s < _host._repeat_count.size() and int(_host._repeat_count[s]) >= 0:
+            var s_rep: int = int(_host._repeat_count[s])
+            if (rep_confirmed >= 0 and rep_confirmed != s_rep) or _effective_repeat_state(record_idx, s_rep) == 2:
+                continue
         # Colour — always given.
         var sc: int = int(_host._star_colors[s]) if s < _host._star_colors.size() else -1
         if sc >= 0 and _effective_color_state(record_idx, sc) == 2:

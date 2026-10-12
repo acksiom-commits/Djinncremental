@@ -2,12 +2,13 @@ extends "res://dev_tests/test_base.gd"
 # The Sort tabs' Sequence boxes take STAFF NOTES, the numbers the clues and the
 # staff use, and keep showing what the player typed.
 #
-# The melody's repeat shape is public, so a note maps to its star's rank through
-# the staff's own table. Meanings:
+# Which notes are a star's FIRST firing is public; which star a repeat note
+# belongs to is not (2026-10-10, repeats are earned). Meanings:
 #   lower box "N <"  : the star FIRST fires after note N
 #   upper box "< M"  : the star FIRST fires before note M
-#   both boxes equal, or "= N" : the star that fires at note N (any of its notes)
-#   centre list      : notes; every note of every candidate star is shown
+#   both boxes equal, or "= N" : the star that FIRST fires at note N. A repeat
+#                      note is refused until the player has placed it
+#   centre list      : first notes of the candidate stars, in and out
 #
 # The bug this guards against: typing 10 became 8, because the bound was shown
 # back as the FIRST note of the star it landed on instead of what was typed.
@@ -53,6 +54,12 @@ func _host(melody: Array):
 	host._star_pitch_index = [0, 1, 2, 3]
 	host._sequence_rank_solution = [0, 1, 2, 3]
 	host._melody_seq_pos_sequence = melody
+	# SEAM ONLY since 2026-10-12 for the repeating melodies in this file: with
+	# the first notes hidden the typed Sequence boxes are not offered on a
+	# repeating melody at all (the per-note checks replace them), so these
+	# checks pin the typed boxes as the seam keeps them. A 1:1 melody is
+	# unaffected by the seam.
+	host._deduction.notes_hidden_enabled = false
 	host._widgets.clear_pitch_caches()
 	host._deduction._load_match_records([])
 	return host
@@ -100,7 +107,9 @@ func run() -> void:
 	await w._commit_sequence_range(rec, lo, mid, hi)
 	ok(int(r["seq_hi"]) == 2 and int(r["seq_lo"]) == 0, "'< 4' stores 'first fires before note 4' = ranks ..2 (seq_hi %d)" % int(r["seq_hi"]))
 	ok(hi.text == "4", "and the box still reads 4 (got '%s')" % hi.text)
-	ok(mid.text == "1-3,6", "the centre box lists every note of ranks 1 and 2 (got '%s')" % mid.text)
+	# 2026-10-10: repeats are earned. Only FIRST notes are listed; notes 3 and 6
+	# are repeat notes, and listing them here would hand over whose they are.
+	ok(mid.text == "1-2", "the centre box lists the FIRST notes of ranks 1 and 2, not their repeats (got '%s')" % mid.text)
 
 	print("\n=== two bounds that leave one star read as an exact pin ===")
 	_reset(r)
@@ -110,22 +119,38 @@ func run() -> void:
 	ok(int(r["seq_lo"]) == 3 and int(r["seq_hi"]) == 3, "'3 < x < 5' leaves only rank 3 (seq_lo %d, seq_hi %d)" % [int(r["seq_lo"]), int(r["seq_hi"])])
 	ok(mid.text == "= 4" and lo.text == "" and hi.text == "", "shown as '= 4' with both bound boxes cleared (got '%s' / '%s' / '%s')" % [lo.text, mid.text, hi.text])
 
-	print("\n=== typing any note of a repeating star pins that star ===")
+	print("\n=== a repeat note names no position until the player has placed it ===")
+	# Note 3 is rank 2 firing again in truth, but that is not given: typing it
+	# must not be turned into rank 2 (the old behaviour, which read the answer).
 	_reset(r)
 	lo.text = "3"
 	hi.text = "3"
 	await w._commit_sequence_range(rec, lo, mid, hi)
-	ok(int(r["seq_lo"]) == 2 and int(r["seq_hi"]) == 2, "note 3 is a note of rank 2, so both boxes at 3 pin rank 2 (seq_lo %d)" % int(r["seq_lo"]))
-	ok(mid.text == "= 2,3", "and every note of that star is shown (got '%s')" % mid.text)
+	ok(int(r["seq_lo"]) == 0 and int(r["seq_hi"]) == 0, "both boxes at repeat note 3 are refused, nothing is stored (seq_lo %d, seq_hi %d)" % [int(r["seq_lo"]), int(r["seq_hi"])])
+	ok(mid.text == "" and lo.text == "" and hi.text == "", "and the row snaps back to empty (got '%s' / '%s' / '%s')" % [lo.text, mid.text, hi.text])
+	lo.text = "2"
+	hi.text = "2"
+	await w._commit_sequence_range(rec, lo, mid, hi)
+	ok(int(r["seq_lo"]) == 2 and int(r["seq_hi"]) == 2, "the star's FIRST note, 2, pins rank 2 (seq_lo %d)" % int(r["seq_lo"]))
+	ok(mid.text == "= 2", "shown as '= 2', its first note alone (got '%s')" % mid.text)
+	await w._commit_sequence_candidates(rec, lo, mid, hi)
+	ok(int(r["seq_lo"]) == 2 and int(r["seq_hi"]) == 2 and mid.text == "= 2", "re-committing the shown '= 2' keeps the pin (seq_lo %d, got '%s')" % [int(r["seq_lo"]), mid.text])
 
-	print("\n=== a candidate list is notes in, notes out ===")
+	print("\n=== a candidate list is first notes in, first notes out ===")
+	_reset(r)
+	mid.text = "2,5"
+	await w._commit_sequence_candidates(rec, lo, mid, hi)
+	w._refresh_range_edits(rec, lo, mid, hi)
+	ok((d.record_at(rec)["seq_candidates"] as Array) == [2, 4],
+		"notes 2 and 5 are ranks 2 and 4 (got %s)" % str(d.record_at(rec)["seq_candidates"]))
+	ok(mid.text == "2,5", "shown as those two first notes (got '%s')" % mid.text)
 	_reset(r)
 	mid.text = "5,6"
 	await w._commit_sequence_candidates(rec, lo, mid, hi)
 	w._refresh_range_edits(rec, lo, mid, hi)
-	ok((d.record_at(rec)["seq_candidates"] as Array) == [1, 4],
-		"notes 5 and 6 are ranks 4 and 1 (got %s)" % str(d.record_at(rec)["seq_candidates"]))
-	ok(mid.text == "1,5-6", "shown as every note of those stars (got '%s')" % mid.text)
+	ok(int(r["seq_lo"]) == 4 and int(r["seq_hi"]) == 4 and (d.record_at(rec)["seq_candidates"] as Array).is_empty(),
+		"in '5,6' the unplaced repeat note 6 is dropped, leaving rank 4 alone (seq_lo %d, candidates %s)" % [int(r["seq_lo"]), str(d.record_at(rec)["seq_candidates"])])
+	ok(mid.text == "= 5", "shown as '= 5' (got '%s')" % mid.text)
 
 	print("\n=== impossible entries are refused, the row snaps back ===")
 	_reset(r)

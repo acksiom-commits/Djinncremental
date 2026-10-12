@@ -3,24 +3,31 @@ extends "res://dev_tests/test_base.gd"
 #
 # The Form is generated from a SELECTOR (the note of its k-th firing / how many
 # firings fall in a window / the gap between two firings) and a PREDICATE (an
-# interval on that number), and every sentence reduces to the set of Sequence
-# ranks whose stars satisfy it. What must hold:
+# interval on that number).
+#
+# REWRITTEN 2026-10-10 (repeats are earned). Until then every sentence was
+# reduced to the set of Sequence RANKS whose stars satisfy it, read off a public
+# note -> star table, and this file judged that set. Which star a repeat note
+# belongs to is no longer given, so that reduction is gone: the clue now carries
+# a firing_position fact that the repeat-note gate reads, and nothing for the
+# Sequence solver or the Name closure beyond what its own label discloses.
+# What must hold:
 #
 #  - It exists only on a repeating melody. A 1:1 melody (every hard-mode
 #    constellation) never offers it, builds nothing from it and draws NO random
 #    numbers for it, so every hard-mode seed is unchanged.
-#  - Every clue is TRUE, and the set of ranks it hands the solvers is exactly the
-#    set a reader gets by working the SENTENCE out against the melody. The judge
-#    below parses the English and recomputes that set from the melody alone --
-#    it shares no helper with the builder -- and is itself shown to FAIL on a
-#    tampered fact and a tampered sentence.
-#  - The cells it rules out are exactly the ranks outside that set; a Name
-#    subject also gets the matching name_rank_set for the closure.
-#  - A real generated Beginner puzzle that contains these clues still passes the
-#    ship gate (Sequence unique, Name closure proven).
-#  - The player-side engine reads the set: a star is dropped only when the
-#    player's own notes put it certainly outside, and a fact is "satisfied" only
-#    when every position the player still allows is inside.
+#  - Every clue is TRUE of its subject, and the gate reads its fact exactly as a
+#    reader reads the SENTENCE: the judge below parses the English, and for the
+#    sets of repeat notes the subject could have it compares the sentence's
+#    verdict with the gate's. It shares no helper with the builder and is itself
+#    shown to FAIL on a tampered fact, sentence and cell.
+#  - It can be false of the subject for SOME choice of repeat notes (otherwise
+#    it is readable off the public first notes and says nothing).
+#  - It carries no rank set (value_in_set / name_rank_set): those need every
+#    star's notes.
+#  - Real generated Beginner puzzles still pass the ship gate, repeat notes
+#    included, pruned and unpruned.
+#  - The player-side engine still reads a rank set when handed one.
 
 const PuzzleScript = preload("res://constellation_logic_puzzle.gd")
 const OverlayScene = preload("res://ConstellationStudyOverlay.tscn")
@@ -168,6 +175,8 @@ func _parse(text: String, n: int) -> Dictionary:
 		["^(.+) fires at least (once|twice|\\d+ times) (.+)\\.$", "atleast"],
 		["^(.+) fires at most (once|twice|\\d+ times) (.+)\\.$", "atmost"],
 		["^(.+) fires between (\\d+) and (\\d+) times (.+)\\.$", "between"],
+		# The repair pin: one note can only be fired once, so no "exactly once".
+		["^(.+) fires (on note \\d+)\\.$", "pin"],
 	]
 	for pat in counted:
 		var cm = RegEx.create_from_string(str(pat[0])).search(text)
@@ -179,6 +188,10 @@ func _parse(text: String, n: int) -> Dictionary:
 		var wtext: String = ""
 		if shape3 == "zero":
 			hi3 = 0
+			wtext = cm.get_string(2)
+		elif shape3 == "pin":
+			lo3 = 1
+			hi3 = 1
 			wtext = cm.get_string(2)
 		elif shape3 == "exactly":
 			lo3 = _times_to_int(cm.get_string(2))
@@ -212,77 +225,109 @@ func _parse(text: String, n: int) -> Dictionary:
 
 ## "" when the clue is sound, else why not. Reads the sentence and the melody;
 ## the fact and the cells are only compared against what that gives.
-func _judge(g, clue: Dictionary, tally: Dictionary) -> String:
+func _judge(g, clue: Dictionary, tally: Dictionary, stored: bool = false) -> String:
 	var n: int = g.melody_star_sequence.size()
 	var p: Dictionary = _parse(str(clue["text"]), n)
 	if p.is_empty():
 		return "unparseable sentence: %s" % str(clue["text"])
-	var vfacts: Array = []
-	for f in (clue["solver_facts"] as Array):
-		if str((f as Dictionary).get("kind", "")) == "value_in_set":
-			vfacts.append(f)
-	if vfacts.size() != 1:
-		return "expected exactly one value_in_set fact, got %d" % vfacts.size()
-	var fact: Dictionary = vfacts[0]
+	var melody: Array = g.melody_star_sequence
+	var facts: Array = []
+	for f in (clue.get("value_facts", []) as Array):
+		if str((f as Dictionary).get("kind", "")) == "firing_position":
+			facts.append(f)
+	if facts.size() != 1:
+		return "expected exactly one firing_position fact, got %d" % facts.size()
+	for f2 in (clue["solver_facts"] as Array) + (clue.get("value_facts", []) as Array):
+		var k: String = str((f2 as Dictionary).get("kind", ""))
+		if k == "value_in_set" or k == "name_rank_set" or k == "ordinal_pair_set":
+			return "carries a %s: a rank set needs every star's notes, which are hidden" % k
+	var fact: Dictionary = facts[0]
 	var subject: int = int(fact["s"])
-	# What the sentence means, over every star, from the melody alone.
-	var want: Array = []
-	for s in g.star_count:
-		var v: int = int(p["value"].call(_ticks_of(g.melody_star_sequence, s)))
-		if v >= 0 and v >= int(p["lo"]) and v <= int(p["hi"]):
-			want.append(int(g.sequence_rank_solution[s]))
-	want.sort()
-	var got: Array = []
-	for a in fact["allowed"]:
-		got.append(int(a))
-	got.sort()
-	if got != want:
-		return "fact allows ranks %s but the sentence means %s: %s" % [str(got), str(want), str(clue["text"])]
-	if not got.has(int(g.sequence_rank_solution[subject])):
-		return "the subject's own rank is outside the set: %s" % str(clue["text"])
-	if got.size() >= g.star_count or got.is_empty():
-		return "set is trivial (%d of %d ranks): %s" % [got.size(), g.star_count, str(clue["text"])]
-	var violation: String = g._validate_sequence_fact(fact)
-	if violation != "":
-		return violation
-	# The cells: exactly the ranks outside the set, none of them true.
-	var cells: Dictionary = {}
-	for c in (clue["grid_updates"] as Array):
-		if bool((c as Dictionary)["is_true"]) or int(c["cat_b"]) != PuzzleScript.Category.SEQUENCE:
-			return "a cell is not a negative Sequence cell"
-		cells[int(c["val_b"])] = true
-	var outside: Array = []
-	for r in g.star_count:
-		if not got.has(r):
-			outside.append(r)
-	var cell_ranks: Array = cells.keys()
-	cell_ranks.sort()
-	if cell_ranks != outside:
-		return "cells rule out %s but the set excludes %s" % [str(cell_ranks), str(outside)]
-	# The Name closure's copy, only for a Name subject.
+	var true_ticks: Array = _ticks_of(melody, subject)
+	if not _holds(p, true_ticks):
+		return "the sentence is false of its own subject: %s" % str(clue["text"])
+	# Every set of repeat notes the subject COULD have: its first note plus any
+	# of the repeat notes after it. The sentence is checked on all of them for
+	# "can it be false"; the gate's reading is compared on up to ~256 of them.
+	var rticks: Array = _repeat_ticks_of(melody)
+	var first: int = int(true_ticks[0])
+	var later_bits: Array = []   # indices into rticks
+	for i in rticks.size():
+		if int(rticks[i]) > first:
+			later_bits.append(i)
+	var total: int = 1 << later_bits.size()
+	@warning_ignore("integer_division")
+	var step: int = maxi(1, total / 256)
+	var falsifiable: bool = false
+	var m: int = 0
+	while m < total:
+		var ticks: Array = [first]
+		var gmask: int = 0
+		for j in later_bits.size():
+			if m & (1 << j):
+				ticks.append(int(rticks[int(later_bits[j])]))
+				gmask |= 1 << int(later_bits[j])
+		var want: bool = _holds(p, ticks)
+		if not want:
+			falsifiable = true
+		if m % step == 0:
+			_gate_compares += 1
+			if g._repeat_mask_satisfies(subject, rticks, gmask, [fact]) != want:
+				return "the gate reads the fact as %s but the sentence is %s for notes %s: %s" % [str(not want), str(want), str(ticks), str(clue["text"])]
+		m += 1
+	if not falsifiable:
+		return "cannot be false whatever the subject's repeat notes are: %s" % str(clue["text"])
+	# The cell: one true cell on the Repeat axis (bookkeeping, not a rank claim).
+	# A STORED clue has none: the cache keeps no Repeat-axis cells.
+	var cells: Array = clue["grid_updates"]
+	if cells.size() != (0 if stored else 1):
+		return "expected %d cell(s), got %d" % [0 if stored else 1, cells.size()]
+	for cell in cells:
+		if not bool((cell as Dictionary)["is_true"]) or int(cell["cat_b"]) != PuzzleScript.Category.REPEAT:
+			return "expected a true Repeat-axis cell"
+	# The label: a Sequence descriptor discloses the subject's rank, nothing else does.
 	var id_cat: int = int((clue["chars"] as Array)[0]["cat"])
-	var nfacts: Array = clue.get("value_facts", [])
-	if id_cat == PuzzleScript.Category.NAME:
-		if nfacts.size() != 1 or str(nfacts[0]["kind"]) != "name_rank_set":
-			return "a Name subject should carry exactly one name_rank_set"
-		var nset: Array = []
-		for a2 in nfacts[0]["allowed"]:
-			nset.append(int(a2))
-		nset.sort()
-		if nset != want or int(nfacts[0]["name_star"]) != subject:
-			return "name_rank_set disagrees with the sentence"
-		var nv: String = g._validate_name_position_fact(nfacts[0])
-		if nv != "":
-			return nv
-	elif not nfacts.is_empty():
-		return "a non-Name subject should carry no name_rank_set"
+	var exacts: Array = []
+	for f3 in (clue["solver_facts"] as Array):
+		if str((f3 as Dictionary).get("kind", "")) == "ordinal_exact":
+			exacts.append(f3)
+		else:
+			return "an unexpected Sequence fact (%s)" % str((f3 as Dictionary).get("kind", ""))
+	if id_cat == PuzzleScript.Category.SEQUENCE:
+		if exacts.size() != 1 or int(exacts[0]["s"]) != subject or int(exacts[0]["r"]) != int(g.sequence_rank_solution[subject]):
+			return "a Sequence label should disclose exactly the subject's rank"
+	elif not exacts.is_empty():
+		return "a non-Sequence label should disclose no rank"
 	tally["kind_" + str(p["kind"])] = int(tally.get("kind_" + str(p["kind"]), 0)) + 1
 	tally["shape_" + str(p["kind"]) + "_" + str(p["shape"])] = int(tally.get("shape_" + str(p["kind"]) + "_" + str(p["shape"]), 0)) + 1
 	if bool(p["last"]):
 		tally["last"] = int(tally.get("last", 0)) + 1
 	if id_cat == PuzzleScript.Category.NAME:
 		tally["name_subject"] = int(tally.get("name_subject", 0)) + 1
+	if id_cat == PuzzleScript.Category.SEQUENCE:
+		tally["seq_subject"] = int(tally.get("seq_subject", 0)) + 1
 	return ""
+
+
+## How many (clue, note set) pairs the gate's reading was compared on: the
+## denominator behind "none disagreed".
+var _gate_compares: int = 0
+
+
+func _repeat_ticks_of(melody: Array) -> Array:
+	var seen: Dictionary = {}
+	var out: Array = []
+	for i in melody.size():
+		if seen.has(int(melody[i])):
+			out.append(i + 1)
+		else:
+			seen[int(melody[i])] = true
+	return out
+
+
+func _holds(p: Dictionary, ticks: Array) -> bool:
+	var v: int = int(p["value"].call(ticks))
+	return v >= 0 and v >= int(p["lo"]) and v <= int(p["hi"])
 
 
 func _host(melody: Array):
@@ -332,7 +377,10 @@ func run() -> void:
 				continue
 			if not active_cids.has(cid):
 				active_cids.append(cid)
-			for i in 400:
+			if g._repeat_ticks() != _repeat_ticks_of(g.melody_star_sequence):
+				judged_bad.append("c%d s%d: the generator's repeat notes are not the melody's" % [cid, seed])
+			# 150 draws, down from 400: the judge now walks note sets per clue.
+			for i in 150:
 				g._rendered_terms = {}
 				var clue: Dictionary = g._build_form(25, {})
 				if clue.is_empty():
@@ -341,8 +389,9 @@ func run() -> void:
 				var why: String = _judge(g, clue, tally)
 				if why != "":
 					judged_bad.append("c%d s%d: %s" % [cid, seed, why])
-	print("    constellations with a repeating melody: %s; clues built: %d" % [str(active_cids), built])
+	print("    constellations with a repeating melody: %s; clues built: %d; gate comparisons: %d" % [str(active_cids), built, _gate_compares])
 	print("    tally: %s" % str(tally))
+	ok(_gate_compares > built, "the gate's reading was compared on more note sets than there are clues (%d)" % _gate_compares)
 	ok(built > 500, "plenty of clues to judge (%d), so 'none are wrong' means something" % built)
 	var judged_ok: int = int(tally.get("kind_nth", 0)) + int(tally.get("kind_count", 0)) + int(tally.get("kind_span", 0))
 	ok(judged_ok == built, "every clue built was parsed and judged (%d of %d) -- none skipped as unparseable" % [judged_ok, built])
@@ -350,34 +399,36 @@ func run() -> void:
 	ok(active_cids.size() >= 2, "more than one constellation exercised (%d)" % active_cids.size())
 
 	print("\n=== the variety is real, not one shape repeated ===")
-	for key in ["kind_nth", "kind_count", "kind_span", "last", "name_subject",
+	for key in ["kind_nth", "kind_count", "kind_span", "last", "name_subject", "seq_subject",
 			"shape_nth_exact", "shape_nth_prefix", "shape_nth_suffix", "shape_nth_interval",
 			"shape_count_zero", "shape_count_exactly", "shape_count_atleast", "shape_count_atmost", "shape_count_between",
 			"shape_span_exactly", "shape_span_atleast", "shape_span_atmost", "shape_span_between"]:
 		ok(int(tally.get(key, 0)) > 0, "drawn at least once: %s (%d)" % [key, int(tally.get(key, 0))])
 
-	print("\n=== the judge is not vacuous: it FAILS on a tampered fact and a tampered sentence ===")
+	print("\n=== the judge is not vacuous: it FAILS on a tampered fact, sentence and cell ===")
 	var gj = _beginner_puzzle(0, 11)
 	var sample: Dictionary = {}
 	for i in 400:
 		gj._rendered_terms = {}
 		var c: Dictionary = gj._build_form(25, {})
-		if not c.is_empty() and (c["solver_facts"] as Array).size() > 0 and ((c["solver_facts"] as Array).back()["allowed"] as Array).size() >= 2 \
-				and str(c["text"]).contains(" at least "):
+		if not c.is_empty() and str(c["text"]).contains(" fires at least "):
 			sample = c
 			break
 	ok(not sample.is_empty(), "found a sample clue to tamper with")
 	if not sample.is_empty():
 		ok(_judge(gj, sample, {}) == "", "the untouched sample passes")
 		var bad_fact: Dictionary = sample.duplicate(true)
-		((bad_fact["solver_facts"] as Array).back()["allowed"] as Array).pop_back()
-		ok(_judge(gj, bad_fact, {}) != "", "dropping one allowed rank from the fact is caught")
+		(bad_fact["value_facts"] as Array)[0]["lo"] = 0
+		ok(_judge(gj, bad_fact, {}) != "", "widening the fact to 'at least 0 times' is caught")
 		var bad_text: Dictionary = sample.duplicate(true)
 		bad_text["text"] = str(sample["text"]).replace(" at least ", " at most ")
 		ok(_judge(gj, bad_text, {}) != "", "flipping 'at least' to 'at most' in the sentence is caught")
 		var bad_cells: Dictionary = sample.duplicate(true)
-		(bad_cells["grid_updates"] as Array).pop_back()
-		ok(_judge(gj, bad_cells, {}) != "", "losing one ruled-out cell is caught")
+		(bad_cells["grid_updates"] as Array)[0]["is_true"] = false
+		ok(_judge(gj, bad_cells, {}) != "", "a false cell is caught")
+		var bad_rank: Dictionary = sample.duplicate(true)
+		(bad_rank["solver_facts"] as Array).append({"kind": "value_in_set", "s": 0, "allowed": [0, 1]})
+		ok(_judge(gj, bad_rank, {}) != "", "a rank set smuggled back in is caught")
 
 	print("\n=== a real Beginner puzzle that uses them still passes the ship gate ===")
 	var shipped_total: int = 0
@@ -386,7 +437,7 @@ func run() -> void:
 		var gp = _beginner_puzzle(0, seed2)
 		gp.prune_enabled = false
 		await gp.generate_clues_forms()
-		ok(gp.gate_passed, "seed %d: Sequence unique and Name closure proven with Form 25 in the pool" % seed2)
+		ok(gp.gate_passed, "seed %d: Sequence, Name closure and repeat notes all proven with Form 25 in the pool" % seed2)
 		var here: int = 0
 		for cl in gp.chosen_form_clues:
 			if int(cl["form_id"]) != 25:
@@ -398,17 +449,17 @@ func run() -> void:
 			var sf: Array = []
 			var vf: Array = []
 			for d in (cl["disclosures"] as Array):
-				if str((d as Dictionary)["kind"]) == "name_rank_set":
-					vf.append(d)
-				else:
+				if str((d as Dictionary)["kind"]) == "ordinal_exact":
 					sf.append(d)
+				else:
+					vf.append(d)
 			as_clue["solver_facts"] = sf
 			as_clue["value_facts"] = vf
 			var cells_out: Array = []
 			for cell in (cl["cells"] as Array):
 				cells_out.append(cell)
 			as_clue["grid_updates"] = cells_out
-			var why2: String = _judge(gp, as_clue, {})
+			var why2: String = _judge(gp, as_clue, {}, true)
 			if why2 != "":
 				shipped_bad.append(why2)
 		shipped_total += here
@@ -416,44 +467,36 @@ func run() -> void:
 	ok(shipped_total > 0, "the generator actually ships Form 25 clues (%d across the runs)" % shipped_total)
 	ok(shipped_bad.is_empty(), "every shipped Form 25 clue judges clean from its stored form (%d bad) %s" % [shipped_bad.size(), str(shipped_bad.slice(0, 3))])
 
-	print("\n=== pruning never removes Firing Position / Firing Relation clues ===")
-	# Same seed, same draws: the pruned run is the unpruned run minus whatever
-	# pruning removed, so every Form 25/26 clue of the unpruned set must survive.
-	# Without the exemption these are dropped as redundant almost every time
-	# (measured: 22 unpruned -> 1 shipped over 18 puzzles).
-	var kept_total: int = 0
-	var lost: Array = []
-	var shrunk: int = 0
+	print("\n=== pruning keeps the repeat notes proven ===")
+	# Firing clues used to be exempt from pruning, because under a public repeat
+	# shape they were always redundant. They now carry the repeat-note gate, so
+	# pruning may drop the ones it does not need and must keep the rest: every
+	# pruned puzzle still has exactly one assignment of its repeat notes.
+	# (test_repeat_note_gate checks that verdict against a brute force.)
 	var gates_ok: int = 0
 	var runs_p: int = 0
-	var f26_seen: int = 0
-	for cidp in [0, 1, 2, 3, 4, 5]:
-		for seedp in [11, 12]:
-			var gu = _beginner_puzzle(cidp, seedp)
-			gu.prune_enabled = false
-			await gu.generate_clues_forms()
-			var gpr = _beginner_puzzle(cidp, seedp)
-			await gpr.generate_clues_forms()
-			runs_p += 1
-			if gpr.gate_passed:
-				gates_ok += 1
-			if gpr.chosen_form_clues.size() < gu.chosen_form_clues.size():
-				shrunk += 1
-			var pruned_texts: Dictionary = {}
-			for cl in gpr.chosen_form_clues:
-				pruned_texts[str(cl["text"])] = true
-			for cl in gu.chosen_form_clues:
-				if int(cl["form_id"]) == 25 or int(cl["form_id"]) == 26:
-					kept_total += 1
-					if int(cl["form_id"]) == 26:
-						f26_seen += 1
-					if not pruned_texts.has(str(cl["text"])):
-						lost.append("c%d s%d F%d: %s" % [cidp, seedp, int(cl["form_id"]), str(cl["text"])])
-	print("    %d puzzles; %d Form 25/26 clues in the unpruned sets (%d of them Form 26); %d lost" % [runs_p, kept_total, f26_seen, lost.size()])
-	ok(kept_total >= 8, "the unpruned sets contain enough of them to test with (%d)" % kept_total)
-	ok(lost.is_empty(), "every one of them survives pruning (%d lost) %s" % [lost.size(), str(lost.slice(0, 2))])
-	ok(shrunk == runs_p, "pruning still shrinks every puzzle (%d of %d), so this is not 'pruning is off'" % [shrunk, runs_p])
-	ok(gates_ok == runs_p, "every pruned puzzle still passes the ship gate (%d of %d)" % [gates_ok, runs_p])
+	var repeats_ok: int = 0
+	var repeat_clues_shipped: int = 0
+	for cidp in [0, 1, 3, 5]:
+		var gpr = _beginner_puzzle(cidp, 11)
+		await gpr.generate_clues_forms()
+		runs_p += 1
+		if gpr.gate_passed:
+			gates_ok += 1
+		# 2026-10-12: the proof is _solve_notes with the first notes hidden. It
+		# takes each star's firing COUNT as given (Listen), which the older
+		# _solve_repeat_notes did not, so that older search is no longer the
+		# one a shipped puzzle has to satisfy.
+		var sols: Array = gpr._solve_notes(gpr._seq_facts_from_clues(), 3)
+		if sols.size() == 1 and not gpr._last_solve_inconclusive and sols[0]["owners"] == gpr.melody_star_sequence:
+			repeats_ok += 1
+		for cl in gpr.chosen_form_clues:
+			if gpr._clue_has_repeat_fact(cl):
+				repeat_clues_shipped += 1
+	print("    %d pruned puzzles; %d clues about the repeat notes shipped" % [runs_p, repeat_clues_shipped])
+	ok(gates_ok == runs_p, "every pruned puzzle passes the ship gate (%d of %d)" % [gates_ok, runs_p])
+	ok(repeats_ok == runs_p, "and has exactly one assignment of its repeat notes (%d of %d)" % [repeats_ok, runs_p])
+	ok(repeat_clues_shipped >= runs_p, "which takes clues about them to prove (%d shipped)" % repeat_clues_shipped)
 
 	print("\n=== the player-side engine reads the set ===")
 	# 4 stars, notes -> ranks [1,2,2,3,4,1]; the set {rank 0, rank 2} = 1-based 1 and 3.

@@ -115,10 +115,23 @@ func run() -> void:
 	await process_frame
 	ok(d._effective_seq_candidates(prec) == [6], "still pinned to 6")
 
-	print("\n=== repeating melody: one button per NOTE, repeats linked ===")
+	# 2026-10-12: EVERY note is on the row (author ruling, "Put them on it").
+	# History: before 2026-10-10 the row had one button per note with a star's
+	# notes LINKED, which gave the repeats away; from 2026-10-10 repeat notes
+	# had no button. Now each note has its own button and nothing links them:
+	# a first note is the pick-one position, a repeat note is "fires here
+	# again or not", marked note by note.
+	#
+	# SEAM ONLY since later on 2026-10-12: which notes are first firings is no
+	# longer shown to the player, so the game does not behave like this any
+	# more. These two sections run with notes_hidden_enabled = false and pin
+	# the older behaviour that seam keeps; the game's own behaviour is the
+	# "first notes hidden" section after them.
+	print("\n=== (seam: first notes shown) repeating melody: one button per note ===")
 	var host2 = await _make_host()
 	var d2 = host2._deduction
 	var w2 = host2._widgets
+	d2.notes_hidden_enabled = false
 	host2._melody_seq_pos_sequence = [1, 2, 3, 1, 4, 5, 2, 6]   # 8 notes, 6 stars
 	d2._load_match_records([])
 	var rec2: int = d2._get_or_create_match_record_for_name("Pyrios")
@@ -127,28 +140,276 @@ func run() -> void:
 	var row2: Control = w2._make_sequence_range_row_for_record(rec2, Color.WHITE)
 	host2.add_child(row2)
 	var b2: Array = _strip_buttons(row2)
-	ok(b2.size() == 8, "eight buttons for eight notes, none skipped (got %d)" % b2.size())
+	ok(b2.size() == 8, "eight buttons for eight notes (got %d)" % b2.size())
 	var labels: Array = []
 	for b in b2:
 		labels.append((b as Button).text)
-	ok(labels == ["1", "2", "3", "4", "5", "6", "7", "8"], "labelled 1..8 (got %s)" % str(labels))
+	ok(labels == ["1", "2", "3", "4", "5", "6", "7", "8"], "labelled with the notes in order (got %s)" % str(labels))
+	var same_look: bool = true
+	for b in b2:
+		if (b as Button).modulate != (b2[0] as Button).modulate or (b as Button).disabled:
+			same_look = false
+	ok(same_look, "on an open row first notes and repeat notes look alike")
 	var lo2 := LineEdit.new()
 	var mid2 := LineEdit.new()
 	var hi2 := LineEdit.new()
 	host2.add_child(lo2)
 	host2.add_child(mid2)
 	host2.add_child(hi2)
-	# The 4th note is the 1st star's second note -- toggling it turns that star off.
-	w2._on_seq_checker_toggle(rec2, d2._seq_pos_for_melody_tick(4), lo2, mid2, hi2)
+	ok(d2._seq_pos_for_melody_tick(4) == 0 and d2._seq_pos_for_melody_tick(7) == 0,
+		"the board has no position for repeat notes 4 and 7 (got %d, %d)" % [d2._seq_pos_for_melody_tick(4), d2._seq_pos_for_melody_tick(7)])
+	# The button labelled 5 is the 4th star to fire: ruling it out removes rank 4 only.
+	w2._on_seq_checker_toggle(rec2, d2._seq_pos_for_melody_tick(5), lo2, mid2, hi2)
 	await process_frame
 	var eff3: Array = d2._effective_seq_candidates(rec2)
-	ok(eff3.size() == 5 and not eff3.has(1), "toggling note 4 turns star 1 off, leaving five (got %s)" % str(eff3))
+	ok(eff3 == [1, 2, 3, 5, 6], "ruling out note 5 turns the 4th star off, leaving five (got %s)" % str(eff3))
 	row2.free()
 	row2 = w2._make_sequence_range_row_for_record(rec2, Color.WHITE)
 	host2.add_child(row2)
 	b2 = _strip_buttons(row2)
-	ok((b2[0] as Button).modulate == (b2[3] as Button).modulate and (b2[0] as Button).modulate != (b2[1] as Button).modulate,
-		"notes 1 and 4 (same star) now share the off look; note 2 does not")
+	var off_look: Color = (b2[4] as Button).modulate
+	var only_one_off: bool = true
+	for bi in b2.size():
+		if bi != 4 and (b2[bi] as Button).modulate == off_look:
+			only_one_off = false
+	ok((b2[4] as Button).text == "5" and only_one_off, "only the note-5 button has the off look; no other note went with it")
+
+	print("\n=== a repeat note: fires here again, or not, note by note ===")
+	# Notes 4 and 7 are repeat notes. Nothing below reads which star they are.
+	ok(d2._repeat_note_state_for_record(rec2, 4) == 0 and d2._repeat_note_state_for_record(rec2, 7) == 0,
+		"both repeat notes start open on Pyrios's row")
+	w2._on_seq_note_toggle(rec2, 4)
+	ok(d2._repeat_note_state_for_record(rec2, 4) == 3, "right-click on note 4: ruled out by the player's own mark")
+	ok(d2._effective_seq_candidates(rec2) == [1, 2, 3, 5, 6], "which changes nothing about Pyrios's position (got %s)" % str(d2._effective_seq_candidates(rec2)))
+	row2.free()
+	row2 = w2._make_sequence_range_row_for_record(rec2, Color.WHITE)
+	host2.add_child(row2)
+	b2 = _strip_buttons(row2)
+	ok((b2[3] as Button).text == "4" and (b2[3] as Button).modulate == off_look and not (b2[3] as Button).disabled,
+		"its button has the off look and can be clicked back")
+	w2._on_seq_note_toggle(rec2, 4)
+	ok(d2._repeat_note_state_for_record(rec2, 4) == 0, "right-click again restores it")
+
+	await w2._on_seq_note_select(rec2, 4)
+	rec2 = d2._get_or_create_match_record_for_name("Pyrios")
+	ok(d2._repeat_note_state_for_record(rec2, 4) == 1, "left-click on note 4: Pyrios fires there again")
+	ok(d2._find_match_record_by_melody_tick(4) == rec2, "the note now belongs to Pyrios's record")
+	ok(d2._effective_seq_candidates(rec2) == [1, 2, 3],
+		"so Pyrios first fired before note 4: positions 1 to 3 only (got %s)" % str(d2._effective_seq_candidates(rec2)))
+	ok(d2._repeat_note_state_for_record(rec2, 7) == 0, "note 7 is untouched: a star may hold several repeat notes")
+	var helios: int = d2._get_or_create_match_record_for_name("Helios")
+	ok(d2._repeat_note_state_for_record(helios, 4) == 2, "on Helios's row note 4 is ruled out by deduction: it is Pyrios's")
+	rec2 = d2._get_or_create_match_record_for_name("Pyrios")
+	await w2._on_seq_note_select(rec2, 7)
+	rec2 = d2._get_or_create_match_record_for_name("Pyrios")
+	ok(d2._repeat_note_state_for_record(rec2, 4) == 1 and d2._repeat_note_state_for_record(rec2, 7) == 1,
+		"notes 4 and 7 can both be confirmed on the one row")
+	await w2._on_seq_note_select(rec2, 7)
+	rec2 = d2._get_or_create_match_record_for_name("Pyrios")
+	ok(d2._repeat_note_state_for_record(rec2, 7) == 0 and d2._repeat_note_state_for_record(rec2, 4) == 1,
+		"left-click on a confirmed note lets that one note go and no other")
+	await w2._on_seq_note_select(rec2, 4)
+	rec2 = d2._get_or_create_match_record_for_name("Pyrios")
+	ok(d2._repeat_note_state_for_record(rec2, 4) == 0 and d2._effective_seq_candidates(rec2) == [1, 2, 3, 5, 6],
+		"letting note 4 go reopens Pyrios's positions (got %s)" % str(d2._effective_seq_candidates(rec2)))
+
+	print("\n=== what rules a repeat note out ===")
+	# Reported 2026-10-12: ruling out note 1 on a row silently removed note 2
+	# too, because note 2 is a repeat note and only note 1's star could be
+	# it -- a fact the player is not shown. A row's position marks must not
+	# remove a repeat note nobody has opened or placed.
+	var hostz = await _make_host()
+	var dz = hostz._deduction
+	var wz = hostz._widgets
+	dz.notes_hidden_enabled = false
+	hostz._melody_seq_pos_sequence = [1, 2, 3, 1, 4, 5, 2, 6]
+	dz._load_match_records([])
+	var zeta: int = dz._get_or_create_match_record_for_name("Zeta")
+	var loz := LineEdit.new()
+	var midz := LineEdit.new()
+	var hiz := LineEdit.new()
+	for ez in [loz, midz, hiz]:
+		hostz.add_child(ez)
+	wz._on_seq_checker_select(zeta, 6, loz, midz, hiz)   # position 6 first fires on note 8
+	await process_frame
+	zeta = dz._get_or_create_match_record_for_name("Zeta")
+	ok(dz._effective_seq_candidates(zeta) == [6], "precondition: Zeta is pinned to the star that first fires on note 8")
+	ok(dz._find_match_record_by_melody_tick(4) < 0, "precondition: nobody has opened note 4")
+	ok(dz._repeat_note_state_for_record(zeta, 4) == 0,
+		"note 4 stays open on Zeta's row although it comes before note 8 (state %d)" % dz._repeat_note_state_for_record(zeta, 4))
+	hostz.queue_free()
+	# The player's "not here" mark makes the note's own record a different star.
+	helios = d2._get_or_create_match_record_for_name("Helios")
+	w2._on_seq_note_toggle(helios, 7)
+	var n7: int = d2._get_or_create_match_record_for_melody_tick(7)
+	d2._full_propagation_refresh()
+	helios = d2._get_or_create_match_record_for_name("Helios")
+	ok(d2._records_provably_distinct(helios, n7), "Helios marked 'not note 7': note 7's own record is provably not Helios")
+	# Same single position on both sides reads as confirmed without a merge.
+	var selion: int = d2._get_or_create_match_record_for_name("Selion")
+	w2._on_seq_checker_select(selion, 2, lo2, mid2, hi2)
+	await process_frame
+	n7 = d2._get_or_create_match_record_for_melody_tick(7)
+	d2.record_at(n7)["seq_lo"] = 2
+	d2.record_at(n7)["seq_hi"] = 2
+	d2._full_propagation_refresh()
+	selion = d2._get_or_create_match_record_for_name("Selion")
+	ok(d2._repeat_note_state_for_record(selion, 7) == 1,
+		"note 7 placed on position 2 from the staff shows as confirmed on Selion's row, pinned to position 2 (state %d)" % d2._repeat_note_state_for_record(selion, 7))
+
+	# FIRST NOTES HIDDEN (author ruling 2026-10-12). The player is never told
+	# which notes are a star's first firing and the game must not act on it.
+	# So on a repeating melody every note is the same kind of button, nothing
+	# is pick-one, and nothing is filled in or removed that the player did not
+	# mark -- except what the star's own firing count allows.
+	print("\n=== first notes hidden: every note is the same kind of button ===")
+	var hosth = await _make_host()
+	var dh = hosth._deduction
+	var wh = hosth._widgets
+	hosth._melody_seq_pos_sequence = [1, 2, 3, 1, 4, 5, 2, 6]   # notes 4 and 7 are repeats, which nothing below may use
+	dh._load_match_records([])
+	ok(dh._notes_hidden(), "the notes are hidden on a repeating melody")
+	wh._seq_checker_loaded = true
+	wh._seq_checker_mode = false
+	var hrec: int = dh._get_or_create_match_record_for_name("Pyrios")
+	var hrow: Control = wh._make_sequence_range_row_for_record(hrec, Color.WHITE)
+	hosth.add_child(hrow)
+	var hb: Array = _strip_buttons(hrow)
+	ok(hb.size() == 8, "even in Classic entry the row is the eight note buttons, not the typed boxes (got %d)" % hb.size())
+	var tips_alike: bool = true
+	var mentions_kind: bool = false
+	for b3 in hb:
+		var tip: String = (b3 as Button).tooltip_text
+		if tip.replace((b3 as Button).text, "N") != (hb[0] as Button).tooltip_text.replace((hb[0] as Button).text, "N"):
+			tips_alike = false
+		if tip.contains("repeat") or tip.contains("first"):
+			mentions_kind = true
+		if (b3 as Button).modulate != (hb[0] as Button).modulate or (b3 as Button).disabled:
+			tips_alike = false
+	ok(tips_alike, "all eight buttons look alike and carry the same tooltip but for the note number")
+	ok(not mentions_kind, "no tooltip says 'first' or 'repeat'")
+	var all_open: bool = true
+	for t3 in range(1, 9):
+		if dh._repeat_note_state_for_record(hrec, t3) != 0:
+			all_open = false
+	ok(all_open, "every note starts open on the row")
+
+	# The reported case: ruling out note 1 must not touch note 2 (or any note).
+	wh._on_seq_note_toggle(hrec, 1)
+	var only_one: bool = dh._repeat_note_state_for_record(hrec, 1) == 3
+	for t4 in range(2, 9):
+		if dh._repeat_note_state_for_record(hrec, t4) != 0:
+			only_one = false
+	ok(only_one, "right-click on note 1 rules out note 1 and nothing else")
+	wh._on_seq_note_toggle(hrec, 1)
+
+	# No note is pick-one: confirming a first-firing note leaves the others open.
+	await wh._on_seq_note_select(hrec, 3)
+	hrec = dh._get_or_create_match_record_for_name("Pyrios")
+	var rest_open: bool = dh._repeat_note_state_for_record(hrec, 3) == 1
+	for t5 in [1, 2, 4, 5, 6, 7, 8]:
+		if dh._repeat_note_state_for_record(hrec, t5) != 0:
+			rest_open = false
+	ok(rest_open, "left-click on note 3 confirms note 3 and leaves the other seven open")
+	ok(dh._effective_seq_candidates(hrec).size() == 6, "and the board has worked out no firing-order position from it (got %s)" % str(dh._effective_seq_candidates(hrec)))
+
+	# A clicked note opens a blank entry.
+	var note5_rec: int = dh._get_or_create_match_record_for_melody_tick(5)
+	dh._full_propagation_refresh()
+	note5_rec = dh._find_match_record_by_melody_tick(5)
+	var blank: bool = dh._effective_seq_candidates(note5_rec).size() == 6 and dh._seq_pos_for_melody_tick(5) == 0
+	for t6 in [1, 2, 3, 4, 6, 7, 8]:
+		# note 3 is Pyrios's, and nothing says note 5 is not Pyrios too
+		if dh._repeat_note_state_for_record(note5_rec, t6) != 0:
+			blank = false
+	ok(blank, "clicking note 5 on the staff opens an entry with every other note open and no position")
+	var note4_rec: int = dh._get_or_create_match_record_for_melody_tick(4)
+	dh._full_propagation_refresh()
+	note4_rec = dh._find_match_record_by_melody_tick(4)
+	var blank4: bool = dh._effective_seq_candidates(note4_rec).size() == 6
+	for t7 in [1, 2, 3, 5, 6, 7, 8]:
+		if dh._repeat_note_state_for_record(note4_rec, t7) != 0:
+			blank4 = false
+	ok(blank4, "and so does note 4, which is secretly a repeat: nothing ties it to note 1")
+
+	# The Staff popup's row: every note's popup has it, offering every other note.
+	for popup_tick in [1, 4]:
+		wh._open_staff_popup(popup_tick, Vector2.ZERO)
+		var idrow: Control = hosth._staff_popup._identity_row
+		var offered: Array = []
+		if idrow != null:
+			for b4 in idrow.find_children("*", "Button", true, false):
+				if (b4 as Button).text.is_valid_int():
+					offered.append(int((b4 as Button).text))
+		var want: Array = []
+		for t8 in range(1, 9):
+			if t8 != popup_tick:
+				want.append(t8)
+		ok(offered == want, "note %d's popup has 'Same star as note' offering every other note (got %s)" % [popup_tick, str(offered)])
+		hosth._staff_popup.hide()
+	await wh._on_staff_note_link(4, 8, false)
+	ok(dh._find_match_record_by_melody_tick(8) == dh._find_match_record_by_melody_tick(4) and dh._find_match_record_by_melody_tick(4) >= 0,
+		"marking 'same star as note 8' on note 4's popup puts both notes on one entry")
+	hosth._staff_popup.hide()
+	await wh._on_staff_note_link(4, 2, true)
+	hosth._staff_popup.hide()
+	var note2_rec: int = dh._get_or_create_match_record_for_melody_tick(2)
+	dh._full_propagation_refresh()
+	ok(dh._records_provably_distinct(dh._find_match_record_by_melody_tick(4), dh._find_match_record_by_melody_tick(2)),
+		"marking 'not the same star as note 2' makes the two notes provably different stars")
+	ok(note2_rec >= 0 and dh._repeat_note_state_for_record(dh._find_match_record_by_melody_tick(2), 8) == 2,
+		"so on note 2's entry note 8 is ruled out too: it is note 4's star")
+
+	# THE COUNT CAPS THE ROW. Zeta is known to fire twice (repeats once): once it
+	# holds two notes every other note is ruled out; before that none is.
+	var zh: int = dh._get_or_create_match_record_for_name("Zeta")
+	dh.record_at(zh)["repeat_states"] = {1: 1}
+	dh._full_propagation_refresh()
+	zh = dh._get_or_create_match_record_for_name("Zeta")
+	ok(dh._known_fire_count_for_record(zh) == 2, "Zeta, marked 'repeats once', is known to fire twice (got %d)" % dh._known_fire_count_for_record(zh))
+	await wh._on_seq_note_select(zh, 6)
+	zh = dh._get_or_create_match_record_for_name("Zeta")
+	ok(dh._repeat_note_state_for_record(zh, 1) == 0, "with one note confirmed the others are still open")
+	await wh._on_seq_note_select(zh, 1)
+	zh = dh._get_or_create_match_record_for_name("Zeta")
+	var capped: bool = dh._repeat_note_state_for_record(zh, 6) == 1 and dh._repeat_note_state_for_record(zh, 1) == 1
+	for t9 in [5, 7]:
+		if dh._repeat_note_state_for_record(zh, t9) != 2:
+			capped = false
+	ok(capped, "with both its notes confirmed every other note is ruled out on Zeta's row")
+	await wh._on_seq_note_select(zh, 1)
+	zh = dh._get_or_create_match_record_for_name("Zeta")
+	ok(dh._repeat_note_state_for_record(zh, 5) == 0, "letting one go reopens them")
+	# The other way: holding notes bounds the count.
+	var eh: int = dh._get_or_create_match_record_for_name("Eos")
+	await wh._on_seq_note_select(eh, 5)
+	eh = dh._get_or_create_match_record_for_name("Eos")
+	await wh._on_seq_note_select(eh, 7)
+	dh._full_propagation_refresh()
+	eh = dh._get_or_create_match_record_for_name("Eos")
+	ok(dh._effective_repeat_state(eh, 0) == 2, "Eos, holding two notes, cannot be a star that never repeats (state %d)" % dh._effective_repeat_state(eh, 0))
+	ok(dh.hints_unavailable() and dh.hint_next_steps([]).is_empty(), "the hint finder is off on this board")
+
+	# A star's map tag lists the notes the board has it firing on, no position.
+	var star0: int = dh._get_or_create_match_record_for_star_idx(0)
+	ok(wh._held_notes_str_for_star(0) == "?", "a map star with no note placed reads '?' (got '%s')" % wh._held_notes_str_for_star(0))
+	await wh._on_seq_note_select(star0, 2)
+	ok(wh._held_notes_str_for_star(0) == "2", "after its row confirms note 2 the tag reads '2' (got '%s')" % wh._held_notes_str_for_star(0))
+
+	# The Staff popup's sections sit in two columns (author direction
+	# 2026-10-12), so the taller popup stays clear of the pinned clue.
+	var pop = hosth._staff_popup
+	var left: Node = pop._pitch_columns_box.get_parent()
+	var right: Node = pop._name_columns_box.get_parent()
+	ok(left != right and left.get_parent() == right.get_parent() and left.get_parent() is HBoxContainer,
+		"Pitch and Name sit in two different columns of one row")
+	ok(pop._color_columns_box.get_parent() == left and pop._repeat_columns_box.get_parent() == left,
+		"Colour and Repeats share the left column with Pitch; Name has the right one")
+	wh._open_staff_popup(5, Vector2.ZERO)
+	ok(pop._identity_row != null and pop._identity_row.get_parent() == pop._title_label.get_parent(),
+		"the 'Same star as note' row spans the full width above both columns")
+	pop.hide()
+	hosth.queue_free()
 
 	print("\n=== the scroll position survives a rebuild ===")
 	# A click rebuilds the whole row; the strip must come back where it was.

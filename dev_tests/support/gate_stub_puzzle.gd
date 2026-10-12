@@ -14,6 +14,7 @@ func _generate_clues_forms_attempt() -> Dictionary:
 		"seq_unique": passes,
 		"name_unique": passes,
 		"name_unique_closure": passes,
+		"repeat_unique": passes,
 		"seq_solutions_count": 1 if passes else 2,
 		"name_solutions_count": 1 if passes else 2,
 	}

@@ -130,6 +130,51 @@ func _ready() -> void:
     _add_copy_button(_color_btn_undo_all, "color")
     _add_copy_button(_name_btn_undo_all, "name")
     _add_copy_button(_repeat_btn_undo_all, "repeat")
+    _split_sections_into_two_columns()
+
+
+## TWO COLUMNS OF SECTIONS (author direction 2026-10-12). The popup was one
+## stack: Pitch, Colour, Name, Repeats. With the "Same star as note" row now on
+## every note's popup and offering every other note, that stack is tall enough
+## to cover the pinned clue at the top of the Study panel. So the sections sit
+## side by side under the title and the note row: Pitch, Colour and Repeats on
+## the left, Name (the longest list) on the right.
+##
+## Done here rather than in StaffPopup.tscn so the scene's node names, and every
+## %UniqueName lookup above, stay exactly as they are.
+func _split_sections_into_two_columns() -> void:
+    var stack: Node = _title_label.get_parent()
+    if stack == null or stack.get_node_or_null("SectionColumns") != null:
+        return
+    var columns := HBoxContainer.new()
+    columns.name = "SectionColumns"
+    columns.add_theme_constant_override("separation", 12)
+    var left := VBoxContainer.new()
+    left.name = "LeftSections"
+    left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    var divider := VSeparator.new()
+    var right := VBoxContainer.new()
+    right.name = "RightSections"
+    right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    columns.add_child(left)
+    columns.add_child(divider)
+    columns.add_child(right)
+    var to_left: Array = ["PitchHeader", "PitchUndoRow", "PitchColumns", "Sep2",
+        "ColorHeader", "ColorUndoRow", "ColorColumns", "Sep4",
+        "RepeatHeader", "RepeatUndoRow", "RepeatColumns"]
+    var to_right: Array = ["NameHeader", "NameUndoRow", "NameColumns"]
+    for pair in [[to_left, left], [to_right, right]]:
+        for node_name in pair[0]:
+            var n: Node = stack.get_node_or_null(str(node_name))
+            if n == null:
+                continue
+            stack.remove_child(n)
+            (pair[1] as Node).add_child(n)
+    # The separator that sat between Colour and Name has nothing to separate.
+    var sep3: Node = stack.get_node_or_null("Sep3")
+    if sep3 != null:
+        (sep3 as Control).visible = false
+    stack.add_child(columns)
 
 
 func _add_copy_button(sibling: Button, section: String) -> void:
@@ -142,6 +187,27 @@ func _add_copy_button(sibling: Button, section: String) -> void:
     btn.tooltip_text = "Write the still-possible %s values into the Notes tab" % section
     btn.pressed.connect(func(): copy_pressed.emit(current_record_idx, section))
     parent.add_child(btn)
+
+
+## The "Same star as note" row, directly under the title (added 2026-10-10 for
+## repeat notes; on EVERY note's popup since 2026-10-12, when which notes are
+## first firings stopped being shown). Built by the caller, like the section
+## rows; null removes it (a melody with no repeats). Replaced on every
+## call, and the old row is detached at once so it stops counting toward the
+## popup's minimum size before it is freed.
+var _identity_row: Control = null
+
+func set_identity_row(row: Control) -> void:
+    if _identity_row != null and is_instance_valid(_identity_row):
+        if _identity_row.get_parent() != null:
+            _identity_row.get_parent().remove_child(_identity_row)
+        _identity_row.queue_free()
+    _identity_row = row
+    if row == null:
+        return
+    var parent: Node = _title_label.get_parent()
+    parent.add_child(row)
+    parent.move_child(row, _title_label.get_index() + 1)
 
 
 func open(tick: int, record_idx: int, screen_pos: Vector2) -> void:

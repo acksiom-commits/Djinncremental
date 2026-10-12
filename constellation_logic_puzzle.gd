@@ -192,12 +192,30 @@ static func _ordinal(n: int) -> String:
 
 
 ## True when the melody has more note-events than stars, i.e. some star fires
-## more than once (every Beginner constellation). The melody's repeat shape --
-## which notes are the same star -- is PUBLIC (the staff shows it), so a clue may
-## name a star by any one of its notes. In a 1:1 melody (every hard-mode
-## constellation) this is false and every wording below is the original.
+## more than once (every Beginner constellation). In a 1:1 melody (every
+## hard-mode constellation) this is false and every wording below is the
+## original. What the player is GIVEN about a repeating melody is decided by
+## _repeats_hidden() just below.
 func _melody_repeats() -> bool:
     return melody_star_sequence.size() > star_count
+
+
+## REPEATS ARE EARNED (author ruling 2026-10-10, replacing the 2026-10-03
+## "repeat shape is public" one). Which star fires on a note is NOT given: the
+## player has to deduce it. Since later on 2026-10-12 that includes which notes
+## are a star's FIRST firing (see FIRST NOTES HIDDEN, above _solve_note_owners);
+## this comment used to say the staff shows them.
+##
+## So a star's later notes are part of what is PROVEN, not of what is given:
+## every note is a Sequence position, and the note proof (_solve_notes,
+## 2026-10-12) shows the firing order and the repeat notes have one answer
+## between them. False only as a test seam, to compare against the old
+## public-shape behaviour.
+var repeats_earned: bool = true
+
+
+func _repeats_hidden() -> bool:
+    return repeats_earned and _melody_repeats()
 
 
 var _first_tick_cache: Array[int] = []
@@ -244,10 +262,71 @@ func _seq_tick_phrase(star: int, noun_phrase: bool) -> String:
 ## ambiguous about which of A's several notes is meant. Stars that fire once
 ## keep the plain verb.
 func _seq_fire_verb(stars: Array) -> String:
+    # OVER A GROUP THE VERB SAYS THE SAME OF EVERY MEMBER (author, 2026-10-11:
+    # "'fires first' should only apply to stars that repeat"). "first fire" is
+    # used only when ALL of them repeat and the plain verb only when NONE does;
+    # a group with both kinds has no honest verb, and its callers refuse to
+    # build the clue (_seq_group_mixed). Until then "first fire" meant "at
+    # least one of them repeats", which read as a false claim about the rest:
+    # "Exactly 3 of Eosyos's connected stars first fire before it", with one
+    # of the three firing only once.
+    var repeats: bool = false
     for s in stars:
         if int(repeat_count[int(s)]) > 0:
-            return "first fires"
-    return "fires"
+            repeats = true
+            break
+    for s2 in stars:
+        _note_repeat_verb(int(s2), repeats)
+    return "first fires" if repeats else "fires"
+
+
+## True when some of these stars repeat and some fire once: no single verb is
+## true of the group, so a clue that needs one must not be built.
+func _seq_group_mixed(stars: Array) -> bool:
+    var any_repeat: bool = false
+    var any_once: bool = false
+    for s in stars:
+        if int(repeat_count[int(s)]) > 0:
+            any_repeat = true
+        else:
+            any_once = true
+    return any_repeat and any_once
+
+
+## THE VERB IS INFORMATION (author ruling 2026-10-11). Saying "first fires" of a
+## star tells the reader it repeats; the plain "fires" (or no " first fires"
+## tail) in the same grammar tells them it fires once. That is intended, so the
+## repeat-note gate has to be credited with it: every verb the helpers here
+## hand to a sentence is recorded, per star, and _commit_clue_result turns the
+## record into repeat_count_range facts on that clue.
+##
+## star -> true (repeats) / false (fires once), for the clue being built. Reset
+## wherever _rendered_terms is, for the same reason: a Form that renders and
+## then bails must leave nothing behind.
+##
+## ONLY call a noting helper (_seq_verb_for, _seq_fire_verb and what is built on
+## them) for a verb or tail the sentence really shows. A call whose result is
+## thrown away credits the gate with something the text never said.
+var _rendered_repeat_verbs: Dictionary = {}
+
+
+func _note_repeat_verb(star: int, repeats: bool) -> void:
+    if star < 0 or star >= repeat_count.size() or int(repeat_count[star]) < 0:
+        return
+    _rendered_repeat_verbs[star] = repeats
+
+
+## The recorded verbs as facts, and the record cleared.
+func _take_repeat_verb_facts() -> Array:
+    var out: Array = []
+    if _repeats_hidden():
+        for s in _rendered_repeat_verbs:
+            var repeats: bool = bool(_rendered_repeat_verbs[s])
+            out.append({"kind": "repeat_count_range", "star": int(s),
+                "lo": 1 if repeats else 0, "hi": REPEAT_COUNT_UNBOUNDED if repeats else 0,
+                "negated": false, "from_verb": true})
+    _rendered_repeat_verbs = {}
+    return out
 
 
 ## The bare form for "Exactly 2 of them ___ before it".
@@ -263,7 +342,9 @@ func _seq_fire_base(stars: Array) -> String:
 ## repeating star the sentence mentions is still marked and the order claim
 ## stays unambiguous.
 func _seq_verb_for(star: int) -> String:
-    return "first fires" if star >= 0 and star < repeat_count.size() and int(repeat_count[star]) > 0 else "fires"
+    var repeats: bool = star >= 0 and star < repeat_count.size() and int(repeat_count[star]) > 0
+    _note_repeat_verb(star, repeats)
+    return "first fires" if repeats else "fires"
 
 
 func _seq_base_for(star: int) -> String:
@@ -1852,7 +1933,19 @@ func check_solution(candidate: Array) -> bool:
 # defaulted because a half-populated distance clue would silently derive
 # nothing while looking fully wired; _load_cache() rejects the whole cache on
 # a version mismatch, so those puzzles regenerate.
-const CACHE_VERSION: int = 7
+#
+# version 8 (2026-10-10): repeats are earned, not given (_repeats_hidden). A
+# version-7 Beginner puzzle was proven unique on the assumption that the player
+# could read every star's notes off the staff, and its Firing clues carry rank
+# sets instead of firing_position / firing_relation facts, so nothing proves its
+# repeat notes can be worked out. Those puzzles regenerate.
+#
+# version 9 (2026-10-12): which notes are first firings is hidden as well
+# (_first_notes_hidden). A version-8 Beginner puzzle was proven unique only for
+# a player who is told the first notes, and may contain the ill-formed "first
+# fire" / "one of the firings of" wordings fixed on 2026-10-11 and -12. Those
+# puzzles regenerate.
+const CACHE_VERSION: int = 9
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -2715,6 +2808,33 @@ func _repeat_predicate_neg_facts(subject_id: Dictionary, pred: Dictionary, want_
             continue
         out.append_array(_name_group_facts(subject_id, {"cat": Category.REPEAT, "star": _repeat_rep_star(int(v))}, false))
     return out
+
+
+## "No upper limit" for a repeat_count_range fact's `hi`.
+const REPEAT_COUNT_UNBOUNDED: int = 999
+
+
+## What a Repeat sentence says about ONE star's repeat count, as the sentence
+## words it: an inclusive range, optionally negated. This is the form the
+## repeat-note gate reads (_solve_repeat_notes). The name_group / descriptor
+## encodings beside it key a group by the counts PRESENT in the answer, which
+## is right for the player's board but too narrow here: "repeats at least once"
+## must also allow a count no star actually has.
+func _repeat_range_fact(star: int, raw_val: int, pred: Dictionary, negated: bool) -> Dictionary:
+    var lo: int = raw_val
+    var hi: int = raw_val
+    if not pred.is_empty():
+        match str(pred["kind"]):
+            "at_least":
+                lo = int(pred["lo"])
+                hi = REPEAT_COUNT_UNBOUNDED
+            "at_most":
+                lo = 0
+                hi = int(pred["hi"])
+            _:
+                lo = int(pred["lo"])
+                hi = int(pred["hi"])
+    return {"kind": "repeat_count_range", "star": star, "lo": lo, "hi": hi, "negated": negated}
 
 
 func _hop_word(d: int) -> String:
@@ -4439,6 +4559,13 @@ func _firing_domain(sel: Dictionary) -> Array:
         return [1, n]
     if kind == "span":
         return [1, n - 1]
+    # With the repeats hidden the reader cannot rule out a star having MORE
+    # notes than any star really has, so the top of the range is every repeat
+    # note plus the first. Using the real maximum made "at most <real max>"
+    # print as "at least 0 times" -- a sentence that says nothing, carrying a
+    # fact that says something (caught by test_firing_position, 2026-10-10).
+    if _repeats_hidden():
+        return [0, 1 + _repeat_ticks().size()]
     var most: int = 0
     for s in star_count:
         most = maxi(most, _star_ticks(s).size())
@@ -4485,6 +4612,9 @@ func _firing_sentence(label: String, sel: Dictionary, lo: int, hi: int) -> Strin
         if lo == hi:
             if lo == 0:
                 return "%s does not fire %s." % [label, win]
+            # One note can only be fired once, so "exactly once" is noise.
+            if lo == 1 and int(sel["lo"]) == int(sel["hi"]):
+                return "%s fires %s." % [label, win]
             return "%s fires exactly %s %s." % [label, _firing_times_word(lo), win]
         if hi >= int(dom[1]):
             return "%s fires at least %s %s." % [label, _firing_times_word(lo), win]
@@ -4510,7 +4640,11 @@ func _build_form_firing_position(chain: Dictionary) -> Dictionary:
     var n: int = melody_star_sequence.size()
     if n < 4:
         return {}
-    var a: Dictionary = _sample_identity_axis_cell(Category.SEQUENCE, chain, -1)
+    # With the repeats hidden the sentence is about the star's later notes, not
+    # its rank, so the subject is drawn (and its cell spent) on the Repeat axis
+    # and may be labelled by its first note like any other descriptor.
+    var hidden: bool = _repeats_hidden()
+    var a: Dictionary = _sample_identity_axis_cell(Category.REPEAT if hidden else Category.SEQUENCE, chain, -1)
     if a.is_empty():
         return {}
     var subject_star: int = int(a["star"])
@@ -4560,6 +4694,8 @@ func _build_form_firing_position(chain: Dictionary) -> Dictionary:
     var iv: Array = _firing_pick_interval(v, int(dom[0]), int(dom[1]))
     var lo: int = int(iv[0])
     var hi: int = int(iv[1])
+    if hidden:
+        return _firing_position_hidden_result({"cat": int(a["id_cat"]), "star": subject_star}, sel, lo, hi, true)
     var allowed: Array = _firing_allowed_ranks(sel, lo, hi)
     # A clue that every star satisfies tells the reader nothing, and the subject
     # must satisfy it (true by construction; checked so a bug fails loudly here).
@@ -4589,6 +4725,152 @@ func _build_form_firing_position(chain: Dictionary) -> Dictionary:
         "solver_facts": solver_facts,
         "value_facts": _name_rank_set_facts(id_ch, allowed),
     }
+
+
+## A Firing Position clue when the repeats are hidden (_repeats_hidden). The
+## sentence is the same; what it is worth is different. It no longer says which
+## RANKS the subject could have (that needed every star's notes), it says
+## something about which REPEAT NOTES are the subject's, so it carries a
+## firing_position fact for the repeat-note gate and nothing for the Sequence
+## solver beyond what its own label discloses.
+##
+## Refused when the sentence cannot be false of the subject whatever the repeat
+## notes turn out to be: then it is readable off the public first notes alone.
+## `require_fresh` is the main loop's termination guard (one such clue per
+## label of a star); the repair pass states a pin regardless.
+func _firing_position_hidden_result(id_ch: Dictionary, sel: Dictionary, lo: int, hi: int, require_fresh: bool) -> Dictionary:
+    var star: int = int(id_ch["star"])
+    var id_cat: int = int(id_ch["cat"])
+    if not _firing_position_informative(star, sel, lo, hi):
+        return {}
+    var grid_updates: Array = [{
+        "cat_a": id_cat, "val_a": int(_cat_star_to_value[id_cat][star]),
+        "cat_b": Category.REPEAT, "val_b": int(_cat_star_to_value[Category.REPEAT][star]), "is_true": true,
+    }]
+    if require_fresh and not _any_cell_fresh(grid_updates):
+        return {}
+    return {
+        "chars": [id_ch, {"cat": Category.REPEAT, "star": star}],
+        "text": _firing_sentence(_characteristic_label(id_ch), sel, lo, hi),
+        "grid_updates": grid_updates,
+        "solver_facts": _seq_fact_for_label(id_ch),
+        "value_facts": [{"kind": "firing_position", "s": star, "sel": sel.duplicate(), "lo": lo, "hi": hi}],
+    }
+
+
+## The melody notes (1-indexed, ascending) that are NOT a star's first firing:
+## the notes whose star the player has to work out.
+func _repeat_ticks() -> Array:
+    var seen: Dictionary = {}
+    var out: Array = []
+    for t in melody_star_sequence.size():
+        var s: int = int(melody_star_sequence[t])
+        if s < 0 or s >= star_count:
+            continue
+        if seen.has(s):
+            out.append(t + 1)
+        else:
+            seen[s] = true
+    return out
+
+
+## The firing order the note proof is currently trying (star -> rank, 0-indexed),
+## or empty to mean the real one. Set only by _solve_notes, around one
+## _solve_repeat_notes call, so the repeat-note search can be asked "what if the
+## stars first fired in THIS order instead".
+var _note_proof_ranks: Array = []
+
+
+## The melody notes (1-indexed, ascending) that ARE a star's first firing.
+## Public: the staff's shape gives it. Entry r is the first note of whichever
+## star is r-th in the firing order (0-indexed).
+func _first_fire_ticks() -> Array:
+    var seen: Dictionary = {}
+    var out: Array = []
+    for t in melody_star_sequence.size():
+        var s: int = int(melody_star_sequence[t])
+        if s < 0 or s >= star_count or seen.has(s):
+            continue
+        seen[s] = true
+        out.append(t + 1)
+    return out
+
+
+## A star's first note under the order being tried (see _note_proof_ranks).
+func _note_proof_first_tick(star: int) -> int:
+    if _note_proof_ranks.size() != star_count:
+        return _seq_first_tick(star)
+    var firsts: Array = _first_fire_ticks()
+    var r: int = int(_note_proof_ranks[star])
+    if r < 0 or r >= firsts.size():
+        return _seq_first_tick(star)
+    return int(firsts[r])
+
+
+## Bit i set = repeat note rticks[i] could be `star`'s: it comes after the
+## star's first note. (A repeat note can only belong to a star already heard.)
+func _repeat_eligible_mask(star: int, rticks: Array) -> int:
+    var first: int = _note_proof_first_tick(star)
+    var mask: int = 0
+    for i in rticks.size():
+        if int(rticks[i]) > first:
+            mask |= 1 << i
+    return mask
+
+
+## A star's notes if its repeat notes were exactly the ones in `mask`.
+func _ticks_for_repeat_mask(star: int, rticks: Array, mask: int) -> Array:
+    var out: Array = [_note_proof_first_tick(star)]
+    for i in rticks.size():
+        if mask & (1 << i):
+            out.append(int(rticks[i]))
+    return out
+
+
+## Can the sentence be FALSE of this star for some choice of its repeat notes?
+func _firing_position_informative(star: int, sel: Dictionary, lo: int, hi: int) -> bool:
+    var rticks: Array = _repeat_ticks()
+    var elig: int = _repeat_eligible_mask(star, rticks)
+    var sub: int = elig
+    while true:
+        var v: int = _firing_value(_ticks_for_repeat_mask(star, rticks, sub), sel)
+        if v < 0 or v < lo or v > hi:
+            return true
+        if sub == 0:
+            break
+        sub = (sub - 1) & elig
+    return false
+
+
+## The same question for a Firing Relation, over both stars' repeat notes. The
+## search is bounded: a falsifying choice is nearly always among the first few
+## (a star with no repeats has no second firing), and giving up reads as "not
+## informative", which only costs a clue.
+const FIRING_RELATION_INFORMATIVE_BUDGET: int = 300
+
+func _firing_relation_informative(star_a: int, star_b: int, pick_a: Dictionary, pick_b: Dictionary, spec: Dictionary) -> bool:
+    var rticks: Array = _repeat_ticks()
+    var elig_a: int = _repeat_eligible_mask(star_a, rticks)
+    var elig_b: int = _repeat_eligible_mask(star_b, rticks)
+    var budget: int = FIRING_RELATION_INFORMATIVE_BUDGET
+    var sub_a: int = 0
+    while true:
+        var notes_a: Array = _firing_pick_notes(_ticks_for_repeat_mask(star_a, rticks, sub_a), pick_a)
+        var free_b: int = elig_b & ~sub_a
+        var sub_b: int = 0
+        while true:
+            budget -= 1
+            if budget < 0:
+                return false
+            if not _firing_rel_holds(notes_a, _firing_pick_notes(_ticks_for_repeat_mask(star_b, rticks, sub_b), pick_b), spec):
+                return true
+            if sub_b == free_b:
+                break
+            sub_b = (sub_b - free_b) & free_b
+        if sub_a == elig_a:
+            break
+        sub_a = (sub_a - elig_a) & elig_a
+    return false
 
 
 # ── Form 26: Firing Relation -- how two stars' firings sit against each other ──
@@ -4682,7 +4964,19 @@ func _firing_random_pick(m: int, specific_only: bool) -> Dictionary:
     return {"kind": kind}
 
 
-func _firing_pick_phrase(label: String, pick: Dictionary) -> String:
+## `star` is the star the label names. "One of the firings of", "the first
+## firing of" and the rest all presuppose a star that fires MORE than once, so a
+## star that fires once is "the only firing of" whatever the pick (reported
+## 2026-10-12: "one of the firings of the star that plays B5" for a star that
+## never repeats). Either wording tells the player whether the star repeats,
+## which is the design intention, so it is recorded for the gates like the
+## "first fires" verb (_note_repeat_verb).
+func _firing_pick_phrase(label: String, pick: Dictionary, star: int = -1) -> String:
+    if star >= 0:
+        var once: bool = _star_ticks(star).size() <= 1
+        _note_repeat_verb(star, not once)
+        if once:
+            return "the only firing of %s" % label
     var kind: String = str(pick["kind"])
     if kind == "any":
         return "one of the firings of %s" % label
@@ -4693,7 +4987,8 @@ func _firing_pick_phrase(label: String, pick: Dictionary) -> String:
     return "the %s firing of %s" % [_firing_ordinal(int(pick["k"])), label]
 
 
-func _firing_relation_sentence(label_a: String, pick_a: Dictionary, label_b: String, pick_b: Dictionary, spec: Dictionary) -> String:
+func _firing_relation_sentence(label_a: String, pick_a: Dictionary, label_b: String, pick_b: Dictionary, spec: Dictionary,
+        star_a: int = -1, star_b: int = -1) -> String:
     var rel: String = str(spec["rel"])
     var n: int = int(spec["n"])
     var dir_word: String = "after" if int(spec["dir"]) > 0 else "before"
@@ -4704,8 +4999,8 @@ func _firing_relation_sentence(label_a: String, pick_a: Dictionary, label_b: Str
         phrase = "at least %s %s" % [_firing_notes_word(n), dir_word]
     else:
         phrase = "within %s of" % _firing_notes_word(n)
-    return "%s is %s%s %s." % [_firing_pick_phrase(label_a, pick_a), "not " if bool(spec["neg"]) else "",
-        phrase, _firing_pick_phrase(label_b, pick_b)]
+    return "%s is %s%s %s." % [_firing_pick_phrase(label_a, pick_a, star_a), "not " if bool(spec["neg"]) else "",
+        phrase, _firing_pick_phrase(label_b, pick_b, star_b)]
 
 
 ## mode: "free" (Form 26), "offset" (Form 6 in a repeating melody: a gap between
@@ -4714,7 +5009,11 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
     if not _firing_position_available():
         return {}
     var n_notes: int = melody_star_sequence.size()
-    var a: Dictionary = _sample_identity_axis_cell(Category.SEQUENCE, chain, -1)
+    # Hidden repeats: the stars are drawn, and their cells spent, on the Repeat
+    # axis (see _build_form_firing_position).
+    var hidden: bool = _repeats_hidden()
+    var id_axis: int = Category.REPEAT if hidden else Category.SEQUENCE
+    var a: Dictionary = _sample_identity_axis_cell(id_axis, chain, -1)
     if a.is_empty():
         return {}
     var star_a: int = int(a["star"])
@@ -4735,9 +5034,9 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
         if beside.is_empty():
             return {}
         star_b = int(beside[_rng.randi_range(0, beside.size() - 1)])
-        b = _identity_cell_for_known_star(star_b, Category.SEQUENCE)
+        b = _identity_cell_for_known_star(star_b, id_axis)
     else:
-        b = _sample_identity_axis_cell(Category.SEQUENCE, {}, star_a)
+        b = _sample_identity_axis_cell(id_axis, {}, star_a)
         if not b.is_empty():
             star_b = int(b["star"])
     if b.is_empty():
@@ -4751,6 +5050,12 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
     if mode != "adjacent":
         pick_a = _firing_random_pick(ticks_a.size(), neg or mode == "offset")
         pick_b = _firing_random_pick(ticks_b.size(), neg or mode == "offset")
+    # A star that fires once has one firing: its first. The fact says so, and
+    # the sentence reads "the only firing of" (_firing_pick_phrase).
+    if ticks_a.size() == 1:
+        pick_a = {"kind": "first"}
+    if ticks_b.size() == 1:
+        pick_b = {"kind": "first"}
     var notes_a: Array = _firing_pick_notes(ticks_a, pick_a)
     var notes_b: Array = _firing_pick_notes(ticks_b, pick_b)
     if notes_a.is_empty() or notes_b.is_empty():
@@ -4807,7 +5112,30 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
         return {}
     var id_a: Dictionary = {"cat": int(a["id_cat"]), "star": star_a}
     var id_b: Dictionary = {"cat": int(b["id_cat"]), "star": star_b}
-    var text: String = _firing_relation_sentence(_characteristic_label(id_a), pick_a, _characteristic_label(id_b), pick_b, spec)
+    if hidden:
+        # Between two FIRST firings the sentence is about public notes, so it
+        # still narrows the ranks (the pair set is read off first notes only).
+        # Anything else is about repeat notes: a firing_relation fact for the
+        # repeat-note gate, and nothing for the Sequence solver.
+        var first_first: bool = str(pick_a["kind"]) == "first" and str(pick_b["kind"]) == "first"
+        var hidden_facts: Array = _seq_fact_for_label(id_a) + _seq_fact_for_label(id_b)
+        if first_first:
+            hidden_facts.append({"kind": "ordinal_pair_set", "a": star_a, "b": star_b, "pairs": pairs})
+        elif not _firing_relation_informative(star_a, star_b, pick_a, pick_b, spec):
+            return {}
+        var hidden_text: String = _firing_relation_sentence(_characteristic_label(id_a), pick_a, _characteristic_label(id_b), pick_b, spec, star_a, star_b)
+        return {
+            "chars": [id_a, id_b, {"cat": Category.REPEAT, "star": star_a}, {"cat": Category.REPEAT, "star": star_b}],
+            "text": hidden_text,
+            "grid_updates": [
+                {"cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]), "cat_b": Category.REPEAT, "val_b": int(a["axis_val"]), "is_true": true},
+                {"cat_a": int(b["id_cat"]), "val_a": int(b["id_val"]), "cat_b": Category.REPEAT, "val_b": int(b["axis_val"]), "is_true": true},
+            ],
+            "solver_facts": hidden_facts,
+            "value_facts": [{"kind": "firing_relation", "a": star_a, "b": star_b,
+                "pick_a": pick_a.duplicate(), "pick_b": pick_b.duplicate(), "spec": spec.duplicate()}],
+        }
+    var text: String = _firing_relation_sentence(_characteristic_label(id_a), pick_a, _characteristic_label(id_b), pick_b, spec, star_a, star_b)
     return {
         "chars": [id_a, id_b, {"cat": Category.SEQUENCE, "star": star_a}, {"cat": Category.SEQUENCE, "star": star_b}],
         "text": text,
@@ -6456,6 +6784,8 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
     var group_phrase: String = _group_noun_phrase(group_cat, def_star, true)
     var verb_word: String = "precedes" if precedes else "follows"
     var text: String
+    if _seq_group_mixed(group_stars):
+        return {}   # no single verb is true of a group that half repeats
     var subject_repeats: bool = _seq_verb_for(subject_star) == "first fires"
     var group_repeats: bool = _seq_fire_verb(group_stars) == "first fires"
     if not subject_repeats and not group_repeats:
@@ -6463,8 +6793,8 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
     else:
         # "precedes" is ambiguous when a star fires more than once; say whose
         # note is compared. Per side: "first fires" only where that side
-        # actually has a repeating star -- the subject's own verb, and a tail
-        # on the group (which repeats if ANY of its members does).
+        # actually repeats -- the subject's own verb, and a tail on the group
+        # (only when EVERY member repeats; a mixed group was refused above).
         text = "%s %s %s %s%s." % [
             _characteristic_label(subject_id), _seq_verb_for(subject_star),
             "before" if precedes else "after", group_phrase,
@@ -6516,8 +6846,11 @@ func _build_form_extreme(chain: Dictionary) -> Dictionary:
     var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
     var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
     var word: String = "earliest" if want_lowest else "latest"
-    # The verb is the subject's own ("first fire" only if IT repeats); if any
-    # neighbour repeats, say the comparison is on each star's first note.
+    # The verb is the subject's own ("first fire" only if IT repeats). "Going by
+    # each star's first note" is said of the neighbours only when ALL of them
+    # repeat; neighbours of both kinds have no honest wording (_seq_fire_verb).
+    if _seq_group_mixed(neighbors):
+        return {}
     var text: String = "%s is the %s to %s among its connected stars%s." % [
         _characteristic_label(subject_id), word, _seq_base_for(subject_star),
         ", going by each star's first note" if _seq_fire_verb(neighbors) == "first fires" else ""]
@@ -6551,8 +6884,11 @@ func _build_form_count(chain: Dictionary) -> Dictionary:
             k += 1
     var subject_id: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
     var subject_axis: Dictionary = {"cat": axis, "star": subject_star}
-    # "first fire" on the plural only if some connected star repeats, and
-    # "it first fires" only if the subject itself does.
+    # "first fire" on the plural only if EVERY connected star repeats, the plain
+    # "fire" only if none does (a mix has no honest verb, see _seq_fire_verb),
+    # and "it first fires" only if the subject itself repeats.
+    if _seq_group_mixed(neighbors):
+        return {}
     var text: String = "Exactly %d of %s's connected stars %s before it%s." % [
         k, _characteristic_label(subject_id),
         "first fire" if _seq_fire_verb(neighbors) == "first fires" else "fire",
@@ -6951,24 +7287,27 @@ func _betweenness_render_triple(participants: Array, axis: int) -> Dictionary:
     # ("first fires" only if it repeats); a star that is only an object carries
     # the tail instead. In the chains the middle star is a subject (of "which
     # ...") so it needs none.
+    # Each verb and tail is asked for ONLY in the branch that prints it: the
+    # helpers record what they hand out as something the sentence said about
+    # that star's repeats (see _rendered_repeat_verbs).
     var is_seq: bool = axis == Category.SEQUENCE
-    var v_lo: String = _order_verb_for_subject(axis, lo)
     var v_mid: String = _order_verb_for_subject(axis, mid)
-    var v_hi: String = _order_verb_for_subject(axis, hi)
-    var t_lo: String = _seq_obj_tail(lo_id) if is_seq else ""
-    var t_hi: String = _seq_obj_tail(hi_id) if is_seq else ""
     var text: String
     match _rng.randi() % 3:
         0:
-            text = "%s %s between %s%s and %s%s." % [_characteristic_label(mid_id), v_mid, _characteristic_label(lo_id), t_lo, _characteristic_label(hi_id), t_hi]
+            var t_lo0: String = _seq_obj_tail(lo_id) if is_seq else ""
+            var t_hi0: String = _seq_obj_tail(hi_id) if is_seq else ""
+            text = "%s %s between %s%s and %s%s." % [_characteristic_label(mid_id), v_mid, _characteristic_label(lo_id), t_lo0, _characteristic_label(hi_id), t_hi0]
         1:
+            var t_hi1: String = _seq_obj_tail(hi_id) if is_seq else ""
             text = "%s %s %s %s, which %s %s %s%s." % [
-                _characteristic_label(lo_id), v_lo, _order_chain_word(axis, false), _characteristic_label(mid_id),
-                v_mid, _order_chain_word(axis, false), _characteristic_label(hi_id), t_hi]
+                _characteristic_label(lo_id), _order_verb_for_subject(axis, lo), _order_chain_word(axis, false), _characteristic_label(mid_id),
+                v_mid, _order_chain_word(axis, false), _characteristic_label(hi_id), t_hi1]
         _:
+            var t_lo2: String = _seq_obj_tail(lo_id) if is_seq else ""
             text = "%s %s %s %s, which %s %s %s%s." % [
-                _characteristic_label(hi_id), v_hi, _order_chain_word(axis, true), _characteristic_label(mid_id),
-                v_mid, _order_chain_word(axis, true), _characteristic_label(lo_id), t_lo]
+                _characteristic_label(hi_id), _order_verb_for_subject(axis, hi), _order_chain_word(axis, true), _characteristic_label(mid_id),
+                v_mid, _order_chain_word(axis, true), _characteristic_label(lo_id), t_lo2]
     var solver_facts: Array = _seq_fact_for_label(lo_id) + _seq_fact_for_label(mid_id) + _seq_fact_for_label(hi_id)
     if axis == Category.SEQUENCE:
         solver_facts.append({"kind": "ordinal_chain", "a": lo, "mid": mid, "b": hi})
@@ -7058,6 +7397,8 @@ func _build_form_cross_domain_bridge(chain: Dictionary) -> Dictionary:
     _note_group_value_term(group_cat, def_star)
     var group_phrase: String = ("the %s stars" % COLOR_NAMES[star_colors[def_star]].to_lower()) if group_cat == Category.COLOR else ("the stars that play %s" % note_name_for_freq(_freq_for_star(def_star)))
     var extreme_word: String
+    if _seq_group_mixed(group_stars):
+        return {}   # no single verb is true of a group that half repeats
     if _seq_fire_verb(group_stars) == "first fires":
         extreme_word = "earliest first-firing" if want_lowest else "latest first-firing"
     else:
@@ -7273,6 +7614,8 @@ func _build_form_group_membership(chain: Dictionary) -> Dictionary:
     var solver_facts: Array = _seq_fact_for_label(subject_id)
     var value_facts: Array = _name_group_facts(subject_id, group_def_ch, want_positive) if pred.is_empty() \
         else _repeat_predicate_neg_facts(subject_id, pred, want_positive)
+    if group_cat == Category.REPEAT:
+        value_facts.append(_repeat_range_fact(subject_star, int(raw_val), pred, not want_positive))
 
     # ── WHAT THE SENTENCE ALSO RULES OUT ────────────────────────────────
     # Reported from a live puzzle: these two shipped together —
@@ -7561,6 +7904,9 @@ func _build_form_group_negation(_chain: Dictionary) -> Dictionary:
         chars.append(sub2)
         solver_facts.append_array(_seq_fact_for_label(sub2))
         for gd2 in group_defs:
+            if int(gd2["cat"]) == Category.REPEAT:
+                value_facts.append(_repeat_range_fact(int(sub2["star"]),
+                    int(repeat_count[int(gd2["star"])]), gd2.get("pred", {}), true))
             # Two encodings, doing different jobs. name_group_neg feeds the
             # NAME CLOSURE and exists only for Name subjects.
             # descriptor_not_in_group is what the PLAYER's board is scored
@@ -8293,12 +8639,14 @@ func generate_clues_forms() -> void:
         debug_dump_clueset("generated in %d attempt(s)" % attempt)
 
 
-## The ship gate: Sequence unique, every name bound, and the Name closure a
-## proof. Named so generate_clues_forms and the tests read one definition.
+## The ship gate: Sequence unique, every name bound, the Name closure a proof,
+## and (when the repeats are hidden) the repeat notes a proof too. Named so
+## generate_clues_forms and the tests read one definition.
 func _gate_result_passes(result: Dictionary) -> bool:
     return bool(result.get("seq_unique", false)) \
         and bool(result.get("name_unique", false)) \
-        and bool(result.get("name_unique_closure", false))
+        and bool(result.get("name_unique_closure", false)) \
+        and bool(result.get("repeat_unique", false))
 
 
 ## Builds `form_id` once and, if it produced a non-duplicate clue, commits
@@ -8328,6 +8676,7 @@ func _try_build_and_commit(form_id: int, sequence_solver_facts: Array,
     # labels and then bails still dirtied the accumulator, and those terms
     # belong to no clue.
     _rendered_terms = {}
+    _rendered_repeat_verbs = {}
     var result: Dictionary = _build_name_binding_clue(coverage_star, coverage_which) \
         if coverage_star >= 0 else _build_form(form_id, chain)
     if result.is_empty():
@@ -8386,7 +8735,8 @@ func _commit_clue_result(form_id: int, result: Dictionary, sequence_solver_facts
         # Sequence half can never drift from what the puzzle was proven
         # unique against; value_facts carries the Colour/Pitch content the
         # CSP has no use for.
-        "disclosures": (_coerce_array(result.get("solver_facts"), []) + _coerce_array(result.get("value_facts"), [])).duplicate(true),
+        "disclosures": (_coerce_array(result.get("solver_facts"), []) + _coerce_array(result.get("value_facts"), [])
+            + _take_repeat_verb_facts()).duplicate(true),
     })
     if result.has("solver_facts"):
         for f in result["solver_facts"]:
@@ -8607,13 +8957,21 @@ func _repair_uniqueness(sequence_solver_facts: Array, name_revealed: Array,
 ## is already unique and conclusive, or cannot be repaired this way.
 func _repair_targets(sequence_solver_facts: Array) -> Array:
     var out: Array = []
-    var seq_sols: Array = _solve(sequence_solver_facts, 2)
-    if _last_solve_inconclusive or seq_sols.is_empty():
+    # The note proof (_solve_notes): two answers may differ in the firing order
+    # or only in the repeat notes. This repair is for the firing order; a
+    # difference in the repeat notes alone is _repair_repeat_notes' to settle.
+    var note_sols: Array = _solve_notes(sequence_solver_facts, 2)
+    if _last_solve_inconclusive or note_sols.is_empty():
         return out
+    var seq_sols: Array = []
+    for ns0 in note_sols:
+        seq_sols.append(ns0["ranks"])
+    if seq_sols.size() >= 2 and _first_notes_hidden():
+        return out   # a second answer for the notes: _repair_repeat_notes pins a note
     if seq_sols.size() >= 2:
         var alt: Array = _assignment_other_than(seq_sols, sequence_rank_solution)
         if alt.is_empty():
-            return out   # neither differs from the truth: inconsistent facts
+            return out   # same firing order in both: the repeat notes differ
         for s in star_count:
             if int(alt[s]) != int(sequence_rank_solution[s]):
                 out.append({"star": s, "rank": int(alt[s])})
@@ -8663,6 +9021,7 @@ func _commit_repair_clue(star: int, rank: int, pin: bool, sequence_solver_facts:
         "is_true": pin,
     }
     _rendered_terms = {}
+    _rendered_repeat_verbs = {}
     var result: Dictionary = _identity_result_for_cell(cell) if pin else _negation_result_for_cell(cell)
     return _commit_clue_result(1 if pin else 2, result,
         sequence_solver_facts, name_revealed, tier_counts, form_counts)
@@ -8811,6 +9170,7 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
             var b_triples: Array = _betweenness_two_disjoint_triples(b_axis)
             for b_triple in b_triples:
                 _rendered_terms = {}
+                _rendered_repeat_verbs = {}
                 var b_result: Dictionary = _betweenness_render_triple(b_triple, b_axis)
                 _commit_clue_result(17, b_result, sequence_solver_facts,
                     name_revealed, tier_counts, form_counts)
@@ -8904,6 +9264,10 @@ const VALUE_FACT_KINDS: Array = [
     # when a clue-mix change happened to put one in the fixture, which is
     # why the test samples a real puzzle rather than a fixed list.
     "descriptor_either_or",
+    # What a clue says about the REPEAT NOTES (see the REPEAT-NOTE GATE
+    # header). Read only by _solve_repeat_notes, never by the Sequence solver
+    # or the Name closure.
+    "firing_position", "firing_relation", "repeat_count_range",
 ]
 
 ## Above this many surviving name-solutions the pruning pass gives up on a
@@ -9031,10 +9395,11 @@ var prune_enabled: bool = true
 func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
     var removed: Dictionary = chosen_form_clues[idx]
     chosen_form_clues.remove_at(idx)
-    var trial_seq: Array = _solve(_seq_facts_from_clues(), 2)
+    # The note proof: firing order AND repeat notes, together (_solve_notes).
     # An INCONCLUSIVE solve (node budget hit) is not proof of uniqueness, so
     # it must never license a removal: keep the clue.
-    if trial_seq.size() == 1 and not _last_solve_inconclusive:
+    var trial_seq: Array = _unique_note_order(_seq_facts_from_clues())
+    if trial_seq.size() == 1:
         var trial_closure: Array = _solve_name_closure(trial_seq, baseline + 1)
         if trial_closure.size() <= baseline and not _last_solve_inconclusive:
             # Third condition, alongside Sequence uniqueness and the
@@ -9050,6 +9415,8 @@ func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
                 if bool(cur_revealed[n]) and not bool(trial_revealed[n]):
                     unbinds = true
                     break
+            # (The repeat notes need no condition of their own any more: the
+            # note proof above already covers them.)
             if not unbinds:
                 for n in cur_revealed.size():
                     cur_revealed[n] = trial_revealed[n]
@@ -9065,9 +9432,9 @@ var prune_first_forms: Array = []
 
 func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array[Dictionary]:
     var seq_facts: Array[Dictionary] = _seq_facts_from_clues()
-    var seq_sols: Array = _solve(seq_facts, 2)
-    if seq_sols.size() != 1 or _last_solve_inconclusive:
-        return seq_facts   # not (provably) uniquely solvable on Sequence — nothing safe to prune against
+    var seq_sols: Array = _unique_note_order(seq_facts)
+    if seq_sols.size() != 1:
+        return seq_facts   # the notes are not (provably) uniquely solvable — nothing safe to prune against
     var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
     if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP or _last_solve_inconclusive:
         return seq_facts
@@ -9163,8 +9530,8 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
 ## since the anchors were first committed) against the settled survivor
 ## set, touching no non-anchor clue, does remove it.
 func _recheck_anchors_for_redundancy(anchor_texts: Array, name_revealed: Array) -> void:
-    var seq_sols: Array = _solve(_seq_facts_from_clues(), 2)
-    if seq_sols.size() != 1 or _last_solve_inconclusive:
+    var seq_sols: Array = _unique_note_order(_seq_facts_from_clues())
+    if seq_sols.size() != 1:
         return
     var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
     if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP or _last_solve_inconclusive:
@@ -9220,7 +9587,14 @@ func _is_redundancy_exempt_form(form_id: int) -> bool:
 ## Deliberately only the Firing forms: Mutex and Betweenness are exempt from the
 ## anchor recheck and the safety net but their main-loop instances have always
 ## been prunable here, and hard-mode output must not move.
+##
+## NOT when the repeats are hidden. The exemption existed because a Firing clue
+## was always redundant under a public repeat shape; with the repeats hidden
+## they are what pins the repeat notes, so pruning keeps exactly the ones that
+## gate needs (_try_prune_clue_at) and may drop the rest.
 func _prune_skips_form(form_id: int) -> bool:
+    if _repeats_hidden():
+        return false
     return form_id == FIRING_POSITION_FORM_ID or form_id == FIRING_RELATION_FORM_ID
 
 
@@ -9246,8 +9620,8 @@ func _prune_skips_form(form_id: int) -> bool:
 ## general per-cell propagation cascade (see game history 2026-09-22 for
 ## why that would be a separate, larger, disclosure-only rebuild).
 func _final_redundancy_safety_net(name_revealed: Array) -> void:
-    var seq_sols: Array = _solve(_seq_facts_from_clues(), 2)
-    if seq_sols.size() != 1 or _last_solve_inconclusive:
+    var seq_sols: Array = _unique_note_order(_seq_facts_from_clues())
+    if seq_sols.size() != 1:
         return
     var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
     if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP or _last_solve_inconclusive:
@@ -9287,11 +9661,776 @@ var _early_stop_last_check: int = 0
 ## (mention coverage is ignored: _build_name_coverage_clues guarantees it
 ## later). Inconclusive searches count as not met.
 func _gate_met_on(sequence_solver_facts: Array) -> bool:
-    var sols: Array = _solve(sequence_solver_facts, 2)
+    # The notes are settled when the note proof says so -- or, as the cheaper
+    # thing to see mid-loop, when the firing order is already unique from the
+    # ordinal facts alone: what is left then is the repeat notes, which the
+    # repeat phase after the loop finishes.
+    var typed: Array[Dictionary] = []
+    for f in sequence_solver_facts:
+        typed.append(f)
+    var sols: Array = _solve(typed, 2)
     if sols.size() != 1 or _last_solve_inconclusive:
-        return false
+        # With the first notes hidden too the full proof is a much larger
+        # search, and the note repair after the loop is what completes it; the
+        # loop only needs the cheap signal above to know it has drawn enough.
+        if not _repeats_hidden() or _first_notes_hidden():
+            return false
+        sols = _unique_note_order(sequence_solver_facts)
+        if sols.is_empty():
+            return false
     var names: Array = _solve_name_closure(sols)
     return names.size() == 1 and not _last_solve_inconclusive
+
+
+# ==================================================
+# REPEAT-NOTE SEARCH -- which star does each repeat note belong to?
+# ==================================================
+# Only when the repeats are hidden (_repeats_hidden). The unknown is one CELL
+# per (repeat note, star): "this note is that star firing again". A repeat note
+# can only be a star already heard, and every repeat note is exactly one star.
+#
+# This is the INNER half of the note proof (_solve_notes, further down), not a
+# gate of its own: it answers "given THIS firing order, which repeat-note
+# assignments do the clues allow". Until 2026-10-12 it ran as a second stage
+# after a Sequence solve that had to be unique by itself; now the two are
+# solved together, so a clue about a later firing also narrows the firing
+# order. A star's repeat COUNT is not one of these cells: it is given by
+# Listen, like pitch, so the Name closure reads Repeat-count groups. The
+# proof still does not credit a Repeat clue with helping to place a NAME.
+#
+# Facts read, all stated by the clue's own sentence:
+#   firing_position     one star's notes satisfy a selector + interval (Form 25,
+#                       and the repair pin "X fires on note N")
+#   firing_relation     two stars' notes satisfy a relation (Forms 26, 6, 7)
+#   repeat_count_range  one star's repeat count is / is not in a range (23, 24)
+#   values_same on REPEAT  two stars repeat equally often (Form 12)
+
+const REPEAT_FACT_KINDS: Array = ["firing_position", "firing_relation", "repeat_count_range"]
+
+## Work budget for one _solve_repeat_notes search, in list entries scanned.
+## Running out is INCONCLUSIVE, never "unique" -- same rule as _solve.
+const MAX_REPEAT_SOLVE_WORK: int = 300000
+var _repeat_solve_work: int = 0
+var _repeat_budget_hit: bool = false
+## Verdict on the LAST _solve_repeat_notes call; read it immediately after.
+var _last_repeat_solve_inconclusive: bool = false
+## Repair pins ("X fires on note N") committed over this puzzle's generation,
+## and the natural Firing clues the repeat phase added before resorting to them.
+var repeat_pins_added: int = 0
+var repeat_phase_clues_added: int = 0
+
+
+func _fact_is_repeat_fact(fd: Dictionary) -> bool:
+    var kind: String = str(fd.get("kind", ""))
+    if REPEAT_FACT_KINDS.has(kind):
+        return true
+    return kind == "values_same" and int(fd.get("cat", -1)) == Category.REPEAT
+
+
+func _clue_has_repeat_fact(clue: Dictionary) -> bool:
+    for f in _coerce_array(clue.get("disclosures"), []):
+        if f is Dictionary and _fact_is_repeat_fact(f):
+            return true
+    return false
+
+
+func _repeat_mask_satisfies(star: int, rticks: Array, mask: int, facts: Array) -> bool:
+    var ticks: Array = _ticks_for_repeat_mask(star, rticks, mask)
+    for f in facts:
+        var fd: Dictionary = f
+        if str(fd["kind"]) == "firing_position":
+            var v: int = _firing_value(ticks, fd["sel"])
+            if v < 0 or v < int(fd["lo"]) or v > int(fd["hi"]):
+                return false
+        else:
+            var count: int = ticks.size() - 1
+            var in_range: bool = count >= int(fd["lo"]) and count <= int(fd["hi"])
+            if in_range == bool(fd.get("negated", false)):
+                return false
+    return true
+
+
+func _repeat_binary_holds(fd: Dictionary, rticks: Array, masks: Array) -> bool:
+    var a: int = int(fd["a"])
+    var b: int = int(fd["b"])
+    var ticks_a: Array = _ticks_for_repeat_mask(a, rticks, int(masks[a]))
+    var ticks_b: Array = _ticks_for_repeat_mask(b, rticks, int(masks[b]))
+    if str(fd["kind"]) == "values_same":
+        return ticks_a.size() == ticks_b.size()
+    return _firing_rel_holds(_firing_pick_notes(ticks_a, fd["pick_a"]),
+        _firing_pick_notes(ticks_b, fd["pick_b"]), fd["spec"])
+
+
+## Is some admissible set of repeat notes for a star still reachable, given the
+## notes decided so far (`decided` = the low bits) and which of them it holds?
+func _repeat_extendable(admissible: PackedInt32Array, partial: int, decided: int) -> bool:
+    for m in admissible:
+        _repeat_solve_work -= 1
+        if (m & decided) == partial:
+            return true
+    return false
+
+
+func _repeat_backtrack(i: int, rticks: Array, elig: Array, adm: Array, masks: Array,
+        binary: Array, cap: int, solutions: Array) -> void:
+    if solutions.size() >= cap:
+        return
+    if _repeat_solve_work <= 0:
+        _repeat_budget_hit = true
+        return
+    var n: int = rticks.size()
+    if i == n:
+        for f in binary:
+            if not _repeat_binary_holds(f, rticks, masks):
+                return
+        var sol: Array = []
+        for j in n:
+            for s in star_count:
+                if int(masks[s]) & (1 << j):
+                    sol.append(s)
+                    break
+        solutions.append(sol)
+        return
+    var bit: int = 1 << i
+    var decided: int = (bit << 1) - 1
+    for s in star_count:
+        if not (int(elig[s]) & bit):
+            continue
+        masks[s] = int(masks[s]) | bit
+        # Only a star that COULD hold this note has had anything decided.
+        var ok: bool = true
+        for u in star_count:
+            if (int(elig[u]) & bit) and not _repeat_extendable(adm[u], int(masks[u]), decided):
+                ok = false
+                break
+        if ok:
+            _repeat_backtrack(i + 1, rticks, elig, adm, masks, binary, cap, solutions)
+        masks[s] = int(masks[s]) & ~bit
+        if solutions.size() >= cap or _repeat_budget_hit:
+            return
+
+
+## Every assignment of the repeat notes the clues allow, up to `cap`, taking the
+## stars' identities and first notes as known (see the header). Each solution
+## is one star index per entry of _repeat_ticks(). `source_clues` null means
+## chosen_form_clues. Not unique unless it returns exactly one AND
+## _last_repeat_solve_inconclusive is false.
+func _solve_repeat_notes(cap: int = 2, source_clues = null) -> Array:
+    _last_repeat_solve_inconclusive = false
+    _repeat_budget_hit = false
+    var rticks: Array = _repeat_ticks()
+    if rticks.is_empty():
+        return [[]]
+    var unary: Array = []
+    for _s in star_count:
+        unary.append([])
+    var binary: Array = []
+    var clues_to_scan: Array = chosen_form_clues if source_clues == null else (source_clues as Array)
+    for clue in clues_to_scan:
+        for f in _coerce_array((clue as Dictionary).get("disclosures"), []):
+            if not (f is Dictionary) or not _fact_is_repeat_fact(f):
+                continue
+            var fd: Dictionary = f
+            match str(fd["kind"]):
+                "firing_position":
+                    (unary[int(fd["s"])] as Array).append(fd)
+                "repeat_count_range":
+                    (unary[int(fd["star"])] as Array).append(fd)
+                _:
+                    binary.append(fd)
+    var elig: Array = []
+    var adm: Array = []
+    for s in star_count:
+        var e: int = _repeat_eligible_mask(s, rticks) if int(repeat_count[s]) >= 0 else 0
+        elig.append(e)
+        var list: PackedInt32Array = PackedInt32Array()
+        var sub: int = 0
+        while true:
+            if _repeat_mask_satisfies(s, rticks, sub, unary[s]):
+                list.append(sub)
+            if sub == e:
+                break
+            sub = (sub - e) & e
+        if list.is_empty():
+            return []   # a clue is false of the real melody: nothing fits
+        adm.append(list)
+    var masks: Array = []
+    for _s2 in star_count:
+        masks.append(0)
+    var solutions: Array = []
+    _repeat_solve_work = MAX_REPEAT_SOLVE_WORK
+    _repeat_backtrack(0, rticks, elig, adm, masks, binary, cap, solutions)
+    if _repeat_budget_hit and solutions.size() < cap:
+        _last_repeat_solve_inconclusive = true
+    return solutions
+
+
+## True when the repeat notes need no proof (none hidden) or the note proof
+## (_solve_notes: firing order and repeat notes together) has exactly one answer
+## under the current clues.
+func _repeat_notes_unique() -> bool:
+    if not _repeats_hidden():
+        return true
+    return _unique_note_order(_seq_facts_from_clues()).size() == 1
+
+
+# ==================================================
+# THE NOTE PROOF -- one proof over every note of the melody (2026-10-12)
+# ==================================================
+# Author ruling 2026-10-12 ("Build Option 1"): every note is a Sequence position.
+# The unknown is who fires on each note: one star per note, a star on as many
+# notes as it fires. Which notes are a star's FIRST firing stays public, so an
+# answer is (a) the order the stars first fire in and (b) which earlier star
+# each repeat note is -- and the two are proven TOGETHER, not one after the
+# other. A clue about a later firing ("X fires on note 9", "X last fires before
+# Y first fires") therefore counts towards the firing order as well: X must
+# have first fired before note 9.
+#
+# This replaces the two-stage arrangement of 2026-10-10, where the Sequence
+# solve had to be unique on its own before the repeat notes were looked at.
+#
+# How: _solve lists the firing orders the ordinal facts allow; for each one
+# _solve_repeat_notes is asked, with THAT order's first notes, for the
+# repeat-note assignments the firing facts allow. The answers are the pairs.
+
+## Firing orders one _solve_notes call looks at. More than this still open
+## reads as INCONCLUSIVE (never "unique"), which only ever costs a clue.
+const NOTE_PROOF_ORDER_CAP: int = 24
+
+## TEST SEAM. False = the two-stage proof of 2026-10-10 (firing order unique on
+## its own, then the repeat notes), to measure what the joint proof changes.
+## Generation always runs with it true.
+var note_proof_joint: bool = true
+## How many _solve_notes calls found exactly one answer although the ordinal
+## facts alone left more than one firing order open -- i.e. how often a clue
+## about a later firing is what settled the order. A measurement.
+var note_proof_order_settled_by_notes: int = 0
+
+
+## Every answer the clues allow, up to `cap`: {"ranks": star -> rank,
+## "repeats": one star per entry of _repeat_ticks()}. `seq_facts` are the
+## ordinal facts (_seq_facts_from_clues); `source_clues` null means
+## chosen_form_clues. Sets _last_solve_inconclusive like _solve does, so "exactly
+## one and not inconclusive" is the uniqueness test here too. With no hidden
+## repeat notes this is _solve and nothing more.
+func _solve_notes(seq_facts: Array, cap: int = 2, source_clues = null) -> Array:
+    var typed: Array[Dictionary] = []
+    for f in seq_facts:
+        typed.append(f)
+    var out: Array = []
+    if not _repeats_hidden():
+        for ranks in _solve(typed, cap):
+            out.append({"ranks": ranks, "repeats": []})
+        return out
+    if _first_notes_hidden():
+        return _solve_note_owners(seq_facts, cap, source_clues)
+    if not note_proof_joint:
+        # TEST SEAM: the two-stage arrangement of 2026-10-10. The firing order
+        # has to be unique from the ordinal facts alone before the repeat notes
+        # are looked at.
+        var alone: Array = _solve(typed, 2)
+        if alone.size() != 1 or _last_solve_inconclusive:
+            for ranks0 in alone:
+                out.append({"ranks": ranks0, "repeats": []})
+            return out
+    var order_cap: int = maxi(cap, NOTE_PROOF_ORDER_CAP) if note_proof_joint else 2
+    var orders: Array = _solve(typed, order_cap)
+    var inconclusive: bool = _last_solve_inconclusive
+    if note_proof_joint and orders.size() >= order_cap:
+        inconclusive = true   # more orders are open than were looked at
+    for ranks2 in orders:
+        _note_proof_ranks = ranks2
+        var reps: Array = _solve_repeat_notes(cap - out.size(), source_clues)
+        _note_proof_ranks = []
+        if _last_repeat_solve_inconclusive:
+            inconclusive = true
+        for r in reps:
+            out.append({"ranks": ranks2, "repeats": r})
+        if out.size() >= cap:
+            break
+    _last_solve_inconclusive = inconclusive and out.size() < cap
+    if _last_solve_inconclusive:
+        inconclusive_solves += 1
+    elif out.size() == 1 and orders.size() > 1:
+        note_proof_order_settled_by_notes += 1
+    return out
+
+
+# ==================================================
+# FIRST NOTES HIDDEN (author ruling 2026-10-12)
+# ==================================================
+# Which notes are a star's FIRST firing is NOT given to the player. Nothing on
+# screen says it and the game must not act on it, so the proof may not assume
+# it either: the unknown is simply WHO FIRES ON EACH NOTE, with no note marked
+# as anybody's first. This solver searches that directly.
+#
+# Given (like pitch, through Listen): how many times each star fires.
+#
+# What each fact means here, read off the sentence the player sees. T(r) is
+# the note number a Sequence label prints for rank r ("the star that fires
+# T-th note") -- a number in the clue text, not a statement that the note is a
+# first firing. first(s) is the earliest note s is assigned in the answer being
+# tried, whatever that turns out to be.
+#   ordinal_exact s r        s fires on note T(r)
+#   ordinal_neg s r          s does not fire on note T(r)
+#   ordinal_either_or        s fires on note T(r1) or on note T(r2)
+#   ordinal_range s lo hi    T(lo) <= first(s) <= T(hi)   (open ends dropped)
+#   ordinal_cmp / _chain     first(a) against first(b)
+#   ordinal_extreme / _count_before   first(s) against its neighbours' firsts
+#   ordinal_adjacent / _offset        the order stars begin in, by arithmetic
+#   ordinal_pair_set         SKIPPED: built from the public first-note table;
+#                            the same clue always carries a firing_relation
+#   firing_position / firing_relation / values_same   on the notes themselves
+#
+# Notes are assigned in melody order, so a star's first note is known the
+# moment it is given one and a star is complete when it holds as many notes as
+# it fires; each fact is checked at the earliest of those points it can be.
+
+## TEST SEAM. False = which notes are first firings is taken as given (the
+## 2026-10-10 / early 2026-10-12 proofs). Generation runs with it true.
+var first_notes_hidden: bool = true
+
+## Search nodes one hidden-first solve may spend. Running out is INCONCLUSIVE.
+const NOTE_OWNER_NODE_BUDGET: int = 400000
+var _note_owner_nodes: int = 0
+var _note_owner_budget_hit: bool = false
+
+
+func _first_notes_hidden() -> bool:
+    return first_notes_hidden and _repeats_hidden()
+
+
+## Every assignment of a star to each note the clues allow, up to `cap`:
+## {"owners": star per note, "ranks": the order the stars begin in (star ->
+## rank), "repeats": the owners of the notes _repeat_ticks() lists}.
+func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> Array:
+    _last_solve_inconclusive = false
+    var n_notes: int = melody_star_sequence.size()
+    var label_note: Array = _first_fire_ticks()
+    var need: Array = []
+    for s in star_count:
+        need.append(_star_ticks(s).size())
+    var all_mask: int = (1 << star_count) - 1
+    var allowed: Array = []
+    for _t in n_notes + 1:
+        allowed.append(all_mask)
+    var deadline: Array = []      # the latest note a star may begin on
+    var before: Array = []        # stars that must have begun before this one does
+    var counts_at_begin: Array = []
+    var unary: Array = []
+    for _s in star_count:
+        deadline.append(n_notes)
+        before.append([])
+        counts_at_begin.append([])
+        unary.append([])
+    var binary: Array = []
+    var at_leaf: Array = []
+    var window_end: Array = []    # note -> the count facts whose window ends there
+    for _t3 in n_notes + 1:
+        window_end.append([])
+    for f in seq_facts:
+        var fd: Dictionary = f
+        match str(fd.get("kind", "")):
+            "ordinal_exact":
+                allowed[int(label_note[int(fd["r"])])] &= 1 << int(fd["s"])
+            "ordinal_neg":
+                allowed[int(label_note[int(fd["r"])])] &= ~(1 << int(fd["s"]))
+            "ordinal_either_or":
+                at_leaf.append(fd)
+            "ordinal_range":
+                var rs: int = int(fd["s"])
+                if int(fd["lo"]) > 0:
+                    for t0 in range(1, int(label_note[int(fd["lo"])])):
+                        allowed[t0] &= ~(1 << rs)
+                if int(fd["hi"]) < star_count - 1:
+                    deadline[rs] = mini(int(deadline[rs]), int(label_note[int(fd["hi"])]))
+            "ordinal_cmp":
+                var later: int = int(fd["a"]) if bool(fd["a_gt_b"]) else int(fd["b"])
+                var earlier: int = int(fd["b"]) if bool(fd["a_gt_b"]) else int(fd["a"])
+                (before[later] as Array).append(earlier)
+            "ordinal_chain":
+                (before[int(fd["mid"])] as Array).append(int(fd["a"]))
+                (before[int(fd["b"])] as Array).append(int(fd["mid"]))
+            "ordinal_extreme":
+                for nb in fd["neighbors"]:
+                    if bool(fd["want_lowest"]):
+                        (before[int(nb)] as Array).append(int(fd["s"]))
+                    else:
+                        (before[int(fd["s"])] as Array).append(int(nb))
+            "ordinal_count_before":
+                (counts_at_begin[int(fd["s"])] as Array).append(fd)
+            "ordinal_adjacent", "ordinal_offset":
+                at_leaf.append(fd)
+            _:
+                pass   # ordinal_pair_set: see the header
+    var clues_to_scan: Array = chosen_form_clues if source_clues == null else (source_clues as Array)
+    for clue in clues_to_scan:
+        for f2 in _coerce_array((clue as Dictionary).get("disclosures"), []):
+            if not (f2 is Dictionary) or not _fact_is_repeat_fact(f2):
+                continue
+            var vd: Dictionary = f2
+            match str(vd["kind"]):
+                "firing_position":
+                    (unary[int(vd["s"])] as Array).append(vd)
+                    # "How many times in notes a..b" is settled once note b is
+                    # assigned, long before the star's last note; and "none
+                    # there" / "every note there" restricts the notes outright.
+                    var sel: Dictionary = vd["sel"]
+                    if str(sel["kind"]) == "count":
+                        var fs: int = int(vd["s"])
+                        var wa: int = maxi(1, int(sel["lo"]))
+                        var wb: int = mini(n_notes, int(sel["hi"]))
+                        if int(vd["hi"]) <= 0:
+                            for tw in range(wa, wb + 1):
+                                allowed[tw] &= ~(1 << fs)
+                        elif int(vd["lo"]) >= wb - wa + 1:
+                            for tw2 in range(wa, wb + 1):
+                                allowed[tw2] &= 1 << fs
+                        elif wb >= 1:
+                            (window_end[wb] as Array).append(vd)
+                "repeat_count_range":
+                    # The count is given (Listen); a clue that contradicts it
+                    # is false of the melody and nothing can satisfy it.
+                    var have: int = int(need[int(vd["star"])]) - 1
+                    if (have >= int(vd["lo"]) and have <= int(vd["hi"])) == bool(vd.get("negated", false)):
+                        return []
+                "values_same":
+                    if int(need[int(vd["a"])]) != int(need[int(vd["b"])]):
+                        return []
+                _:
+                    binary.append(vd)
+    # room[s][t] = how many of the notes t..n star s is still allowed on. A star
+    # that needs more notes than it has room for can be dropped at once.
+    var room: Array = []
+    for s3 in star_count:
+        var col: Array = []
+        col.resize(n_notes + 2)
+        col[n_notes + 1] = 0
+        for t4 in range(n_notes, 0, -1):
+            col[t4] = int(col[t4 + 1]) + (1 if int(allowed[t4]) & (1 << s3) else 0)
+        room.append(col)
+    for t5 in range(1, n_notes + 1):
+        if int(allowed[t5]) == 0:
+            return []   # a note nobody may fire on: the facts contradict each other
+    var st: Dictionary = {
+        "room": room, "window_end": window_end,
+        "n": n_notes, "need": need, "allowed": allowed, "deadline": deadline, "before": before,
+        "counts_at_begin": counts_at_begin, "unary": unary, "binary": binary, "at_leaf": at_leaf,
+        "label_note": label_note, "cap": cap,
+        "first": [], "notes": [], "owners": [], "solutions": [],
+    }
+    for _s2 in star_count:
+        (st["first"] as Array).append(0)
+        (st["notes"] as Array).append([])
+    for _t2 in n_notes:
+        (st["owners"] as Array).append(-1)
+    _note_owner_nodes = NOTE_OWNER_NODE_BUDGET
+    _note_owner_budget_hit = false
+    _note_owner_step(1, st)
+    var out: Array = []
+    var rticks: Array = _repeat_ticks()
+    for owners in st["solutions"]:
+        var reps: Array = []
+        for rt in rticks:
+            reps.append(int(owners[int(rt) - 1]))
+        out.append({"owners": owners, "ranks": _ranks_from_owners(owners), "repeats": reps})
+    _last_solve_inconclusive = _note_owner_budget_hit and out.size() < cap
+    if _last_solve_inconclusive:
+        inconclusive_solves += 1
+    return out
+
+
+## star -> rank (0-indexed) by the order the stars are first given a note.
+func _ranks_from_owners(owners: Array) -> Array:
+    var ranks: Array = []
+    for _s in star_count:
+        ranks.append(-1)
+    var next_rank: int = 0
+    for o in owners:
+        if int(o) >= 0 and int(ranks[int(o)]) < 0:
+            ranks[int(o)] = next_rank
+            next_rank += 1
+    return ranks
+
+
+func _note_owner_step(t: int, st: Dictionary) -> void:
+    var solutions: Array = st["solutions"]
+    if solutions.size() >= int(st["cap"]) or _note_owner_budget_hit:
+        return
+    _note_owner_nodes -= 1
+    if _note_owner_nodes <= 0:
+        _note_owner_budget_hit = true
+        return
+    var owners: Array = st["owners"]
+    var first: Array = st["first"]
+    var notes: Array = st["notes"]
+    var need: Array = st["need"]
+    if t > int(st["n"]):
+        if _note_owner_leaf_ok(st):
+            solutions.append(owners.duplicate())
+        return
+    var deadline: Array = st["deadline"]
+    var mask: int = int((st["allowed"] as Array)[t])
+    for s in star_count:
+        if not (mask & (1 << s)):
+            continue
+        var mine: Array = notes[s]
+        if mine.size() >= int(need[s]):
+            continue
+        var begins: bool = int(first[s]) == 0
+        # Nobody else may be left past the last note they are allowed to begin on.
+        var ok: bool = true
+        for u in star_count:
+            if u != s and int(first[u]) == 0 and int(deadline[u]) <= t:
+                ok = false
+                break
+        if not ok:
+            continue
+        if begins:
+            if t > int(deadline[s]):
+                continue
+            for b in (st["before"] as Array)[s]:
+                if int(first[int(b)]) == 0:
+                    ok = false
+                    break
+            if ok:
+                for cf in (st["counts_at_begin"] as Array)[s]:
+                    var begun: int = 0
+                    for nb in cf["neighbors"]:
+                        if int(first[int(nb)]) > 0:
+                            begun += 1
+                    if begun != int(cf["k"]):
+                        ok = false
+                        break
+            if not ok:
+                continue
+            first[s] = t
+        mine.append(t)
+        owners[t - 1] = s
+        if mine.size() == int(need[s]):
+            ok = _note_owner_complete_ok(s, st)
+        # A window that ends on this note now has its final count.
+        if ok:
+            for wf in (st["window_end"] as Array)[t]:
+                var wsel: Dictionary = wf["sel"]
+                var inside: int = 0
+                for held in notes[int(wf["s"])]:
+                    if int(held) >= int(wsel["lo"]) and int(held) <= int(wsel["hi"]):
+                        inside += 1
+                if inside < int(wf["lo"]) or inside > int(wf["hi"]):
+                    ok = false
+                    break
+        # Every star must still have room for the notes it is owed.
+        if ok:
+            var room: Array = st["room"]
+            for u2 in star_count:
+                if int(need[u2]) - (notes[u2] as Array).size() > int((room[u2] as Array)[t + 1]):
+                    ok = false
+                    break
+        if ok:
+            _note_owner_step(t + 1, st)
+        mine.pop_back()
+        owners[t - 1] = -1
+        if begins:
+            first[s] = 0
+        if solutions.size() >= int(st["cap"]) or _note_owner_budget_hit:
+            return
+
+
+## Star `s` has just been given its last note: every fact about its notes can
+## now be read, and every fact relating it to another complete star.
+func _note_owner_complete_ok(s: int, st: Dictionary) -> bool:
+    var notes: Array = st["notes"]
+    var need: Array = st["need"]
+    for f in (st["unary"] as Array)[s]:
+        var v: int = _firing_value(notes[s], f["sel"])
+        if v < 0 or v < int(f["lo"]) or v > int(f["hi"]):
+            return false
+    for f2 in st["binary"]:
+        var a: int = int(f2["a"])
+        var b: int = int(f2["b"])
+        if a != s and b != s:
+            continue
+        if (notes[a] as Array).size() != int(need[a]) or (notes[b] as Array).size() != int(need[b]):
+            continue
+        if not _firing_rel_holds(_firing_pick_notes(notes[a], f2["pick_a"]),
+                _firing_pick_notes(notes[b], f2["pick_b"]), f2["spec"]):
+            return false
+    return true
+
+
+func _note_owner_leaf_ok(st: Dictionary) -> bool:
+    var owners: Array = st["owners"]
+    var label_note: Array = st["label_note"]
+    var ranks: Array = []
+    for f in st["at_leaf"]:
+        match str(f["kind"]):
+            "ordinal_either_or":
+                var s: int = int(f["s"])
+                if int(owners[int(label_note[int(f["r1"])]) - 1]) != s \
+                        and int(owners[int(label_note[int(f["r2"])]) - 1]) != s:
+                    return false
+            _:
+                if ranks.is_empty():
+                    ranks = _ranks_from_owners(owners)
+                if int(ranks[int(f["a"])]) != int(ranks[int(f["b"])]) + int(f.get("offset", 1)):
+                    return false
+    return true
+
+
+## [ranks] when the notes have exactly one answer, else []. The shape the Name
+## closure takes its Sequence solution in.
+func _unique_note_order(seq_facts: Array, source_clues = null) -> Array:
+    var sols: Array = _solve_notes(seq_facts, 2, source_clues)
+    if sols.size() != 1 or _last_solve_inconclusive:
+        return []
+    return [sols[0]["ranks"]]
+
+
+## Build attempts the repeat phase spends on natural Firing clues before the
+## repair pins take over.
+const REPEAT_PHASE_ATTEMPTS: int = 120
+
+
+## After the main loop: keep drawing Firing Position / Firing Relation clues
+## until the repeat notes are pinned down or the attempts run out. The main loop
+## stops as soon as Sequence and Name are settled (early stop), which says
+## nothing about the repeat notes, and it would otherwise fall to the pins.
+func _build_repeat_note_clues(sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> int:
+    if not _repeats_hidden() or not _firing_position_available():
+        return 0
+    var added: int = 0
+    if _repeat_notes_unique():
+        return 0
+    for attempt in REPEAT_PHASE_ATTEMPTS:
+        var form_id: int = FIRING_POSITION_FORM_ID if attempt % 2 == 0 else FIRING_RELATION_FORM_ID
+        if _try_build_and_commit(form_id, sequence_solver_facts, name_revealed, tier_counts, form_counts):
+            added += 1
+            if _repeat_notes_unique():
+                break
+    repeat_phase_clues_added += added
+    return added
+
+
+## The repeat-note counterpart of _repair_uniqueness: while the repeat notes
+## still have a second assignment, state outright whose one of the disputed
+## notes is ("<Name> fires on note N"). True by construction. An unfinished
+## search has no second assignment to aim at, so it pins the first note not yet
+## pinned instead; either way each pin settles one note for good, so the loop
+## ends within one pin per repeat note.
+func _repair_repeat_notes(sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> int:
+    if not _repeats_hidden():
+        return 0
+    if _first_notes_hidden():
+        return _repair_note_owners(sequence_solver_facts, name_revealed, tier_counts, form_counts)
+    var rticks: Array = _repeat_ticks()
+    var pinned: Dictionary = {}
+    var added: int = 0
+    while pinned.size() < rticks.size():
+        var note_sols: Array = _solve_notes(sequence_solver_facts, 2)
+        var inconclusive: bool = _last_solve_inconclusive
+        if note_sols.size() == 1 and not inconclusive:
+            break
+        if note_sols.is_empty() and not inconclusive:
+            push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NOTE FACT -- no firing order and repeat-note assignment satisfies the clues." % constellation_id)
+            break
+        var target: int = -1
+        for ns in note_sols:
+            var sol: Array = ns["repeats"]
+            for i in rticks.size():
+                if not pinned.has(i) and int(sol[i]) != int(melody_star_sequence[int(rticks[i]) - 1]):
+                    target = i
+                    break
+            if target >= 0:
+                break
+        if target < 0 and not inconclusive:
+            break   # the answers differ in the firing order only: _repair_uniqueness's job
+        if target < 0:
+            for i2 in rticks.size():
+                if not pinned.has(i2):
+                    target = i2
+                    break
+        if target < 0:
+            break
+        pinned[target] = true
+        if _commit_repeat_pin(int(rticks[target]), sequence_solver_facts, name_revealed, tier_counts, form_counts):
+            added += 1
+    repeat_pins_added += added
+    return added
+
+
+## Pins added for a note that is, in the real melody, a star's first firing
+## ("<Name> is the star that fires <N>th note"). Counted inside repeat_pins_added
+## as well; kept apart because it is the cost of hiding the first notes.
+var first_note_pins_added: int = 0
+
+
+## The note repair with the first notes hidden: while the clues allow a second
+## assignment of stars to notes, state outright who fires on one note where it
+## differs from the real melody. Each pin settles that note for good, so the
+## loop ends within one pin per note. An unfinished search has no second
+## answer to aim at and pins the first note not yet pinned.
+func _repair_note_owners(sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> int:
+    var n_notes: int = melody_star_sequence.size()
+    var firsts: Array = _first_fire_ticks()
+    var pinned: Dictionary = {}
+    var added: int = 0
+    while pinned.size() < n_notes:
+        var sols: Array = _solve_notes(sequence_solver_facts, 2)
+        var inconclusive: bool = _last_solve_inconclusive
+        if sols.size() == 1 and not inconclusive:
+            break
+        if sols.is_empty() and not inconclusive:
+            push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NOTE FACT -- no assignment of stars to notes satisfies the clues." % constellation_id)
+            break
+        var target: int = -1
+        for sol in sols:
+            var owners: Array = sol["owners"]
+            for t in n_notes:
+                if not pinned.has(t + 1) and int(owners[t]) != int(melody_star_sequence[t]):
+                    target = t + 1
+                    break
+            if target > 0:
+                break
+        if target < 0:
+            for t2 in n_notes:
+                if not pinned.has(t2 + 1):
+                    target = t2 + 1
+                    break
+        if target < 0:
+            break
+        pinned[target] = true
+        var star: int = int(melody_star_sequence[target - 1])
+        var done: bool = false
+        if firsts.has(target):
+            done = _commit_repair_clue(star, 0, true, sequence_solver_facts, name_revealed, tier_counts, form_counts)
+            if done:
+                first_note_pins_added += 1
+        else:
+            done = _commit_repeat_pin(target, sequence_solver_facts, name_revealed, tier_counts, form_counts)
+        if done:
+            added += 1
+    repeat_pins_added += added
+    return added
+
+
+## "<Name> fires on note <tick>." -- a Firing Position clue with a one-note
+## window, built for the star that really fires there.
+func _commit_repeat_pin(tick: int, sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> bool:
+    var star: int = int(melody_star_sequence[tick - 1])
+    for id_cat in [Category.NAME, Category.SEQUENCE]:
+        _rendered_terms = {}
+        _rendered_repeat_verbs = {}
+        var result: Dictionary = _firing_position_hidden_result({"cat": int(id_cat), "star": star},
+            {"kind": "count", "lo": tick, "hi": tick}, 1, 1, false)
+        if _commit_clue_result(FIRING_POSITION_FORM_ID, result, sequence_solver_facts,
+                name_revealed, tier_counts, form_counts):
+            return true
+    return false
 
 
 func _generate_clues_forms_attempt() -> Dictionary:
@@ -9491,8 +10630,20 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # more than one Sequence or Name solution, add the clue that rules the
     # wrong one out (see _repair_uniqueness) instead of redrawing the whole
     # attempt. Before pruning, so pruning protects what this establishes.
+    #
+    # With hidden repeat notes the proof is the NOTE proof (_solve_notes), so
+    # the order is: natural Firing clues first, which can settle the firing
+    # order as well as the repeat notes; then the repairs. A firing-order repair
+    # and a repeat-note pin each remove one kind of second answer, and the Name
+    # repair only starts once the notes have one answer, so they alternate
+    # until a round adds nothing.
+    _build_repeat_note_clues(sequence_solver_facts, name_revealed, tier_counts, form_counts)
     if repair_enabled:
-        _repair_uniqueness(sequence_solver_facts, name_revealed, tier_counts, form_counts)
+        for _round in 4:
+            var fixed: int = _repair_uniqueness(sequence_solver_facts, name_revealed, tier_counts, form_counts)
+            fixed += _repair_repeat_notes(sequence_solver_facts, name_revealed, tier_counts, form_counts)
+            if fixed == 0 or not _repeats_hidden():
+                break
 
     # Phase B2 — minimize. _prune_redundant_clues drops clues the main
     # loop's over-generation left redundant, protecting the opening
@@ -9534,11 +10685,17 @@ func _generate_clues_forms_attempt() -> Dictionary:
         var violation: String = _validate_sequence_fact(f)
         if violation != "":
             push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT SEQUENCE FACT — %s" % [constellation_id, violation])
-    var seq_solutions: Array = _solve(sequence_solver_facts, 2)
+    # THE NOTE PROOF (_solve_notes): the firing order and, when they are hidden,
+    # the repeat notes, proven together. seq_unique means "one answer for the
+    # notes"; on a melody with nothing hidden that is the old Sequence proof.
+    var note_solutions: Array = _solve_notes(sequence_solver_facts, 2)
     # "Unique" needs the search to have FINISHED: exactly one solution found
     # by a search cut off at the node budget proves nothing (see
     # MAX_BACKTRACK_NODES).
     var seq_inconclusive: bool = _last_solve_inconclusive
+    var seq_solutions: Array = []
+    for ns in note_solutions:
+        seq_solutions.append(ns["ranks"])
     var seq_unique: bool = seq_solutions.size() == 1 and not seq_inconclusive
     var name_unique: bool = true
     for revealed in name_revealed:
@@ -9571,10 +10728,23 @@ func _generate_clues_forms_attempt() -> Dictionary:
         name_inconclusive = _last_solve_inconclusive
         name_unique_closure = name_solutions.size() == 1 and not name_inconclusive
         name_solutions_count = name_solutions.size()
+    # REPEAT NOTES -- no proof of their own since 2026-10-12: they are part of
+    # the note proof above. These keys are kept (same verdict as seq_unique
+    # when repeats are hidden, trivially met otherwise) for the gate and tests.
+    var repeat_solutions_count: int = 1
+    var repeat_inconclusive: bool = false
+    if _repeats_hidden():
+        repeat_inconclusive = seq_inconclusive
+        repeat_solutions_count = note_solutions.size()
     return {
         "seq_unique": seq_unique,
         "name_unique": name_unique,
         "name_unique_closure": name_unique_closure,
+        "repeat_unique": repeat_solutions_count == 1 and not repeat_inconclusive,
+        "repeat_solutions_count": repeat_solutions_count,
+        "repeat_inconclusive": repeat_inconclusive,
+        "repeat_pins": repeat_pins_added,
+        "repeat_phase_clues": repeat_phase_clues_added,
         # True when that solve hit the node budget with fewer than `cap` found:
         # the "unique" reading above was withheld because the search never
         # finished. Diagnostics only; the gate already treats it as a failure.
@@ -9646,6 +10816,11 @@ func _build_name_clues(seq_solutions: Array, source_clues = null) -> Dictionary:
                 continue
             var fd: Dictionary = f
             var kind: String = str(fd.get("kind", ""))
+            # Repeat-count groups ARE read here (author ruling 2026-10-11):
+            # Listen gives each star's repeat count, and the player is presumed
+            # to have Listened to every star, so "the stars that repeat once" is
+            # a group they can look up exactly like "the stars that play A4".
+            # (For one day, 2026-10-10, these were skipped as hidden.)
             if kind == "name_group" or kind == "name_group_neg":
                 var violation: String = _validate_name_group_fact(fd)
                 if violation != "":

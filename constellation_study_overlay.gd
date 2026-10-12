@@ -999,6 +999,10 @@ func _on_pitch_listen_star_clicked(star_idx: int) -> void:
     var record_idx: int = _deduction._get_or_create_match_record_for_star_idx(star_idx)
     _deduction._propagate_pitch_confirmed_same_record(record_idx, note_name)
     _deduction.record_at(record_idx)["pitch_revealed"] = true
+    # Listen also gives the star's repeat count (see
+    # _repeat_given_for_record); make sure there is a bucket row to show it on.
+    if star_idx < _repeat_count.size() and int(_repeat_count[star_idx]) >= 0:
+        _deduction._ensure_repeat_bucket_for(int(_repeat_count[star_idx]))
     # Reconciles this record with a stale, blank Sort:Pitch-tab slot
     # record for the same note, if the tab was opened before this star
     # was ever listened to — see _reconcile_unique_pitch_slot for why

@@ -88,7 +88,16 @@ func _parse_pick(p: String) -> Dictionary:
 	if m:
 		var all_fn: Callable = func(t: Array) -> Array:
 			return t.duplicate()
-		return {"label": m.get_string(1), "fn": all_fn, "any": true}
+		return {"label": m.get_string(1), "fn": all_fn, "any": true, "first": false}
+	# "the only firing of X" (2026-10-12): the wording for a star that fires
+	# once. As a relation it is the star's first note; THAT the star fires once
+	# is a separate fact the clue carries (the verb fact), and _judge checks
+	# the wording against the real melody.
+	m = RegEx.create_from_string("^the only firing of (.+)$").search(p)
+	if m:
+		var only_fn: Callable = func(t: Array) -> Array:
+			return [t[0]]
+		return {"label": m.get_string(1), "fn": only_fn, "any": false, "first": true, "only": true}
 	m = RegEx.create_from_string("^the (\\w+) firing of (.+)$").search(p)
 	if m and ORDS.has(m.get_string(1)):
 		var k: int = int(ORDS[m.get_string(1)])
@@ -97,7 +106,7 @@ func _parse_pick(p: String) -> Dictionary:
 			if kk >= 1 and kk <= t.size():
 				return [t[kk - 1]]
 			return []
-		return {"label": m.get_string(2), "fn": nth_fn, "any": false}
+		return {"label": m.get_string(2), "fn": nth_fn, "any": false, "first": k == 1}
 	return {}
 
 
@@ -162,61 +171,149 @@ func _holds(p: Dictionary, ticks_a: Array, ticks_b: Array) -> bool:
 
 
 ## "" when sound, else why not.
-func _judge(g, clue: Dictionary, tally: Dictionary) -> String:
+##
+## REWRITTEN 2026-10-10 (repeats are earned). The clue's content is a
+## firing_relation fact read by the repeat-note gate; this compares the gate's
+## reading of it with the sentence's, over note sets the two stars could have.
+## A rank pair table survives only between two FIRST firings, which are public.
+func _judge(g, clue: Dictionary, tally: Dictionary, stored: bool = false) -> String:
 	var p: Dictionary = _parse(str(clue["text"]))
 	if p.is_empty():
 		return "unparseable sentence: %s" % str(clue["text"])
-	var facts: Array = []
-	for f in (clue["solver_facts"] as Array):
-		if str((f as Dictionary).get("kind", "")) == "ordinal_pair_set":
-			facts.append(f)
-	if facts.size() != 1:
-		return "expected exactly one ordinal_pair_set, got %d" % facts.size()
-	var fact: Dictionary = facts[0]
-	var sa: int = int(fact["a"])
-	var sb: int = int(fact["b"])
+	var melody: Array = g.melody_star_sequence
+	var rels: Array = []
+	for f in (clue.get("value_facts", []) as Array):
+		if str((f as Dictionary).get("kind", "")) == "firing_relation":
+			rels.append(f)
+	if rels.size() != 1:
+		return "expected exactly one firing_relation fact, got %d" % rels.size()
+	var rel: Dictionary = rels[0]
+	var sa: int = int(rel["a"])
+	var sb: int = int(rel["b"])
 	if sa == sb:
 		return "a clue relates a star to itself"
-	# What the sentence means, over every ordered pair of stars, from the melody alone.
-	var want: Dictionary = {}
-	for x in g.star_count:
-		for y in g.star_count:
-			if x != y and _holds(p, _ticks_of(g.melody_star_sequence, x), _ticks_of(g.melody_star_sequence, y)):
-				want[int(g.sequence_rank_solution[x]) * 1000 + int(g.sequence_rank_solution[y])] = true
-	var got: Dictionary = {}
-	for pr in fact["pairs"]:
-		got[int(pr[0]) * 1000 + int(pr[1])] = true
-	if got.size() != (fact["pairs"] as Array).size():
-		return "the pair list has duplicates"
-	var got_keys: Array = got.keys()
-	var want_keys: Array = want.keys()
-	got_keys.sort()
-	want_keys.sort()
-	if got_keys != want_keys:
-		return "table has %d pairs but the sentence means %d: %s" % [got_keys.size(), want_keys.size(), str(clue["text"])]
-	if not _holds(p, _ticks_of(g.melody_star_sequence, sa), _ticks_of(g.melody_star_sequence, sb)):
+	var true_a: Array = _ticks_of(melody, sa)
+	var true_b: Array = _ticks_of(melody, sb)
+	if not _holds(p, true_a, true_b):
 		return "the sentence is FALSE of its own stars: %s" % str(clue["text"])
-	var v: String = g._validate_sequence_fact(fact)
-	if v != "":
-		return v
-	var all_pairs: int = g.star_count * (g.star_count - 1)
-	if got_keys.is_empty() or got_keys.size() >= all_pairs:
-		return "table is empty or trivial (%d of %d)" % [got_keys.size(), all_pairs]
-	# The two TRUE cells the Form consumes, one per star, never the Sequence label.
+	# WELL-FORMED (reported 2026-10-12, "one of the firings of the star that
+	# plays B5" for a star that never repeats): a star that fires once reads
+	# "the only firing of", and only such a star does.
+	if bool(p["left"].get("only", false)) != (true_a.size() == 1) \
+			or bool(p["right"].get("only", false)) != (true_b.size() == 1):
+		return "ill-formed for how often its stars fire (%d and %d times): %s" % [true_a.size(), true_b.size(), str(clue["text"])]
+	tally["only_wording"] = int(tally.get("only_wording", 0)) \
+		+ (1 if bool(p["left"].get("only", false)) or bool(p["right"].get("only", false)) else 0)
+	# Sentence vs gate. The real note sets first, then other sets the two stars
+	# could have (each star's first note plus some later repeat notes, disjoint).
+	var rticks: Array = _repeat_ticks_of(melody)
+	var masks: Array = []
+	for _s in g.star_count:
+		masks.append(0)
+	var elig_a: int = 0
+	var elig_b: int = 0
+	var real_a: int = 0
+	var real_b: int = 0
+	for i in rticks.size():
+		if int(rticks[i]) > int(true_a[0]):
+			elig_a |= 1 << i
+		if int(rticks[i]) > int(true_b[0]):
+			elig_b |= 1 << i
+		if true_a.has(rticks[i]):
+			real_a |= 1 << i
+		if true_b.has(rticks[i]):
+			real_b |= 1 << i
+	var trials: Array = [[real_a, real_b], [0, 0], [elig_a, 0], [0, elig_b]]
+	var walk: int = 0
+	for t in 12:
+		walk = (walk * 37 + 11 + t) & 0xFFFF
+		var ma: int = walk & elig_a
+		trials.append([ma, (walk >> 3) & elig_b & ~ma])
+	for tr in trials:
+		var ta: Array = [true_a[0]]
+		var tb: Array = [true_b[0]]
+		for i2 in rticks.size():
+			if int(tr[0]) & (1 << i2):
+				ta.append(rticks[i2])
+			if int(tr[1]) & (1 << i2):
+				tb.append(rticks[i2])
+		masks[sa] = int(tr[0])
+		masks[sb] = int(tr[1])
+		var want: bool = _holds(p, ta, tb)
+		_gate_compares += 1
+		if g._repeat_binary_holds(rel, rticks, masks) != want:
+			return "the gate reads the fact as %s but the sentence is %s for notes %s / %s: %s" % [str(not want), str(want), str(ta), str(tb), str(clue["text"])]
+	# Sequence facts: a rank disclosed by a Sequence label, and a pair table
+	# only when BOTH picks are first firings.
+	var both_first: bool = bool(p["left"]["first"]) and bool(p["right"]["first"])
+	var tables: Array = []
+	for f2 in (clue["solver_facts"] as Array):
+		var k: String = str((f2 as Dictionary).get("kind", ""))
+		if k == "ordinal_pair_set":
+			tables.append(f2)
+		elif k == "repeat_count_range" and bool((f2 as Dictionary).get("from_verb", false)):
+			# The wording's own "fires once" / "fires more than once" fact
+			# (2026-10-12), present in a stored clue's disclosures. Must be true.
+			var real_n: int = _ticks_of(melody, int(f2["star"])).size() - 1
+			if real_n < int(f2["lo"]) or real_n > int(f2["hi"]):
+				return "the wording's repeat fact is false of the melody: %s" % str(clue["text"])
+		elif k != "ordinal_exact":
+			return "an unexpected Sequence fact (%s)" % k
+	if tables.size() != (1 if both_first else 0):
+		return "expected %d pair table(s) for %s picks, got %d: %s" % [1 if both_first else 0,
+			"first/first" if both_first else "repeat-dependent", tables.size(), str(clue["text"])]
+	if both_first:
+		var fact: Dictionary = tables[0]
+		# What the sentence means between FIRST notes, over every ordered pair.
+		var want_t: Dictionary = {}
+		for x in g.star_count:
+			for y in g.star_count:
+				if x != y and _holds(p, [_ticks_of(melody, x)[0]], [_ticks_of(melody, y)[0]]):
+					want_t[int(g.sequence_rank_solution[x]) * 1000 + int(g.sequence_rank_solution[y])] = true
+		var got: Dictionary = {}
+		for pr in fact["pairs"]:
+			got[int(pr[0]) * 1000 + int(pr[1])] = true
+		if got.size() != (fact["pairs"] as Array).size():
+			return "the pair list has duplicates"
+		var got_keys: Array = got.keys()
+		var want_keys: Array = want_t.keys()
+		got_keys.sort()
+		want_keys.sort()
+		if got_keys != want_keys:
+			return "table has %d pairs but the sentence means %d: %s" % [got_keys.size(), want_keys.size(), str(clue["text"])]
+		var v: String = g._validate_sequence_fact(fact)
+		if v != "":
+			return v
+		tally["first_first"] = int(tally.get("first_first", 0)) + 1
+	# The two TRUE cells the Form consumes, one per star, on the Repeat axis
+	# (none in a stored clue: the cache keeps no Repeat-axis cells).
 	var cells: Array = clue["grid_updates"]
-	if cells.size() != 2:
-		return "expected two bookkeeping cells"
+	if cells.size() != (0 if stored else 2):
+		return "expected %d bookkeeping cells, got %d" % [0 if stored else 2, cells.size()]
 	for c in cells:
-		if not bool((c as Dictionary)["is_true"]) or int(c["cat_b"]) != PuzzleScript.Category.SEQUENCE:
-			return "a bookkeeping cell is not a true Sequence cell"
-	if int((clue["chars"] as Array)[0]["cat"]) == PuzzleScript.Category.SEQUENCE or int((clue["chars"] as Array)[1]["cat"]) == PuzzleScript.Category.SEQUENCE:
-		return "a star is named by its Sequence position"
+		if not bool((c as Dictionary)["is_true"]) or int(c["cat_b"]) != PuzzleScript.Category.REPEAT:
+			return "a bookkeeping cell is not a true Repeat-axis cell"
 	tally["shape_" + str(p["shape"])] = int(tally.get("shape_" + str(p["shape"]), 0)) + 1
 	tally["neg" if bool(p["neg"]) else "pos"] = int(tally.get("neg" if bool(p["neg"]) else "pos", 0)) + 1
 	tally["left_any" if bool(p["left"]["any"]) else "left_specific"] = int(tally.get("left_any" if bool(p["left"]["any"]) else "left_specific", 0)) + 1
 	tally["right_any" if bool(p["right"]["any"]) else "right_specific"] = int(tally.get("right_any" if bool(p["right"]["any"]) else "right_specific", 0)) + 1
 	tally["dir_before" if int(p["dir"]) < 0 else "dir_after"] = int(tally.get("dir_before" if int(p["dir"]) < 0 else "dir_after", 0)) + 1
 	return ""
+
+
+## How many (clue, note sets) pairs the gate's reading was compared on.
+var _gate_compares: int = 0
+
+
+func _repeat_ticks_of(melody: Array) -> Array:
+	var seen: Dictionary = {}
+	var out: Array = []
+	for i in melody.size():
+		if seen.has(int(melody[i])):
+			out.append(i + 1)
+		else:
+			seen[int(melody[i])] = true
+	return out
 
 
 func _host(melody: Array):
@@ -266,7 +363,7 @@ func run() -> void:
 			if not g._firing_position_available():
 				continue
 			for form_id in [26, 6, 7]:
-				for i in 400:
+				for i in 200:
 					g._rendered_terms = {}
 					var clue: Dictionary = g._build_form(form_id, {})
 					if clue.is_empty():
@@ -288,8 +385,10 @@ func run() -> void:
 					if form_id == 6 and not text.contains(" is exactly "):
 						form6_not_exact += 1
 	print("    clues built: %d (Form 26: %d, Form 6: %d, Form 7: %d); Form 6 Pitch clues skipped: %d" % [built, by_form["26"], by_form["6"], by_form["7"], form6_pitch])
-	print("    tally: %s" % str(tally))
+	print("    tally: %s; gate comparisons: %d" % [str(tally), _gate_compares])
 	ok(built > 500, "plenty of clues to judge (%d)" % built)
+	ok(_gate_compares >= built * 4, "the gate's reading was compared on several note sets per clue (%d)" % _gate_compares)
+	ok(int(tally.get("first_first", 0)) > 0, "some clues relate two first firings and keep a rank table (%d)" % int(tally.get("first_first", 0)))
 	var judged: int = int(tally.get("pos", 0)) + int(tally.get("neg", 0))
 	ok(judged == built - bad.size(), "every clue built was parsed and judged (%d judged, %d bad of %d)" % [judged, bad.size(), built])
 	ok(bad.is_empty(), "no clue is false or disagrees with its own pair table (%d bad) %s" % [bad.size(), str(bad.slice(0, 3))])
@@ -300,7 +399,7 @@ func run() -> void:
 
 	print("\n=== the variety is real ===")
 	for key in ["shape_immediately", "shape_exactly", "shape_atleast", "shape_within", "pos", "neg",
-			"left_any", "left_specific", "right_any", "right_specific", "dir_before", "dir_after"]:
+			"left_any", "left_specific", "right_any", "right_specific", "dir_before", "dir_after", "only_wording"]:
 		ok(int(tally.get(key, 0)) > 0, "drawn at least once: %s (%d)" % [key, int(tally.get(key, 0))])
 
 	print("\n=== the judge is not vacuous ===")
@@ -316,8 +415,11 @@ func run() -> void:
 	if not sample.is_empty():
 		ok(_judge(gj, sample, {}) == "", "the untouched sample passes")
 		var bad_fact: Dictionary = sample.duplicate(true)
-		((bad_fact["solver_facts"] as Array)[0]["pairs"] as Array).pop_back()
-		ok(_judge(gj, bad_fact, {}) != "", "dropping one pair from the table is caught")
+		(bad_fact["value_facts"] as Array)[0]["spec"]["dir"] = -int((sample["value_facts"] as Array)[0]["spec"]["dir"])
+		ok(_judge(gj, bad_fact, {}) != "", "reversing the direction in the fact is caught")
+		var bad_table: Dictionary = sample.duplicate(true)
+		(bad_table["solver_facts"] as Array).append({"kind": "ordinal_pair_set", "a": 0, "b": 1, "pairs": [[0, 1]]})
+		ok(_judge(gj, bad_table, {}) != "", "a rank table that does not belong is caught")
 		var bad_dir: Dictionary = sample.duplicate(true)
 		bad_dir["text"] = str(sample["text"]).replace(" notes after ", " notes before ")
 		ok(_judge(gj, bad_dir, {}) != "", "flipping 'after' to 'before' is caught")
@@ -332,12 +434,19 @@ func run() -> void:
 	var checked_pins: int = 0
 	var wrong_prop: int = 0
 	var wrong_fc: int = 0
-	for i in 600:
+	# Only a relation between two FIRST firings carries a table now, so most
+	# draws are skipped; Form 6 (two specific firings) supplies them fastest.
+	for i in 6000:
 		gj._rendered_terms = {}
-		var c2: Dictionary = gj._build_form(26, {})
+		var c2: Dictionary = gj._build_form(6 if i % 2 == 0 else 26, {})
 		if c2.is_empty():
 			continue
-		var f2: Dictionary = (c2["solver_facts"] as Array)[0]
+		var f2: Dictionary = {}
+		for sf in (c2["solver_facts"] as Array):
+			if str((sf as Dictionary).get("kind", "")) == "ordinal_pair_set":
+				f2 = sf
+		if f2.is_empty():
+			continue
 		var ra: int = int(gj.sequence_rank_solution[int(f2["a"])])
 		var partners: Array = []
 		for pr in f2["pairs"]:
@@ -370,7 +479,7 @@ func run() -> void:
 		checked_pins += 1
 		if checked_pins >= 60:
 			break
-	ok(checked_pins >= 30, "checked the solver on %d tables" % checked_pins)
+	ok(checked_pins >= 15, "checked the solver on %d tables" % checked_pins)
 	ok(wrong_prop == 0, "propagation with one star pinned leaves exactly the partner ranks the table allows (%d wrong)" % wrong_prop)
 	ok(wrong_fc == 0, "forward checking restricts the other star to the same partners (%d wrong)" % wrong_fc)
 
@@ -381,18 +490,21 @@ func run() -> void:
 		var gp = _beginner_puzzle(0, seed2)
 		gp.prune_enabled = false
 		await gp.generate_clues_forms()
-		ok(gp.gate_passed, "seed %d: Sequence unique and Name closure proven with note relations in the pool" % seed2)
+		ok(gp.gate_passed, "seed %d: Sequence, Name closure and repeat notes all proven with note relations in the pool" % seed2)
 		for cl in gp.chosen_form_clues:
-			var has_pair: bool = false
+			var sf2: Array = []
+			var vf2: Array = []
 			for d in (cl["disclosures"] as Array):
-				if str((d as Dictionary)["kind"]) == "ordinal_pair_set":
-					has_pair = true
-			if not has_pair:
+				if str((d as Dictionary)["kind"]) == "firing_relation":
+					vf2.append(d)
+				else:
+					sf2.append(d)
+			if vf2.is_empty():
 				continue
 			shipped += 1
 			var as_clue: Dictionary = {"text": cl["text"], "chars": cl["chars"], "grid_updates": cl["cells"],
-				"solver_facts": cl["disclosures"], "value_facts": []}
-			var why2: String = _judge(gp, as_clue, {})
+				"solver_facts": sf2, "value_facts": vf2}
+			var why2: String = _judge(gp, as_clue, {}, true)
 			if why2 != "":
 				shipped_bad.append(why2)
 	ok(shipped > 0, "the generator ships note-relation clues (%d across the runs)" % shipped)

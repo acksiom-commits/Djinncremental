@@ -693,6 +693,30 @@ func _name_step_sentence(step: Dictionary, who: String) -> String:
         str(step.get("phrase", "in that group")), n, "star" if n == 1 else "stars"]
 
 
+## "note 12" / "notes 10 and 12" / "notes 10, 12 and 13".
+func _notes_phrase(ticks: Array) -> String:
+    var parts: Array[String] = []
+    for t in ticks:
+        parts.append(str(int(t)))
+    if parts.size() == 1:
+        return "note " + parts[0]
+    return "notes " + ", ".join(parts.slice(0, parts.size() - 1)) + " and " + parts[parts.size() - 1]
+
+
+## Repeat-note steps: "With what you know, note 12 must be Alpha firing again."
+## / "... notes 10 and 13 cannot be Alpha firing again." / both, joined.
+func _note_step_sentence(step: Dictionary) -> String:
+    var who: String = str(step.get("descriptor", "that star"))
+    var must: Array = step.get("must_ticks", [])
+    var cannot: Array = step.get("cannot_ticks", [])
+    var parts: Array[String] = []
+    if not must.is_empty():
+        parts.append("%s must be %s firing again" % [_notes_phrase(must), who])
+    if not cannot.is_empty():
+        parts.append("%s cannot be %s firing again" % [_notes_phrase(cannot), who])
+    return "With what you know, " + ", and ".join(parts) + "."
+
+
 ## "Alpha cannot fire 3rd or 5th." / "Alpha must fire 4th." Ranks arrive
 ## 0-based, the sentence is 1-based like every other place the player reads one.
 func _step_sentence(step: Dictionary) -> String:
@@ -701,6 +725,8 @@ func _step_sentence(step: Dictionary) -> String:
         who = who.substr(0, 1).to_upper() + who.substr(1)
     if ["name", "position"].has(str(step.get("axis", "sequence"))):
         return _name_step_sentence(step, who)
+    if str(step.get("axis", "")) == "note":
+        return _note_step_sentence(step)
     var resolved: int = int(step.get("resolved_rank", -1))
     if resolved >= 0:
         return "With what you know, %s must %s %s." % [who, _deduction._seq_verb_base(), _deduction._seq_ord(resolved + 1)]
@@ -778,6 +804,14 @@ func _populate_hint_markers() -> void:
         _hint_clue_index = -1
         _hint_step = {}
 
+    # Switched off on a repeating melody (2026-10-12): the hint finder reasons
+    # about the order stars first fire in, which the player is no longer told.
+    if _deduction.hints_unavailable():
+        _hint_state = HINT_NONE
+        _host._markers_content.add_child(_make_hint_message(
+            "Hints are switched off for this puzzle while they are being rebuilt."))
+        return
+
     _host._markers_content.add_child(_make_hint_message(
         "A hint tells you where to look, never what to conclude."))
     _host._markers_content.add_child(_make_hint_button(
@@ -811,11 +845,17 @@ func _populate_hint_markers() -> void:
                     "Here is everything you can work out right now, in the order you'd reach it:"))
                 for i in live_chain.size():
                     var st: Dictionary = live_chain[i]
-                    var sclue: Dictionary = clues[int(st["clue_index"])]
-                    _host._markers_content.add_child(_make_clue_label(
-                        str(sclue.get("text", "")),
-                        _clue_state_color(sclue, _deduction.player_marked_terms()),
-                        int(st["clue_index"]) + 1))
+                    # clue_index -1: a step from the player's own Repeats mark,
+                    # with no clue behind it to show.
+                    if int(st["clue_index"]) >= 0:
+                        var sclue: Dictionary = clues[int(st["clue_index"])]
+                        _host._markers_content.add_child(_make_clue_label(
+                            str(sclue.get("text", "")),
+                            _clue_state_color(sclue, _deduction.player_marked_terms()),
+                            int(st["clue_index"]) + 1))
+                    else:
+                        _host._markers_content.add_child(_make_hint_message(
+                            "From your own Repeats mark for %s:" % str(st["descriptor"])))
                     _host._markers_content.add_child(_make_hint_message(
                         "Step %d: %s" % [i + 1, _step_sentence(st)]))
         HINT_NO_STEP:
@@ -868,6 +908,16 @@ func _populate_hint_markers() -> void:
                     "That step is no longer available. Ask again for another."))
             else:
                 _hint_step = still
+                if int(still["clue_index"]) < 0:
+                    # No clue behind this one: it follows from the player's own
+                    # Repeats mark and the notes still open to that star.
+                    if _hint_state == HINT_DESCRIPTOR:
+                        _host._markers_content.add_child(_make_hint_message(
+                            "Your own Repeats mark for %s settles one of its notes. Look at the notes it could still fire on." % str(still["descriptor"])))
+                    else:
+                        _host._markers_content.add_child(_make_hint_message(
+                            "From your own Repeats mark for %s: %s" % [str(still["descriptor"]), _step_sentence(still)]))
+                    return
                 var sclue: Dictionary = clues[int(still["clue_index"])]
                 _host._markers_content.add_child(_make_clue_label(
                     str(sclue.get("text", "")),
@@ -1482,7 +1532,7 @@ func _on_staff_copy(record_idx: int, section: String) -> void:
                     items.append(name_str)
         "repeat":
             var excluded_repeats: Array[int] = _deduction._compute_excluded_repeats_for(record_idx)
-            for v in _deduction._get_repeat_bucket_values():
+            for v in _deduction._repeat_values_shown():
                 var value: int = int(v)
                 var rs: int = _deduction._effective_repeat_state(record_idx, value, false)
                 if (rs == 0 or rs == 4) and excluded_repeats.has(value):
@@ -1813,7 +1863,12 @@ func _on_pitch_checklist_undo_all(record_idx: int) -> void:
 func _earned_repeat_for_record(record_idx: int) -> String:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return ""
-    for v in _deduction._get_repeat_bucket_values():
+    # A count Listen has given is shown even if the bucket list on a loaded
+    # board happens not to reach it.
+    var given: int = _deduction._repeat_given_for_record(record_idx)
+    if given >= 0:
+        return _deduction._repeat_value_label(given)
+    for v in _deduction._repeat_values_shown():
         if _deduction._effective_repeat_state(record_idx, int(v), false) == 1:
             return _deduction._repeat_value_label(int(v))
     return ""
@@ -1855,7 +1910,7 @@ func _make_repeat_checklist_row_for_record(record_idx: int) -> HBoxContainer:
 
 func _open_repeat_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     _host._repeat_checklist_popup.clear_rows()
-    var bucket_values: Array = _deduction._get_repeat_bucket_values()
+    var bucket_values: Array = _deduction._repeat_values_shown()
     _host._repeat_checklist_popup.set_expected_row_count(bucket_values.size())
     var excluded_repeats: Array[int] = _deduction._compute_excluded_repeats_for(record_idx)
     for v in bucket_values:
@@ -1872,8 +1927,14 @@ func _open_repeat_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
 # ── Repeat-count mutations, WITHOUT any popup reopen. The Sort-row checklist
 # popup, the Staff popup and the Star Map widget all edit the same record
 # axis; each wraps these and then redraws its own surface.
+##
+## A count Listen has given (_repeat_given_for_record) is not the player's to
+## edit, on any surface: every mutation below refuses, the same way the pitch
+## handlers refuse a Listened record.
 func _repeat_toggle_confirm(record_idx: int, value: int) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    if _deduction._repeat_given_for_record(record_idx) >= 0:
         return
     var repeat_states: Dictionary = _deduction.record_at(record_idx).get("repeat_states", {})
     var cur: int = int(repeat_states.get(value, 0))
@@ -1890,6 +1951,8 @@ func _repeat_toggle_confirm(record_idx: int, value: int) -> void:
 
 func _repeat_toggle_block(record_idx: int, value: int) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    if _deduction._repeat_given_for_record(record_idx) >= 0:
         return
     var r: Dictionary = _deduction.record_at(record_idx)
     var repeat_states: Dictionary = r.get("repeat_states", {})
@@ -1909,6 +1972,8 @@ func _repeat_toggle_block(record_idx: int, value: int) -> void:
 func _repeat_toggle_protect(record_idx: int, value: int) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
+    if _deduction._repeat_given_for_record(record_idx) >= 0:
+        return
     var r: Dictionary = _deduction.record_at(record_idx)
     var states: Dictionary = r.get("repeat_states", {})
     if int(states.get(value, 0)) != 0:
@@ -1927,7 +1992,7 @@ func _repeat_undo(record_idx: int, selects: bool, blocks: bool) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     if selects:
-        _deduction._undo_category_selects(record_idx, "repeat_states", "manual_repeat_blocks", "protected_repeat_values", _deduction._get_repeat_bucket_values())
+        _deduction._undo_category_selects(record_idx, "repeat_states", "manual_repeat_blocks", "protected_repeat_values", _deduction._repeat_values_all())
         var r: Dictionary = _deduction.record_at(record_idx)
         if str(r.get("repeat_slot_label", "")) != "":
             r["repeat_slot_label"] = ""
@@ -2199,29 +2264,11 @@ func _on_record_degree_eliminate(record_idx: int, degree: int, btn: Button) -> v
     _deduction._full_propagation_refresh()
 
 
-## The tint of a Sort row's Sequence label and boxes, the same rule the staff
-## uses (_staff_tick_color) applied to what the ROW is known to be. A row whose
-## colour is known keeps that colour (row_color already is it). Until then, on a
-## repeating melody: if every star the row could still be fires only once it is
-## DIM, if every one repeats it is the lit not-yet-known green, and if it could
-## be either (or nothing is known) it keeps its neutral tint -- a row must not
-## claim more than the board shows. A 1:1 melody keeps the original tint.
-func _seq_row_color(record_idx: int, row_color: Color) -> Color:
-    if not _deduction._seq_repeats():
-        return row_color
-    if row_color != STATE_COLORS.unresolved_fallback:
-        return row_color
-    var any_repeats: bool = false
-    var any_once: bool = false
-    for c in _deduction._effective_seq_candidates(record_idx):
-        if _deduction._melody_ticks_for_rank(int(c)).size() > 1:
-            any_repeats = true
-        else:
-            any_once = true
-    if any_repeats and not any_once:
-        return _host.UNKNOWN_SEQ_COLOR
-    if any_once and not any_repeats:
-        return STATE_COLORS.muted
+## The tint of a Sort row's Sequence label and boxes: the row's own colour.
+## Until 2026-10-10 an unresolved row was dimmed or lit by whether the stars it
+## could still be repeat; that is no longer given (repeats are earned), and a
+## row must not claim more than the board shows.
+func _seq_row_color(_record_idx: int, row_color: Color) -> Color:
     return row_color
 
 
@@ -2333,7 +2380,12 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, sc
     # new ScrollContainer at scroll 0 -- so toggling a button far along the
     # strip threw the view back to the start. Remember where each record's
     # strip was scrolled and put the new one back there.
-    var scroll_key = (scroll_ctx + str(record_idx)) if scroll_ctx != "" else record_idx
+    # A String with a context (the Star Map widgets), the bare record index
+    # without one. Written as if/else, not a ternary: the two are different
+    # types on purpose, which a ternary warns about (INCOMPATIBLE_TERNARY).
+    var scroll_key = record_idx
+    if scroll_ctx != "":
+        scroll_key = scroll_ctx + str(record_idx)
     var saved_scroll: int = int(_seq_checker_scroll.get(scroll_key, 0))
     if saved_scroll > 0:
         _restore_checker_scroll.call_deferred(scroll, scroll_key, saved_scroll)
@@ -2357,38 +2409,80 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, sc
     var off_key: String = "off:%s" % str(scroll_key)
     var show_off: bool = bool(_checker_show_off.get(off_key, false))
     var any_hidden: bool = false
-    # One button per staff NOTE (every note 1..N, the same numbers the typed
-    # boxes and the clues use). On a repeating melody several notes are the
-    # same star, so those buttons are linked: they share one state and a
-    # click on any of them toggles that star. Labelling by each star's FIRST
-    # note only (the earlier version) left gaps in the numbering -- 1 2 3 4 8
-    # 9 12 14 -- that read as missing checks.
+    # ONE BUTTON PER NOTE of the melody, in note order (2026-10-12: every note
+    # is a Sequence position; until then repeat notes had no button here). The
+    # row asks "which notes does this star fire on", and the two kinds of note
+    # answer differently only because which notes are FIRST firings is public:
+    #   a first note   exactly one of them is this star's (the position set,
+    #                  the number the clues and the typed boxes use)
+    #   a repeat note  the star fires there again or it does not, note by note
+    #                  (_repeat_note_state_for_record); any number can be true
+    # They look alike on purpose; the tooltip says which kind a note is.
+    #
+    # FIRST NOTES HIDDEN (later on 2026-10-12): the player is not told which
+    # kind a note is, so on a repeating melody EVERY note takes the second
+    # branch and no note is pick-one. The first branch is left for a 1:1
+    # melody, where every note is a position, and for the seam.
+    var all_alike: bool = _deduction._notes_hidden()
     for tick in range(1, _deduction._melody_tick_count() + 1):
+        if all_alike or not _deduction._tick_is_first_fire(tick):
+            var nstate: int = _deduction._repeat_note_state_for_record(record_idx, tick)
+            var nbtn := Button.new()
+            nbtn.text = str(tick)
+            nbtn.custom_minimum_size = Vector2(26, 24)
+            nbtn.focus_mode = Control.FOCUS_NONE
+            nbtn.add_theme_font_size_override("font_size", 16)
+            # No "(a repeat note)" in the wording when the notes are all alike:
+            # that is the very thing the player is not told.
+            var kind: String = "" if all_alike else " (a repeat note)"
+            match nstate:
+                1:
+                    nbtn.add_theme_color_override("font_color", tint)
+                    nbtn.modulate = STATE_COLORS.confirmed
+                    nbtn.tooltip_text = "Note %d%s: this star fires here (left-click to let go)" % [tick, kind]
+                2:
+                    nbtn.modulate = STATE_COLORS.eliminated
+                    nbtn.disabled = true
+                    nbtn.tooltip_text = "Note %d%s: ruled out by deduction" % [tick, kind]
+                3:
+                    nbtn.modulate = STATE_COLORS.eliminated
+                    nbtn.tooltip_text = "Note %d%s: ruled out (right-click to restore)" % [tick, kind]
+                _:
+                    nbtn.add_theme_color_override("font_color", tint)
+                    nbtn.tooltip_text = "Note %d%s: this star may fire here (left-click: it does; right-click: it does not)" % [tick, kind]
+            var nridx := record_idx
+            var ntick := tick
+            nbtn.pressed.connect(func(): _on_seq_note_select(nridx, ntick))
+            nbtn.gui_input.connect(func(event: InputEvent):
+                if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+                    _on_seq_note_toggle(nridx, ntick)
+                    nbtn.accept_event())
+            if nstate >= 2:
+                any_hidden = true
+                nbtn.visible = show_off
+            strip.add_child(nbtn)
+            continue
         var p: int = _deduction._seq_pos_for_melody_tick(tick)
         var btn := Button.new()
         btn.text = str(tick)
         btn.custom_minimum_size = Vector2(26, 24)
         btn.focus_mode = Control.FOCUS_NONE
         btn.add_theme_font_size_override("font_size", 16)
-        var ticks: Array = _deduction._melody_ticks_for_rank(p)
-        var tick_strs := PackedStringArray()
-        for t in ticks:
-            tick_strs.append(str(t))
         var is_on: bool = effective.has(p)
         if is_on:
             btn.add_theme_color_override("font_color", tint)
             if pinned:
                 btn.modulate = STATE_COLORS.confirmed
-            btn.tooltip_text = "Note%s %s: still possible (left-click: this is the one; right-click: rule out)" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
+            btn.tooltip_text = "Note %d: still possible (left-click: this is the one; right-click: rule out)" % tick
         elif manual.has(p):
             # In the player's own set but removed by deduction: shown off and
             # not togglable, since clicking could not bring it back.
             btn.modulate = STATE_COLORS.eliminated
             btn.disabled = true
-            btn.tooltip_text = "Note%s %s: ruled out by deduction" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
+            btn.tooltip_text = "Note %d: ruled out by deduction" % tick
         else:
             btn.modulate = STATE_COLORS.eliminated
-            btn.tooltip_text = "Note%s %s: ruled out (right-click to restore)" % ["s" if ticks.size() > 1 else "", ", ".join(tick_strs)]
+            btn.tooltip_text = "Note %d: ruled out (right-click to restore)" % tick
         var ridx := record_idx
         var rank := p
         # Left-click selects this position as the true one; right-click rules
@@ -2424,11 +2518,65 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, sc
     undo_btn.text = "↶"
     undo_btn.custom_minimum_size = Vector2(26, 24)
     undo_btn.focus_mode = Control.FOCUS_NONE
-    undo_btn.tooltip_text = "Undo: make every sequence position possible again"
-    undo_btn.disabled = _deduction._raw_seq_candidate_set(_deduction.record_at(record_idx)).is_empty()
-    undo_btn.pressed.connect(func(): _clear_sequence_info(cridx))
+    undo_btn.tooltip_text = "Undo: make every note possible again"
+    undo_btn.disabled = _deduction._raw_seq_candidate_set(_deduction.record_at(record_idx)).is_empty() \
+        and (_deduction.record_at(record_idx).get("seq_note_blocks", []) as Array).is_empty()
+    undo_btn.pressed.connect(func(): _clear_sequence_info(cridx, true))
     row.add_child(undo_btn)
     return row
+
+
+## Left-click on a REPEAT note of a record's Sequence row: "this star fires
+## here again". The note joins the record -- the same thing naming the note
+## does -- so the staff, the star's tag and the note's own popup all follow.
+## Clicking a note the record already has lets it go again.
+func _on_seq_note_select(record_idx: int, tick: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var state: int = _deduction._repeat_note_state_for_record(record_idx, tick)
+    if state == 2:
+        return   # ruled out by deduction
+    var r: Dictionary = _deduction.record_at(record_idx)
+    if state == 1:
+        if (r.get("melody_ticks", []) as Array).has(tick):
+            # The row of the note's OWN record: the note is what the record is.
+            if (r.get("melody_ticks", []) as Array).size() == 1 and str(r.get("name", "")) == "" \
+                    and int(r.get("star_idx", -1)) < 0:
+                return
+            _deduction._detach_melody_tick(tick, record_idx)
+        else:
+            _release_repeat_note(tick)   # the note's own record sat on the same position
+        _deduction._save_puzzle_notes()
+        _deduction._full_propagation_refresh()
+        return
+    var blocks: Array = (r.get("seq_note_blocks", []) as Array).duplicate()
+    blocks.erase(tick)
+    r["seq_note_blocks"] = blocks
+    # Move the NOTE: let it go from wherever it was, then join it to this record.
+    var note_idx: int = _release_repeat_note(tick)
+    if note_idx != record_idx and note_idx >= 0:
+        await _deduction._merge_match_records(record_idx, note_idx)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+
+
+## Right-click on a REPEAT note: "this star does not fire here", or take that
+## mark back. A note the record holds has nothing to rule out; let it go first.
+func _on_seq_note_toggle(record_idx: int, tick: int) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var state: int = _deduction._repeat_note_state_for_record(record_idx, tick)
+    if state == 1 or state == 2:
+        return
+    var r: Dictionary = _deduction.record_at(record_idx)
+    var blocks: Array = (r.get("seq_note_blocks", []) as Array).duplicate()
+    if state == 3:
+        blocks.erase(tick)
+    else:
+        blocks.append(tick)
+    r["seq_note_blocks"] = blocks
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 ## Per checker row (keyed by the row, see the builders): whether its ruled-out
@@ -2465,10 +2613,14 @@ func _make_return_button(off_key: String, showing: bool, any_ruled_out: bool) ->
 ## refreshes. Behind the checker row's UNDO button, and what "all checks on"
 ## means. (_undo_sequence_entry, the typed row's release, deliberately leaves
 ## a bounds range alone.)
-func _clear_sequence_info(record_idx: int) -> void:
+func _clear_sequence_info(record_idx: int, and_note_marks: bool = false) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     var r: Dictionary = _deduction.record_at(record_idx)
+    # The row's UNDO also takes back the "does not fire on note N" marks; the
+    # other callers (un-pinning a position) leave them alone.
+    if and_note_marks:
+        r["seq_note_blocks"] = []
     r["seq_candidates"] = []
     r["seq_lo"] = 0
     r["seq_hi"] = 0
@@ -2491,10 +2643,7 @@ func _on_seq_checker_select(record_idx: int, rank: int, lo_edit: LineEdit, mid_e
     if manual.size() == 1 and manual[0] == rank:
         _clear_sequence_info(record_idx)
         return
-    var ticks: PackedStringArray = PackedStringArray()
-    for t in _deduction._melody_ticks_for_rank(rank):
-        ticks.append(str(t))
-    mid_edit.text = ",".join(ticks)
+    mid_edit.text = str(_deduction._first_tick_for_rank(rank))
     _commit_sequence_candidates(record_idx, lo_edit, mid_edit, hi_edit)
 
 
@@ -2522,12 +2671,11 @@ func _on_seq_checker_toggle(record_idx: int, rank: int, lo_edit: LineEdit, mid_e
         _clear_sequence_info(record_idx)
         return
 
-    # The shared commit takes staff NOTES and maps them back to ranks, so a
-    # repeating star's other notes dedupe to the same rank.
+    # The shared commit takes staff NOTES and maps them back to ranks: each
+    # position goes in as its first note.
     var ticks: PackedStringArray = PackedStringArray()
     for p in new_set:
-        for t in _deduction._melody_ticks_for_rank(int(p)):
-            ticks.append(str(t))
+        ticks.append(str(_deduction._first_tick_for_rank(int(p))))
     mid_edit.text = ",".join(ticks)
     _commit_sequence_candidates(record_idx, lo_edit, mid_edit, hi_edit)
 
@@ -2798,7 +2946,7 @@ func _on_pitch_checklist_undo_all_no_popup(record_idx: int) -> void:
 
 # ── Repeats ──────────────────────────────────────────────────────────────
 func _make_repeat_checker_row_for_record(record_idx: int) -> HBoxContainer:
-    var values: Array = _deduction._get_repeat_bucket_values()
+    var values: Array = _deduction._repeat_values_shown()
     var excluded: Array[int] = _deduction._compute_excluded_repeats_for(record_idx)
     var labels: Array = []
     var tips: Array = []
@@ -2807,7 +2955,10 @@ func _make_repeat_checker_row_for_record(record_idx: int) -> HBoxContainer:
         labels.append(str(v))
         tips.append(_deduction._repeat_value_label(int(v)))
         states.append(_repeat_row_state(record_idx, int(v), excluded))
-    var slotted: bool = str(_deduction.record_at(record_idx).get("repeat_slot_label", "")) != ""
+    # Locked when the count is not the player's to change: a Sort:Repeats slot
+    # record, or a star whose count Listen has given.
+    var slotted: bool = str(_deduction.record_at(record_idx).get("repeat_slot_label", "")) != "" \
+        or _deduction._repeat_given_for_record(record_idx) >= 0
     var ridx := record_idx
     return _make_value_checker_row(record_idx, "r", values, labels, tips, states, slotted,
         "repeat", "Write the still-possible repeat counts into the Notes tab",
@@ -2822,10 +2973,11 @@ func _make_repeat_checker_row_for_record(record_idx: int) -> HBoxContainer:
 func _on_repeat_checker_select(record_idx: int, value: int) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    if str(_deduction.record_at(record_idx).get("repeat_slot_label", "")) != "":
+    if str(_deduction.record_at(record_idx).get("repeat_slot_label", "")) != "" \
+            or _deduction._repeat_given_for_record(record_idx) >= 0:
         return
     _axis_select(record_idx, "repeat_states", "manual_repeat_blocks", "protected_repeat_values",
-        _deduction._get_repeat_bucket_values(), value,
+        _deduction._repeat_values_shown(), value,
         _deduction._effective_repeat_state(record_idx, value, false),
         func(rec, v): _deduction._propagate_repeat_confirmed_same_record(rec, int(v)))
 
@@ -2834,16 +2986,22 @@ func _on_repeat_checker_select(record_idx: int, value: int) -> void:
 func _on_repeat_checker_toggle(record_idx: int, value: int) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
-    if str(_deduction.record_at(record_idx).get("repeat_slot_label", "")) != "":
+    if str(_deduction.record_at(record_idx).get("repeat_slot_label", "")) != "" \
+            or _deduction._repeat_given_for_record(record_idx) >= 0:
         return
     _axis_eliminate(record_idx, "repeat_states", "manual_repeat_blocks",
-        _deduction._get_repeat_bucket_values(), value,
+        _deduction._repeat_values_shown(), value,
         _deduction._effective_repeat_state(record_idx, value, false),
         func(rec, v): _deduction._propagate_repeat_confirmed_same_record(rec, int(v)))
 
 
 func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> HBoxContainer:
-    if _seq_checker_enabled():
+    # With the first notes hidden the typed boxes cannot be offered: "lower <
+    # list < upper" is a statement about where the star comes in the firing
+    # order, which that board does not keep. The per-note checks are the entry
+    # there whichever style is chosen (2026-10-12; a typed form that takes a
+    # plain list of notes is not built).
+    if _seq_checker_enabled() or _deduction._notes_hidden():
         return _make_sequence_checker_row_for_record(record_idx, row_color)
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
@@ -2962,18 +3120,10 @@ func _refresh_range_edits(record_idx: int, lo_edit: LineEdit, mid_edit: LineEdit
     if lo > 0 and lo == hi:
         lo_edit.text = ""
         hi_edit.text = ""
-        # ALL ticks this star fires at, not just its first -- a repeated star
-        # is one star, but "= 8" alone would look like a contradiction next to
-        # a staff clearly showing that same star at 8, 10 and 12. The repeat
-        # shape is public, so listing them reveals nothing.
-        # PackedStringArray, not a plain Array: String.join() is typed, and
-        # handing it an untyped Array is the silent-abort class this project
-        # has hit before (see _copy_open_items_to_notes's own comment).
-        var ticks: Array = _deduction._melody_ticks_for_rank(lo)
-        var tick_strs := PackedStringArray()
-        for t in ticks:
-            tick_strs.append(str(t))
-        mid_edit.text = "= %s" % ",".join(tick_strs)
+        # The star's FIRST note: that is what a Sequence position is. Its
+        # repeat notes are not listed here even once the player has placed
+        # them; the staff and the star's tag show those.
+        mid_edit.text = "= %d" % _deduction._first_tick_for_rank(lo)
         return
     var rec: Dictionary = _deduction.record_at(record_idx)
     var lo_val: int = _deduction._exclusive_display_lo(lo, hi, int(rec.get("seq_tick_lo", 0)))
@@ -3002,10 +3152,11 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEd
     var typed_hi: int = int(raw_hi) if raw_hi.is_valid_int() else 0
 
     # Typed numbers are staff NOTES -- the same numbers the clues and the staff
-    # use -- so the valid range is the melody's own length. The repeat shape is
-    # public, so a note maps to its star's rank through the staff's own table:
-    #   * the same note in both boxes, or "= N", pins the star that fires there
-    #     (typing ANY of a repeating star's notes lands on the same star);
+    # use -- so the valid range is the melody's own length:
+    #   * the same note in both boxes, or "= N", pins the star that FIRST fires
+    #     on note N. A repeat note is accepted only once the player has placed
+    #     it on a position (it then means that position); until then it names
+    #     no position and the entry is refused;
     #   * the lower box "N <" means the star FIRST fires after note N, the
     #     upper box "< M" before note M (see _seq_bounds_for_ticks).
     var tick_count: int = _deduction._melody_tick_count()
@@ -3027,6 +3178,10 @@ func _commit_sequence_range(record_idx: int, lo_edit: LineEdit, mid_edit: LineEd
     if is_exact_entry:
         lo = _deduction._seq_pos_for_melody_tick(typed_lo)
         hi = lo
+        if lo <= 0:
+            # A repeat note not yet placed: writing 0 here would CLEAR the row.
+            _refresh_range_edits(record_idx, lo_edit, mid_edit, hi_edit)
+            return
     else:
         var converted: Array = _deduction._seq_bounds_for_ticks(typed_lo, typed_hi)
         lo = int(converted[0])
@@ -3150,14 +3305,17 @@ func _commit_sequence_candidates(record_idx: int, lo_edit: LineEdit, mid_edit: L
 
     # Parsed numbers are staff NOTES, same domain as the range boxes (see
     # _commit_sequence_range's own comment) -- converted to their RANKS and
-    # DEDUPED here, since two notes of the same repeating star are one star,
-    # not two candidates.
-    var parsed: Array = _deduction._parse_candidate_list(raw)
+    # DEDUPED here. A repeat note the player has not placed names no position
+    # (rank 0) and is dropped. The leading "=" is how an exact pin is shown in
+    # this box, so it has to survive being committed again.
+    var parsed: Array = _deduction._parse_candidate_list(raw.trim_prefix("=").strip_edges())
     var tick_count: int = _deduction._melody_tick_count()
     var valid_ranks: Dictionary = {}
     for p in parsed:
         if p >= 1 and p <= tick_count:
-            valid_ranks[_deduction._seq_pos_for_melody_tick(int(p))] = true
+            var typed_rank: int = _deduction._seq_pos_for_melody_tick(int(p))
+            if typed_rank > 0:
+                valid_ranks[typed_rank] = true
     var valid: Array = valid_ranks.keys()
     valid.sort()
 
@@ -3708,6 +3866,7 @@ func _build_repeat_bucket_slot_controls(value: int) -> void:
 ## so it stays consistent with _populate_name_rows/_populate_color_group_
 ## rows/etc., which don't either.
 func _populate_repeat_bucket_rows() -> void:
+    # The (hidden) Sort:Repeats tab keeps its own player-grown bucket list.
     for value in _deduction._get_repeat_bucket_values():
         var v: int = int(value)
         for pos in _deduction._repeat_bucket_slot_count(v):
@@ -3777,17 +3936,13 @@ const STAFF_TOP_PAD: float = 10.0
 const NUMERAL_BASELINE_PAD: float = 8.0
 const NUMERAL_BLOCK_H: float = 22.0
 
-## The colour a staff tick's marks take. A star's colour once it is deduced,
-## for every one of its notes. Until then, on a repeating melody, a note of a
-## star that fires only once stays DIM and a note of a star that repeats is lit
-## in the not-yet-known green -- so the repeat shape reads at a glance, and the
-## colour never says more than the board already shows. A 1:1 melody has no
-## repeats to show, so every note stays the original green.
-func _staff_tick_color(seq_pos: int, known_color: int) -> Color:
+## The colour a staff tick's marks take. The star's colour once the board knows
+## it for that note, the not-yet-known green until then. A FIRST note and a
+## REPEAT note look the same (2026-10-12: the dim repeat colour of 2026-10-10
+## was taken off the bar), so `tick` no longer changes the answer.
+func _staff_tick_color(_tick: int, known_color: int) -> Color:
     if known_color >= 0:
         return _host.STAR_COLORS_BY_IDX[known_color]
-    if _deduction._seq_repeats() and _deduction._melody_ticks_for_rank(seq_pos).size() < 2:
-        return STATE_COLORS.muted
     return _host.UNKNOWN_SEQ_COLOR
 
 
@@ -3860,14 +4015,17 @@ func _draw_melody_staff() -> void:
 
     for tick in range(1, tick_count + 1):
         var x: float = margin_x + step_x * float(tick - 1)
-        # seq_pos is the RANK this tick's note belongs to (1-indexed, the
+        # seq_pos is the RANK the board knows for this note (1-indexed, the
         # domain _melody_marker_for_position/_known_color_for_seq_position/
-        # _known_name_for_seq_position already expect) — NOT the tick's own
-        # melody position. Two ticks sharing a repeated note resolve to the
-        # SAME seq_pos and so draw identically: the repeat is the same star
-        # firing again, not a new unknown to solve.
+        # _known_name_for_seq_position expect): public for a star's first
+        # note, the player's own pin for a repeat note, and 0 for a repeat
+        # note not yet placed. A placed repeat note therefore draws exactly
+        # like its star's first note; an unplaced one shows only what the
+        # player has marked on that note itself.
         var seq_pos: int = _melody_rank_for_tick(tick)
-        var marker: Dictionary = _deduction._melody_marker_for_position(seq_pos)
+        var own_rec: int = -1 if seq_pos > 0 else _deduction._find_match_record_by_melody_tick(tick)
+        var marker: Dictionary = _deduction._melody_marker_for_position(seq_pos) if seq_pos > 0 \
+            else _deduction._melody_marker_for_record(own_rec)
 
         # ONE COLOUR PER POSITION, and COLOUR is what sets it.
         #
@@ -3881,8 +4039,9 @@ func _draw_melody_staff() -> void:
         #
         # Colour is a GIVEN axis (painted on the map), so tinting by it
         # reveals nothing the player has not already got.
-        var known_color: int = _deduction._known_color_for_seq_position(seq_pos)
-        var pos_col: Color = _staff_tick_color(seq_pos, known_color)
+        var known_color: int = _deduction._known_color_for_seq_position(seq_pos) if seq_pos > 0 \
+            else _deduction._resolved_color_for_record(own_rec)
+        var pos_col: Color = _staff_tick_color(tick, known_color)
 
         # NAME, on one of two staggered rows, above the staff. "?" until
         # identified, then the name itself.
@@ -3894,7 +4053,8 @@ func _draw_melody_staff() -> void:
         # neighbour and each may run to roughly TWO columns before it can
         # collide — with the tick two along, on its own row. The ellipsis
         # stays as a backstop for a very narrow panel or a very long name.
-        var star_name: String = _deduction._known_name_for_seq_position(seq_pos)
+        var star_name: String = _deduction._known_name_for_seq_position(seq_pos) if seq_pos > 0 \
+            else _deduction._known_name_for_record(own_rec)
         var name_dy: float = NAME_ROW_HIGH_DY if tick % 2 == 1 else NAME_ROW_LOW_DY
         var name_label: String = _fit_string_to_width(
             font, star_name, FONT_SIZE_STAFF_NAME, step_x * 2.0 - 6.0) if star_name != "" else "?"
@@ -4009,6 +4169,16 @@ func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
     var record_idx: int = _deduction._get_or_create_match_record_for_melody_tick(tick)
 
     _host._staff_popup.clear_all_rows()
+    # "Same star as note": where the player says which other notes this note's
+    # star also fires on. On EVERY note's popup when the first notes are hidden
+    # (2026-10-12) -- a popup that only some notes had would say which notes
+    # are repeats. A 1:1 melody has nothing to ask.
+    var id_row: Control = null
+    if _deduction._notes_hidden():
+        id_row = _make_staff_note_link_row(tick, record_idx)
+    elif not _deduction._tick_is_first_fire(tick):
+        id_row = _make_staff_identity_row(tick, record_idx)
+    _host._staff_popup.set_identity_row(id_row)
 
     # Column counts scale with content instead of a fixed 2, so a section
     # spreads wider rather than getting taller and taller (Name in
@@ -4067,7 +4237,7 @@ func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
 
     # Add repeat-count rows -- one column, a handful of buckets. Same
     # cross-record exclusion as the Sort rows' checklist popup.
-    var bucket_values: Array = _deduction._get_repeat_bucket_values()
+    var bucket_values: Array = _deduction._repeat_values_shown()
     _host._staff_popup.set_repeat_column_count(1, bucket_values.size())
     var excluded_repeats: Array[int] = _deduction._compute_excluded_repeats_for(record_idx)
     for bv in bucket_values:
@@ -4094,6 +4264,223 @@ func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
     # column-scaling above) the centered top edge lands ABOVE the header,
     # over the clue box. This is the actual floor.
     _host._staff_popup.open(tick, record_idx, _clamp_popup_screen_pos(screen_pos))
+
+
+# ==================================================
+# STAFF POPUP "SAME STAR AS NOTE" ROW (2026-10-10, repeats are earned)
+#
+# A repeat note is an earlier star firing again, and which star is for the
+# player to work out. This row is where they record it: one button per note
+# that is some star's FIRST firing before this one. It is the note's own
+# Sequence entry -- placing the note on a star pins the note's record to that
+# star's position through the same commit the Sort rows use, so the two
+# records merge (or share) by the ordinary identity rules and the staff, the
+# star's tag and every Sort row follow. Left-click places it (again lets go),
+# right-click rules a star out, Undo lets the note go.
+# ==================================================
+func _make_staff_identity_row(tick: int, record_idx: int) -> Control:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 2)
+    var lbl := Label.new()
+    lbl.text = "Same star as note:"
+    lbl.add_theme_font_size_override("font_size", 16)
+    lbl.tooltip_text = "This note is an earlier star firing again. Mark which star's first note it repeats."
+    lbl.mouse_filter = Control.MOUSE_FILTER_STOP
+    row.add_child(lbl)
+
+    var effective: Array = _deduction._effective_seq_candidates(record_idx)
+    var manual: Array = _seq_manual_ranks(record_idx)
+    var placed: bool = effective.size() == 1
+    for first in range(1, tick):
+        if not _deduction._tick_is_first_fire(first):
+            continue
+        var rank: int = _deduction._seq_pos_for_melody_tick(first)
+        var btn := Button.new()
+        btn.text = str(first)
+        btn.custom_minimum_size = Vector2(26, 24)
+        btn.focus_mode = Control.FOCUS_NONE
+        btn.add_theme_font_size_override("font_size", 16)
+        if effective.has(rank):
+            if placed:
+                btn.modulate = STATE_COLORS.confirmed
+                btn.tooltip_text = "Placed: this note is the star that first fires on note %d (left-click to let go)" % first
+            else:
+                btn.tooltip_text = "Could be the star that first fires on note %d (left-click: it is; right-click: rule out)" % first
+        elif manual.has(rank):
+            btn.modulate = STATE_COLORS.eliminated
+            btn.disabled = true
+            btn.tooltip_text = "Not the star that first fires on note %d: ruled out by deduction" % first
+        else:
+            btn.modulate = STATE_COLORS.eliminated
+            btn.tooltip_text = "Not the star that first fires on note %d (right-click to restore)" % first
+        var r := rank
+        btn.pressed.connect(func(): _on_staff_identity_select(tick, r))
+        btn.gui_input.connect(func(event: InputEvent):
+            if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+                _on_staff_identity_toggle(tick, r)
+                btn.accept_event())
+        row.add_child(btn)
+
+    var undo_btn := Button.new()
+    undo_btn.text = "↶"
+    undo_btn.custom_minimum_size = Vector2(26, 24)
+    undo_btn.focus_mode = Control.FOCUS_NONE
+    undo_btn.tooltip_text = "Undo: this note could be any earlier star again"
+    undo_btn.disabled = _deduction._raw_seq_candidate_set(_deduction.record_at(record_idx)).is_empty()
+    undo_btn.pressed.connect(func(): _on_staff_identity_undo(tick))
+    row.add_child(undo_btn)
+    return row
+
+
+## The same row with the first notes hidden (2026-10-12): a button for EVERY
+## other note of the melody, earlier or later, each one "does this note's star
+## also fire there". It is the note's record's Sequence row seen from the
+## staff, so it reads and writes exactly what a Sort row does
+## (_repeat_note_state_for_record, _on_seq_note_select / _toggle).
+func _make_staff_note_link_row(tick: int, record_idx: int) -> Control:
+    var box := VBoxContainer.new()
+    box.add_theme_constant_override("separation", 2)
+    var lbl := Label.new()
+    lbl.text = "Same star as note:"
+    lbl.add_theme_font_size_override("font_size", 16)
+    lbl.tooltip_text = "Mark the other notes this note's star also fires on (left-click: it does; right-click: it does not)."
+    lbl.mouse_filter = Control.MOUSE_FILTER_STOP
+    box.add_child(lbl)
+    var flow := HFlowContainer.new()
+    flow.add_theme_constant_override("h_separation", 2)
+    flow.add_theme_constant_override("v_separation", 2)
+    box.add_child(flow)
+    var any_mark: bool = not (_deduction.record_at(record_idx).get("seq_note_blocks", []) as Array).is_empty() \
+        or (_deduction.record_at(record_idx).get("melody_ticks", []) as Array).size() > 1
+    for other in range(1, _deduction._melody_tick_count() + 1):
+        if other == tick:
+            continue
+        var state: int = _deduction._repeat_note_state_for_record(record_idx, other)
+        var btn := Button.new()
+        btn.text = str(other)
+        btn.custom_minimum_size = Vector2(26, 24)
+        btn.focus_mode = Control.FOCUS_NONE
+        btn.add_theme_font_size_override("font_size", 16)
+        match state:
+            1:
+                btn.modulate = STATE_COLORS.confirmed
+                btn.tooltip_text = "The same star fires on note %d (left-click to let go)" % other
+            2:
+                btn.modulate = STATE_COLORS.eliminated
+                btn.disabled = true
+                btn.tooltip_text = "Not the same star as note %d: ruled out by deduction" % other
+            3:
+                btn.modulate = STATE_COLORS.eliminated
+                btn.tooltip_text = "Not the same star as note %d (right-click to restore)" % other
+            _:
+                btn.tooltip_text = "Could be the same star as note %d (left-click: it is; right-click: it is not)" % other
+        var o := other
+        btn.pressed.connect(func(): _on_staff_note_link(tick, o, false))
+        btn.gui_input.connect(func(event: InputEvent):
+            if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+                _on_staff_note_link(tick, o, true)
+                btn.accept_event())
+        flow.add_child(btn)
+    var undo_btn := Button.new()
+    undo_btn.text = "↶"
+    undo_btn.custom_minimum_size = Vector2(26, 24)
+    undo_btn.focus_mode = Control.FOCUS_NONE
+    undo_btn.tooltip_text = "Undo: take back every 'not the same star' mark made here"
+    undo_btn.disabled = not any_mark
+    undo_btn.pressed.connect(func(): _on_staff_note_link_undo(tick))
+    flow.add_child(undo_btn)
+    return box
+
+
+## A click in the row above. The popup's record is looked up again each time:
+## joining two notes merges their records, which can renumber them.
+func _on_staff_note_link(tick: int, other: int, rule_out: bool) -> void:
+    var record_idx: int = _deduction._get_or_create_match_record_for_melody_tick(tick)
+    if rule_out:
+        _on_seq_note_toggle(record_idx, other)
+    else:
+        await _on_seq_note_select(record_idx, other)
+    _open_staff_popup(tick, _host._staff_popup.position)
+
+
+func _on_staff_note_link_undo(tick: int) -> void:
+    var record_idx: int = _deduction._get_or_create_match_record_for_melody_tick(tick)
+    _deduction.record_at(record_idx)["seq_note_blocks"] = []
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+    _open_staff_popup(tick, _host._staff_popup.position)
+
+
+## Three LineEdits for the shared Sequence commit, which reads and refreshes
+## them. Never in the tree; the caller frees them.
+func _throwaway_seq_edits() -> Array:
+    return [LineEdit.new(), LineEdit.new(), LineEdit.new()]
+
+
+## Lets a repeat note go from wherever the player had placed it, and returns
+## the record that now holds the note, unplaced.
+##
+## A record that is nothing but this note (no name, no map star, no Sort slot,
+## no other note) only loses the placement; the colour and pitch marks made on
+## the note stay with it. Anything more is some other row's record the note
+## was merged into, so the note leaves it for a fresh record and that row is
+## left exactly as it was (_detach_melody_tick).
+func _release_repeat_note(tick: int) -> int:
+    var idx: int = _deduction._get_or_create_match_record_for_melody_tick(tick)
+    var r: Dictionary = _deduction.record_at(idx)
+    var only_this_note: bool = (r.get("melody_ticks", []) as Array).size() == 1 \
+        and str(r.get("name", "")) == "" and int(r.get("star_idx", -1)) < 0 \
+        and str(r.get("color_slot_label", "")) == "" and str(r.get("pitch_slot_label", "")) == "" \
+        and str(r.get("degree_slot_label", "")) == ""
+    if not only_this_note:
+        return _deduction._detach_melody_tick(tick, idx)
+    r["seq_candidates"] = []
+    r["seq_lo"] = 0
+    r["seq_hi"] = 0
+    r["seq_tick_lo"] = 0
+    r["seq_tick_hi"] = 0
+    return idx
+
+
+func _on_staff_identity_select(tick: int, rank: int) -> void:
+    var record_idx: int = _deduction._get_or_create_match_record_for_melody_tick(tick)
+    var effective: Array = _deduction._effective_seq_candidates(record_idx)
+    if effective.size() == 1 and int(effective[0]) == rank:
+        _on_staff_identity_undo(tick)
+        return
+    if not effective.has(rank) and _seq_manual_ranks(record_idx).has(rank):
+        return   # ruled out by deduction
+    # Moving the note to a different star must move the NOTE, never re-pin a
+    # row it had been merged into: let it go first, then place it.
+    record_idx = _release_repeat_note(tick)
+    var edits: Array = _throwaway_seq_edits()
+    var first: String = str(_deduction._first_tick_for_rank(rank))
+    (edits[0] as LineEdit).text = first
+    (edits[2] as LineEdit).text = first
+    await _commit_sequence_range(record_idx, edits[0], edits[1], edits[2])
+    for e in edits:
+        (e as LineEdit).queue_free()
+    _open_staff_popup(tick, _host._staff_popup.position)
+
+
+func _on_staff_identity_toggle(tick: int, rank: int) -> void:
+    var record_idx: int = _deduction._get_or_create_match_record_for_melody_tick(tick)
+    # A placed note has nothing to rule out; let it go first (same rule as the
+    # checker rows: right-click on a selected value does nothing).
+    if _deduction._effective_seq_candidates(record_idx).size() == 1:
+        return
+    var edits: Array = _throwaway_seq_edits()
+    _on_seq_checker_toggle(record_idx, rank, edits[0], edits[1], edits[2])
+    for e in edits:
+        (e as LineEdit).queue_free()
+    _open_staff_popup(tick, _host._staff_popup.position)
+
+
+func _on_staff_identity_undo(tick: int) -> void:
+    _release_repeat_note(tick)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
+    _open_staff_popup(tick, _host._staff_popup.position)
 
 
 func _on_staff_pitch_check(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
@@ -4730,7 +5117,7 @@ func _build_star_widgets_impl() -> void:
 
 
 func _build_star_widget_repeats(root: VBoxContainer, _star_idx: int, record_idx: int, star_color: Color) -> void:
-    var bucket_values: Array = _deduction._get_repeat_bucket_values()
+    var bucket_values: Array = _deduction._repeat_values_shown()
     if bucket_values.is_empty():
         return
     var panel := PanelContainer.new()
@@ -4841,6 +5228,26 @@ func _confirmed_pitch_str_for_star(star_idx: int) -> String:
     return note if note != "" else "?"
 
 
+## A star tag's Repeats text: "R2" once the board has the star's repeat count
+## (the player's own mark, or one the engine derived from it), "R?" until then.
+## "R" plus the count is the Sort:Repeats slots' own shorthand ("R0 A"); the
+## letter also keeps this "?" apart from the tag's other unknowns. Read through
+## the effective state, like the Sequence and Pitch readers beside it. The true
+## count shows only for a star the player has Listened to (the axis's one
+## ground-truth tier, see _repeat_given_for_record); otherwise it is the
+## player's own mark.
+func _confirmed_repeat_str_for_star(star_idx: int) -> String:
+    if star_idx < 0:
+        return "R?"
+    var idx: int = _deduction._find_match_record_by_star_idx(star_idx)
+    if idx < 0:
+        return "R?"
+    for v in _deduction._repeat_count_domain():
+        if _deduction._effective_repeat_state(idx, int(v)) == 1:
+            return "R%d" % int(v)
+    return "R?"
+
+
 func _ordinal(n: int) -> String:
     var mod100: int = n % 100
     if mod100 >= 11 and mod100 <= 13:
@@ -4853,16 +5260,34 @@ func _ordinal(n: int) -> String:
 
 
 ## A star tag's Sequence text from the star's confirmed rank: just the staff
-## numbers of every note it fires on ("7", or "8, 10, 12" for a star that
-## repeats). No "note"/"notes" wording -- the numbers are the staff's own and
-## the player knows what they mean. (_seq_ticks_phrase keeps its wording for
-## clue and hint text.)
+## numbers of the notes the board knows it fires on -- its first note, then any
+## repeat note the player has placed on it ("7", or "8, 10, 12"). No
+## "note"/"notes" wording -- the numbers are the staff's own and the player
+## knows what they mean. (_seq_ticks_phrase keeps its wording for clue and
+## hint text.)
 func _ordinal_str(raw: String) -> String:
     if raw == "?" or not raw.is_valid_int():
         return raw
     var parts := PackedStringArray()
-    for t in _deduction._melody_ticks_for_rank(int(raw)):
+    for t in _deduction._known_ticks_for_rank(int(raw)):
         parts.append(str(t))
+    return ", ".join(parts)
+
+
+## The notes the board has a map star firing on ("3", "3, 9"), or "?". Read off
+## the record that is that star's: the notes it holds, which got there only by
+## the player's own marks.
+func _held_notes_str_for_star(star_idx: int) -> String:
+    var idx: int = _deduction._find_match_record_by_star_idx(star_idx)
+    if idx < 0:
+        return "?"
+    var held: Array = (_deduction.record_at(idx).get("melody_ticks", []) as Array).duplicate()
+    if held.is_empty():
+        return "?"
+    held.sort()
+    var parts := PackedStringArray()
+    for t in held:
+        parts.append(str(int(t)))
     return ", ".join(parts)
 
 
@@ -5046,6 +5471,11 @@ func _build_star_tags_impl() -> void:
             name_str = "?"
         var seq_str: String = _confirmed_sequence_str(i)
         var pitch_str: String = _confirmed_pitch_str_for_star(i)
+        # First notes hidden: there is no position to show. The tag lists the
+        # notes the board has this star firing on, or "?" while it has none.
+        var seq_text: String = _ordinal_str(seq_str)
+        if _deduction._notes_hidden():
+            seq_text = _held_notes_str_for_star(i)
 
         var name_lbl := Label.new()
         name_lbl.name = "NameLabel"
@@ -5056,7 +5486,7 @@ func _build_star_tags_impl() -> void:
 
         var seq_lbl := Label.new()
         seq_lbl.name = "SeqLabel"
-        seq_lbl.text = "%s" % _ordinal_str(seq_str)
+        seq_lbl.text = seq_text
         seq_lbl.add_theme_font_size_override("font_size", 19)
         seq_lbl.add_theme_color_override("font_color", Color(star_color.r, star_color.g, star_color.b, 0.75))
         seq_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -5068,11 +5498,23 @@ func _build_star_tags_impl() -> void:
         pitch_lbl.add_theme_color_override("font_color", Color(star_color.r, star_color.g, star_color.b, 0.75))
         pitch_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
+        # FOURTH counter (2026-10-11): how often the star repeats. Only on a
+        # repeating melody; on a 1:1 melody every star fires once, so the
+        # label is built (the child order below stays fixed) but left empty
+        # and hidden, and the three-label triangle is laid out as before.
+        var repeat_lbl := Label.new()
+        repeat_lbl.name = "RepeatLabel"
+        repeat_lbl.text = _confirmed_repeat_str_for_star(i) if _deduction._seq_repeats() else ""
+        repeat_lbl.add_theme_font_size_override("font_size", 19)
+        repeat_lbl.add_theme_color_override("font_color", Color(star_color.r, star_color.g, star_color.b, 0.75))
+        repeat_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
         # Order is load-bearing: _reposition_star_tags() reads them back by
-        # index (0 Name, 1 Sequence, 2 Pitch) to place the triangle.
+        # index (0 Name, 1 Sequence, 2 Pitch, 3 Repeats) to place them.
         root.add_child(name_lbl)
         root.add_child(seq_lbl)
         root.add_child(pitch_lbl)
+        root.add_child(repeat_lbl)
 
     _reposition_star_tags()
 
@@ -5124,12 +5566,13 @@ func _reposition_star_tags() -> void:
         # get_child() HANGS the engine (not a catchable error) if the
         # structure ever changes, so `as` + null-check degrades to skipping
         # this tag instead. Now three Labels rather than a VBox + HBox.
-        if root.get_child_count() < 3:
+        if root.get_child_count() < 4:
             continue
         var name_lbl: Label = root.get_child(0) as Label
         var seq_lbl: Label = root.get_child(1) as Label
         var pitch_lbl: Label = root.get_child(2) as Label
-        if not name_lbl or not seq_lbl or not pitch_lbl:
+        var repeat_lbl: Label = root.get_child(3) as Label
+        if not name_lbl or not seq_lbl or not pitch_lbl or not repeat_lbl:
             continue
 
         root.position = Vector2.ZERO
@@ -5137,6 +5580,11 @@ func _reposition_star_tags() -> void:
         for lbl in [name_lbl, seq_lbl, pitch_lbl]:
             (lbl as Label).visible = true
             (lbl as Label).reset_size()
+        # The Repeats counter exists only on a repeating melody (empty text
+        # otherwise, see _build_star_tags_impl).
+        var has_repeat: bool = repeat_lbl.text != ""
+        repeat_lbl.visible = has_repeat
+        repeat_lbl.reset_size()
 
         var n_sz: Vector2 = name_lbl.get_combined_minimum_size()
         var s_sz: Vector2 = seq_lbl.get_combined_minimum_size()
@@ -5149,8 +5597,17 @@ func _reposition_star_tags() -> void:
             Vector2(base_right - n_sz.x, dot.y - TAG_TRI_GAP_Y - n_sz.y), n_sz, map_w, map_h)
         _tag_place(placed, seq_lbl,
             Vector2(base_right - s_sz.x, dot.y + TAG_TRI_GAP_Y), s_sz, map_w, map_h)
-        _tag_place(placed, pitch_lbl,
-            Vector2(dot.x + TAG_TRI_GAP_X, dot.y - p_sz.y * 0.5), p_sz, map_w, map_h)
+        if has_repeat:
+            # Four labels make a square: Pitch moves up to sit opposite Name,
+            # and Repeats takes the place below it, opposite Sequence.
+            var r_sz: Vector2 = repeat_lbl.get_combined_minimum_size()
+            _tag_place(placed, pitch_lbl,
+                Vector2(dot.x + TAG_TRI_GAP_X, dot.y - TAG_TRI_GAP_Y - p_sz.y), p_sz, map_w, map_h)
+            _tag_place(placed, repeat_lbl,
+                Vector2(dot.x + TAG_TRI_GAP_X, dot.y + TAG_TRI_GAP_Y), r_sz, map_w, map_h)
+        else:
+            _tag_place(placed, pitch_lbl,
+                Vector2(dot.x + TAG_TRI_GAP_X, dot.y - p_sz.y * 0.5), p_sz, map_w, map_h)
 
     # Phase 2 — push apart anything that collides, then commit.
     _separate_tag_rects(placed, map_w, map_h)

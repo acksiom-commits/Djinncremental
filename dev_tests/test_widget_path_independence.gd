@@ -375,10 +375,17 @@ func _family_staff_link() -> void:
 		var s: int = 2
 		var rec: int = d._get_or_create_match_record_for_name(_t_name(host, s))
 		await _do(host, rec, s, ["name_select"])
-		await _do(host, d._find_match_record_by_name(_t_name(host, s)), s, ["seq_typed"])
+		var tick: int = d._first_tick_for_rank(_t_pos(host, s))
+		if repeating:
+			# 2026-10-12: on a repeating melody the first notes are hidden and
+			# the board keeps no firing-order position, so a row is tied to a
+			# note by clicking that note on the row, not by typing a position.
+			# (`tick` is only this test's choice of which note to click.)
+			await host._widgets._on_seq_note_select(d._find_match_record_by_name(_t_name(host, s)), tick)
+		else:
+			await _do(host, d._find_match_record_by_name(_t_name(host, s)), s, ["seq_typed"])
 		await _do(host, d._find_match_record_by_name(_t_name(host, s)), s, ["color_toggle"])
 		d._full_propagation_refresh()
-		var tick: int = d._first_tick_for_rank(_t_pos(host, s))
 		var pop: int = d._get_or_create_match_record_for_melody_tick(tick)
 		d._full_propagation_refresh()
 		var row_rec: int = d._find_match_record_by_name(_t_name(host, s))

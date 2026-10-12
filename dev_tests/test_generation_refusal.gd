@@ -54,12 +54,16 @@ func run() -> void:
 	await d.generate_clues_forms()
 	ok(d.gate_passed, "gate_passed reflects the FINAL attempt, not an earlier failure")
 
-	print("\n=== the gate definition needs all three conditions ===")
+	# Four since 2026-10-10: repeat_unique (the repeat notes have one assignment;
+	# trivially true on a 1:1 melody, but the result must still state it).
+	print("\n=== the gate definition needs all four conditions ===")
 	var g = Stub.new()
-	ok(g._gate_result_passes({"seq_unique": true, "name_unique": true, "name_unique_closure": true}), "all three: passes")
-	ok(not g._gate_result_passes({"seq_unique": false, "name_unique": true, "name_unique_closure": true}), "Sequence not unique: fails")
-	ok(not g._gate_result_passes({"seq_unique": true, "name_unique": false, "name_unique_closure": true}), "a name unbound: fails")
-	ok(not g._gate_result_passes({"seq_unique": true, "name_unique": true, "name_unique_closure": false}), "closure not a proof: fails")
+	ok(g._gate_result_passes({"seq_unique": true, "name_unique": true, "name_unique_closure": true, "repeat_unique": true}), "all four: passes")
+	ok(not g._gate_result_passes({"seq_unique": false, "name_unique": true, "name_unique_closure": true, "repeat_unique": true}), "Sequence not unique: fails")
+	ok(not g._gate_result_passes({"seq_unique": true, "name_unique": false, "name_unique_closure": true, "repeat_unique": true}), "a name unbound: fails")
+	ok(not g._gate_result_passes({"seq_unique": true, "name_unique": true, "name_unique_closure": false, "repeat_unique": true}), "closure not a proof: fails")
+	ok(not g._gate_result_passes({"seq_unique": true, "name_unique": true, "name_unique_closure": true, "repeat_unique": false}), "repeat notes not proven: fails")
+	ok(not g._gate_result_passes({"seq_unique": true, "name_unique": true, "name_unique_closure": true}), "repeat_unique not stated: fails")
 	ok(not g._gate_result_passes({}), "a missing result fails rather than passes")
 
 	print("\n=== root_ui refuses a failed puzzle, accepts a good one ===")

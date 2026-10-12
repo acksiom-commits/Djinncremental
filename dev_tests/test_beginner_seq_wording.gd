@@ -388,8 +388,11 @@ func run() -> void:
 		"a disclosure line names rank 10 as the 15th note (got '%s')" % d._describe_disclosure({"kind": "ordinal_exact", "s": 0, "r": 9}))
 	ok(w._step_sentence({"descriptor": "Alpha", "axis": "sequence", "resolved_rank": 9}) == "With what you know, Alpha must fire 15th note.",
 		"a hint sentence names it by its note")
-	ok(d._seq_ticks_phrase(8) == "notes 8, 10, 12",
-		"a star that repeats is listed by every note (got '%s')" % d._seq_ticks_phrase(8))
+	# 2026-10-10: repeats are earned. Rank 8 also fires on notes 10 and 12, but
+	# that is for the player to work out, so only its first note is listed until
+	# they place the others (test_staff_shape covers the placed case).
+	ok(d._seq_ticks_phrase(8) == "8th note",
+		"a star that repeats is listed by its first note only, on an untouched board (got '%s')" % d._seq_ticks_phrase(8))
 	ok(d._seq_ticks_phrase(10) == "15th note", "a star that fires once is listed by its one note (got '%s')" % d._seq_ticks_phrase(10))
 	host.queue_free()
 	await process_frame
