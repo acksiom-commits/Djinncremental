@@ -270,12 +270,12 @@ func run() -> void:
 	dh._load_match_records([])
 	ok(dh._notes_hidden(), "the notes are hidden on a repeating melody")
 	wh._seq_checker_loaded = true
-	wh._seq_checker_mode = false
+	wh._seq_checker_mode = true
 	var hrec: int = dh._get_or_create_match_record_for_name("Pyrios")
 	var hrow: Control = wh._make_sequence_range_row_for_record(hrec, Color.WHITE)
 	hosth.add_child(hrow)
 	var hb: Array = _strip_buttons(hrow)
-	ok(hb.size() == 8, "even in Classic entry the row is the eight note buttons, not the typed boxes (got %d)" % hb.size())
+	ok(hb.size() == 8, "in Checks entry the row is the eight note buttons (got %d)" % hb.size())
 	var tips_alike: bool = true
 	var mentions_kind: bool = false
 	for b3 in hb:
@@ -311,6 +311,20 @@ func run() -> void:
 		if dh._repeat_note_state_for_record(hrec, t5) != 0:
 			rest_open = false
 	ok(rest_open, "left-click on note 3 confirms note 3 and leaves the other seven open")
+	# A CONFIRMED CHECK IS NOT DIMMED (2026-10-13). It used to be tinted by
+	# multiplying the whole button by green, which made the one settled value
+	# the darkest button on the row. It keeps full brightness and is marked by
+	# its text colour.
+	var crow: Control = wh._make_sequence_range_row_for_record(hrec, Color.WHITE)
+	hosth.add_child(crow)
+	var cb: Array = _strip_buttons(crow)
+	var c3: Button = cb[2]
+	var c1: Button = cb[0]
+	ok(c3.text == "3" and c3.modulate == Color.WHITE and c3.modulate == c1.modulate,
+		"the confirmed note-3 button is as bright as an open one beside it (modulate %s)" % str(c3.modulate))
+	ok(c3.get_theme_color("font_color") == wh.STATE_COLORS.confirmed and c1.get_theme_color("font_color") != wh.STATE_COLORS.confirmed,
+		"and is told apart by its text colour alone")
+	crow.free()
 	ok(dh._effective_seq_candidates(hrec).size() == 6, "and the board has worked out no firing-order position from it (got %s)" % str(dh._effective_seq_candidates(hrec)))
 
 	# A clicked note opens a blank entry.
@@ -461,6 +475,80 @@ func run() -> void:
 		"the 'Same star as note' row spans the full width above both columns")
 	pop.hide()
 	hosth.queue_free()
+
+	# CLASSIC ENTRY WITH THE FIRST NOTES HIDDEN (reported 2026-10-13: switching
+	# to Classic left the Sequence line on the check buttons). The three boxes
+	# are back, speaking about notes: `lower < list < upper`, "=N" for a note
+	# the star does fire on. They write the same marks the checks write.
+	print("\n=== first notes hidden, Classic entry: the three boxes, about notes ===")
+	var hostt = await _make_host()
+	var dt = hostt._deduction
+	var wt = hostt._widgets
+	hostt._melody_seq_pos_sequence = [1, 2, 3, 1, 4, 5, 2, 6]
+	dt._load_match_records([])
+	wt._seq_checker_loaded = true
+	wt._seq_checker_mode = false
+	var trec: int = dt._get_or_create_match_record_for_name("Pyrios")
+	var trow: Control = wt._make_sequence_range_row_for_record(trec, Color.WHITE)
+	hostt.add_child(trow)
+	var tedits: Array = trow.find_children("*", "LineEdit", true, false)
+	ok(tedits.size() == 3 and _strip_buttons(trow).is_empty(), "Classic entry shows three boxes and no note buttons (%d boxes)" % tedits.size())
+	ok(wt._seq_notes_typed_texts(trec) == ["", "", ""], "an untouched row reads blank in all three (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	trow.free()
+	# lower 2: no note up to 2. upper 7: no note from 7 on.
+	await wt._commit_sequence_notes_typed(trec, "2", "", "7")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	var st_typed: Array = []
+	for tt in range(1, 9):
+		st_typed.append(dt._repeat_note_state_for_record(trec, tt))
+	ok(st_typed == [3, 3, 0, 0, 0, 0, 3, 3], "'2 < _ < 7' rules out notes 1, 2, 7, 8 and leaves 3 to 6 open (states %s)" % str(st_typed))
+	ok(wt._seq_notes_typed_texts(trec) == ["2", "", "7"], "and reads back as 2 < (blank) < 7 (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	# The list: 3 and 5-6 possible, so 4 is ruled out.
+	await wt._commit_sequence_notes_typed(trec, "2", "3,5-6", "7")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(dt._repeat_note_state_for_record(trec, 4) == 3 and dt._repeat_note_state_for_record(trec, 5) == 0,
+		"a note left out of the list (4) is ruled out; one listed (5) stays open")
+	ok(wt._seq_notes_typed_texts(trec) == ["2", "3,5-6", "7"], "reads back as typed (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	# "=5" confirms note 5 on the row, exactly as a left-click on the checks would.
+	await wt._commit_sequence_notes_typed(trec, "2", "3,=5,6", "7")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(dt._repeat_note_state_for_record(trec, 5) == 1 and dt._find_match_record_by_melody_tick(5) == trec,
+		"'=5' puts note 5 on Pyrios's row")
+	ok(wt._seq_notes_typed_texts(trec) == ["2", "3,=5,6", "7"], "reads back with the = (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	# The checks show the very same marks.
+	wt._seq_checker_mode = true
+	var same_marks: Array = []
+	var crow2: Control = wt._make_sequence_range_row_for_record(trec, Color.WHITE)
+	hostt.add_child(crow2)
+	for cbtn in _strip_buttons(crow2):
+		same_marks.append(dt._repeat_note_state_for_record(trec, int((cbtn as Button).text)))
+	ok(same_marks == [3, 3, 0, 3, 1, 0, 3, 3], "switching to Checks shows the same marks, note for note (%s)" % str(same_marks))
+	crow2.free()
+	wt._seq_checker_mode = false
+	# Taking the "=" away lets the note go; widening the bounds takes marks back.
+	await wt._commit_sequence_notes_typed(trec, "", "3,5,6", "")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(dt._repeat_note_state_for_record(trec, 5) == 0 and dt._repeat_note_state_for_record(trec, 1) == 3 and dt._repeat_note_state_for_record(trec, 4) == 3,
+		"removing the = lets note 5 go; notes not in the list stay ruled out")
+	await wt._commit_sequence_notes_typed(trec, "", "", "")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	var all_open_again: bool = true
+	for tt2 in range(1, 9):
+		if dt._repeat_note_state_for_record(trec, tt2) != 0:
+			all_open_again = false
+	ok(all_open_again, "clearing all three boxes makes every note possible again")
+	# Something unreadable changes nothing.
+	await wt._commit_sequence_notes_typed(trec, "2", "", "7")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	for junk in [["x", "", ""], ["", "3,banana", ""], ["", "9", ""], ["6", "", "7"]]:
+		await wt._commit_sequence_notes_typed(trec, str(junk[0]), str(junk[1]), str(junk[2]))
+		trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(wt._seq_notes_typed_texts(trec) == ["2", "", "7"], "a letter, a note past the end, and bounds leaving nothing are all refused (still %s)" % str(wt._seq_notes_typed_texts(trec)))
+	# The Star Map's widget uses the same boxes in Classic entry.
+	var srec: int = dt._get_or_create_match_record_for_star_idx(0)
+	ok(wt._seq_notes_typed_texts(srec) == ["", "", ""] and wt._make_sequence_notes_typed_row(srec, Color.WHITE).find_children("*", "LineEdit", true, false).size() == 3,
+		"a map star's entry gets the same three boxes")
+	hostt.queue_free()
 
 	print("\n=== the scroll position survives a rebuild ===")
 	# A click rebuilds the whole row; the strip must come back where it was.

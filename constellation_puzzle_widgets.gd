@@ -2561,8 +2561,7 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, sc
             var kind: String = "" if all_alike else " (a repeat note)"
             match nstate:
                 1:
-                    nbtn.add_theme_color_override("font_color", tint)
-                    nbtn.modulate = STATE_COLORS.confirmed
+                    _style_confirmed_check(nbtn)
                     nbtn.tooltip_text = "Note %d%s: this star fires here (left-click to let go)" % [tick, kind]
                 2:
                     nbtn.modulate = STATE_COLORS.eliminated
@@ -2596,7 +2595,7 @@ func _make_sequence_checker_row_for_record(record_idx: int, row_color: Color, sc
         if is_on:
             btn.add_theme_color_override("font_color", tint)
             if pinned:
-                btn.modulate = STATE_COLORS.confirmed
+                _style_confirmed_check(btn)
             btn.tooltip_text = "Note %d: still possible (left-click: this is the one; right-click: rule out)" % tick
         elif manual.has(p):
             # In the player's own set but removed by deduction: shown off and
@@ -2701,6 +2700,25 @@ func _on_seq_note_toggle(record_idx: int, tick: int) -> void:
     r["seq_note_blocks"] = blocks
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
+
+
+## THE LOOK OF A SELECTED / CONFIRMED CHECK BUTTON (2026-10-13). It used to be
+## `modulate = STATE_COLORS.confirmed`, which MULTIPLIES the whole button by
+## green: the text (already tinted with the row's colour) and the button face
+## both came out darker than an unselected button beside them, so the one value
+## the player had settled was the dimmest thing on the row. A locked row
+## (a pitch or count Listen has given) was dimmer still, because a disabled
+## button draws with the theme's greyed-out face and text.
+##
+## Now the button keeps full brightness and says "confirmed" with its TEXT
+## colour alone, in every button state, and a disabled one keeps the normal
+## face. Whether the button is disabled is unchanged.
+func _style_confirmed_check(btn: Button) -> void:
+    btn.modulate = Color.WHITE
+    for key in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color",
+            "font_hover_pressed_color", "font_disabled_color"]:
+        btn.add_theme_color_override(key, STATE_COLORS.confirmed)
+    btn.add_theme_stylebox_override("disabled", btn.get_theme_stylebox("normal", "Button"))
 
 
 ## Per checker row (keyed by the row, see the builders): whether its ruled-out
@@ -2857,7 +2875,7 @@ func _make_value_checker_row(record_idx: int, ctx: String, values: Array, labels
         var possible: bool = st != 2 and st != 3
         if possible:
             if st == 1 or confirmed_only:
-                btn.modulate = STATE_COLORS.confirmed
+                _style_confirmed_check(btn)
             btn.tooltip_text = "%s: still possible%s" % [str(tips[i]), "" if locked else " (left-click: this is the one; right-click: rule out)"]
         else:
             btn.modulate = STATE_COLORS.eliminated
@@ -3120,13 +3138,15 @@ func _on_repeat_checker_toggle(record_idx: int, value: int) -> void:
 
 
 func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> HBoxContainer:
-    # With the first notes hidden the typed boxes cannot be offered: "lower <
-    # list < upper" is a statement about where the star comes in the firing
-    # order, which that board does not keep. The per-note checks are the entry
-    # there whichever style is chosen (2026-10-12; a typed form that takes a
-    # plain list of notes is not built).
-    if _seq_checker_enabled() or _deduction._notes_hidden():
+    if _seq_checker_enabled():
         return _make_sequence_checker_row_for_record(record_idx, row_color)
+    # With the first notes hidden the three boxes keep their shape but speak
+    # about NOTES, since that board keeps no firing-order positions (reported
+    # 2026-10-13: Classic entry was showing the check buttons on Beginner,
+    # because on 2026-10-12 I had the checks stand in for a typed form I had
+    # not built).
+    if _deduction._notes_hidden():
+        return _make_sequence_notes_typed_row(record_idx, row_color)
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
 
@@ -3204,6 +3224,231 @@ func _make_sequence_range_row_for_record(record_idx: int, row_color: Color) -> H
     row.add_child(copy_btn)
 
     return row
+
+
+# ==================================================
+# CLASSIC SEQUENCE ENTRY WITH THE FIRST NOTES HIDDEN (2026-10-13)
+#
+# The same three boxes, `lower < list < upper`, for a board whose Sequence is
+# "which notes does this star fire on":
+#   lower N    the star fires on no note up to and including N
+#   upper M    the star fires on no note from M on
+#   list       the notes it could still fire on, as numbers and ranges
+#              ("5-9,12"); a note it DOES fire on is written "=3"
+# A note left out of the list is ruled out. Typing "=6" confirms note 6 on the
+# row (the note joins it, exactly as a left-click on the checks does);
+# removing the "=" lets it go. The boxes are only another way of writing the
+# marks the check buttons write (seq_note_blocks, and the notes the row
+# holds), so the two entry styles always agree and switching between them
+# loses nothing.
+# ==================================================
+
+## [lower, list, upper] as the boxes should read for a record right now.
+func _seq_notes_typed_texts(record_idx: int) -> Array:
+    var n: int = _deduction._melody_tick_count()
+    var states: Array = [0]
+    for t in range(1, n + 1):
+        states.append(_deduction._repeat_note_state_for_record(record_idx, t))
+    # The bounds are whatever run of ruled-out notes sits at each end.
+    var lo: int = 0
+    while lo < n and int(states[lo + 1]) >= 2:
+        lo += 1
+    var hi: int = n + 1
+    while hi > lo + 1 and int(states[hi - 1]) >= 2:
+        hi -= 1
+    var parts := PackedStringArray()
+    var t2: int = lo + 1
+    var any_ruled_inside: bool = false
+    var any_held: bool = false
+    while t2 < hi:
+        var st: int = int(states[t2])
+        if st == 1:
+            parts.append("=%d" % t2)
+            any_held = true
+            t2 += 1
+        elif st == 0:
+            var end: int = t2
+            while end + 1 < hi and int(states[end + 1]) == 0:
+                end += 1
+            parts.append(str(t2) if end == t2 else "%d-%d" % [t2, end])
+            t2 = end + 1
+        else:
+            any_ruled_inside = true
+            t2 += 1
+    # Nothing said yet between the bounds: leave the list blank, as the
+    # position form does for an untouched row.
+    var mid: String = ",".join(parts) if (any_ruled_inside or any_held) else ""
+    return [str(lo) if lo > 0 else "", mid, str(hi) if hi <= n else ""]
+
+
+func _make_sequence_notes_typed_row(record_idx: int, row_color: Color) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 2)
+    var texts: Array = _seq_notes_typed_texts(record_idx)
+
+    var edit_lo := LineEdit.new()
+    edit_lo.custom_minimum_size = Vector2(22, 24)
+    edit_lo.max_length = 2
+    edit_lo.placeholder_text = "–"
+    edit_lo.text = str(texts[0])
+    edit_lo.tooltip_text = "This star fires on no note up to and including this one"
+    edit_lo.add_theme_font_size_override("font_size", 15)
+    edit_lo.add_theme_constant_override("minimum_character_width", 2)
+    _style_range_edit(edit_lo, row_color)
+    row.add_child(edit_lo)
+
+    var lbl_lt := Label.new()
+    lbl_lt.text = "<"
+    lbl_lt.add_theme_font_size_override("font_size", 16)
+    lbl_lt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+    row.add_child(lbl_lt)
+
+    var edit_mid := LineEdit.new()
+    edit_mid.custom_minimum_size = Vector2(96, 24)
+    edit_mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    edit_mid.max_length = 64
+    edit_mid.placeholder_text = "–"
+    edit_mid.text = str(texts[1])
+    edit_mid.tooltip_text = "The notes this star could fire on, e.g. 5-9,12. Write =3 for a note it does fire on. A note left out is ruled out."
+    edit_mid.add_theme_font_size_override("font_size", 14)
+    edit_mid.alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _style_range_edit(edit_mid, row_color)
+    row.add_child(edit_mid)
+
+    var lbl_gt := Label.new()
+    lbl_gt.text = "<"
+    lbl_gt.add_theme_font_size_override("font_size", 16)
+    lbl_gt.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85, 0.9))
+    row.add_child(lbl_gt)
+
+    var edit_hi := LineEdit.new()
+    edit_hi.custom_minimum_size = Vector2(18, 24)
+    edit_hi.max_length = 2
+    edit_hi.placeholder_text = "–"
+    edit_hi.text = str(texts[2])
+    edit_hi.tooltip_text = "This star fires on no note from this one on"
+    edit_hi.add_theme_font_size_override("font_size", 15)
+    edit_hi.add_theme_constant_override("minimum_character_width", 2)
+    _style_range_edit(edit_hi, row_color)
+    row.add_child(edit_hi)
+
+    var ridx := record_idx
+    for e in [edit_lo, edit_mid, edit_hi]:
+        (e as LineEdit).text_submitted.connect(func(_t): _commit_sequence_notes_typed(ridx, edit_lo.text, edit_mid.text, edit_hi.text))
+        (e as LineEdit).focus_exited.connect(func(): _commit_sequence_notes_typed(ridx, edit_lo.text, edit_mid.text, edit_hi.text))
+
+    var copy_btn := Button.new()
+    copy_btn.text = "⎘"
+    copy_btn.custom_minimum_size = Vector2(26, 24)
+    copy_btn.focus_mode = Control.FOCUS_NONE
+    copy_btn.tooltip_text = "Write the notes this star could still fire on into the Notes tab"
+    copy_btn.pressed.connect(func(): _on_staff_copy(ridx, "sequence"))
+    row.add_child(copy_btn)
+    return row
+
+
+## Reads the three boxes as the header above describes and writes the marks.
+## An entry that cannot be read (a letter, a note past the end of the melody,
+## bounds that leave nothing) changes nothing; the refresh puts the boxes back
+## to what the row really says. Unchanged boxes change nothing either, so
+## merely clicking through the row is harmless.
+func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: String, hi_text: String) -> void:
+    if record_idx < 0 or record_idx >= _deduction.record_count():
+        return
+    var now: Array = _seq_notes_typed_texts(record_idx)
+    if lo_text.strip_edges() == str(now[0]) and mid_text.strip_edges() == str(now[1]) and hi_text.strip_edges() == str(now[2]):
+        return
+    var n: int = _deduction._melody_tick_count()
+    var lo: int = 0
+    var hi: int = n + 1
+    var bad: bool = false
+    if lo_text.strip_edges() != "":
+        if lo_text.strip_edges().is_valid_int():
+            lo = int(lo_text.strip_edges())
+        else:
+            bad = true
+    if hi_text.strip_edges() != "":
+        if hi_text.strip_edges().is_valid_int():
+            hi = int(hi_text.strip_edges())
+        else:
+            bad = true
+    if lo < 0 or hi > n + 1 or hi - lo < 2:
+        bad = true
+    var listed: Dictionary = {}     # note -> true where the list allows it
+    var confirmed: Dictionary = {}  # note -> true where it is written "=N"
+    var has_list: bool = mid_text.strip_edges() != ""
+    if has_list and not bad:
+        for raw in mid_text.split(","):
+            var tok: String = raw.strip_edges()
+            if tok == "":
+                continue
+            var is_confirm: bool = tok.begins_with("=")
+            if is_confirm:
+                tok = tok.substr(1).strip_edges()
+            var a: int = 0
+            var b: int = 0
+            if tok.is_valid_int():
+                a = int(tok)
+                b = a
+            elif tok.contains("-") and not is_confirm:
+                var ends: PackedStringArray = tok.split("-")
+                if ends.size() == 2 and ends[0].strip_edges().is_valid_int() and ends[1].strip_edges().is_valid_int():
+                    a = int(ends[0].strip_edges())
+                    b = int(ends[1].strip_edges())
+                else:
+                    bad = true
+            else:
+                bad = true
+            if bad or a < 1 or b > n or a > b:
+                bad = true
+                break
+            for t in range(a, b + 1):
+                listed[t] = true
+                if is_confirm:
+                    confirmed[t] = true
+    if bad:
+        request_markers_rebuild()
+        _build_star_widgets()
+        return
+    # What the boxes say about each note: fires here / could / does not.
+    var blocks: Array = []
+    var to_join: Array = []
+    var to_release: Array = []
+    for t2 in range(1, n + 1):
+        var state: int = _deduction._repeat_note_state_for_record(record_idx, t2)
+        var allowed: bool = t2 > lo and t2 < hi and (not has_list or listed.has(t2))
+        if confirmed.has(t2) and allowed:
+            if state == 0 or state == 3:
+                to_join.append(t2)
+            continue
+        if state == 1 and has_list:
+            to_release.append(t2)   # no longer written "=N"
+        # A note deduction already rules out is not turned into the player's
+        # own mark just because the list (which never showed it) omits it: the
+        # mark would outlive the deduction.
+        if not allowed and state != 2:
+            blocks.append(t2)
+    # Let go first, then set the marks, then join -- joining merges records
+    # and can renumber them, so the record is followed through each merge.
+    var held_now: Array = _deduction.record_at(record_idx).get("melody_ticks", [])
+    for t3 in to_release:
+        if held_now.has(t3):
+            var solo: bool = held_now.size() == 1 and str(_deduction.record_at(record_idx).get("name", "")) == "" \
+                and int(_deduction.record_at(record_idx).get("star_idx", -1)) < 0
+            if solo:
+                blocks.erase(t3)   # the entry IS this note; it cannot be let go
+            else:
+                _deduction._detach_melody_tick(t3, record_idx)
+        else:
+            _release_repeat_note(t3)
+    _deduction.record_at(record_idx)["seq_note_blocks"] = blocks
+    var rec: int = record_idx
+    for t4 in to_join:
+        var note_idx: int = _release_repeat_note(t4)
+        if note_idx >= 0 and note_idx != rec:
+            rec = await _deduction._merge_match_records(rec, note_idx)
+    _deduction._save_puzzle_notes()
+    _deduction._full_propagation_refresh()
 
 
 # ==================================================
@@ -4448,7 +4693,7 @@ func _make_staff_identity_row(tick: int, record_idx: int) -> Control:
         btn.add_theme_font_size_override("font_size", 16)
         if effective.has(rank):
             if placed:
-                btn.modulate = STATE_COLORS.confirmed
+                _style_confirmed_check(btn)
                 btn.tooltip_text = "Placed: this note is the star that first fires on note %d (left-click to let go)" % first
             else:
                 btn.tooltip_text = "Could be the star that first fires on note %d (left-click: it is; right-click: rule out)" % first
@@ -4509,7 +4754,7 @@ func _make_staff_note_link_row(tick: int, record_idx: int) -> Control:
         btn.add_theme_font_size_override("font_size", 16)
         match state:
             1:
-                btn.modulate = STATE_COLORS.confirmed
+                _style_confirmed_check(btn)
                 btn.tooltip_text = "The same star fires on note %d (left-click to let go)" % other
             2:
                 btn.modulate = STATE_COLORS.eliminated
@@ -5068,8 +5313,16 @@ func _build_star_widgets_impl() -> void:
         # the wiring below refers to its edits; it is simply never shown (and
         # is freed right after that wiring) when checks are on.
         var use_checks: bool = _seq_checker_enabled()
+        # First notes hidden + Classic entry: the three boxes are the NOTE
+        # form (_make_sequence_notes_typed_row), not the position form built
+        # above, which that board has no positions to back. The position row
+        # is then disposed of exactly as it is when checks are on.
+        var notes_typed: bool = not use_checks and _deduction._notes_hidden()
         if use_checks:
             root.add_child(_make_sequence_checker_row_for_record(existing_record, star_color, "w"))
+        elif notes_typed:
+            root.add_child(_make_sequence_notes_typed_row(existing_record, star_color))
+            use_checks = true
         else:
             root.add_child(range_row)
 

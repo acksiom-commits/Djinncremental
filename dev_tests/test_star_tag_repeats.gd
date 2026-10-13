@@ -140,6 +140,17 @@ func run() -> void:
 				if not (b as Button).disabled:
 					all_locked = false
 		ok(value_buttons >= 2 and all_locked, "the row's count buttons are shown but locked (%d buttons)" % value_buttons)
+		# The count Listen gave is locked, but NOT dimmed (2026-10-13): a
+		# disabled button normally draws greyed out, and this is the one value
+		# on the row the player most needs to read.
+		var given_btn: Button = null
+		for b5 in row.find_children("*", "Button", true, false):
+			if (b5 as Button).text == "1":
+				given_btn = b5
+		ok(given_btn != null and given_btn.disabled and given_btn.modulate == Color.WHITE
+			and given_btn.get_theme_color("font_disabled_color") == wl.STATE_COLORS.confirmed
+			and given_btn.get_theme_stylebox("disabled") == given_btn.get_theme_stylebox("normal", "Button"),
+			"the given count's button is locked yet drawn at full brightness, in the confirmed colour")
 		row.queue_free()
 		hl.queue_free()
 		await process_frame
