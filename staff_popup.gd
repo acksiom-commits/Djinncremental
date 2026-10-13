@@ -137,8 +137,8 @@ func _ready() -> void:
 ## stack: Pitch, Colour, Name, Repeats. With the "Same star as note" row now on
 ## every note's popup and offering every other note, that stack is tall enough
 ## to cover the pinned clue at the top of the Study panel. So the sections sit
-## side by side under the title and the note row: Pitch, Colour and Repeats on
-## the left, Name (the longest list) on the right.
+## side by side under the title and the note row: Pitch and Colour on the left,
+## Name and Repeats on the right.
 ##
 ## Done here rather than in StaffPopup.tscn so the scene's node names, and every
 ## %UniqueName lookup above, stay exactly as they are.
@@ -159,10 +159,12 @@ func _split_sections_into_two_columns() -> void:
     columns.add_child(left)
     columns.add_child(divider)
     columns.add_child(right)
+    # Repeats sits under Name on the right (moved there 2026-10-13: with it on
+    # the left the popup was still tall enough to cover the pinned clue).
     var to_left: Array = ["PitchHeader", "PitchUndoRow", "PitchColumns", "Sep2",
-        "ColorHeader", "ColorUndoRow", "ColorColumns", "Sep4",
+        "ColorHeader", "ColorUndoRow", "ColorColumns"]
+    var to_right: Array = ["NameHeader", "NameUndoRow", "NameColumns", "Sep4",
         "RepeatHeader", "RepeatUndoRow", "RepeatColumns"]
-    var to_right: Array = ["NameHeader", "NameUndoRow", "NameColumns"]
     for pair in [[to_left, left], [to_right, right]]:
         for node_name in pair[0]:
             var n: Node = stack.get_node_or_null(str(node_name))

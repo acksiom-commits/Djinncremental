@@ -30,10 +30,14 @@ const StaffPopupRowScene: PackedScene = preload("res://StaffPopupRow.tscn")
 const STAFF_POPUP_MAX_ROWS_PER_COLUMN: int = 6
 const STAFF_POPUP_MAX_COLUMNS:         int = 4
 
-func _staff_popup_column_count(row_count: int) -> int:
+## `rows_per_column` below the usual 6 is how _open_staff_popup makes the popup
+## shorter when it would not fit under the header: fewer rows a column, so more
+## columns, which are then allowed past the usual 4.
+func _staff_popup_column_count(row_count: int, rows_per_column: int = STAFF_POPUP_MAX_ROWS_PER_COLUMN) -> int:
     if row_count <= 0:
         return 2
-    return clampi(ceili(float(row_count) / STAFF_POPUP_MAX_ROWS_PER_COLUMN), 2, STAFF_POPUP_MAX_COLUMNS)
+    var most: int = STAFF_POPUP_MAX_COLUMNS + (STAFF_POPUP_MAX_ROWS_PER_COLUMN - rows_per_column)
+    return clampi(ceili(float(row_count) / float(maxi(1, rows_per_column))), 2, most)
 
 
 func setup(host: ConstellationStudyOverlay, deduction: ConstellationPuzzleDeduction) -> void:
@@ -78,6 +82,70 @@ func _popup_min_screen_y() -> float:
 func _clamp_popup_screen_pos(screen_pos: Vector2) -> Vector2:
     screen_pos.y = maxf(screen_pos.y, _popup_min_screen_y())
     return screen_pos
+
+
+## Screen-space Y a popup's bottom edge should not pass: the bottom of the
+## game's own view. A popup taller than the gap between this and the header
+## cannot be placed clear of the header at all, which is what the clamp above
+## never checked: Godot then slides the window up to keep it on screen, back
+## over the pinned clue.
+func _popup_max_screen_y() -> float:
+    var sep: Control = _host._header_separator
+    if sep == null or not is_instance_valid(sep):
+        return INF
+    var vp: Viewport = sep.get_viewport()
+    return (vp.get_screen_transform() * Vector2(0, vp.get_visible_rect().size.y)).y
+
+
+## TEST SEAM: a room to use instead of the measured one (negative = measure).
+## The headless test runner's view is a 64-pixel stub, so "too tall to fit"
+## cannot be produced there by resizing anything.
+var popup_room_override: float = -1.0
+
+## How tall a popup may be and still sit wholly under the header, in the
+## popup's own (content) pixels.
+func _popup_room_under_header() -> float:
+    if popup_room_override >= 0.0:
+        return popup_room_override
+    var sep: Control = _host._header_separator
+    if sep == null or not is_instance_valid(sep):
+        return INF
+    var scale_y: float = absf(sep.get_viewport().get_screen_transform().get_scale().y)
+    return (_popup_max_screen_y() - _popup_min_screen_y()) / maxf(scale_y, 0.0001)
+
+
+## IS A PLACED POPUP COVERING THE HEADER (the pinned clue)? The one question
+## the placement code never asked of the result: every earlier guard adjusted
+## the position it was ABOUT to request and assumed the window ended up there.
+## This reads where the window actually is.
+func _popup_covers_header(popup: Window) -> bool:
+    if popup == null or not is_instance_valid(popup):
+        return false
+    return float(popup.position.y) < _popup_min_screen_y() - 0.5
+
+
+## The rows-per-column the Staff popup was last built at: 6 normally, lower when
+## it had to be squeezed to fit under the header. A measurement.
+var staff_popup_rows_per_column: int = STAFF_POPUP_MAX_ROWS_PER_COLUMN
+
+## How many times a popup was found over the header after being placed, and
+## moved back down. A measurement: it should stay 0 once the popup is sized to
+## fit, and a test or a dev can read it.
+var popup_header_cover_count: int = 0
+
+
+## Call right after a popup's open(). If the window ended up over the header,
+## put its top edge back on the header's bottom line and say so. Returns
+## whether it had been covering.
+func _keep_popup_off_header(popup: Window, what: String) -> bool:
+    if not _popup_covers_header(popup):
+        return false
+    popup_header_cover_count += 1
+    var floor_y: float = _popup_min_screen_y()
+    push_warning("ConstellationPuzzleWidgets: %s was placed over the pinned clue (top %d, header ends %d, popup height %d, room %d) -- moved down." % [
+        what, int(popup.position.y), int(floor_y), int(popup.size.y), int(_popup_max_screen_y() - floor_y)])
+    popup.position = Vector2i(popup.position.x, int(ceil(floor_y)))
+    return true
 
 
 ## Character budget for the middle sequence field (the explicit
@@ -1613,6 +1681,7 @@ func _open_name_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
             state = 2
         _host._name_checklist_popup.add_name_row(name_str, state, STATE_COLORS.neutral)
     _host._name_checklist_popup.open(record_idx, _clamp_popup_screen_pos(screen_pos))
+    _keep_popup_off_header(_host._name_checklist_popup, "the Name checklist")
 
 
 func _on_slot_name_check(record_idx: int, star_name: String, _row: StaffPopupRow) -> void:
@@ -1800,6 +1869,7 @@ func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
             state = 2
         _host._pitch_checklist_popup.add_pitch_row(note_name, incidence_count, state, STATE_COLORS.neutral)
     _host._pitch_checklist_popup.open(record_idx, _clamp_popup_screen_pos(screen_pos))
+    _keep_popup_off_header(_host._pitch_checklist_popup, "the Pitch checklist")
 
 
 func _on_pitch_checklist_check(record_idx: int, note_name: String, _row: StaffPopupRow) -> void:
@@ -1975,6 +2045,7 @@ func _open_repeat_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
             state = 2
         _host._repeat_checklist_popup.add_repeat_row(value, _deduction._repeat_value_label(value), state, STATE_COLORS.neutral)
     _host._repeat_checklist_popup.open(record_idx, _clamp_popup_screen_pos(screen_pos))
+    _keep_popup_off_header(_host._repeat_checklist_popup, "the Repeats checklist")
 
 
 # ── Repeat-count mutations, WITHOUT any popup reopen. The Sort-row checklist
@@ -4217,7 +4288,12 @@ func _on_melody_staff_input(event: InputEvent) -> void:
 ## the same star still end up sharing state, but only once the player's own
 ## Name/Colour/Pitch/Sequence marks prove it (ordinary record-merge, unioning
 ## melody_ticks) -- never from the click itself.
-func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
+##
+## `rows_per_column` is how the popup is made to FIT: built at the usual 6 rows
+## a column, measured, and if it is taller than the room under the header,
+## rebuilt with fewer rows a column (so more columns, so shorter) until it fits
+## or reaches 2. The last time this was built it is whatever it is.
+func _open_staff_popup(tick: int, screen_pos: Vector2, rows_per_column: int = STAFF_POPUP_MAX_ROWS_PER_COLUMN) -> void:
     _host._staff_popup_tick = tick
     var record_idx: int = _deduction._get_or_create_match_record_for_melody_tick(tick)
 
@@ -4245,11 +4321,11 @@ func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
     # loops below add one row per element with no filtering, so these
     # counts are the totals rather than an estimate of them.
     _host._staff_popup.set_pitch_column_count(
-        _staff_popup_column_count(_host._pitch_freqs.size()), _host._pitch_freqs.size())
+        _staff_popup_column_count(_host._pitch_freqs.size(), rows_per_column), _host._pitch_freqs.size())
     _host._staff_popup.set_color_column_count(
-        _staff_popup_column_count(_host.COLOR_NAME_LABELS.size()), _host.COLOR_NAME_LABELS.size())
+        _staff_popup_column_count(_host.COLOR_NAME_LABELS.size(), rows_per_column), _host.COLOR_NAME_LABELS.size())
     _host._staff_popup.set_name_column_count(
-        _staff_popup_column_count(_host._star_count), _host._star_count)
+        _staff_popup_column_count(_host._star_count, rows_per_column), _host._star_count)
 
     # Add pitch rows — same cross-record exclusion as
     # _open_pitch_checklist_popup, since the Staff popup is a third UI
@@ -4290,7 +4366,10 @@ func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
     # Add repeat-count rows -- one column, a handful of buckets. Same
     # cross-record exclusion as the Sort rows' checklist popup.
     var bucket_values: Array = _deduction._repeat_values_shown()
-    _host._staff_popup.set_repeat_column_count(1, bucket_values.size())
+    # One column normally; side by side once the popup is being squeezed.
+    _host._staff_popup.set_repeat_column_count(
+        1 if rows_per_column >= STAFF_POPUP_MAX_ROWS_PER_COLUMN else _staff_popup_column_count(bucket_values.size(), rows_per_column),
+        bucket_values.size())
     var excluded_repeats: Array[int] = _deduction._compute_excluded_repeats_for(record_idx)
     for bv in bucket_values:
         var rv: int = int(bv)
@@ -4307,6 +4386,12 @@ func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
     # recentered here.
     var panel: Control = _host.get_node(_host.PANEL_ROOT_PATH)
     var popup_height: float = _host._staff_popup.get_contents_minimum_size().y
+    # DOES IT FIT UNDER THE HEADER? If not, no position can keep it off the
+    # pinned clue: rebuild it shorter (see this function's header).
+    staff_popup_rows_per_column = rows_per_column
+    if popup_height > _popup_room_under_header() and rows_per_column > 2:
+        _open_staff_popup(tick, screen_pos, rows_per_column - 1)
+        return
     var panel_center_local: Vector2 = panel.global_position + panel.size * 0.5
     var target_top_local: Vector2 = Vector2(panel_center_local.x, panel_center_local.y - popup_height * 0.5)
     screen_pos.y = (panel.get_viewport().get_screen_transform() * target_top_local).y
@@ -4315,7 +4400,16 @@ func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
     # panel's height — for a tall enough popup (many stars, even after the
     # column-scaling above) the centered top edge lands ABOVE the header,
     # over the clue box. This is the actual floor.
-    _host._staff_popup.open(tick, record_idx, _clamp_popup_screen_pos(screen_pos))
+    # A popup that fits is also kept from hanging off the bottom, which is
+    # what makes Godot slide the window back up over the header.
+    screen_pos = _clamp_popup_screen_pos(screen_pos)
+    var scale_y: float = absf(panel.get_viewport().get_screen_transform().get_scale().y)
+    var lowest_top: float = _popup_max_screen_y() - popup_height * scale_y
+    if lowest_top >= _popup_min_screen_y():
+        screen_pos.y = minf(screen_pos.y, lowest_top)
+    _host._staff_popup.open(tick, record_idx, screen_pos)
+    # And where did the window actually end up?
+    _keep_popup_off_header(_host._staff_popup, "the Staff popup for note %d" % tick)
 
 
 # ==================================================

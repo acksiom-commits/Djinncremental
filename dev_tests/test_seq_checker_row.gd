@@ -405,8 +405,38 @@ func run() -> void:
 	var right: Node = pop._name_columns_box.get_parent()
 	ok(left != right and left.get_parent() == right.get_parent() and left.get_parent() is HBoxContainer,
 		"Pitch and Name sit in two different columns of one row")
-	ok(pop._color_columns_box.get_parent() == left and pop._repeat_columns_box.get_parent() == left,
-		"Colour and Repeats share the left column with Pitch; Name has the right one")
+	ok(pop._color_columns_box.get_parent() == left and pop._repeat_columns_box.get_parent() == right,
+		"Colour shares the left column with Pitch; Repeats sits under Name on the right")
+
+	# IS THE POPUP OVER THE PINNED CLUE? (2026-10-13: it still was, on screen.)
+	# The check reads where the window actually is, after it has been placed.
+	wh._open_staff_popup(5, Vector2.ZERO)
+	var floor_y: float = wh._popup_min_screen_y()
+	print("    header ends at %d, view ends at %d, room %d; popup top %d, content height %d, built at %d rows a column" % [
+		int(floor_y), int(wh._popup_max_screen_y()), int(wh._popup_room_under_header()), int(pop.position.y),
+		int(pop.get_contents_minimum_size().y), wh.staff_popup_rows_per_column])
+	ok(not wh._popup_covers_header(pop), "as placed, the Staff popup is not over the header (top %d, header ends %d)" % [int(pop.position.y), int(floor_y)])
+	var covers_before: int = wh.popup_header_cover_count
+	pop.position = Vector2i(pop.position.x, int(floor_y) - 40)
+	ok(wh._popup_covers_header(pop), "moved 40 px up, it is detected as covering the header")
+	ok(wh._keep_popup_off_header(pop, "test") and int(pop.position.y) >= int(floor_y) and wh.popup_header_cover_count == covers_before + 1,
+		"and is put back under it, and counted (top now %d)" % int(pop.position.y))
+	ok(not wh._keep_popup_off_header(pop, "test") and wh.popup_header_cover_count == covers_before + 1,
+		"a popup already clear of the header is left alone")
+	pop.hide()
+	# A popup too tall for the room is rebuilt with fewer rows a column.
+	var tall_height: int = int(pop.get_contents_minimum_size().y)
+	var room_before: float = wh._popup_room_under_header()
+	wh.popup_room_override = float(tall_height - 40)   # the runner's own view is a stub; see the seam
+	wh._open_staff_popup(5, Vector2.ZERO)
+	print("    with the view shortened: room %d (was %d); popup content height %d (was %d), built at %d rows a column" % [
+		int(wh._popup_room_under_header()), int(room_before), int(pop.get_contents_minimum_size().y), tall_height, wh.staff_popup_rows_per_column])
+	ok(wh._popup_room_under_header() < float(tall_height), "precondition: the popup as first built no longer fits (room %d < %d)" % [int(wh._popup_room_under_header()), tall_height])
+	ok(wh.staff_popup_rows_per_column < wh.STAFF_POPUP_MAX_ROWS_PER_COLUMN and int(pop.get_contents_minimum_size().y) < tall_height,
+		"so it was rebuilt shorter, with fewer rows a column (%d rows, height %d)" % [wh.staff_popup_rows_per_column, int(pop.get_contents_minimum_size().y)])
+	ok(not wh._popup_covers_header(pop), "and it is still not over the header")
+	wh.popup_room_override = -1.0
+	pop.hide()
 	# PITCH ROWS READ LOWEST FIRST whatever order the constellation's table
 	# stores them in (reported 2026-10-12 on the Phial: E5, second lowest, sat
 	# second from last and read as second highest). This board's table is
