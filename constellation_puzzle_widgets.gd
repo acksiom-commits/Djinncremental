@@ -709,6 +709,16 @@ func _note_step_sentence(step: Dictionary) -> String:
     var who: String = str(step.get("descriptor", "that star"))
     var must: Array = step.get("must_ticks", [])
     var cannot: Array = step.get("cannot_ticks", [])
+    # First notes hidden: no note is "again", so the step is said plainly --
+    # "With what you know, Helios must fire on note 6, and cannot fire on
+    # notes 1 and 2."
+    if bool(step.get("plain_notes", false)):
+        var plain: Array[String] = []
+        if not must.is_empty():
+            plain.append("%s must fire on %s" % [who, _notes_phrase(must)])
+        if not cannot.is_empty():
+            plain.append("%s fire on %s" % ["cannot" if not must.is_empty() else who + " cannot", _notes_phrase(cannot)])
+        return "With what you know, " + ", and ".join(plain) + "."
     var parts: Array[String] = []
     if not must.is_empty():
         parts.append("%s must be %s firing again" % [_notes_phrase(must), who])
@@ -727,6 +737,16 @@ func _step_sentence(step: Dictionary) -> String:
         return _name_step_sentence(step, who)
     if str(step.get("axis", "")) == "note":
         return _note_step_sentence(step)
+    if str(step.get("axis", "")) == "repeat":
+        # A row's Repeats entry: "... Helios must be marked 'Repeats once'." /
+        # "... Helios cannot be marked 'Never repeats' or 'Repeats twice'."
+        if int(step.get("must_value", -1)) >= 0:
+            return "With what you know, %s must be marked '%s'." % [who, _deduction._repeat_value_label(int(step["must_value"]))]
+        var labels: Array[String] = []
+        for v in (step.get("cannot_values", []) as Array):
+            labels.append("'%s'" % _deduction._repeat_value_label(int(v)))
+        var joined: String = labels[0] if labels.size() == 1 else ", ".join(labels.slice(0, labels.size() - 1)) + " or " + labels[labels.size() - 1]
+        return "With what you know, %s cannot be marked %s." % [who, joined]
     var resolved: int = int(step.get("resolved_rank", -1))
     if resolved >= 0:
         return "With what you know, %s must %s %s." % [who, _deduction._seq_verb_base(), _deduction._seq_ord(resolved + 1)]
@@ -735,6 +755,20 @@ func _step_sentence(step: Dictionary) -> String:
         parts.append(_deduction._seq_ord(int(r) + 1))
     var listed: String = parts[0] if parts.size() == 1 else ", ".join(parts.slice(0, parts.size() - 1)) + " or " + parts[parts.size() - 1]
     return "With what you know, %s cannot %s %s." % [who, _deduction._seq_verb_base(), listed]
+
+
+## The clue a step rests on -- or, for a step that takes several clues together
+## (step["clue_indices"], Beginner only), each of them in turn.
+func _add_step_clue_labels(step: Dictionary, clues: Array) -> void:
+    var indices: Array = step.get("clue_indices", [int(step["clue_index"])])
+    for ci in indices:
+        if int(ci) < 0 or int(ci) >= clues.size():
+            continue
+        var c: Dictionary = clues[int(ci)]
+        _host._markers_content.add_child(_make_clue_label(
+            str(c.get("text", "")),
+            _clue_state_color(c, _deduction.player_marked_terms()),
+            int(ci) + 1))
 
 
 func _make_hint_button(text: String, tier: int, handler: Callable) -> Button:
@@ -848,14 +882,11 @@ func _populate_hint_markers() -> void:
                     # clue_index -1: a step from the player's own Repeats mark,
                     # with no clue behind it to show.
                     if int(st["clue_index"]) >= 0:
-                        var sclue: Dictionary = clues[int(st["clue_index"])]
-                        _host._markers_content.add_child(_make_clue_label(
-                            str(sclue.get("text", "")),
-                            _clue_state_color(sclue, _deduction.player_marked_terms()),
-                            int(st["clue_index"]) + 1))
+                        _add_step_clue_labels(st, clues)
                     else:
                         _host._markers_content.add_child(_make_hint_message(
-                            "From your own Repeats mark for %s:" % str(st["descriptor"])))
+                            (str(st["from_text"]) + ":") if st.has("from_text")
+                            else "From your own Repeats mark for %s:" % str(st["descriptor"])))
                     _host._markers_content.add_child(_make_hint_message(
                         "Step %d: %s" % [i + 1, _step_sentence(st)]))
         HINT_NO_STEP:
@@ -911,6 +942,17 @@ func _populate_hint_markers() -> void:
                 if int(still["clue_index"]) < 0:
                     # No clue behind this one: it follows from the player's own
                     # Repeats mark and the notes still open to that star.
+                    # (With the first notes hidden the step says where it comes
+                    # from itself: "from_text".)
+                    if still.has("from_text"):
+                        if _hint_state == HINT_DESCRIPTOR:
+                            _host._markers_content.add_child(_make_hint_message(
+                                "No clue is needed for this one. %s, something about %s is settled. Look at the notes it could still fire on." % [
+                                    str(still["from_text"]), str(still["descriptor"])]))
+                        else:
+                            _host._markers_content.add_child(_make_hint_message(
+                                "%s: %s" % [str(still["from_text"]), _step_sentence(still)]))
+                        return
                     if _hint_state == HINT_DESCRIPTOR:
                         _host._markers_content.add_child(_make_hint_message(
                             "Your own Repeats mark for %s settles one of its notes. Look at the notes it could still fire on." % str(still["descriptor"])))
@@ -918,14 +960,11 @@ func _populate_hint_markers() -> void:
                         _host._markers_content.add_child(_make_hint_message(
                             "From your own Repeats mark for %s: %s" % [str(still["descriptor"]), _step_sentence(still)]))
                     return
-                var sclue: Dictionary = clues[int(still["clue_index"])]
-                _host._markers_content.add_child(_make_clue_label(
-                    str(sclue.get("text", "")),
-                    _clue_state_color(sclue, _deduction.player_marked_terms()),
-                    int(still["clue_index"]) + 1))
+                _add_step_clue_labels(still, clues)
                 if _hint_state == HINT_DESCRIPTOR:
                     _host._markers_content.add_child(_make_hint_message(
-                        "You can act on this clue now. It bears on %s." % str(still["descriptor"])))
+                        ("Take these clues together. They bear on %s." if bool(still.get("multi", false))
+                        else "You can act on this clue now. It bears on %s.") % str(still["descriptor"])))
                 else:
                     _host._markers_content.add_child(_make_hint_message(_step_sentence(still)))
         HINT_WAITING:
@@ -1506,8 +1545,8 @@ func _on_staff_copy(record_idx: int, section: String) -> void:
                 items.append(str(int(p)))
         "pitch":
             var excluded_pitches: Array[String] = _deduction._compute_excluded_pitches_for(record_idx)
-            for pitch_idx in _host._pitch_freqs.size():
-                var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(_host._pitch_freqs[pitch_idx])
+            for pf_sorted in _pitch_freqs_low_to_high():   # the Notes line reads low to high too
+                var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(pf_sorted)
                 var ps: int = _deduction._effective_pitch_state(record_idx, note_name, false)
                 if (ps == 0 or ps == 4) and excluded_pitches.has(note_name):
                     continue
@@ -1718,6 +1757,21 @@ func _make_pitch_checklist_row_for_record(record_idx: int) -> HBoxContainer:
     return row
 
 
+## The constellation's pitches LOWEST FIRST, for every list of pitch rows: read
+## down the left column and then the right, the pitches rise. Reported
+## 2026-10-12 on the Phial, where E5 (second lowest) sat second from last and
+## read as second highest. The two popups listed the pitches in the order the
+## constellation's own table happens to store them, which is ascending for the
+## Archon and not for the other six. Same length as the table, so the
+## column-major split's row total is unchanged.
+func _pitch_freqs_low_to_high() -> Array:
+    var out: Array = []
+    for f in _host._pitch_freqs:
+        out.append(float(f))
+    out.sort()
+    return out
+
+
 func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     # Names-tab rows always have a confirmed .name (that's what makes the
     # row exist); other callers (Staff popup reopen) may not, and .name is
@@ -1737,8 +1791,7 @@ func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     # note can't be excluded just because one of its stars is spoken for),
     # rules that note out here too — see _compute_excluded_pitches_for.
     var excluded_pitches: Array[String] = _deduction._compute_excluded_pitches_for(record_idx)
-    for pitch_idx in _host._pitch_freqs.size():
-        var f: float = _host._pitch_freqs[pitch_idx]
+    for f in _pitch_freqs_low_to_high():
         var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(f)
         var incidence_count: int = _deduction._pitch_star_count(note_name)
         # See the name checklist above for collapse_soft / the 0-or-4 rule.
@@ -4203,8 +4256,7 @@ func _open_staff_popup(tick: int, screen_pos: Vector2) -> void:
     # surface hitting the exact same records (see
     # _compute_excluded_pitches_for).
     var excluded_pitches: Array[String] = _deduction._compute_excluded_pitches_for(record_idx)
-    for pitch_idx in _host._pitch_freqs.size():
-        var f: float = _host._pitch_freqs[pitch_idx]
+    for f in _pitch_freqs_low_to_high():
         var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(f)
         var incidence_count: int = _deduction._pitch_star_count(note_name)
         # See _open_name_checklist_popup for collapse_soft / the 0-or-4 rule.

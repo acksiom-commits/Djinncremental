@@ -5336,6 +5336,14 @@ func _value_sets_disjoint(a: Array, b: Array) -> bool:
 ## on every crossing.
 func _disclosure_satisfied(f: Dictionary) -> bool:
     var kind: String = str(f.get("kind", ""))
+    # FIRST NOTES HIDDEN: the board keeps no positions, so a fact about firing
+    # order is judged against the notes each row holds (_note_fact_entailed).
+    # Kinds that cannot be judged that way fall through to the readings below,
+    # which find no positions and answer "not yet".
+    if _notes_hidden():
+        var by_notes: Dictionary = _note_fact_entailed(f)
+        if bool(by_notes["known"]):
+            return bool(by_notes["value"])
     match kind:
         "ordinal_exact":
             var p: Array = _player_positions_for_star(int(f.get("s", -1)))
@@ -5626,6 +5634,7 @@ const SCOREABLE_DISCLOSURE_KINDS: Array = [
 func _clue_coverage(cells: Array, terms: Array = [], disclosures: Array = []) -> Dictionary:
     var covered: int = 0
     var total: int = 0
+    _scoring_clue_terms = terms
     for d in disclosures:
         if not (d is Dictionary):
             continue
@@ -5634,6 +5643,7 @@ func _clue_coverage(cells: Array, terms: Array = [], disclosures: Array = []) ->
         total += 1
         if _disclosure_satisfied(d):
             covered += 1
+    _scoring_clue_terms = []
     for cell in cells:
         if not (cell is Dictionary):
             continue
@@ -5843,6 +5853,7 @@ func explain_unrecorded_assertions(clue: Dictionary) -> Array[String]:
     var total: int = 0
     var cells: Array = clue.get("cells", [])
     var terms: Array = clue.get("search_terms", [])
+    _scoring_clue_terms = terms
     for d in (clue.get("disclosures", []) as Array):
         if not (d is Dictionary):
             continue
@@ -5851,6 +5862,7 @@ func explain_unrecorded_assertions(clue: Dictionary) -> Array[String]:
         total += 1
         if not _disclosure_satisfied(d):
             lines.append(_describe_disclosure(d))
+    _scoring_clue_terms = []
     for cell in cells:
         if not (cell is Dictionary):
             continue
@@ -6153,10 +6165,13 @@ func _hint_sequence_steps(clues: Array, solver, grid: Array = []) -> Array[Dicti
     return out
 
 
-## True when the Hint tab has nothing sound to offer on this puzzle: a repeating
-## melody, whose first notes are hidden. The tab says so instead of answering.
+## True when the Hint tab has nothing sound to offer on this puzzle. It was
+## true on every repeating melody for a few hours on 2026-10-12, between hiding
+## the first notes and re-basing the finder on who fires on each note
+## (_hint_owner_steps); nothing makes it true now. Kept so the tab's own
+## "switched off" branch has one switch to read if a case turns up.
 func hints_unavailable() -> bool:
-    return _notes_hidden()
+    return false
 
 
 ## HINT SUPPORT (tiers 3 and 4, and the per-iteration search inside tier 5's
@@ -6171,13 +6186,36 @@ func hints_unavailable() -> bool:
 ## Ranked: a step that pins something to one position first, then the one that
 ## rules out the most, then clue order, then axis.
 func hint_next_steps(clues: Array, boards: Dictionary = {}) -> Array[Dictionary]:
-    # OFF while the first notes are hidden (author, 2026-10-12): every step
-    # below reasons about firing-order positions, which that board does not
-    # keep and the player is not told. To be re-based on who fires on each note.
-    if hints_unavailable():
-        var none: Array[Dictionary] = []
-        return none
     var solver = _hint_solver_for(_host._star_count)
+    # FIRST NOTES HIDDEN (2026-10-12): the Sequence, position and joint steps
+    # below all reason about firing-order positions, which that board does not
+    # keep and the player is not told. There the steps are about who fires on
+    # each note (_hint_owner_steps), plus the Name steps, which read groups and
+    # simply find nothing in a position they cannot resolve.
+    if _notes_hidden():
+        var hidden_out: Array[Dictionary] = []
+        hidden_out.append_array(_hint_owner_steps(clues, solver))
+        hidden_out.append_array(_hint_name_steps(clues, solver,
+            boards["name"] if boards.has("name") else _player_name_grid()))
+        # Several clues together only once no single clue gives anything: a
+        # one-clue step is the easier one to follow, and this search costs more.
+        if hidden_out.is_empty():
+            hidden_out.append_array(_hint_owner_multi_steps(clues, solver))
+        # And the whole melody at once only after that: the widest search.
+        # OFF by default (owner_global_hints_enabled): measured 2026-10-12 on
+        # three stalled boards, it gave up on all three within the budget a
+        # hint press can afford, so in the game it would only add a pause.
+        if hidden_out.is_empty() and owner_global_hints_enabled:
+            hidden_out.append_array(_hint_owner_global_steps(clues, solver))
+        hidden_out.sort_custom(func(a, b):
+            if bool(a["resolved"]) != bool(b["resolved"]):
+                return bool(a["resolved"])
+            if int(a["gain"]) != int(b["gain"]):
+                return int(a["gain"]) > int(b["gain"])
+            if int(a["clue_index"]) != int(b["clue_index"]):
+                return int(a["clue_index"]) < int(b["clue_index"])
+            return str(a["axis"]) < str(b["axis"]))
+        return hidden_out
     var seq_grid: Array = boards["seq"] if boards.has("seq") else _player_sequence_grid()
     var name_grid: Array = boards["name"] if boards.has("name") else _player_name_grid()
     var rank_grid: Array = boards["rank"] if boards.has("rank") else _player_rank_grid()
@@ -6572,6 +6610,1469 @@ func _hint_note_steps(clues: Array, solver, seq_grid: Array, ticks: Dictionary) 
     return out
 
 
+# ── NOTE-OWNER STEPS (2026-10-12): hints with the first notes hidden ─────
+# On a repeating melody the board keeps no firing-order position; Sequence is
+# which notes each row's star fires on. So a step is about CELLS of (row,
+# note): "with what you know, Helios must fire on note 6" / "cannot fire on
+# notes 1 and 2". One clue at a time, on top of the player's own rows.
+#
+# THE ROW a step is about is the one the CLUE ITSELF lets the player find:
+# the Name row if the clue names the star, the map star's own row if the clue
+# picks it out by a colour or (Listened) pitch only one star has, else the row
+# of the note the clue names it by ("the star that fires 3rd note" is the
+# entry for note 3). A star the clue gives no such handle for yields no step.
+# What that row already says is read through _repeat_note_state_for_record,
+# the same reading the row's own buttons show.
+#
+# WHAT A FACT MEANS is the sentence's meaning with no note marked as anyone's
+# first -- the table above ConstellationLogicPuzzle._solve_note_owners:
+# a Sequence label is "fires on note T", an order fact compares the earliest
+# note each star has.
+#
+# HOW A STEP IS FOUND. If the row's star is known to fire n times (Listen, or
+# a confirmed Repeats mark), every way of completing its notes to n that the
+# clue's facts allow is listed; a note in ALL of them must be the star's, a
+# note in NONE cannot be. Two stars a clue relates are listed together. With
+# the count unknown only what a fact says outright is used. Weaker than a full
+# search, never wrong: the real melody is always one of the listed ways.
+
+## Most ways of completing one row's notes that are listed for a step.
+const OWNER_STEP_MAX_SETS: int = 3000
+## Most pairs of ways tried for a clue relating two stars.
+const OWNER_STEP_PAIR_BUDGET: int = 40000
+
+
+## The note a Sequence label prints for a star / for a 0-based rank. A number
+## in the clue's own text ("the star that fires 3rd note"), read off the table
+## only to translate the fact's rank back into that number.
+func _label_note_for_rank0(rank0: int) -> int:
+    return _first_tick_for_rank(rank0 + 1)
+
+
+func _label_note_for_star(star: int) -> int:
+    if star < 0 or star >= _host._sequence_rank_solution.size():
+        return 0
+    return _label_note_for_rank0(int(_host._sequence_rank_solution[star]))
+
+
+## Does exactly one map star have this star's colour / (Listened) pitch? Only
+## then does "the red star" point the player at one row.
+func _star_alone_in_group(star: int, cat: int) -> bool:
+    var mine: int = _raw_group_key(cat, star)
+    if mine < 0:
+        return false
+    for s in _host._star_count:
+        if s != star and _raw_group_key(cat, s) == mine:
+            return false
+    return true
+
+
+## The NOTE's column: the map stars whose own row says they do not fire on
+## `tick` ({star: true}). Asked of the note, in one pass over the rows -- the
+## matrix-up form of "could this star fire there". `skip` is a row to leave out
+## (the one asking). Rows the Star Map made for itself are read on purpose:
+## where such a row sits is its widget's place, and a "not this note" mark or a
+## full set of notes on it is the player's own. No name or pitch is read off
+## it; its firing count is, but only through _repeat_given_for_record, which
+## answers nothing until the player has Listened to that star.
+func _map_stars_ruling_out_note(tick: int, skip: int = -1) -> Dictionary:
+    var out: Dictionary = {}
+    for b in _match_records.size():
+        if b == skip:
+            continue
+        var at_star: int = _effective_star_idx(b)
+        if at_star >= 0 and _repeat_note_state_for_record(b, tick) >= 2:
+            out[at_star] = true
+    return out
+
+
+## The row for a star and what it says: {"label", "record", "held": [notes],
+## "ruled": [notes], "open": [notes], "count": times it fires or -1}. `clue`
+## null means "whichever row denotes the star" (used for scoring, where there
+## is no one clue); with a clue, only a handle that clue states. {} if none.
+func _owner_frame(star: int, clue = null) -> Dictionary:
+    if star < 0 or star >= _host._star_count:
+        return {}
+    var terms: Array = []
+    if clue != null and (clue as Dictionary).get("search_terms") is Array:
+        terms = (clue as Dictionary)["search_terms"]
+    var label: String = ""
+    var rec: int = -1
+    var own_note: int = 0
+    var visible_star: bool = false
+    var name_term: String = _descriptor_term(ConstellationLogicPuzzle.Category.NAME, star)
+    var color_term: String = _descriptor_term(ConstellationLogicPuzzle.Category.COLOR, star)
+    var pitch_term: String = _descriptor_term(ConstellationLogicPuzzle.Category.PITCH, star)
+    var t_label: int = _label_note_for_star(star)
+    if name_term != "" and (clue == null or terms.has(name_term)) \
+            and (clue != null or _find_match_record_by_name(str(_host._star_names[star])) >= 0):
+        label = str(_host._star_names[star])
+        rec = _find_match_record_by_name(label)
+    elif color_term != "" and (clue == null or terms.has(color_term)) \
+            and _star_alone_in_group(star, ConstellationLogicPuzzle.Category.COLOR) \
+            and (clue != null or _find_match_record_by_star_idx(star) >= 0):
+        label = _describe_descriptor(ConstellationLogicPuzzle.Category.COLOR, star)
+        rec = _find_match_record_by_star_idx(star)
+        visible_star = true
+    elif pitch_term != "" and (clue == null or terms.has(pitch_term)) and _player_knows_star_pitch(star) \
+            and _star_alone_in_group(star, ConstellationLogicPuzzle.Category.PITCH) \
+            and (clue != null or _find_match_record_by_star_idx(star) >= 0):
+        label = _describe_descriptor(ConstellationLogicPuzzle.Category.PITCH, star)
+        rec = _find_match_record_by_star_idx(star)
+        visible_star = true
+    elif t_label > 0 and (clue == null or terms.has("S:%d" % t_label)):
+        label = "the star that fires %s" % ConstellationLogicPuzzle._ordinal(t_label)
+        rec = _find_match_record_by_melody_tick(t_label)
+        own_note = t_label
+    if label == "":
+        return {}
+    var held: Array = []
+    var ruled: Array = []
+    var open: Array = []
+    for t in range(1, _melody_tick_count() + 1):
+        var state: int = _repeat_note_state_for_record(rec, t) if rec >= 0 else 0
+        if t == own_note:
+            state = 1
+        if state == 1:
+            held.append(t)
+        elif state == 0:
+            open.append(t)
+        else:
+            ruled.append(t)
+    var count: int = _known_fire_count_for_record(rec) if rec >= 0 else -1
+    if count < 0 and visible_star and _player_knows_star_pitch(star) \
+            and star < _host._repeat_count.size() and int(_host._repeat_count[star]) >= 0:
+        count = int(_host._repeat_count[star]) + 1   # Listen gives it, and the clue points at the map star
+    # WHICH STAR IS THIS ROW? (2026-10-12) The row's notes and the map are two
+    # halves of one question, so what the board knows about the stars this row
+    # could still be is used here too:
+    #   - if every star it could be is Listened, the row fires one of THEIR
+    #     counts (often a single one, long before the name is pinned to a star);
+    #   - a note every one of those stars' own rows has ruled out is ruled out
+    #     for this row.
+    var counts: Array = []
+    if count > 0:
+        counts = [count]
+    elif not visible_star:
+        var cands: Array = []
+        if rec >= 0:
+            cands = _candidate_stars_for_record(rec)
+        else:
+            for s0 in _host._star_count:
+                cands.append(s0)
+        var all_known: bool = not cands.is_empty()
+        var seen: Dictionary = {}
+        for s in cands:
+            if _player_knows_star_pitch(int(s)) and int(s) < _host._repeat_count.size() and int(_host._repeat_count[int(s)]) >= 0:
+                seen[int(_host._repeat_count[int(s)]) + 1] = true
+            else:
+                all_known = false
+        if all_known:
+            counts = seen.keys()
+            counts.sort()
+        if rec >= 0 and cands.size() < _host._star_count:
+            var still_open: Array = []
+            for t3 in open:
+                var ruling_out: Dictionary = _map_stars_ruling_out_note(int(t3), rec)
+                var everyone_rules_it_out: bool = true
+                for s2 in cands:
+                    if not ruling_out.has(int(s2)):
+                        everyone_rules_it_out = false
+                        break
+                if everyone_rules_it_out:
+                    ruled.append(int(t3))
+                else:
+                    still_open.append(int(t3))
+            open = still_open
+    # Which row this is, for whoever acts on a step: the Name row, the map
+    # star's own row, or the entry of a staff note.
+    var row_kind: String = "note" if own_note > 0 else ("star" if visible_star else "name")
+    var row_key = own_note if own_note > 0 else (star if visible_star else label)
+    return {"label": label, "record": rec, "held": held, "ruled": ruled, "open": open, "count": count,
+        "counts": counts, "row_kind": row_kind, "row_key": row_key}
+
+
+## Every way of completing a row's notes to its known count: {"ok": false} when
+## the count is unknown or there are too many to list, else {"ok": true,
+## "sets": [sorted note lists]} (empty when the row already contradicts it).
+##
+## The row may fire one of SEVERAL counts (frame["counts"]: one per star it
+## could still be); then the ways for each are listed together, since the real
+## one is among them whichever star the row turns out to be.
+func _owner_sets(frame: Dictionary) -> Dictionary:
+    var counts: Array = frame.get("counts", [])
+    if counts.is_empty():
+        return {"ok": false}
+    var held: Array = frame["held"]
+    var open: Array = frame["open"]
+    var grand_total: int = 0
+    for c in counts:
+        var kc: int = int(c) - held.size()
+        if kc < 0 or kc > open.size():
+            continue
+        var total: int = 1
+        for i in kc:
+            @warning_ignore("integer_division")
+            total = total * (open.size() - i) / (i + 1)
+            if total > OWNER_STEP_MAX_SETS:
+                return {"ok": false}
+        grand_total += total
+        if grand_total > OWNER_STEP_MAX_SETS:
+            return {"ok": false}
+    var sets: Array = []
+    for c2 in counts:
+        var k: int = int(c2) - held.size()
+        if k < 0 or k > open.size():
+            continue
+        var idx: Array = []
+        for i2 in k:
+            idx.append(i2)
+        while true:
+            var one: Array = held.duplicate()
+            for j in idx:
+                one.append(int(open[int(j)]))
+            one.sort()
+            sets.append(one)
+            # next combination of k indices out of open.size()
+            var p: int = k - 1
+            while p >= 0 and int(idx[p]) == open.size() - k + p:
+                p -= 1
+            if p < 0:
+                break
+            idx[p] = int(idx[p]) + 1
+            for q in range(p + 1, k):
+                idx[q] = int(idx[q - 1]) + 1
+    return {"ok": true, "sets": sets}
+
+
+## Does a full set of notes for `star` satisfy the facts about that star alone?
+func _owner_unary_holds(solver, star: int, notes: Array, facts: Array) -> bool:
+    for f in facts:
+        var fd: Dictionary = f
+        match str(fd["kind"]):
+            "ordinal_exact":
+                if not notes.has(_label_note_for_rank0(int(fd["r"]))):
+                    return false
+            "ordinal_neg":
+                if notes.has(_label_note_for_rank0(int(fd["r"]))):
+                    return false
+            "ordinal_either_or":
+                if not notes.has(_label_note_for_rank0(int(fd["r1"]))) \
+                        and not notes.has(_label_note_for_rank0(int(fd["r2"]))):
+                    return false
+            "ordinal_range":
+                var first: int = int(notes[0])
+                if int(fd["lo"]) > 0 and first < _label_note_for_rank0(int(fd["lo"])):
+                    return false
+                if int(fd["hi"]) < _host._star_count - 1 and first > _label_note_for_rank0(int(fd["hi"])):
+                    return false
+            "firing_position":
+                var v: int = solver._firing_value(notes, fd["sel"])
+                if v < 0 or v < int(fd["lo"]) or v > int(fd["hi"]):
+                    return false
+            "repeat_count_range":
+                var reps: int = notes.size() - 1
+                if (reps >= int(fd["lo"]) and reps <= int(fd["hi"])) == bool(fd.get("negated", false)):
+                    return false
+    return true
+
+
+## Does a pair of full sets satisfy a fact relating the two stars?
+func _owner_pair_holds(solver, fd: Dictionary, notes_of: Dictionary) -> bool:
+    var na: Array = notes_of[int(fd["a"])]
+    var nb: Array = notes_of[int(fd["b"])]
+    if str(fd["kind"]) == "ordinal_cmp":
+        return (int(na[0]) > int(nb[0])) == bool(fd["a_gt_b"])
+    return solver._firing_rel_holds(solver._firing_pick_notes(na, fd["pick_a"]),
+        solver._firing_pick_notes(nb, fd["pick_b"]), fd["spec"])
+
+
+## A clue's facts sorted for the step finder: {"unary": star -> [facts],
+## "binary": [facts], "stars": {star: true}}. An ordinal_chain is its two
+## comparisons. Kinds the finder does not read are left out (never wrong, only
+## weaker): neighbour counts and extremes, rank arithmetic, the pair table.
+func _owner_facts_of(clue: Dictionary) -> Dictionary:
+    var unary: Dictionary = {}
+    var binary: Array = []
+    var stars: Dictionary = {}
+    for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
+        if not (f is Dictionary):
+            continue
+        var fd: Dictionary = f
+        var one: int = -1
+        match str(fd.get("kind", "")):
+            "ordinal_exact", "ordinal_neg", "ordinal_either_or", "ordinal_range", "firing_position":
+                one = int(fd.get("s", -1))
+            "repeat_count_range":
+                one = int(fd.get("star", -1))
+            "ordinal_cmp", "firing_relation":
+                binary.append(fd)
+                stars[int(fd.get("a", -1))] = true
+                stars[int(fd.get("b", -1))] = true
+            "ordinal_chain":
+                for pair in [[int(fd["mid"]), int(fd["a"])], [int(fd["b"]), int(fd["mid"])]]:
+                    binary.append({"kind": "ordinal_cmp", "a": pair[0], "b": pair[1], "a_gt_b": true})
+                    stars[pair[0]] = true
+                    stars[pair[1]] = true
+        if one >= 0:
+            if not unary.has(one):
+                unary[one] = []
+            (unary[one] as Array).append(fd)
+            stars[one] = true
+    return {"unary": unary, "binary": binary, "stars": stars}
+
+
+## What the facts about one star say OUTRIGHT, with no count to list by:
+## {"must": [notes], "cannot": [notes]} among the row's open notes.
+func _owner_direct_verdict(frame: Dictionary, facts: Array) -> Dictionary:
+    var open: Array = frame["open"]
+    var must: Array = []
+    var cannot: Array = []
+    for f in facts:
+        var fd: Dictionary = f
+        match str(fd["kind"]):
+            "ordinal_exact":
+                var t: int = _label_note_for_rank0(int(fd["r"]))
+                if open.has(t) and not must.has(t):
+                    must.append(t)
+            "ordinal_neg":
+                var tn: int = _label_note_for_rank0(int(fd["r"]))
+                if open.has(tn) and not cannot.has(tn):
+                    cannot.append(tn)
+            "ordinal_range":
+                if int(fd["lo"]) > 0:
+                    var floor_note: int = _label_note_for_rank0(int(fd["lo"]))
+                    for o in open:
+                        if int(o) < floor_note and not cannot.has(int(o)):
+                            cannot.append(int(o))
+            "firing_position":
+                var sel: Dictionary = fd["sel"]
+                if str(sel["kind"]) == "count":
+                    var wa: int = int(sel["lo"])
+                    var wb: int = int(sel["hi"])
+                    for o2 in open:
+                        if int(o2) < wa or int(o2) > wb:
+                            continue
+                        if int(fd["hi"]) <= 0 and not cannot.has(int(o2)):
+                            cannot.append(int(o2))
+                        elif int(fd["lo"]) >= wb - wa + 1 and not must.has(int(o2)):
+                            must.append(int(o2))
+    must.sort()
+    cannot.sort()
+    return {"must": must, "cannot": cannot}
+
+
+## Which of a row's OPEN notes are in every listed set / in none of them.
+func _owner_verdict_from_sets(frame: Dictionary, sets: Array) -> Dictionary:
+    var must: Array = []
+    var cannot: Array = []
+    for o in frame["open"]:
+        var in_all: bool = true
+        var in_any: bool = false
+        for one in sets:
+            if (one as Array).has(o):
+                in_any = true
+            else:
+                in_all = false
+        if in_all:
+            must.append(int(o))
+        elif not in_any:
+            cannot.append(int(o))
+    return {"must": must, "cannot": cannot}
+
+
+func _hint_owner_steps(clues: Array, solver) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    for ci in clue_indices_with_something_to_give(clues):
+        var clue: Dictionary = clues[ci]
+        var sorted_facts: Dictionary = _owner_facts_of(clue)
+        var unary: Dictionary = sorted_facts["unary"]
+        var binary: Array = sorted_facts["binary"]
+        if (sorted_facts["stars"] as Dictionary).is_empty():
+            continue
+        var frames: Dictionary = {}
+        var listed: Dictionary = {}   # star -> the sets its own facts allow, where they can be listed
+        for s in sorted_facts["stars"]:
+            var fr: Dictionary = _owner_frame(int(s), clue)
+            if fr.is_empty():
+                continue
+            frames[int(s)] = fr
+            var all_sets: Dictionary = _owner_sets(fr)
+            if bool(all_sets["ok"]):
+                var kept: Array = []
+                for one in all_sets["sets"]:
+                    if _owner_unary_holds(solver, int(s), one, unary.get(int(s), [])):
+                        kept.append(one)
+                listed[int(s)] = kept
+        var contradiction: bool = false
+        for s0 in listed:
+            if (listed[s0] as Array).is_empty():
+                contradiction = true   # the board already contradicts the clue: not a hint
+        if contradiction:
+            continue
+        # Two stars the clue relates, both listable: keep only the pairs of
+        # sets that share no note and satisfy every relation between them.
+        var pair_stars: Array = []
+        for bf in binary:
+            for key in ["a", "b"]:
+                if not pair_stars.has(int(bf[key])):
+                    pair_stars.append(int(bf[key]))
+        if pair_stars.size() == 2 and listed.has(pair_stars[0]) and listed.has(pair_stars[1]) \
+                and (listed[pair_stars[0]] as Array).size() * (listed[pair_stars[1]] as Array).size() <= OWNER_STEP_PAIR_BUDGET:
+            var sa: int = int(pair_stars[0])
+            var sb: int = int(pair_stars[1])
+            var keep_a: Dictionary = {}
+            var keep_b: Dictionary = {}
+            var sets_a: Array = listed[sa]
+            var sets_b: Array = listed[sb]
+            for ia in sets_a.size():
+                for ib in sets_b.size():
+                    var na: Array = sets_a[ia]
+                    var nb: Array = sets_b[ib]
+                    var clash: bool = false
+                    for t in nb:
+                        if na.has(t):
+                            clash = true   # one note is one star
+                            break
+                    if clash:
+                        continue
+                    var good: bool = true
+                    for bf2 in binary:
+                        if not _owner_pair_holds(solver, bf2, {sa: na, sb: nb}):
+                            good = false
+                            break
+                    if good:
+                        keep_a[ia] = true
+                        keep_b[ib] = true
+            if keep_a.is_empty():
+                continue   # contradiction
+            var la: Array = []
+            for ia2 in sets_a.size():
+                if keep_a.has(ia2):
+                    la.append(sets_a[ia2])
+            var lb: Array = []
+            for ib2 in sets_b.size():
+                if keep_b.has(ib2):
+                    lb.append(sets_b[ib2])
+            listed[sa] = la
+            listed[sb] = lb
+        for s2 in frames:
+            var frame: Dictionary = frames[s2]
+            var verdict: Dictionary
+            if listed.has(s2):
+                verdict = _owner_verdict_from_sets(frame, listed[s2])
+            else:
+                verdict = _owner_direct_verdict(frame, unary.get(s2, []))
+            # Stated outright by an order fact whatever the counts: a star that
+            # first fires AFTER another fires on no note up to the earliest the
+            # other could begin (note 1, if nothing is known about it).
+            var cannot: Array = verdict["cannot"]
+            for bf3 in binary:
+                if str(bf3["kind"]) != "ordinal_cmp":
+                    continue
+                var later: int = int(bf3["a"]) if bool(bf3["a_gt_b"]) else int(bf3["b"])
+                var earlier: int = int(bf3["b"]) if bool(bf3["a_gt_b"]) else int(bf3["a"])
+                if later != int(s2):
+                    continue
+                var earliest: int = 1
+                if frames.has(earlier):
+                    var poss: Array = (frames[earlier]["held"] as Array) + (frames[earlier]["open"] as Array)
+                    if not poss.is_empty():
+                        earliest = int(poss.min())
+                for o in frame["open"]:
+                    if int(o) <= earliest and not cannot.has(int(o)):
+                        cannot.append(int(o))
+            cannot.sort()
+            var must: Array = verdict["must"]
+            if must.is_empty() and cannot.is_empty():
+                continue
+            out.append({
+                "axis": "note",
+                "plain_notes": true,
+                "clue_index": int(ci),
+                "star": int(s2),
+                "rank": 0,
+                "descriptor": str(frame["label"]),
+                "row_kind": str(frame["row_kind"]),
+                "row_key": frame["row_key"],
+                "must_ticks": must,
+                "cannot_ticks": cannot,
+                "resolved": not must.is_empty(),
+                "gain": must.size() + cannot.size(),
+            })
+        # What the clue says about HOW OFTEN a star fires, for a row whose count
+        # the board does not have yet. Marking it is what lets the row's notes
+        # be worked out, so it is offered as a step in its own right.
+        for s4 in frames:
+            var rep_step: Dictionary = _owner_repeat_step(frames[s4], unary.get(s4, []))
+            if not rep_step.is_empty():
+                rep_step["clue_index"] = int(ci)
+                rep_step["star"] = int(s4)
+                out.append(rep_step)
+    out.append_array(_hint_owner_board_steps())
+    return out
+
+
+# ── SEVERAL CLUES TOGETHER (2026-10-12) ──────────────────────────────────
+# One clue at a time placed 18 of 42 notes on three measured puzzles and then
+# ran out with most clues still unused: the rest needs clues combined.
+#
+# A WORLD pools the facts of several clues onto the player's ROWS. A row is
+# what a clue's own wording points at (_owner_frame), so two clues talk about
+# the same thing exactly when they point at the same row -- "Helios" twice, or
+# "Helios" and "the star that fires 3rd note" once Helios's row holds note 3.
+# Two rows the board has not joined are kept apart even when they are secretly
+# one star; they are only forced to share no note when they are KNOWN to be
+# different stars (two names, two map stars, or rows the board proves
+# distinct), or when one clue relates them (a clue never relates a star to
+# itself). That keeps every conclusion one the player could reach: nothing
+# rests on which map star a name is unless the board already says.
+#
+# Each row whose firing count is known lists the ways its notes could be
+# completed; ways no fact allows are struck out, then ways with no compatible
+# partner in a related row, round after round until nothing changes. A note
+# in every surviving way must be the row's; a note in none cannot be.
+#
+# A step names the SMALLEST set of clues found to force it: clues are dropped
+# one at a time while the conclusion still follows.
+
+## Most clues a multi-clue step is allowed to name. A hint that needs more is
+## not a hint a player can follow.
+const OWNER_MULTI_MAX_CLUES: int = 3
+## Rounds of striking out before a world is taken as settled.
+const OWNER_WORLD_MAX_ROUNDS: int = 8
+
+
+func _owner_entity_key(frame: Dictionary) -> String:
+    if int(frame["record"]) >= 0:
+        return "r%d" % int(frame["record"])
+    return "%s:%s" % [str(frame["row_kind"]), str(frame["row_key"])]
+
+
+## Are two rows known to be different stars?
+func _owner_rows_known_distinct(fa: Dictionary, fb: Dictionary) -> bool:
+    if str(fa["row_kind"]) == str(fb["row_kind"]) and str(fa["row_kind"]) != "note" \
+            and str(fa["row_key"]) != str(fb["row_key"]):
+        return true   # two names, or two map stars
+    if int(fa["record"]) >= 0 and int(fb["record"]) >= 0:
+        return _records_provably_distinct(int(fa["record"]), int(fb["record"]))
+    return false
+
+
+## Frames built during one world search, keyed by star and clue: the same row
+## is asked for many times while clues are dropped and the world rebuilt.
+var _owner_frame_memo: Dictionary = {}
+var _owner_frame_memo_on: bool = false
+
+
+func _owner_frame_memoised(star: int, clue: Dictionary, clue_index: int) -> Dictionary:
+    if not _owner_frame_memo_on:
+        return _owner_frame(star, clue)
+    var key: String = "%d|%d" % [star, clue_index]
+    if not _owner_frame_memo.has(key):
+        _owner_frame_memo[key] = _owner_frame(star, clue)
+    return _owner_frame_memo[key]
+
+
+## Pools the clues at `indices` and narrows. {"ok": false} when the board
+## contradicts them (never a hint); else {"ok": true, "rows": key -> {"frame",
+## "clues": {index: true}, "star"}, "verdicts": key -> {"must", "cannot"},
+## "links": [[key, key, clue index]]}.
+func _owner_world(clues: Array, indices: Array, solver) -> Dictionary:
+    var rows: Dictionary = {}
+    var relations: Array = []   # {"fd", "ka", "kb", "ci"}
+    var shown: Array = _repeat_values_shown()
+    for ci in indices:
+        var clue: Dictionary = clues[int(ci)]
+        var sorted_facts: Dictionary = _owner_facts_of(clue)
+        var key_of: Dictionary = {}
+        for s in sorted_facts["stars"]:
+            var fr: Dictionary = _owner_frame_memoised(int(s), clue, int(ci))
+            if fr.is_empty():
+                continue
+            var key: String = _owner_entity_key(fr)
+            key_of[int(s)] = key
+            if not rows.has(key):
+                rows[key] = {"frame": fr, "facts": [], "clues": {}, "star": int(s)}
+            for f in (sorted_facts["unary"] as Dictionary).get(int(s), []):
+                (rows[key]["facts"] as Array).append(f)
+                (rows[key]["clues"] as Dictionary)[int(ci)] = true
+        for bf in sorted_facts["binary"]:
+            var a: int = int(bf["a"])
+            var b: int = int(bf["b"])
+            if key_of.has(a) and key_of.has(b) and str(key_of[a]) != str(key_of[b]):
+                relations.append({"fd": bf, "ka": key_of[a], "kb": key_of[b], "ci": int(ci)})
+                (rows[key_of[a]]["clues"] as Dictionary)[int(ci)] = true
+                (rows[key_of[b]]["clues"] as Dictionary)[int(ci)] = true
+    # The ways each row's notes could be completed, where they can be listed.
+    for key2 in rows:
+        var row: Dictionary = rows[key2]
+        var frame: Dictionary = row["frame"]
+        # What the pooled clues say about HOW OFTEN the star fires narrows the
+        # counts tried, even before the player has marked it on the row.
+        var by_fact: Dictionary = {}
+        var counted: bool = false
+        for f2 in row["facts"]:
+            if str(f2["kind"]) != "repeat_count_range":
+                continue
+            if not counted:
+                counted = true
+                for v in shown:
+                    by_fact[int(v) + 1] = true
+            for v2 in shown:
+                if (int(v2) >= int(f2["lo"]) and int(v2) <= int(f2["hi"])) == bool(f2.get("negated", false)):
+                    by_fact.erase(int(v2) + 1)
+        if counted:
+            var base: Array = (frame["counts"] as Array) if not (frame["counts"] as Array).is_empty() else by_fact.keys()
+            var narrowed: Array = []
+            for c in base:
+                if by_fact.has(int(c)):
+                    narrowed.append(int(c))
+            narrowed.sort()
+            if narrowed.is_empty():
+                return {"ok": false}
+            frame = frame.duplicate()
+            frame["counts"] = narrowed
+            row["frame"] = frame
+        var all_sets: Dictionary = _owner_sets(frame)
+        row["sets"] = null
+        if bool(all_sets["ok"]):
+            var kept: Array = []
+            for one in all_sets["sets"]:
+                if _owner_unary_holds(solver, int(row["star"]), one, row["facts"]):
+                    kept.append(one)
+            if kept.is_empty():
+                return {"ok": false}
+            row["sets"] = kept
+    # Pairs of rows that constrain each other: a relation a clue states (the
+    # two share no note AND the relation holds), or simply known to be
+    # different stars (they share no note).
+    var pairs: Array = []
+    for rel in relations:
+        pairs.append(rel)
+    var keys: Array = rows.keys()
+    for i in keys.size():
+        for j in range(i + 1, keys.size()):
+            if _owner_rows_known_distinct(rows[keys[i]]["frame"], rows[keys[j]]["frame"]):
+                pairs.append({"fd": {}, "ka": keys[i], "kb": keys[j], "ci": -1})
+    var changed: bool = true
+    var rounds: int = 0
+    while changed and rounds < OWNER_WORLD_MAX_ROUNDS:
+        changed = false
+        rounds += 1
+        for pr in pairs:
+            var sets_a = rows[pr["ka"]]["sets"]
+            var sets_b = rows[pr["kb"]]["sets"]
+            if sets_a == null or sets_b == null:
+                continue
+            if (sets_a as Array).size() * (sets_b as Array).size() > OWNER_STEP_PAIR_BUDGET:
+                continue
+            var fd: Dictionary = pr["fd"]
+            var keep_a: Dictionary = {}
+            var keep_b: Dictionary = {}
+            for ia in (sets_a as Array).size():
+                var na: Array = sets_a[ia]
+                for ib in (sets_b as Array).size():
+                    if keep_a.has(ia) and keep_b.has(ib):
+                        continue
+                    var nb: Array = sets_b[ib]
+                    var clash: bool = false
+                    for t in nb:
+                        if na.has(t):
+                            clash = true
+                            break
+                    if clash:
+                        continue
+                    # A relation is stored with ka = the row of its star `a`.
+                    if not fd.is_empty() and not _owner_pair_holds(solver, fd, {int(fd["a"]): na, int(fd["b"]): nb}):
+                        continue
+                    keep_a[ia] = true
+                    keep_b[ib] = true
+            if keep_a.is_empty():
+                return {"ok": false}
+            if keep_a.size() < (sets_a as Array).size():
+                var la: Array = []
+                for ia2 in (sets_a as Array).size():
+                    if keep_a.has(ia2):
+                        la.append(sets_a[ia2])
+                rows[pr["ka"]]["sets"] = la
+                changed = true
+            if keep_b.size() < (sets_b as Array).size():
+                var lb: Array = []
+                for ib2 in (sets_b as Array).size():
+                    if keep_b.has(ib2):
+                        lb.append(sets_b[ib2])
+                rows[pr["kb"]]["sets"] = lb
+                changed = true
+    var verdicts: Dictionary = {}
+    for key3 in rows:
+        var row3: Dictionary = rows[key3]
+        var verdict: Dictionary
+        if row3["sets"] != null:
+            verdict = _owner_verdict_from_sets(row3["frame"], row3["sets"])
+        else:
+            verdict = _owner_direct_verdict(row3["frame"], row3["facts"])
+        verdicts[key3] = verdict
+    # An order fact says outright that the later star fires on no note up to
+    # the earliest the other could begin.
+    for rel2 in relations:
+        var fd2: Dictionary = rel2["fd"]
+        if str(fd2["kind"]) != "ordinal_cmp":
+            continue
+        var later_is_a: bool = bool(fd2["a_gt_b"])
+        var later_key: String = str(rel2["ka"]) if later_is_a else str(rel2["kb"])
+        var earlier_key: String = str(rel2["kb"]) if later_is_a else str(rel2["ka"])
+        var earliest: int = 1
+        var erow: Dictionary = rows[earlier_key]
+        if erow["sets"] != null:
+            earliest = 999999
+            for es in erow["sets"]:
+                earliest = mini(earliest, int((es as Array)[0]))
+        else:
+            var poss: Array = (erow["frame"]["held"] as Array) + (erow["frame"]["open"] as Array)
+            if not poss.is_empty():
+                earliest = int(poss.min())
+        var cannot: Array = verdicts[later_key]["cannot"]
+        for o in rows[later_key]["frame"]["open"]:
+            if int(o) <= earliest and not cannot.has(int(o)) and not (verdicts[later_key]["must"] as Array).has(int(o)):
+                cannot.append(int(o))
+        cannot.sort()
+    var links: Array = []
+    for rel3 in relations:
+        links.append([str(rel3["ka"]), str(rel3["kb"]), int(rel3["ci"])])
+    return {"ok": true, "rows": rows, "verdicts": verdicts, "links": links}
+
+
+## Steps that take SEVERAL clues, offered once no single clue gives anything
+## (hint_next_steps only calls this then). Each carries "clue_indices", the
+## clues to show, smallest set found; "clue_index" is the first of them.
+func _hint_owner_multi_steps(clues: Array, solver) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    var waiting: Array = []
+    for ci in clue_indices_with_something_to_give(clues):
+        waiting.append(int(ci))
+    if waiting.size() < 2:
+        return out
+    _owner_frame_memo = {}
+    _owner_frame_memo_on = true
+    var whole: Dictionary = _owner_world(clues, waiting, solver)
+    if bool(whole["ok"]):
+        for key in whole["verdicts"]:
+            var verdict: Dictionary = whole["verdicts"][key]
+            var must: Array = verdict["must"]
+            var cannot: Array = verdict["cannot"]
+            if must.is_empty() and cannot.is_empty():
+                continue
+            # What to explain: the notes the row MUST take if there are any
+            # (that is the step that moves the board), else the ones ruled out.
+            var want_must: bool = not must.is_empty()
+            var target: Array = must if want_must else cannot
+            # Only the clues that reach this row through the rows they relate.
+            var reach: Dictionary = {str(key): true}
+            var grew: bool = true
+            while grew:
+                grew = false
+                for link in whole["links"]:
+                    if reach.has(link[0]) != reach.has(link[1]):
+                        reach[link[0]] = true
+                        reach[link[1]] = true
+                        grew = true
+            var subset: Array = []
+            for ci2 in waiting:
+                for rk in reach:
+                    if (whole["rows"][rk]["clues"] as Dictionary).has(int(ci2)) and not subset.has(int(ci2)):
+                        subset.append(int(ci2))
+            # Drop clues one at a time while the conclusion still follows.
+            var i: int = subset.size() - 1
+            while i >= 0 and subset.size() > 1:
+                var trial: Array = subset.duplicate()
+                trial.remove_at(i)
+                var w: Dictionary = _owner_world(clues, trial, solver)
+                var still: bool = bool(w["ok"]) and (w["verdicts"] as Dictionary).has(key)
+                if still:
+                    var got: Array = w["verdicts"][key]["must" if want_must else "cannot"]
+                    for t in target:
+                        if not got.has(t):
+                            still = false
+                            break
+                if still:
+                    subset = trial
+                i -= 1
+            if subset.size() > OWNER_MULTI_MAX_CLUES:
+                continue   # a hint needing more clues than that is not one a player can follow
+            # (One clue can be left: this search also uses what a clue says
+            # about how often its star fires, which the one-clue finder does
+            # not. It is then an ordinary one-clue step.)
+            subset.sort()
+            var frame: Dictionary = whole["rows"][key]["frame"]
+            out.append({
+                "axis": "note",
+                "plain_notes": true,
+                "multi": subset.size() > 1,
+                "clue_index": int(subset[0]),
+                "clue_indices": subset,
+                "star": int(whole["rows"][key]["star"]),
+                "rank": 0,
+                "descriptor": str(frame["label"]),
+                "row_kind": str(frame["row_kind"]),
+                "row_key": frame["row_key"],
+                "must_ticks": target.duplicate() if want_must else [],
+                "cannot_ticks": [] if want_must else target.duplicate(),
+                "resolved": want_must,
+                "gain": target.size(),
+            })
+    _owner_frame_memo_on = false
+    _owner_frame_memo = {}
+    return out
+
+
+# ── THE WHOLE MELODY AT ONCE (2026-10-12) ────────────────────────────────
+# Pooling clues row by row moved nothing on the measured puzzles, because the
+# strongest thing a player knows is not about any one row: EVERY NOTE IS
+# EXACTLY ONE MAP STAR'S, and Listen gives how many notes each map star has.
+# So this searches the melody itself -- one map star per note, each star as
+# many notes as it fires -- for the assignments that fit the board and the
+# clues, and reports what they all agree on.
+#
+# Only what the player can use goes in:
+#   - the notes each ROW holds or rules out, applied to the map stars that
+#     row could still be (_candidate_stars_for_record). A row tied to one map
+#     star fixes that star; a Name row not yet tied to a star only says "one
+#     of the stars this name could be fires here";
+#   - a clue's fact, applied to what the clue's own wording points at: a map
+#     star (a colour or Listened pitch only it has), the star of a note ("the
+#     star that fires 3rd note" is whoever fires on note 3 in the assignment
+#     being tried), or a NAME -- and a fact about a name holds if it is true
+#     of at least one map star that name could still be.
+# A name's facts are tested together on one candidate star, but two names are
+# not forced onto different stars, and a relation between two names is tested
+# on its own. Both make the search accept more than the truth allows, never
+# less, so what every accepted assignment agrees on is certainly true.
+#
+# It needs every star Listened (the counts), and it gives up -- offering
+# nothing -- when the board is still so open that the assignments cannot be
+# listed within OWNER_GLOBAL_MAX_SOLUTIONS / the node budget.
+
+## Search steps one whole-melody search may spend. MEASURED 2026-10-12: about
+## 40,000 a second in the test runner, and the search runs in one go when a
+## hint is asked for, so this is roughly a second's pause at most (longer in a
+## web build). Raising it finds more and stalls the game longer.
+const OWNER_GLOBAL_NODE_BUDGET: int = 40000
+const OWNER_GLOBAL_MAX_SOLUTIONS: int = 600
+## Most clues a whole-melody step may name. Above that it is not offered.
+const OWNER_GLOBAL_MAX_CLUES: int = 4
+
+var _owner_global_nodes: int = 0
+var _owner_global_gave_up: bool = false
+## Whether hint_next_steps runs the whole-melody search. False: it is sound
+## (test_owner_hints.gd lists every assignment it accepts on one board and the
+## real melody is among them) but too slow to finish where it would matter --
+## 424 assignments in 0.7 s on the smallest measured board, and still unfinished
+## after 75 s and 133 s on the other two. It needs a faster search before it
+## is worth a player's wait.
+var owner_global_hints_enabled: bool = false
+
+
+## Who a fact is about, for the whole-melody search: {"stars": [map stars it
+## could be]} or {"note": T} (whoever fires on note T). {} = the clue gives the
+## player no way to find it.
+func _owner_subject(star: int, clue: Dictionary, clue_index: int) -> Dictionary:
+    var fr: Dictionary = _owner_frame_memoised(star, clue, clue_index)
+    if fr.is_empty():
+        return {}
+    match str(fr["row_kind"]):
+        "star":
+            return {"stars": [int(fr["row_key"])], "name": ""}
+        "note":
+            return {"note": int(fr["row_key"])}
+    var rec: int = int(fr["record"])
+    var cands: Array = []
+    if rec >= 0:
+        cands = _candidate_stars_for_record(rec).duplicate()
+    else:
+        for s in _host._star_count:
+            cands.append(s)
+    return {"stars": cands, "name": str(fr["label"]), "record": rec}
+
+
+## Everything the search needs for the clues at `indices`, or {"ok": false}.
+func _owner_global_setup(clues: Array, indices: Array) -> Dictionary:
+    var n_notes: int = _melody_tick_count()
+    var need: Array = []
+    for s in _host._star_count:
+        if not _player_knows_star_pitch(s) or s >= _host._repeat_count.size() or int(_host._repeat_count[s]) < 0:
+            return {"ok": false}   # a star not Listened: its count is not known
+        need.append(int(_host._repeat_count[s]) + 1)
+    var all_mask: int = (1 << _host._star_count) - 1
+    var allowed: Array = []
+    for _t in n_notes + 1:
+        allowed.append(all_mask)
+    # The rows: a note a row holds is one of the stars that row could be; a
+    # note a row rules out is not that row's star, when the row is one star.
+    for i in _match_records.size():
+        var held: Array = _match_records[i].get("melody_ticks", [])
+        var blocks: Array = _match_records[i].get("seq_note_blocks", [])
+        if held.is_empty() and blocks.is_empty():
+            continue
+        var cands: Array = _candidate_stars_for_record(i)
+        var mask: int = 0
+        for c in cands:
+            mask |= 1 << int(c)
+        for t in held:
+            if int(t) >= 1 and int(t) <= n_notes:
+                allowed[int(t)] = int(allowed[int(t)]) & mask
+        if cands.size() == 1:
+            for t2 in blocks:
+                if int(t2) >= 1 and int(t2) <= n_notes:
+                    allowed[int(t2)] = int(allowed[int(t2)]) & ~(1 << int(cands[0]))
+    var fixed: Array = []        # per map star: facts about that star alone
+    for _s in _host._star_count:
+        fixed.append([])
+    var by_note: Array = []      # {"note", "fd"}: about whoever fires on a note
+    var names: Dictionary = {}   # name -> {"stars", "facts", "held", "blocks"}
+    var relations: Array = []    # {"fd", "a": subject, "b": subject}
+    for ci in indices:
+        var clue: Dictionary = clues[int(ci)]
+        var sorted_facts: Dictionary = _owner_facts_of(clue)
+        var subj: Dictionary = {}
+        for s2 in sorted_facts["stars"]:
+            var sub: Dictionary = _owner_subject(int(s2), clue, int(ci))
+            if sub.is_empty():
+                continue
+            subj[int(s2)] = sub
+            for f in (sorted_facts["unary"] as Dictionary).get(int(s2), []):
+                if sub.has("note"):
+                    by_note.append({"note": int(sub["note"]), "fd": f})
+                elif (sub["stars"] as Array).size() == 1:
+                    (fixed[int((sub["stars"] as Array)[0])] as Array).append(f)
+                elif str(sub["name"]) != "":
+                    if not names.has(str(sub["name"])):
+                        var nrec: int = int(sub.get("record", -1))
+                        names[str(sub["name"])] = {"stars": sub["stars"], "facts": [],
+                            "held": _match_records[nrec].get("melody_ticks", []) if nrec >= 0 else [],
+                            "blocks": _match_records[nrec].get("seq_note_blocks", []) if nrec >= 0 else []}
+                    (names[str(sub["name"])]["facts"] as Array).append(f)
+        for bf in sorted_facts["binary"]:
+            if subj.has(int(bf["a"])) and subj.has(int(bf["b"])):
+                relations.append({"fd": bf, "a": subj[int(bf["a"])], "b": subj[int(bf["b"])]})
+    for t3 in range(1, n_notes + 1):
+        if int(allowed[t3]) == 0:
+            return {"ok": false}   # the board contradicts itself: not a hint
+    return {"ok": true, "n": n_notes, "need": need, "allowed": allowed, "fixed": fixed,
+        "by_note": by_note, "names": names, "relations": relations}
+
+
+## The map stars a subject could be in a finished assignment.
+func _owner_subject_stars(sub: Dictionary, owners: Array) -> Array:
+    if sub.has("note"):
+        return [int(owners[int(sub["note"]) - 1])]
+    return sub["stars"]
+
+
+## Does a finished assignment (notes_of[s] = that star's notes) fit everything
+## that could not be checked on the way?
+func _owner_global_leaf_ok(setup: Dictionary, owners: Array, notes_of: Array, solver) -> bool:
+    for bn in setup["by_note"]:
+        var who: int = int(owners[int(bn["note"]) - 1])
+        if not _owner_unary_holds(solver, who, notes_of[who], [bn["fd"]]):
+            return false
+    for name in setup["names"]:
+        var req: Dictionary = setup["names"][name]
+        if _owner_name_fits(req, notes_of, solver).is_empty():
+            return false
+    for rel in setup["relations"]:
+        var fd: Dictionary = rel["fd"]
+        var found: bool = false
+        for sa in _owner_subject_stars(rel["a"], owners):
+            for sb in _owner_subject_stars(rel["b"], owners):
+                if int(sa) != int(sb) and _owner_pair_holds(solver, fd,
+                        {int(fd["a"]): notes_of[int(sa)], int(fd["b"]): notes_of[int(sb)]}):
+                    found = true
+                    break
+            if found:
+                break
+        if not found:
+            return false
+    return true
+
+
+## The map stars a name could be in a finished assignment: of the stars its row
+## still allows, those whose notes include every note the row holds, none it
+## rules out, and satisfy every fact the clues state about the name.
+func _owner_name_fits(req: Dictionary, notes_of: Array, solver) -> Array:
+    var out: Array = []
+    for s in req["stars"]:
+        var mine: Array = notes_of[int(s)]
+        var good: bool = true
+        for t in req["held"]:
+            if not mine.has(t):
+                good = false
+                break
+        if good:
+            for t2 in req["blocks"]:
+                if mine.has(t2):
+                    good = false
+                    break
+        if good and _owner_unary_holds(solver, int(s), mine, req["facts"]):
+            out.append(int(s))
+    return out
+
+
+func _owner_global_step(t: int, setup: Dictionary, owners: Array, notes_of: Array, sols: Array, cap: int, solver) -> void:
+    if sols.size() >= cap or _owner_global_gave_up:
+        return
+    _owner_global_nodes -= 1
+    if _owner_global_nodes <= 0:
+        _owner_global_gave_up = true
+        return
+    var n: int = int(setup["n"])
+    if t > n:
+        if _owner_global_leaf_ok(setup, owners, notes_of, solver):
+            sols.append(owners.duplicate())
+        return
+    var need: Array = setup["need"]
+    var mask: int = int((setup["allowed"] as Array)[t])
+    # Notes still to hand out must cover what every star is still owed.
+    for s in _host._star_count:
+        if not (mask & (1 << s)):
+            continue
+        var mine: Array = notes_of[s]
+        if mine.size() >= int(need[s]):
+            continue
+        mine.append(t)
+        owners[t - 1] = s
+        var ok: bool = true
+        if mine.size() == int(need[s]):
+            ok = _owner_unary_holds(solver, s, mine, (setup["fixed"] as Array)[s])
+        if ok:
+            _owner_global_step(t + 1, setup, owners, notes_of, sols, cap, solver)
+        mine.pop_back()
+        owners[t - 1] = -1
+        if sols.size() >= cap or _owner_global_gave_up:
+            return
+
+
+## Every assignment that fits, up to `cap`: {"complete": the search finished
+## and found fewer than cap, "sols": [owners per note]}.
+func _owner_global_solve(setup: Dictionary, cap: int, solver, budget: int = OWNER_GLOBAL_NODE_BUDGET) -> Dictionary:
+    var owners: Array = []
+    for _t in int(setup["n"]):
+        owners.append(-1)
+    var notes_of: Array = []
+    for _s in _host._star_count:
+        notes_of.append([])
+    var sols: Array = []
+    _owner_global_nodes = budget
+    _owner_global_gave_up = false
+    _owner_global_step(1, setup, owners, notes_of, sols, cap, solver)
+    return {"complete": not _owner_global_gave_up and sols.size() < cap, "sols": sols}
+
+
+## Is "star s fires / does not fire on each of `notes`" true in EVERY assignment
+## that fits? Asked by looking for one that breaks it. A search that gives up
+## answers no.
+func _owner_global_forced(setup: Dictionary, star: int, notes: Array, want_must: bool, solver) -> bool:
+    for t in notes:
+        var trial: Dictionary = setup.duplicate()
+        var allowed: Array = (setup["allowed"] as Array).duplicate()
+        allowed[int(t)] = (int(allowed[int(t)]) & ~(1 << star)) if want_must else (int(allowed[int(t)]) & (1 << star))
+        trial["allowed"] = allowed
+        if int(allowed[int(t)]) == 0:
+            continue
+        var res: Dictionary = _owner_global_solve(trial, 1, solver, OWNER_GLOBAL_NODE_BUDGET / 3)
+        if not (res["sols"] as Array).is_empty() or _owner_global_gave_up:
+            return false
+    return true
+
+
+## How a whole-melody step may name a map star: by a colour or Listened pitch
+## only it has. "" = no way to say which star, so no step about it.
+func _owner_visible_star_label(star: int) -> String:
+    if _star_alone_in_group(star, ConstellationLogicPuzzle.Category.COLOR):
+        return _describe_descriptor(ConstellationLogicPuzzle.Category.COLOR, star)
+    if _player_knows_star_pitch(star) and _star_alone_in_group(star, ConstellationLogicPuzzle.Category.PITCH):
+        return _describe_descriptor(ConstellationLogicPuzzle.Category.PITCH, star)
+    return ""
+
+
+func _hint_owner_global_steps(clues: Array, solver) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    var waiting: Array = []
+    for ci in clue_indices_with_something_to_give(clues):
+        waiting.append(int(ci))
+    _owner_frame_memo = {}
+    _owner_frame_memo_on = true
+    var setup: Dictionary = _owner_global_setup(clues, waiting)
+    if bool(setup["ok"]):
+        var res: Dictionary = _owner_global_solve(setup, OWNER_GLOBAL_MAX_SOLUTIONS, solver)
+        var sols: Array = res["sols"]
+        if bool(res["complete"]) and not sols.is_empty():
+            var n_notes: int = int(setup["n"])
+            for s in _host._star_count:
+                var label: String = _owner_visible_star_label(s)
+                if label == "":
+                    continue
+                var row: int = _find_match_record_by_star_idx(s)
+                var must: Array = []
+                var cannot: Array = []
+                for t in range(1, n_notes + 1):
+                    if row >= 0 and _repeat_note_state_for_record(row, t) != 0:
+                        continue   # already on the row
+                    var always: bool = true
+                    var ever: bool = false
+                    for sol in sols:
+                        if int(sol[t - 1]) == s:
+                            ever = true
+                        else:
+                            always = false
+                    if always:
+                        must.append(t)
+                    elif not ever:
+                        cannot.append(t)
+                if must.is_empty() and cannot.is_empty():
+                    continue
+                var want_must: bool = not must.is_empty()
+                # At most two notes per step: each one is re-proved for every
+                # clue dropped below, and the step claims only what was proved.
+                var target: Array = (must if want_must else cannot).slice(0, 2)
+                # The fewest clues found that still force it, dropping one at a time.
+                var subset: Array = waiting.duplicate()
+                var i: int = subset.size() - 1
+                while i >= 0:
+                    var trial: Array = subset.duplicate()
+                    trial.remove_at(i)
+                    var tsetup: Dictionary = _owner_global_setup(clues, trial)
+                    if bool(tsetup["ok"]) and _owner_global_forced(tsetup, s, target, want_must, solver):
+                        subset = trial
+                    i -= 1
+                if subset.size() > OWNER_GLOBAL_MAX_CLUES:
+                    continue   # needs more clues than a player can follow in one hint
+                subset.sort()
+                var step: Dictionary = {
+                    "axis": "note",
+                    "plain_notes": true,
+                    "whole_melody": true,
+                    "multi": subset.size() > 1,
+                    "clue_index": int(subset[0]) if not subset.is_empty() else -1,
+                    "star": s,
+                    "rank": 0,
+                    "descriptor": label,
+                    "row_kind": "star",
+                    "row_key": s,
+                    "must_ticks": target if want_must else [],
+                    "cannot_ticks": [] if want_must else target,
+                    "resolved": want_must,
+                    "gain": target.size(),
+                }
+                if subset.is_empty():
+                    step["from_marks"] = true
+                    step["from_text"] = "Every note is exactly one star's, and you know how often each star fires. From the notes already on your rows"
+                else:
+                    step["clue_indices"] = subset
+                out.append(step)
+    _owner_frame_memo_on = false
+    _owner_frame_memo = {}
+    return out
+
+
+## Steps that need NO clue, only the Name rows as they stand (clue_index -1).
+## Every star has a name and every note has exactly one star, so:
+##   - a Name row known to fire n times, holding h notes, with exactly n - h
+##     notes still open, fires on all of them;
+##   - a note no row holds yet, which every Name row but one has ruled out,
+##     is that one name's.
+## The Name rows are read as a clue naming the star would read them
+## (_owner_frame), a row nobody has opened counting as fully open.
+func _hint_owner_board_steps() -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    var frames: Array = []
+    for n in _host._star_count:
+        if n >= _host._star_names.size():
+            return out
+        frames.append(_owner_frame(n, {"search_terms": ["N:" + str(_host._star_names[n])]}))
+    var must_by_name: Dictionary = {}   # name star -> {note: why}
+    for n2 in frames.size():
+        var fr: Dictionary = frames[n2]
+        if fr.is_empty():
+            continue
+        var counts: Array = fr["counts"]
+        var open: Array = fr["open"]
+        if counts.size() == 1 and not open.is_empty() and open.size() == int(counts[0]) - (fr["held"] as Array).size():
+            for t in open:
+                if not must_by_name.has(n2):
+                    must_by_name[n2] = {}
+                (must_by_name[n2] as Dictionary)[int(t)] = "With as many notes left open as %s still has to fire on" % str(fr["label"])
+    for t2 in range(1, _melody_tick_count() + 1):
+        if _find_match_record_by_melody_tick(t2) >= 0:
+            continue   # some row holds it: that row's star fires there
+        var only: int = -1
+        var several: bool = false
+        for n3 in frames.size():
+            var fr3: Dictionary = frames[n3]
+            if fr3.is_empty() or (fr3["open"] as Array).has(t2):
+                if only >= 0:
+                    several = true
+                    break
+                only = n3
+        if only >= 0 and not several and not (frames[only] as Dictionary).is_empty():
+            if not must_by_name.has(only):
+                must_by_name[only] = {}
+            if not (must_by_name[only] as Dictionary).has(t2):
+                (must_by_name[only] as Dictionary)[t2] = "With every other name ruled out for it"
+    for n4 in must_by_name:
+        var notes: Array = (must_by_name[n4] as Dictionary).keys()
+        notes.sort()
+        out.append({
+            "axis": "note",
+            "plain_notes": true,
+            "clue_index": -1,
+            "from_marks": true,
+            "from_text": str((must_by_name[n4] as Dictionary)[notes[0]]),
+            "star": int(n4),
+            "rank": 0,
+            "descriptor": str(frames[int(n4)]["label"]),
+            "row_kind": "name",
+            "row_key": str(frames[int(n4)]["label"]),
+            "must_ticks": notes,
+            "cannot_ticks": [],
+            "resolved": true,
+            "gain": notes.size(),
+        })
+    return out
+
+
+## A step on a row's REPEATS entry from one clue's facts about that star's
+## count ("Helios repeats once", or the wording "first fires" / "the only
+## firing of"): the counts still open on the row that the clue rules out, and
+## the one it leaves if only one is left. {} when the row's count is already
+## known or the clue says nothing new about it.
+func _owner_repeat_step(frame: Dictionary, facts: Array) -> Dictionary:
+    if int(frame["count"]) > 0:
+        return {}
+    var rec: int = int(frame["record"])
+    var shown: Array = _repeat_values_shown()
+    var open: Array = []
+    for v in shown:
+        var state: int = _effective_repeat_state(rec, int(v)) if rec >= 0 else 0
+        if state == 1:
+            return {}
+        if state == 0:
+            open.append(int(v))
+    var allowed: Dictionary = {}
+    for v2 in shown:
+        allowed[int(v2)] = true
+    var says_something: bool = false
+    for f in facts:
+        var fd: Dictionary = f
+        if str(fd["kind"]) != "repeat_count_range":
+            continue
+        says_something = true
+        for v3 in shown:
+            if (int(v3) >= int(fd["lo"]) and int(v3) <= int(fd["hi"])) == bool(fd.get("negated", false)):
+                allowed.erase(int(v3))
+    if not says_something:
+        return {}
+    var cannot: Array = []
+    var left: Array = []
+    for v4 in open:
+        if allowed.has(int(v4)):
+            left.append(int(v4))
+        else:
+            cannot.append(int(v4))
+    if cannot.is_empty() or left.is_empty():
+        return {}   # nothing new, or the row already contradicts the clue
+    return {
+        "axis": "repeat",
+        "descriptor": str(frame["label"]),
+        "row_kind": str(frame["row_kind"]),
+        "row_key": frame["row_key"],
+        "must_value": int(left[0]) if left.size() == 1 else -1,
+        "cannot_values": cannot,
+        "resolved": left.size() == 1,
+        "gain": cannot.size(),
+    }
+
+
+## Is a fact about notes already entailed by the board, with the first notes
+## hidden? The scoring twin of the step finder: same rows, same reading.
+## {"known": false} for a kind this cannot judge (the caller's old reading
+## stands); else {"known": true, "value": bool}.
+##
+## A star can have several rows on the board that are not yet joined (its Name
+## row, its map star's row, the entry of the note a clue names it by). A fact is
+## recorded as soon as ANY of them entails it -- found 2026-10-12, when "the
+## star that plays E5 is the star that fires 9th note" stayed "waiting" after
+## the E5 star's row held note 9, because a still-empty Name row was read
+## instead. So every choice of row per star is tried.
+func _note_fact_entailed(f: Dictionary) -> Dictionary:
+    var stars: Array = []
+    for key in ["s", "a", "mid", "b"]:
+        if f.has(key) and not stars.has(int(f[key])):
+            stars.append(int(f[key]))
+    var choices: Array = []
+    for s in stars:
+        var rows: Array = _owner_frames_all(int(s), str(f.get("kind", "")) == "ordinal_exact")
+        if rows.is_empty():
+            rows = [{}]
+        choices.append(rows)
+    var pick: Array = []
+    for _c in choices:
+        pick.append(0)
+    var result: Dictionary = {"known": false}
+    while true:
+        _scoring_frames = {}
+        for i in stars.size():
+            _scoring_frames[int(stars[i])] = (choices[i] as Array)[int(pick[i])]
+        result = _note_fact_entailed_picked(f)
+        if not bool(result["known"]) or bool(result["value"]):
+            break
+        var p: int = pick.size() - 1
+        while p >= 0 and int(pick[p]) == (choices[p] as Array).size() - 1:
+            pick[p] = 0
+            p -= 1
+        if p < 0:
+            break
+        pick[p] = int(pick[p]) + 1
+    _scoring_frames = {}
+    return result
+
+
+## The rows chosen for the current try of _note_fact_entailed.
+var _scoring_frames: Dictionary = {}
+## The search terms of the clue being scored, or empty when a fact is judged
+## with no clue in hand. See _owner_frames_all.
+var _scoring_clue_terms: Array = []
+
+func _scoring_frame(star: int) -> Dictionary:
+    return _scoring_frames.get(star, {})
+
+
+## Every row on the board that stands for a star, one frame each: its Name row,
+## its map star's row (when a colour or Listened pitch only it has would let a
+## clue point at it), the entry of its label note.
+##
+## The label-note entry is offered ONLY for the fact that is the label itself
+## (ordinal_exact, "... is the star that fires T-th note"). For any other fact
+## it would be circular: which note is a star's label is read off the melody,
+## so judging "Alpha first fires within the first 2 notes" against the entry of
+## Alpha's own first note answers yes before the player has done anything.
+func _owner_frames_all(star: int, with_label_note: bool = false) -> Array:
+    var out: Array = []
+    if star < 0 or star >= _host._star_count:
+        return out
+    var terms: Array = [_descriptor_term(ConstellationLogicPuzzle.Category.NAME, star),
+        _descriptor_term(ConstellationLogicPuzzle.Category.COLOR, star),
+        _descriptor_term(ConstellationLogicPuzzle.Category.PITCH, star)]
+    var label_note: int = _label_note_for_star(star)
+    if with_label_note and label_note > 0:
+        terms.append("S:%d" % label_note)
+    # Scoring ONE CLUE (_scoring_clue_terms set by _clue_coverage): only the
+    # rows that clue itself points at count, exactly as for its hint step. A
+    # fact the board happens to hold on some other, unjoined row for the same
+    # star is not yet recorded where the clue's reader would look -- counting
+    # it made clues drop out of the hint finder early (measured 2026-10-12).
+    if not _scoring_clue_terms.is_empty():
+        terms = []
+        var all_terms: Array = [_descriptor_term(ConstellationLogicPuzzle.Category.NAME, star),
+            _descriptor_term(ConstellationLogicPuzzle.Category.COLOR, star),
+            _descriptor_term(ConstellationLogicPuzzle.Category.PITCH, star)]
+        for at in all_terms:
+            if str(at) != "" and _scoring_clue_terms.has(at):
+                terms.append(at)
+        # The label-note entry only when it is the clue's SOLE way of naming
+        # the star. "The star that plays E5 is the star that fires 9th note"
+        # is recorded when the E5 star's row holds note 9 -- not by the entry
+        # of note 9 itself, which holds note 9 by definition.
+        if terms.is_empty() and label_note > 0 and _scoring_clue_terms.has("S:%d" % label_note):
+            terms.append("S:%d" % label_note)
+    for term in terms:
+        if str(term) == "":
+            continue
+        var fr: Dictionary = _owner_frame(star, {"search_terms": [term]})
+        if not fr.is_empty():
+            out.append(fr)
+    return out
+
+
+func _note_fact_entailed_picked(f: Dictionary) -> Dictionary:
+    var kind: String = str(f.get("kind", ""))
+    var solver = _hint_solver_for(_host._star_count)
+    match kind:
+        "ordinal_pair_set":
+            # Built from the first-note table, which this board does not use;
+            # the same clue's firing_relation carries what the sentence says.
+            return {"known": true, "value": true}
+        "ordinal_exact", "ordinal_neg", "ordinal_either_or", "ordinal_range", "firing_position":
+            var star: int = int(f.get("s", -1))
+            var fr: Dictionary = _scoring_frame(star)
+            if fr.is_empty():
+                return {"known": true, "value": false}
+            var all_sets: Dictionary = _owner_sets(fr)
+            if bool(all_sets["ok"]):
+                var sets: Array = all_sets["sets"]
+                if sets.is_empty():
+                    return {"known": true, "value": false}
+                for one in sets:
+                    if not _owner_unary_holds(solver, star, one, [f]):
+                        return {"known": true, "value": false}
+                return {"known": true, "value": true}
+            # Count unknown: only what the row's own notes settle outright.
+            var held: Array = fr["held"]
+            var open: Array = fr["open"]
+            match kind:
+                "ordinal_exact":
+                    return {"known": true, "value": held.has(_label_note_for_rank0(int(f["r"])))}
+                "ordinal_neg":
+                    return {"known": true, "value": (fr["ruled"] as Array).has(_label_note_for_rank0(int(f["r"])))}
+                "ordinal_either_or":
+                    return {"known": true, "value": held.has(_label_note_for_rank0(int(f["r1"]))) or held.has(_label_note_for_rank0(int(f["r2"])))}
+                "ordinal_range":
+                    var good: bool = true
+                    if int(f["lo"]) > 0:
+                        for t in held + open:
+                            if int(t) < _label_note_for_rank0(int(f["lo"])):
+                                good = false
+                    if int(f["hi"]) < _host._star_count - 1:
+                        var has_early: bool = false
+                        for t2 in held:
+                            if int(t2) <= _label_note_for_rank0(int(f["hi"])):
+                                has_early = true
+                        good = good and has_early
+                    return {"known": true, "value": good}
+            return {"known": true, "value": false}
+        "ordinal_cmp", "ordinal_chain":
+            var pairs: Array = []
+            if kind == "ordinal_cmp":
+                var later: int = int(f["a"]) if bool(f["a_gt_b"]) else int(f["b"])
+                var earlier: int = int(f["b"]) if bool(f["a_gt_b"]) else int(f["a"])
+                pairs.append([later, earlier])
+            else:
+                pairs.append([int(f["mid"]), int(f["a"])])
+                pairs.append([int(f["b"]), int(f["mid"])])
+            for pr in pairs:
+                var fl: Dictionary = _scoring_frame(int(pr[0]))
+                var fe: Dictionary = _scoring_frame(int(pr[1]))
+                if fl.is_empty() or fe.is_empty() or (fe["held"] as Array).is_empty():
+                    return {"known": true, "value": false}
+                var later_poss: Array = (fl["held"] as Array) + (fl["open"] as Array)
+                if later_poss.is_empty() or int((fe["held"] as Array).min()) >= int(later_poss.min()):
+                    return {"known": true, "value": false}
+            return {"known": true, "value": true}
+        "firing_relation":
+            var fa: Dictionary = _scoring_frame(int(f.get("a", -1)))
+            var fb: Dictionary = _scoring_frame(int(f.get("b", -1)))
+            if fa.is_empty() or fb.is_empty():
+                return {"known": true, "value": false}
+            # Entailed only once both rows hold every note their stars fire on.
+            var ca: Array = fa["counts"]
+            var cb: Array = fb["counts"]
+            if ca.size() != 1 or cb.size() != 1 \
+                    or (fa["held"] as Array).size() != int(ca[0]) or (fb["held"] as Array).size() != int(cb[0]):
+                return {"known": true, "value": false}
+            return {"known": true, "value": _owner_pair_holds(solver, f, {int(f["a"]): fa["held"], int(f["b"]): fb["held"]})}
+    return {"known": false}
+
+
 ## Cached result of the last hint_full_chain() computation. Same one-slot,
 ## invalidate-on-_clear_deduction_caches() lifetime as every other cache in
 ## this file (_coverage_cache, _star_positions_cache, ...) -- valid exactly
@@ -6606,6 +8107,13 @@ func hint_full_chain(clues: Array, max_steps: int = 200) -> Array[Dictionary]:
     if _hint_chain_cache_valid:
         return _hint_chain_cache
     hint_chain_computations += 1
+    if _notes_hidden():
+        # No working copy of the note rows exists yet to apply a step to and
+        # search again, so this is every step available on the board AS IT IS,
+        # best first -- not the steps those would unlock in turn.
+        _hint_chain_cache = hint_next_steps(clues)
+        _hint_chain_cache_valid = true
+        return _hint_chain_cache
     var boards: Dictionary = {"seq": _player_sequence_grid(), "name": _player_name_grid(), "rank": _player_rank_grid(),
         "ticks": _player_tick_board()}
     var chain: Array[Dictionary] = []
@@ -8159,6 +9667,43 @@ func _candidate_stars_for_record(record_idx: int) -> Array:
             rep_confirmed = int(rv)
             break
 
+    # NOTES (2026-10-12, first notes hidden). What this row's own notes say
+    # about which map star it can be -- the link between "which notes does
+    # Helios fire on" and "which star is Helios". Own fields on both sides:
+    #   - it holds more notes than a Listened star fires at all;
+    #   - a row bound to that star is marked as not firing on a note this row
+    #     holds (or the other way round);
+    #   - a row bound to that star already holds every note the star fires,
+    #     and this row holds some other note.
+    var my_held: Array = _match_records[record_idx].get("melody_ticks", [])
+    var my_blocks: Array = _match_records[record_idx].get("seq_note_blocks", [])
+    var notes_matter: bool = _notes_hidden() and not (my_held.is_empty() and my_blocks.is_empty())
+    # ONE pass over the rows, asking of each row that sits on a map star what
+    # its notes say about THIS row -- never a pass per star. Rows the Star Map
+    # made for itself are read too, on purpose: where such a row sits is its
+    # widget's own place on the map, and the notes on it are marks the player
+    # made there. Nothing here reads a name, pitch or count off it.
+    var star_ruled_out_by_notes: Dictionary = {}
+    if notes_matter:
+        for b in _match_records.size():
+            if b == record_idx:
+                continue
+            var at_star: int = _effective_star_idx(b)
+            if at_star < 0 or at_star >= _host._star_count:
+                continue
+            var their_held: Array = _match_records[b].get("melody_ticks", [])
+            var their_blocks: Array = _match_records[b].get("seq_note_blocks", [])
+            for t in my_held:
+                if their_blocks.has(t):
+                    star_ruled_out_by_notes[at_star] = true
+            for t2 in their_held:
+                if my_blocks.has(t2):
+                    star_ruled_out_by_notes[at_star] = true
+            # That star's notes are all accounted for, and none is this row's.
+            if not my_held.is_empty() and _player_knows_star_pitch(at_star) and at_star < _host._repeat_count.size() \
+                    and int(_host._repeat_count[at_star]) >= 0 and their_held.size() >= int(_host._repeat_count[at_star]) + 1:
+                star_ruled_out_by_notes[at_star] = true
+
     for s in _host._star_count:
         if _star_elim_state_for_record(record_idx, s) == 2:
             continue
@@ -8166,6 +9711,10 @@ func _candidate_stars_for_record(record_idx: int) -> Array:
             var s_rep: int = int(_host._repeat_count[s])
             if (rep_confirmed >= 0 and rep_confirmed != s_rep) or _effective_repeat_state(record_idx, s_rep) == 2:
                 continue
+            if notes_matter and my_held.size() > s_rep + 1:
+                continue
+        if star_ruled_out_by_notes.has(s):
+            continue
         # Colour — always given.
         var sc: int = int(_host._star_colors[s]) if s < _host._star_colors.size() else -1
         if sc >= 0 and _effective_color_state(record_idx, sc) == 2:

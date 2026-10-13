@@ -388,7 +388,9 @@ func run() -> void:
 	dh._full_propagation_refresh()
 	eh = dh._get_or_create_match_record_for_name("Eos")
 	ok(dh._effective_repeat_state(eh, 0) == 2, "Eos, holding two notes, cannot be a star that never repeats (state %d)" % dh._effective_repeat_state(eh, 0))
-	ok(dh.hints_unavailable() and dh.hint_next_steps([]).is_empty(), "the hint finder is off on this board")
+	# (The finder was switched off on these boards for a few hours on
+	# 2026-10-12; it is back, re-based on notes -- see test_owner_hints.gd.)
+	ok(not dh.hints_unavailable() and dh.hint_next_steps([]).is_empty(), "the hint finder is on, and with no clues offers nothing")
 
 	# A star's map tag lists the notes the board has it firing on, no position.
 	var star0: int = dh._get_or_create_match_record_for_star_idx(0)
@@ -405,6 +407,25 @@ func run() -> void:
 		"Pitch and Name sit in two different columns of one row")
 	ok(pop._color_columns_box.get_parent() == left and pop._repeat_columns_box.get_parent() == left,
 		"Colour and Repeats share the left column with Pitch; Name has the right one")
+	# PITCH ROWS READ LOWEST FIRST whatever order the constellation's table
+	# stores them in (reported 2026-10-12 on the Phial: E5, second lowest, sat
+	# second from last and read as second highest). This board's table is
+	# deliberately out of order.
+	hosth._pitch_freqs = [523.25, 440.0, 493.88]   # C5, A4, B4
+	wh.clear_pitch_caches()
+	wh._open_staff_popup(5, Vector2.ZERO)
+	var pitch_order: Array = []
+	for col in pop._pitch_columns:
+		for prow in (col as Node).get_children():
+			pitch_order.append(str(prow.label_text))
+	ok(pitch_order == ["A4", "B4", "C5"], "the Staff popup lists pitches lowest first, down the columns (got %s)" % str(pitch_order))
+	pop.hide()
+	wh._open_pitch_checklist_popup(dh._get_or_create_match_record_for_name("Pyrios"), Vector2.ZERO)
+	var checklist_order: Array = []
+	for prow2 in hosth._pitch_checklist_popup.find_children("*", "StaffPopupRow", true, false):
+		checklist_order.append(str(prow2.label_text))
+	ok(checklist_order == ["A4", "B4", "C5"], "and so does the Classic 'Select Pitch' list (got %s)" % str(checklist_order))
+	hosth._pitch_checklist_popup.hide()
 	wh._open_staff_popup(5, Vector2.ZERO)
 	ok(pop._identity_row != null and pop._identity_row.get_parent() == pop._title_label.get_parent(),
 		"the 'Same star as note' row spans the full width above both columns")

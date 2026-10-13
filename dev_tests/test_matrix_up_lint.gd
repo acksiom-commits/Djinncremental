@@ -122,6 +122,22 @@ const ALLOW_STUB_BLIND := {
 	"_settle_group_sequence_bounds":
 		"requires star_idx >= 0 and reads only VISIBLE groups (colour, degree) "
 		+ "plus a pitch group gated on _player_knows_star_pitch",
+
+	# ── Added 2026-10-12 with the note rows (first notes hidden). Both were
+	# first written star-down and failed this lint; both were restated as ONE
+	# pass over the rows keyed by the NOTE before being listed here. ─────────
+	"_map_stars_ruling_out_note":
+		"includes stubs ON PURPOSE, one site: a stub's star_idx is its widget's "
+		+ "POSITION (definitional), and what is read off it is the player's own "
+		+ "note marks on that widget (melody_ticks / seq_note_blocks via "
+		+ "_repeat_note_state_for_record) plus a firing count gated on Listen "
+		+ "(_repeat_given_for_record); no Name or Pitch tier is touched",
+	"_candidate_stars_for_record":
+		"one site, the star_ruled_out_by_notes pass: reads each row's OWN "
+		+ "melody_ticks / seq_note_blocks and a count gated on "
+		+ "_player_knows_star_pitch. Stubs included on purpose for the same "
+		+ "reason as above: the map star's own widget is where the player marks "
+		+ "that star's notes before any name is known",
 }
 
 # ── PRE-EXISTING DEBT, found when this lint was introduced (2026-08-13). ───

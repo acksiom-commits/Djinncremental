@@ -329,6 +329,13 @@ func _host(melody: Array):
 	host._star_pitch_index = [0, 1, 2, 3]
 	host._sequence_rank_solution = [0, 1, 2, 3]
 	host._melody_seq_pos_sequence = melody
+	# SEAM ONLY since 2026-10-12: the checks that use this board read a rank
+	# pair table (ordinal_pair_set) against the board's firing-order positions.
+	# With the first notes hidden the board keeps no positions and that table
+	# is not judged at all (the same clue's firing_relation is, on the notes
+	# each row holds -- see test_owner_hints.gd), so this pins the older
+	# reading as the seam keeps it.
+	host._deduction.notes_hidden_enabled = false
 	host._widgets.clear_pitch_caches()
 	host._deduction._load_match_records([])
 	return host
