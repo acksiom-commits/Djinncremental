@@ -250,6 +250,15 @@ func _seq_first_tick(star: int) -> int:
 ## The Sequence descriptor's wording. `noun_phrase` true is "the star that fires
 ## 10th note"; false is the predicate "fires 10th note".
 func _seq_tick_phrase(star: int, noun_phrase: bool) -> String:
+    # A star that fires more than once is named by its FIRST note, and says so
+    # (author ruling 2026-10-14): "the star that first fires on note 5". The
+    # label then states a first note, and the proof reads it that way
+    # (ordinal_exact = first(s) = T; see FIRST NOTES HIDDEN).
+    if _star_ticks(star).size() > 1:
+        _note_repeat_verb(star, true)
+        if noun_phrase:
+            return "the star that first fires on note %d" % _seq_first_tick(star)
+        return "first fires on note %d" % _seq_first_tick(star)
     var ord_text: String = _ordinal(_seq_first_tick(star))
     if noun_phrase:
         return "the star that fires %s" % ord_text
@@ -1945,7 +1954,13 @@ func check_solution(candidate: Array) -> bool:
 # a player who is told the first notes, and may contain the ill-formed "first
 # fire" / "one of the firings of" wordings fixed on 2026-10-11 and -12. Those
 # puzzles regenerate.
-const CACHE_VERSION: int = 9
+#
+# version 10 (2026-10-14): a star that fires more than once is spoken of only by
+# the number of a firing. Labels say "the star that first fires on note T" (and
+# the proof reads every label as the star's FIRST note), "last" and "one of the
+# firings of" are gone, and window counts are only built for stars that fire
+# once. A version-9 puzzle was proven for the old meaning of its labels.
+const CACHE_VERSION: int = 10
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -4605,8 +4620,14 @@ func _firing_allowed_ranks(sel: Dictionary, lo: int, hi: int) -> Array:
 func _firing_sentence(label: String, sel: Dictionary, lo: int, hi: int) -> String:
     var dom: Array = _firing_domain(sel)
     var kind: String = str(sel["kind"])
+    # A repeating star's firings are named by their number (author ruling
+    # 2026-10-14): "first fires", "the second firing of", never "last" or
+    # "one of". The builders no longer draw k = -1 or j = -1; those values
+    # are still read (_firing_value) for puzzles cached before the change.
     if kind == "nth":
-        return "%s fires for the %s time %s." % [label, _firing_ordinal(int(sel["k"])), _firing_window_phrase(lo, hi)]
+        if int(sel["k"]) == 1:
+            return "%s first fires %s." % [label, _firing_window_phrase(lo, hi)]
+        return "The %s firing of %s is %s." % [_firing_ordinal(int(sel["k"])), label, _firing_window_phrase(lo, hi)]
     if kind == "count":
         var win: String = _firing_window_phrase(int(sel["lo"]), int(sel["hi"]))
         if lo == hi:
@@ -4631,7 +4652,7 @@ func _firing_sentence(label: String, sel: Dictionary, lo: int, hi: int) -> Strin
         gap = "at most %s" % _firing_notes_word(hi)
     else:
         gap = "between %d and %d notes" % [lo, hi]
-    return "The %s times %s fires are %s apart." % [pair, label, gap]
+    return "The %s firings of %s are %s apart." % [pair, label, gap]
 
 
 func _build_form_firing_position(chain: Dictionary) -> Dictionary:
@@ -4654,24 +4675,20 @@ func _build_form_firing_position(chain: Dictionary) -> Dictionary:
         return {}
     # Only the selectors this star can answer: a star that fires once has no
     # second firing and no span, so it is described by what it does in a window.
+    # A star that fires more than once is only ever spoken of by the number of
+    # a firing (author ruling 2026-10-14), so a window count ("fires twice from
+    # note 3 to note 9", "does not fire within...") is for single-firing stars.
     var kinds: Array = ["count"]
     if m >= 2:
-        kinds.append("nth")
-        kinds.append("span")
+        kinds = ["nth", "span"]
     var kind: String = str(kinds[_rng.randi_range(0, kinds.size() - 1)])
     var sel: Dictionary = {"kind": kind}
     if kind == "nth":
-        var ks: Array = []
-        for k in range(2, m + 1):
-            ks.append(k)
-        if m >= 3:
-            ks.append(-1)
-        sel["k"] = int(ks[_rng.randi_range(0, ks.size() - 1)])
+        sel["k"] = _rng.randi_range(2, m)
     elif kind == "span":
         var si: int = _rng.randi_range(1, m - 1)
-        var sj: int = _rng.randi_range(si + 1, m)
         sel["i"] = si
-        sel["j"] = -1 if (sj == m and _rng.randf() < 0.5) else sj
+        sel["j"] = _rng.randi_range(si + 1, m)
     else:
         var wa: int = 1
         var wb: int = n
@@ -4954,14 +4971,19 @@ func _firing_allowed_pairs(pick_a: Dictionary, pick_b: Dictionary, spec: Diction
     return out
 
 
-func _firing_random_pick(m: int, specific_only: bool) -> Dictionary:
-    var kinds: Array = ["first", "last"] if specific_only else ["any", "any", "first", "last"]
-    if m >= 2:
-        kinds.append("nth")
-    var kind: String = str(kinds[_rng.randi_range(0, kinds.size() - 1)])
-    if kind == "nth":
-        return {"kind": "nth", "k": _rng.randi_range(2, m)}
-    return {"kind": kind}
+## A specific firing, by its number (author ruling 2026-10-14: no "one of the
+## firings of", and "last" is said as its number). `_specific_only` is kept for
+## the callers; every pick is specific now.
+func _firing_random_pick(m: int, _specific_only: bool) -> Dictionary:
+    var k: int = _rng.randi_range(1, maxi(1, m))
+    return _firing_pick_for_index(k)
+
+
+## The pick for a star's k-th firing (1-based): "first" or {"nth", k}.
+func _firing_pick_for_index(k: int) -> Dictionary:
+    if k <= 1:
+        return {"kind": "first"}
+    return {"kind": "nth", "k": k}
 
 
 ## `star` is the star the label names. "One of the firings of", "the first
@@ -5045,9 +5067,23 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
     if ticks_a.is_empty() or ticks_b.is_empty():
         return {}
     var neg: bool = mode == "free" and _rng.randf() < 0.2
-    var pick_a: Dictionary = {"kind": "any"}
-    var pick_b: Dictionary = {"kind": "any"}
-    if mode != "adjacent":
+    var pick_a: Dictionary
+    var pick_b: Dictionary
+    if mode == "adjacent":
+        # One real pair of neighbouring notes, each named by which of its
+        # star's firings it is ("the second firing of A is immediately after
+        # the first firing of B"), never "one of the firings of".
+        var beside_pairs: Array = []
+        for ka in ticks_a.size():
+            for kb in ticks_b.size():
+                if absi(int(ticks_a[ka]) - int(ticks_b[kb])) == 1:
+                    beside_pairs.append([ka + 1, kb + 1])
+        if beside_pairs.is_empty():
+            return {}
+        var bp: Array = beside_pairs[_rng.randi_range(0, beside_pairs.size() - 1)]
+        pick_a = _firing_pick_for_index(int(bp[0]))
+        pick_b = _firing_pick_for_index(int(bp[1]))
+    else:
         pick_a = _firing_random_pick(ticks_a.size(), neg or mode == "offset")
         pick_b = _firing_random_pick(ticks_b.size(), neg or mode == "offset")
     # A star that fires once has one firing: its first. The fact says so, and
@@ -9979,13 +10015,17 @@ func _solve_notes(seq_facts: Array, cap: int = 2, source_clues = null) -> Array:
 # Given (like pitch, through Listen): how many times each star fires.
 #
 # What each fact means here, read off the sentence the player sees. T(r) is
-# the note number a Sequence label prints for rank r ("the star that fires
-# T-th note") -- a number in the clue text, not a statement that the note is a
-# first firing. first(s) is the earliest note s is assigned in the answer being
-# tried, whatever that turns out to be.
-#   ordinal_exact s r        s fires on note T(r)
-#   ordinal_neg s r          s does not fire on note T(r)
-#   ordinal_either_or        s fires on note T(r1) or on note T(r2)
+# the note number a Sequence label prints for rank r. first(s) is the earliest
+# note s is assigned in the answer being tried.
+#
+# LABELS SAY "FIRST" (author ruling 2026-10-14, reversing 2026-10-12 for
+# labels only): a star that fires more than once is labelled "the star that
+# first fires on note T", one that fires once "the star that fires T-th note",
+# which is its first note too. So a label states a first note, and first notes
+# become public wherever a label is printed.
+#   ordinal_exact s r        first(s) = T(r)
+#   ordinal_neg s r          first(s) != T(r)  (s may still fire there later)
+#   ordinal_either_or        first(s) is T(r1) or T(r2)
 #   ordinal_range s lo hi    T(lo) <= first(s) <= T(hi)   (open ends dropped)
 #   ordinal_cmp / _chain     first(a) against first(b)
 #   ordinal_extreme / _count_before   first(s) against its neighbours' firsts
@@ -10030,11 +10070,13 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
     var before: Array = []        # stars that must have begun before this one does
     var counts_at_begin: Array = []
     var unary: Array = []
+    var not_first_at: Array = []  # notes a star may not BEGIN on (ordinal_neg)
     for _s in star_count:
         deadline.append(n_notes)
         before.append([])
         counts_at_begin.append([])
         unary.append([])
+        not_first_at.append([])
     var binary: Array = []
     var at_leaf: Array = []
     var window_end: Array = []    # note -> the count facts whose window ends there
@@ -10044,10 +10086,18 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
         var fd: Dictionary = f
         match str(fd.get("kind", "")):
             "ordinal_exact":
-                allowed[int(label_note[int(fd["r"])])] &= 1 << int(fd["s"])
+                # first(s) = T: s fires on T and on no note before it.
+                var te: int = int(label_note[int(fd["r"])])
+                allowed[te] &= 1 << int(fd["s"])
+                for t_early in range(1, te):
+                    allowed[t_early] &= ~(1 << int(fd["s"]))
             "ordinal_neg":
-                allowed[int(label_note[int(fd["r"])])] &= ~(1 << int(fd["s"]))
+                (not_first_at[int(fd["s"])] as Array).append(int(label_note[int(fd["r"])]))
             "ordinal_either_or":
+                # first(s) is one of two notes: nothing earlier than the lower.
+                var t_lo: int = mini(int(label_note[int(fd["r1"])]), int(label_note[int(fd["r2"])]))
+                for t_early2 in range(1, t_lo):
+                    allowed[t_early2] &= ~(1 << int(fd["s"]))
                 at_leaf.append(fd)
             "ordinal_range":
                 var rs: int = int(fd["s"])
@@ -10128,6 +10178,7 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
         "room": room, "window_end": window_end,
         "n": n_notes, "need": need, "allowed": allowed, "deadline": deadline, "before": before,
         "counts_at_begin": counts_at_begin, "unary": unary, "binary": binary, "at_leaf": at_leaf,
+        "not_first_at": not_first_at,
         "label_note": label_note, "cap": cap,
         "first": [], "notes": [], "owners": [], "solutions": [],
     }
@@ -10270,6 +10321,8 @@ func _note_owner_place(t: int, s_try: int, st: Dictionary) -> bool:
         if begins:
             if t > int(deadline[s]):
                 continue
+            if ((st["not_first_at"] as Array)[s] as Array).has(t):
+                continue
             for b in (st["before"] as Array)[s]:
                 if int(first[int(b)]) == 0:
                     ok = false
@@ -10347,8 +10400,8 @@ func _note_owner_leaf_ok(st: Dictionary) -> bool:
         match str(f["kind"]):
             "ordinal_either_or":
                 var s: int = int(f["s"])
-                if int(owners[int(label_note[int(f["r1"])]) - 1]) != s \
-                        and int(owners[int(label_note[int(f["r2"])]) - 1]) != s:
+                var s_first: int = owners.find(s) + 1
+                if s_first != int(label_note[int(f["r1"])]) and s_first != int(label_note[int(f["r2"])]):
                     return false
             _:
                 if ranks.is_empty():
@@ -10499,16 +10552,21 @@ func _repair_note_owners(sequence_solver_facts: Array, name_revealed: Array,
     return added
 
 
-## "<Name> fires on note <tick>." -- a Firing Position clue with a one-note
-## window, built for the star that really fires there.
+## "The second firing of <Name> is on note <tick>." -- a Firing Position clue
+## naming which of the star's firings the note is (author ruling 2026-10-14),
+## built for the star that really fires there.
 func _commit_repeat_pin(tick: int, sequence_solver_facts: Array, name_revealed: Array,
         tier_counts: Dictionary, form_counts: Dictionary) -> bool:
     var star: int = int(melody_star_sequence[tick - 1])
+    var k: int = _star_ticks(star).find(tick) + 1
+    var sel: Dictionary = {"kind": "nth", "k": k}
+    if _star_ticks(star).size() <= 1:
+        sel = {"kind": "count", "lo": tick, "hi": tick}   # its only firing: "fires on note T"
     for id_cat in [Category.NAME, Category.SEQUENCE]:
         _rendered_terms = {}
         _rendered_repeat_verbs = {}
         var result: Dictionary = _firing_position_hidden_result({"cat": int(id_cat), "star": star},
-            {"kind": "count", "lo": tick, "hi": tick}, 1, 1, false)
+            sel, tick if sel["kind"] == "nth" else 1, tick if sel["kind"] == "nth" else 1, false)
         if _commit_clue_result(FIRING_POSITION_FORM_ID, result, sequence_solver_facts,
                 name_revealed, tier_counts, form_counts):
             return true

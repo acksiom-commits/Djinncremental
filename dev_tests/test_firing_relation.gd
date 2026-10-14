@@ -298,6 +298,8 @@ func _judge(g, clue: Dictionary, tally: Dictionary, stored: bool = false) -> Str
 	tally["left_any" if bool(p["left"]["any"]) else "left_specific"] = int(tally.get("left_any" if bool(p["left"]["any"]) else "left_specific", 0)) + 1
 	tally["right_any" if bool(p["right"]["any"]) else "right_specific"] = int(tally.get("right_any" if bool(p["right"]["any"]) else "right_specific", 0)) + 1
 	tally["dir_before" if int(p["dir"]) < 0 else "dir_after"] = int(tally.get("dir_before" if int(p["dir"]) < 0 else "dir_after", 0)) + 1
+	if str(clue["text"]).contains("the last firing of"):
+		tally["last_wording"] = int(tally.get("last_wording", 0)) + 1
 	return ""
 
 
@@ -406,8 +408,13 @@ func run() -> void:
 
 	print("\n=== the variety is real ===")
 	for key in ["shape_immediately", "shape_exactly", "shape_atleast", "shape_within", "pos", "neg",
-			"left_any", "left_specific", "right_any", "right_specific", "dir_before", "dir_after", "only_wording"]:
+			"left_specific", "right_specific", "dir_before", "dir_after", "only_wording"]:
 		ok(int(tally.get(key, 0)) > 0, "drawn at least once: %s (%d)" % [key, int(tally.get(key, 0))])
+	# 2026-10-14: a repeating star's firing is always named by its number, so
+	# "one of the firings of" and "the last firing of" are never built.
+	ok(int(tally.get("left_any", 0)) == 0 and int(tally.get("right_any", 0)) == 0,
+		"'one of the firings of' never appears (%d, %d)" % [int(tally.get("left_any", 0)), int(tally.get("right_any", 0))])
+	ok(int(tally.get("last_wording", 0)) == 0, "'the last firing of' never appears (%d)" % int(tally.get("last_wording", 0)))
 
 	print("\n=== the judge is not vacuous ===")
 	var gj = _beginner_puzzle(0, 11)

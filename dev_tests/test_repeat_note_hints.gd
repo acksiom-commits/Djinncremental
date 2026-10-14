@@ -174,9 +174,10 @@ func run() -> void:
 			# Wording that presupposes a star firing more than once: the "first"
 			# forms, and (2026-10-12) a Firing Relation's "one of the firings of"
 			# / "the first|last|second firing of" -- a star that fires once reads
-			# "the only firing of" there instead.
+			# "the only firing of" there instead. (2026-10-14: a sentence may now open
+			# with it -- "The second firing of X is..." -- hence either capital.)
 			var plural_firing: bool = text.contains("firings of") \
-				or RegEx.create_from_string("the (first|last|second|third|fourth|fifth|sixth) firing of").search(text) != null
+				or RegEx.create_from_string("[Tt]he (first|last|second|third|fourth|fifth|sixth) firing of").search(text) != null
 			var has_first: bool = text.contains("first fire") or text.contains("first-firing") or text.contains("first note") or plural_firing
 			if says_repeats > 0 and not has_first:
 				wording_mismatch.append("credited 'repeats' with no 'first' wording: %s" % text)

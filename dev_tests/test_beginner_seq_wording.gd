@@ -2,12 +2,12 @@ extends "res://dev_tests/test_base.gd"
 # Beginner (repeating-melody) Sequence wording, in staff NOTES.
 #
 # A star's Sequence value is its rank among the stars; the staff counts melody
-# notes, and a repeating star owns several of them. The melody's repeat shape
-# is public (the staff draws it), so a clue may name a star by ANY one of its
-# notes -- "the star that fires 12th note" is the star at note 12 -- and the
-# wording stays honest as long as order claims say "first fires" when a star in
-# them fires more than once. A 1:1 melody (every hard-mode constellation) must
-# keep the original wording byte-for-byte.
+# notes, and a repeating star owns several of them. A label names a star by its
+# FIRST note, and since 2026-10-14 says so when the star fires more than once:
+# "the star that first fires on note 5"; a star that fires once stays "the star
+# that fires 12th note". Order claims say "first fires" when a star in them
+# fires more than once. A 1:1 melody (every hard-mode constellation) must keep
+# the original wording byte-for-byte.
 #
 # What must hold, and why each case exists:
 #  - Every Sequence label prints a note that really belongs to the star (the
@@ -123,13 +123,17 @@ func run() -> void:
 		if tick != int(g.sequence_rank_solution[s]) + 1:
 			rank_differs += 1
 		var want: String = "the star that fires %s" % PuzzleScript._ordinal(tick)
+		var want_pred: String = "fires %s" % PuzzleScript._ordinal(tick)
+		if g._star_ticks(s).size() > 1:   # 2026-10-14: a repeating star is named by its FIRST note, and says so
+			want = "the star that first fires on note %d" % tick
+			want_pred = "first fires on note %d" % tick
 		if g._characteristic_label({"cat": PuzzleScript.Category.SEQUENCE, "star": s}) != want:
 			bad_label += 1
-		if g._characteristic_predicate({"cat": PuzzleScript.Category.SEQUENCE, "star": s}) != "fires %s" % PuzzleScript._ordinal(tick):
+		if g._characteristic_predicate({"cat": PuzzleScript.Category.SEQUENCE, "star": s}) != want_pred:
 			bad_pred += 1
 	ok(rank_differs > 0, "fixture has a star whose first note is not rank + 1 (%d), so the old rank wording is not accidentally right here" % rank_differs)
 	ok(bad_note == 0, "every label names a note the melody really gives that star (%d wrong)" % bad_note)
-	ok(bad_label == 0, "every Sequence label reads 'the star that fires <its first note>' (%d wrong)" % bad_label)
+	ok(bad_label == 0, "every Sequence label reads 'the star that [first] fires <its first note>' (%d wrong)" % bad_label)
 	ok(bad_pred == 0, "every Sequence predicate reads 'fires <its first note>' (%d wrong)" % bad_pred)
 
 	print("\n=== hard mode is byte-identical to the original wording ===")
@@ -360,7 +364,7 @@ func run() -> void:
 	var adj_b: Array = _draw(g, "_build_form_adjacency", 300)
 	var adj_plain: int = 0
 	for c8 in adj_b:
-		if str(c8["text"]).contains("immediately after") and not str(c8["text"]).contains("first fires"):
+		if str(c8["text"]).contains("immediately after"):
 			adj_plain += 1
 	ok(adj_b.size() > 0, "Beginner Adjacency is back, as melody adjacency (%d clues)" % adj_b.size())
 	ok(adj_b.size() == 0 or adj_plain + _count_containing(adj_b, "immediately before") == adj_b.size(), "every Beginner Adjacency clue says 'immediately after/before'")
@@ -374,6 +378,7 @@ func run() -> void:
 	host._star_count = g.star_count
 	host._sequence_rank_solution = g.sequence_rank_solution.duplicate()
 	host._melody_seq_pos_sequence = g.melody_seq_pos_sequence.duplicate()
+	host._repeat_count = g.repeat_count.duplicate()
 	var d = host._deduction
 	var w = host._widgets
 	ok(d._seq_repeats(), "the deduction engine sees the same repeating melody")
@@ -409,4 +414,4 @@ func _rep(g, star: int) -> bool:
 
 
 func _is_seq_label(label: String) -> bool:
-	return label.begins_with("the star that fires")
+	return label.begins_with("the star that fires") or label.begins_with("the star that first fires")

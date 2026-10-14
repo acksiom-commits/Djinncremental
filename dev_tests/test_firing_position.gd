@@ -119,12 +119,27 @@ func _window(w: String, n: int) -> Array:
 ## Parse one Firing Position sentence into {kind, shape, value: Callable(ticks)->int
 ## (-1 undefined), lo, hi}. {} when it is not one of the generator's shapes.
 func _parse(text: String, n: int) -> Dictionary:
-	var m = RegEx.create_from_string("^(.+) fires for the (\\w+) time (.+)\\.$").search(text)
-	if m and ORDS.has(m.get_string(2)):
-		var win: Array = _window(m.get_string(3), n)
-		if win.is_empty():
-			return {}
-		var k: int = int(ORDS[m.get_string(2)])
+	# 2026-10-14: a repeating star's firing is named by its number --
+	# "The second firing of X is on note 14." / "X first fires on note 5."
+	var m = RegEx.create_from_string("^The (\\w+) firing of (.+) is (.+)\\.$").search(text)
+	var nth_label: String = ""
+	var nth_ord: String = ""
+	var nth_win: String = ""
+	if m:
+		nth_ord = m.get_string(1)
+		nth_label = m.get_string(2)
+		nth_win = m.get_string(3)
+	else:
+		m = RegEx.create_from_string("^(.+) first fires (.+)\\.$").search(text)
+		if m:
+			nth_ord = "first"
+			nth_label = m.get_string(1)
+			nth_win = m.get_string(2)
+	# (A span sentence about "the star that first fires on note 5" also contains
+	# "first fires"; its "window" does not parse, so it falls through to below.)
+	if m and ORDS.has(nth_ord) and not _window(nth_win, n).is_empty():
+		var win: Array = _window(nth_win, n)
+		var k: int = int(ORDS[nth_ord])
 		var shape: String = "exact" if win[0] == win[1] else ("prefix" if win[0] == 1 else ("suffix" if win[1] == n else "interval"))
 		var nth_fn: Callable = func(t: Array) -> int:
 			var kk: int = t.size() if k == -1 else k
@@ -132,8 +147,8 @@ func _parse(text: String, n: int) -> Dictionary:
 				return int(t[kk - 1])
 			return -1
 		return {"kind": "nth", "shape": shape, "last": k == -1, "lo": win[0], "hi": win[1], "value": nth_fn,
-			"label": m.get_string(1)}
-	m = RegEx.create_from_string("^The (\\w+) and (\\w+) times (.+) fires are (.+) apart\\.$").search(text)
+			"label": nth_label}
+	m = RegEx.create_from_string("^The (\\w+) and (\\w+) firings of (.+) are (.+) apart\\.$").search(text)
 	if m and ORDS.has(m.get_string(1)) and ORDS.has(m.get_string(2)):
 		var i: int = int(ORDS[m.get_string(1)])
 		var j: int = int(ORDS[m.get_string(2)])
@@ -298,6 +313,10 @@ func _judge(g, clue: Dictionary, tally: Dictionary, stored: bool = false) -> Str
 			return "a Sequence label should disclose exactly the subject's rank"
 	elif not exacts.is_empty():
 		return "a non-Sequence label should disclose no rank"
+	if str(p["kind"]) == "count" and g._star_ticks(subject).size() > 1:
+		return "a window count about a star that fires more than once (it must name a firing by number): %s" % str(clue["text"])
+	if bool(p["last"]):
+		return "'last' is said as its number now: %s" % str(clue["text"])
 	tally["kind_" + str(p["kind"])] = int(tally.get("kind_" + str(p["kind"]), 0)) + 1
 	tally["shape_" + str(p["kind"]) + "_" + str(p["shape"])] = int(tally.get("shape_" + str(p["kind"]) + "_" + str(p["shape"]), 0)) + 1
 	if bool(p["last"]):
@@ -399,9 +418,12 @@ func run() -> void:
 	ok(active_cids.size() >= 2, "more than one constellation exercised (%d)" % active_cids.size())
 
 	print("\n=== the variety is real, not one shape repeated ===")
-	for key in ["kind_nth", "kind_count", "kind_span", "last", "name_subject", "seq_subject",
+	# Since 2026-10-14 window counts are only built for stars that fire once,
+	# where "at least" is never drawn, and "last" is said as its number: neither
+	# is a shape to require any more (the judge rejects both).
+	for key in ["kind_nth", "kind_count", "kind_span", "name_subject", "seq_subject",
 			"shape_nth_exact", "shape_nth_prefix", "shape_nth_suffix", "shape_nth_interval",
-			"shape_count_zero", "shape_count_exactly", "shape_count_atleast", "shape_count_atmost", "shape_count_between",
+			"shape_count_zero", "shape_count_exactly", "shape_count_atmost", "shape_count_between",
 			"shape_span_exactly", "shape_span_atleast", "shape_span_atmost", "shape_span_between"]:
 		ok(int(tally.get(key, 0)) > 0, "drawn at least once: %s (%d)" % [key, int(tally.get(key, 0))])
 
@@ -411,15 +433,15 @@ func run() -> void:
 	for i in 400:
 		gj._rendered_terms = {}
 		var c: Dictionary = gj._build_form(25, {})
-		if not c.is_empty() and str(c["text"]).contains(" fires at least "):
+		if not c.is_empty() and str(c["text"]).contains(" at least "):
 			sample = c
 			break
 	ok(not sample.is_empty(), "found a sample clue to tamper with")
 	if not sample.is_empty():
 		ok(_judge(gj, sample, {}) == "", "the untouched sample passes")
 		var bad_fact: Dictionary = sample.duplicate(true)
-		(bad_fact["value_facts"] as Array)[0]["lo"] = 0
-		ok(_judge(gj, bad_fact, {}) != "", "widening the fact to 'at least 0 times' is caught")
+		(bad_fact["value_facts"] as Array)[0]["lo"] = int((bad_fact["value_facts"] as Array)[0]["hi"])
+		ok(_judge(gj, bad_fact, {}) != "", "moving the fact's lower bound up to its upper bound is caught")
 		var bad_text: Dictionary = sample.duplicate(true)
 		bad_text["text"] = str(sample["text"]).replace(" at least ", " at most ")
 		ok(_judge(gj, bad_text, {}) != "", "flipping 'at least' to 'at most' in the sentence is caught")

@@ -86,13 +86,15 @@ func _pick(ticks: Array, pick: Dictionary) -> Array:
 ## (ascending). `label` = the note number a Sequence label prints for a rank.
 func _fact_ok(fd: Dictionary, notes: Array, label: Array) -> bool:
 	match str(fd.get("kind", "")):
-		"ordinal_exact":      # "s is the star that fires T-th note"
-			return (notes[int(fd["s"])] as Array).has(int(label[int(fd["r"])]))
-		"ordinal_neg":        # "s is not the star that fires T-th note"
-			return not (notes[int(fd["s"])] as Array).has(int(label[int(fd["r"])]))
+		# A label names a star by its FIRST note (2026-10-14): "the star that
+		# first fires on note T", or "fires T-th note" for a star that fires once.
+		"ordinal_exact":      # "s is the star that first fires on note T"
+			return int(notes[int(fd["s"])][0]) == int(label[int(fd["r"])])
+		"ordinal_neg":        # "s is not the star that first fires on note T"
+			return int(notes[int(fd["s"])][0]) != int(label[int(fd["r"])])
 		"ordinal_either_or":
-			var mine: Array = notes[int(fd["s"])]
-			return mine.has(int(label[int(fd["r1"])])) or mine.has(int(label[int(fd["r2"])]))
+			var f_e: int = int(notes[int(fd["s"])][0])
+			return f_e == int(label[int(fd["r1"])]) or f_e == int(label[int(fd["r2"])])
 		"ordinal_range":      # "first fires within the first T notes" / "no earlier than note T"
 			var f0: int = int((notes[int(fd["s"])] as Array)[0])
 			if int(fd["lo"]) > 0 and f0 < int(label[int(fd["lo"])]):

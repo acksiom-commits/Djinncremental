@@ -159,11 +159,22 @@ func run() -> void:
 	ok(_step_for(cmp_steps, "Beta").get("cannot_ticks", []) == [1] and _step_for(cmp_steps, "Alpha").is_empty(),
 		"'Beta first fires after Alpha': Beta cannot fire on note 1, and nothing is said of Alpha")
 
+	# "Alpha is either the star that fires 1st note or the star that fires 5th
+	# note." The clue's encoding also carries each label's own fact ("the star
+	# that fires 1st note" IS star 0, the true option). Read against Alpha's
+	# Name row that would give the answer away: the clue only says one of the two.
+	var c_either: Dictionary = _clue("Alpha is either the star that fires 1st note or the star that fires 5th note.", ["N:Alpha", "S:1", "S:5"],
+		[{"kind": "ordinal_exact", "s": 0, "r": 0}, {"kind": "ordinal_exact", "s": 3, "r": 3},
+			{"kind": "ordinal_either_or", "s": 0, "r1": 0, "r2": 3}])
+	var either_steps: Array = _note_steps(d, [c_either])
+	ok(_step_for(either_steps, "Alpha").get("must_ticks", []) == [],
+		"'Alpha is either note 1's star or note 5's star' does not say which: no 'must fire on note 1' (got %s)" % str(_step_for(either_steps, "Alpha").get("must_ticks", [])))
+
 	print("\n=== a star the clue gives no way to find yields no step ===")
 	var c_blind: Dictionary = _clue("(no descriptor for star 0)", [], [pin_alpha_6])
 	ok(_note_steps(d, [c_blind]).is_empty(), "the same fact with no descriptor in the clue's own terms: no step")
-	var c_bynote: Dictionary = _clue("The star that fires 1st note fires on note 6.", ["S:1"], [pin_alpha_6])
-	var st_note: Dictionary = _step_for(_note_steps(d, [c_bynote]), "the star that fires 1st note")
+	var c_bynote: Dictionary = _clue("The star that first fires on note 1 fires on note 6.", ["S:1"], [pin_alpha_6])
+	var st_note: Dictionary = _step_for(_note_steps(d, [c_bynote]), "the star that first fires on note 1")
 	ok(not st_note.is_empty() and st_note["must_ticks"] == [6] and str(st_note["row_kind"]) == "note" and int(st_note["row_key"]) == 1,
 		"named only by a note, the step is about that note's own entry: note 1's star must fire on note 6")
 
@@ -235,8 +246,8 @@ func run() -> void:
 	ok(both.size() == 1 and wm._step_sentence(both[0]) == "With what you know, Alpha cannot fire on notes 3 and 4.",
 		"said as '%s'" % (wm._step_sentence(both[0]) if both.size() > 0 else ""))
 	# A third clue that adds nothing to that conclusion is not named.
-	var c_idle: Dictionary = _clue("Beta is not the star that fires 6th note.", ["N:Beta", "S:6"],
-		[{"kind": "ordinal_neg", "s": 1, "r": 3}])
+	var c_idle: Dictionary = _clue("Beta is not the star that first fires on note 1.", ["N:Beta", "S:1"],
+		[{"kind": "ordinal_neg", "s": 1, "r": 0}])
 	var with_idle: Array = dm.hint_next_steps([c_a, c_idle, c_b])
 	var only_singles: bool = true
 	for wi in with_idle:

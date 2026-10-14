@@ -6682,6 +6682,16 @@ func _label_note_for_star(star: int) -> int:
     return _label_note_for_rank0(int(_host._sequence_rank_solution[star]))
 
 
+## A clue's note label, worded as the generator prints it
+## (ConstellationLogicPuzzle._seq_tick_phrase): "the star that first fires on
+## note 5" for a star that fires more than once, else "the star that fires 15th
+## note".
+func _label_phrase_for_star(star: int, t_label: int) -> String:
+    if star >= 0 and star < _host._repeat_count.size() and int(_host._repeat_count[star]) > 0:
+        return "the star that first fires on note %d" % t_label
+    return "the star that fires %s" % ConstellationLogicPuzzle._ordinal(t_label)
+
+
 ## Does exactly one map star have this star's colour / (Listened) pitch? Only
 ## then does "the red star" point the player at one row.
 func _star_alone_in_group(star: int, cat: int) -> bool:
@@ -6748,7 +6758,7 @@ func _owner_frame(star: int, clue = null) -> Dictionary:
         rec = _find_match_record_by_star_idx(star)
         visible_star = true
     elif t_label > 0 and (clue == null or terms.has("S:%d" % t_label)):
-        label = "the star that fires %s" % ConstellationLogicPuzzle._ordinal(t_label)
+        label = _label_phrase_for_star(star, t_label)
         rec = _find_match_record_by_melody_tick(t_label)
         own_note = t_label
     if label == "":
@@ -6760,6 +6770,8 @@ func _owner_frame(star: int, clue = null) -> Dictionary:
         var state: int = _repeat_note_state_for_record(rec, t) if rec >= 0 else 0
         if t == own_note:
             state = 1
+        elif own_note > 0 and t < own_note:
+            state = 2   # the label names this star by its FIRST note (2026-10-14)
         if state == 1:
             held.append(t)
         elif state == 0:
@@ -6882,16 +6894,18 @@ func _owner_sets(frame: Dictionary) -> Dictionary:
 func _owner_unary_holds(solver, _star: int, notes: Array, facts: Array) -> bool:
     for f in facts:
         var fd: Dictionary = f
+        # Labels name a star by its FIRST note (2026-10-14: "the star that
+        # first fires on note T"), so these three are about notes[0].
         match str(fd["kind"]):
             "ordinal_exact":
-                if not notes.has(_label_note_for_rank0(int(fd["r"]))):
+                if int(notes[0]) != _label_note_for_rank0(int(fd["r"])):
                     return false
             "ordinal_neg":
-                if notes.has(_label_note_for_rank0(int(fd["r"]))):
+                if int(notes[0]) == _label_note_for_rank0(int(fd["r"])):
                     return false
             "ordinal_either_or":
-                if not notes.has(_label_note_for_rank0(int(fd["r1"]))) \
-                        and not notes.has(_label_note_for_rank0(int(fd["r2"]))):
+                if int(notes[0]) != _label_note_for_rank0(int(fd["r1"])) \
+                        and int(notes[0]) != _label_note_for_rank0(int(fd["r2"])):
                     return false
             "ordinal_range":
                 var first: int = int(notes[0])
@@ -6928,10 +6942,27 @@ func _owner_facts_of(clue: Dictionary) -> Dictionary:
     var unary: Dictionary = {}
     var binary: Array = []
     var stars: Dictionary = {}
+    # "X is either the star that fires 5th note or the star that fires 15th
+    # note" also carries each LABEL's own fact, and the true option's label is
+    # X itself: "X fires on note 5". Read against X's row that is the answer to
+    # the either/or, which the clue does not give. Those label facts are left
+    # out for the either/or's own subject; the either/or fact says what the
+    # clue says.
+    var either_label_ranks: Dictionary = {}   # star -> {rank0: true}
+    for f0 in (clue["disclosures"] if clue.get("disclosures") is Array else []):
+        if f0 is Dictionary and str((f0 as Dictionary).get("kind", "")) == "ordinal_either_or":
+            var es: int = int(f0.get("s", -1))
+            if not either_label_ranks.has(es):
+                either_label_ranks[es] = {}
+            either_label_ranks[es][int(f0.get("r1", -1))] = true
+            either_label_ranks[es][int(f0.get("r2", -1))] = true
     for f in (clue["disclosures"] if clue.get("disclosures") is Array else []):
         if not (f is Dictionary):
             continue
         var fd: Dictionary = f
+        if str(fd.get("kind", "")) == "ordinal_exact" and either_label_ranks.has(int(fd.get("s", -1))) \
+                and (either_label_ranks[int(fd.get("s", -1))] as Dictionary).has(int(fd.get("r", -1))):
+            continue
         var one: int = -1
         match str(fd.get("kind", "")):
             "ordinal_exact", "ordinal_neg", "ordinal_either_or", "ordinal_range", "firing_position":
@@ -6965,13 +6996,30 @@ func _owner_direct_verdict(frame: Dictionary, facts: Array) -> Dictionary:
         var fd: Dictionary = f
         match str(fd["kind"]):
             "ordinal_exact":
+                # Its first note: it fires there and on nothing earlier.
                 var t: int = _label_note_for_rank0(int(fd["r"]))
                 if open.has(t) and not must.has(t):
                     must.append(t)
+                for o0 in open:
+                    if int(o0) < t and not cannot.has(int(o0)):
+                        cannot.append(int(o0))
             "ordinal_neg":
+                # Not its FIRST note. It could still fire there later -- unless
+                # it fires only once, or no earlier note is left for it (then
+                # a firing on note T would be its first).
                 var tn: int = _label_note_for_rank0(int(fd["r"]))
-                if open.has(tn) and not cannot.has(tn):
+                var earlier_left: bool = false
+                for e in (frame["held"] as Array) + open:
+                    if int(e) < tn:
+                        earlier_left = true
+                        break
+                if (frame.get("counts", []) == [1] or not earlier_left) and open.has(tn) and not cannot.has(tn):
                     cannot.append(tn)
+            "ordinal_either_or":
+                var t_lo: int = mini(_label_note_for_rank0(int(fd["r1"])), _label_note_for_rank0(int(fd["r2"])))
+                for o1 in open:
+                    if int(o1) < t_lo and not cannot.has(int(o1)):
+                        cannot.append(int(o1))
             "ordinal_range":
                 if int(fd["lo"]) > 0:
                     var floor_note: int = _label_note_for_rank0(int(fd["lo"]))
@@ -8053,13 +8101,20 @@ func _note_fact_entailed_picked(f: Dictionary) -> Dictionary:
             # Count unknown: only what the row's own notes settle outright.
             var held: Array = fr["held"]
             var open: Array = fr["open"]
+            # The row's first note is settled when its earliest possible note
+            # is one it holds; labels are about that first note (2026-10-14).
+            var first_settled: int = -1
+            if not (held + open).is_empty() and held.has(int((held + open).min())):
+                first_settled = int((held + open).min())
             match kind:
                 "ordinal_exact":
-                    return {"known": true, "value": held.has(_label_note_for_rank0(int(f["r"])))}
+                    return {"known": true, "value": first_settled == _label_note_for_rank0(int(f["r"]))}
                 "ordinal_neg":
-                    return {"known": true, "value": (fr["ruled"] as Array).has(_label_note_for_rank0(int(f["r"])))}
+                    var tn: int = _label_note_for_rank0(int(f["r"]))
+                    var held_earlier: bool = not held.is_empty() and int(held.min()) < tn
+                    return {"known": true, "value": (fr["ruled"] as Array).has(tn) or held_earlier}
                 "ordinal_either_or":
-                    return {"known": true, "value": held.has(_label_note_for_rank0(int(f["r1"]))) or held.has(_label_note_for_rank0(int(f["r2"])))}
+                    return {"known": true, "value": first_settled > 0 and (first_settled == _label_note_for_rank0(int(f["r1"])) or first_settled == _label_note_for_rank0(int(f["r2"])))}
                 "ordinal_range":
                     var good: bool = true
                     if int(f["lo"]) > 0:
@@ -9373,6 +9428,9 @@ func _seq_ord(rank1: int) -> String:
 
 ## "the star that fires 10th note".
 func _seq_noun(rank1: int) -> String:
+    var star: int = _host._sequence_rank_solution.find(rank1 - 1)
+    if star >= 0 and _seq_repeats():
+        return _label_phrase_for_star(star, _first_tick_for_rank(rank1))
     return "the star that fires %s" % _seq_ord(rank1)
 
 
