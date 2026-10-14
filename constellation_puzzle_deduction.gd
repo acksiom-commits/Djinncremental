@@ -1661,14 +1661,41 @@ func _new_match_record(overrides: Dictionary = {}) -> Dictionary:
     return r
 
 
+## TEST SEAM: true = the behaviour before 2026-10-13, where a colour slot could
+## adopt a map star's own widget record. Only so a test can show the fault.
+var color_slot_adopts_star_widgets: bool = false
+
+
 func _get_or_create_match_record_for_color_slot(color_idx: int, position_in_group: int) -> int:
     var label: String = "%s %s" % [_host.COLOR_NAME_LABELS[color_idx], _slot_letter(position_in_group)]
+    # A SLOT OF A SHARED COLOUR IS NEVER A MAP STAR'S OWN WIDGET RECORD
+    # (reported 2026-10-13: "Color Slots are being assigned to specific stars
+    # again"). "Blue A" is anonymous -- a row for SOME blue star -- and the
+    # adoption below ("a record already known to be blue takes a blue slot")
+    # was handing it the record the Star Map keeps for one particular blue
+    # star. That record came to look "known to be blue" on 2026-10-12, when
+    # placing a note on a star's widget started merging the note's record into
+    # it: every merge ends by writing the star's true colour into the target
+    # (_sync_color_states_from_star_idx). The slot then WAS that star, and
+    # another blue star's data entered into it clashed with the first star's
+    # pitch and count.
+    #
+    # So such a record is neither adopted nor, if an earlier session already
+    # labelled it, kept as the slot: the label comes off and the slot gets a
+    # fresh anonymous record. With only ONE star of the colour the slot is
+    # that star by definition, and nothing changes.
+    var shared: bool = _color_star_count(color_idx) > 1 and not color_slot_adopts_star_widgets
     for i in _match_records.size():
         if str(_match_records[i].get("color_slot_label", "")) == label:
+            if shared and _record_is_unconfirmed_star_widget_stub(i):
+                _match_records[i]["color_slot_label"] = ""
+                continue
             return i
     for i in _match_records.size():
         var r: Dictionary = _match_records[i]
         if str(r.get("color_slot_label", "")) != "":
+            continue
+        if shared and _record_is_unconfirmed_star_widget_stub(i):
             continue
         if int(r.get("color_states", {}).get(color_idx, 0)) == 1:
             r["color_slot_label"] = label
@@ -6787,7 +6814,13 @@ func _owner_frame(star: int, clue = null) -> Dictionary:
     # Which row this is, for whoever acts on a step: the Name row, the map
     # star's own row, or the entry of a staff note.
     var row_kind: String = "note" if own_note > 0 else ("star" if visible_star else "name")
-    var row_key = own_note if own_note > 0 else (star if visible_star else label)
+    # A note number, a map star's index, or a name: written as if/else because
+    # the three are different types on purpose (a ternary warns about that).
+    var row_key = label
+    if own_note > 0:
+        row_key = own_note
+    elif visible_star:
+        row_key = star
     return {"label": label, "record": rec, "held": held, "ruled": ruled, "open": open, "count": count,
         "counts": counts, "row_kind": row_kind, "row_key": row_key}
 
@@ -6846,7 +6879,7 @@ func _owner_sets(frame: Dictionary) -> Dictionary:
 
 
 ## Does a full set of notes for `star` satisfy the facts about that star alone?
-func _owner_unary_holds(solver, star: int, notes: Array, facts: Array) -> bool:
+func _owner_unary_holds(solver, _star: int, notes: Array, facts: Array) -> bool:
     for f in facts:
         var fd: Dictionary = f
         match str(fd["kind"]):
@@ -7571,16 +7604,16 @@ func _owner_subject_stars(sub: Dictionary, owners: Array) -> Array:
 
 ## Does a finished assignment (notes_of[s] = that star's notes) fit everything
 ## that could not be checked on the way?
-func _owner_global_leaf_ok(setup: Dictionary, owners: Array, notes_of: Array, solver) -> bool:
-    for bn in setup["by_note"]:
+func _owner_global_leaf_ok(melody_setup: Dictionary, owners: Array, notes_of: Array, solver) -> bool:
+    for bn in melody_setup["by_note"]:
         var who: int = int(owners[int(bn["note"]) - 1])
         if not _owner_unary_holds(solver, who, notes_of[who], [bn["fd"]]):
             return false
-    for name in setup["names"]:
-        var req: Dictionary = setup["names"][name]
+    for name in melody_setup["names"]:
+        var req: Dictionary = melody_setup["names"][name]
         if _owner_name_fits(req, notes_of, solver).is_empty():
             return false
-    for rel in setup["relations"]:
+    for rel in melody_setup["relations"]:
         var fd: Dictionary = rel["fd"]
         var found: bool = false
         for sa in _owner_subject_stars(rel["a"], owners):
@@ -7618,20 +7651,20 @@ func _owner_name_fits(req: Dictionary, notes_of: Array, solver) -> Array:
     return out
 
 
-func _owner_global_step(t: int, setup: Dictionary, owners: Array, notes_of: Array, sols: Array, cap: int, solver) -> void:
+func _owner_global_step(t: int, melody_setup: Dictionary, owners: Array, notes_of: Array, sols: Array, cap: int, solver) -> void:
     if sols.size() >= cap or _owner_global_gave_up:
         return
     _owner_global_nodes -= 1
     if _owner_global_nodes <= 0:
         _owner_global_gave_up = true
         return
-    var n: int = int(setup["n"])
+    var n: int = int(melody_setup["n"])
     if t > n:
-        if _owner_global_leaf_ok(setup, owners, notes_of, solver):
+        if _owner_global_leaf_ok(melody_setup, owners, notes_of, solver):
             sols.append(owners.duplicate())
         return
-    var need: Array = setup["need"]
-    var mask: int = int((setup["allowed"] as Array)[t])
+    var need: Array = melody_setup["need"]
+    var mask: int = int((melody_setup["allowed"] as Array)[t])
     # Notes still to hand out must cover what every star is still owed.
     for s in _host._star_count:
         if not (mask & (1 << s)):
@@ -7643,9 +7676,9 @@ func _owner_global_step(t: int, setup: Dictionary, owners: Array, notes_of: Arra
         owners[t - 1] = s
         var ok: bool = true
         if mine.size() == int(need[s]):
-            ok = _owner_unary_holds(solver, s, mine, (setup["fixed"] as Array)[s])
+            ok = _owner_unary_holds(solver, s, mine, (melody_setup["fixed"] as Array)[s])
         if ok:
-            _owner_global_step(t + 1, setup, owners, notes_of, sols, cap, solver)
+            _owner_global_step(t + 1, melody_setup, owners, notes_of, sols, cap, solver)
         mine.pop_back()
         owners[t - 1] = -1
         if sols.size() >= cap or _owner_global_gave_up:
@@ -7654,9 +7687,9 @@ func _owner_global_step(t: int, setup: Dictionary, owners: Array, notes_of: Arra
 
 ## Every assignment that fits, up to `cap`: {"complete": the search finished
 ## and found fewer than cap, "sols": [owners per note]}.
-func _owner_global_solve(setup: Dictionary, cap: int, solver, budget: int = OWNER_GLOBAL_NODE_BUDGET) -> Dictionary:
+func _owner_global_solve(melody_setup: Dictionary, cap: int, solver, budget: int = OWNER_GLOBAL_NODE_BUDGET) -> Dictionary:
     var owners: Array = []
-    for _t in int(setup["n"]):
+    for _t in int(melody_setup["n"]):
         owners.append(-1)
     var notes_of: Array = []
     for _s in _host._star_count:
@@ -7664,21 +7697,22 @@ func _owner_global_solve(setup: Dictionary, cap: int, solver, budget: int = OWNE
     var sols: Array = []
     _owner_global_nodes = budget
     _owner_global_gave_up = false
-    _owner_global_step(1, setup, owners, notes_of, sols, cap, solver)
+    _owner_global_step(1, melody_setup, owners, notes_of, sols, cap, solver)
     return {"complete": not _owner_global_gave_up and sols.size() < cap, "sols": sols}
 
 
 ## Is "star s fires / does not fire on each of `notes`" true in EVERY assignment
 ## that fits? Asked by looking for one that breaks it. A search that gives up
 ## answers no.
-func _owner_global_forced(setup: Dictionary, star: int, notes: Array, want_must: bool, solver) -> bool:
+func _owner_global_forced(melody_setup: Dictionary, star: int, notes: Array, want_must: bool, solver) -> bool:
     for t in notes:
-        var trial: Dictionary = setup.duplicate()
-        var allowed: Array = (setup["allowed"] as Array).duplicate()
+        var trial: Dictionary = melody_setup.duplicate()
+        var allowed: Array = (melody_setup["allowed"] as Array).duplicate()
         allowed[int(t)] = (int(allowed[int(t)]) & ~(1 << star)) if want_must else (int(allowed[int(t)]) & (1 << star))
         trial["allowed"] = allowed
         if int(allowed[int(t)]) == 0:
             continue
+        @warning_ignore("integer_division")   # a third of the budget, rounded down, is what is meant
         var res: Dictionary = _owner_global_solve(trial, 1, solver, OWNER_GLOBAL_NODE_BUDGET / 3)
         if not (res["sols"] as Array).is_empty() or _owner_global_gave_up:
             return false
@@ -7702,12 +7736,12 @@ func _hint_owner_global_steps(clues: Array, solver) -> Array[Dictionary]:
         waiting.append(int(ci))
     _owner_frame_memo = {}
     _owner_frame_memo_on = true
-    var setup: Dictionary = _owner_global_setup(clues, waiting)
-    if bool(setup["ok"]):
-        var res: Dictionary = _owner_global_solve(setup, OWNER_GLOBAL_MAX_SOLUTIONS, solver)
+    var melody_setup: Dictionary = _owner_global_setup(clues, waiting)
+    if bool(melody_setup["ok"]):
+        var res: Dictionary = _owner_global_solve(melody_setup, OWNER_GLOBAL_MAX_SOLUTIONS, solver)
         var sols: Array = res["sols"]
         if bool(res["complete"]) and not sols.is_empty():
-            var n_notes: int = int(setup["n"])
+            var n_notes: int = int(melody_setup["n"])
             for s in _host._star_count:
                 var label: String = _owner_visible_star_label(s)
                 if label == "":
@@ -7741,8 +7775,8 @@ func _hint_owner_global_steps(clues: Array, solver) -> Array[Dictionary]:
                 while i >= 0:
                     var trial: Array = subset.duplicate()
                     trial.remove_at(i)
-                    var tsetup: Dictionary = _owner_global_setup(clues, trial)
-                    if bool(tsetup["ok"]) and _owner_global_forced(tsetup, s, target, want_must, solver):
+                    var trial_setup: Dictionary = _owner_global_setup(clues, trial)
+                    if bool(trial_setup["ok"]) and _owner_global_forced(trial_setup, s, target, want_must, solver):
                         subset = trial
                     i -= 1
                 if subset.size() > OWNER_GLOBAL_MAX_CLUES:

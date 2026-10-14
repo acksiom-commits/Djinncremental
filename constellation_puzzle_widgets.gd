@@ -3258,13 +3258,10 @@ func _seq_notes_typed_texts(record_idx: int) -> Array:
         hi -= 1
     var parts := PackedStringArray()
     var t2: int = lo + 1
-    var any_ruled_inside: bool = false
-    var any_held: bool = false
     while t2 < hi:
         var st: int = int(states[t2])
         if st == 1:
             parts.append("=%d" % t2)
-            any_held = true
             t2 += 1
         elif st == 0:
             var end: int = t2
@@ -3273,12 +3270,12 @@ func _seq_notes_typed_texts(record_idx: int) -> Array:
             parts.append(str(t2) if end == t2 else "%d-%d" % [t2, end])
             t2 = end + 1
         else:
-            any_ruled_inside = true
             t2 += 1
-    # Nothing said yet between the bounds: leave the list blank, as the
-    # position form does for an untouched row.
-    var mid: String = ",".join(parts) if (any_ruled_inside or any_held) else ""
-    return [str(lo) if lo > 0 else "", mid, str(hi) if hi <= n else ""]
+    # The list ALWAYS shows what is still possible, like the position form's
+    # centre box ("1-7,10-15"). It was left blank unless something inside the
+    # bounds was marked, so "_ < _ < 7" showed nothing where "1-6" belonged,
+    # and typing "1-6" read straight back as blank (reported 2026-10-13).
+    return [str(lo) if lo > 0 else "", ",".join(parts), str(hi) if hi <= n else ""]
 
 
 func _make_sequence_notes_typed_row(record_idx: int, row_color: Color) -> HBoxContainer:
@@ -3377,6 +3374,17 @@ func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: St
     var listed: Dictionary = {}     # note -> true where the list allows it
     var confirmed: Dictionary = {}  # note -> true where it is written "=N"
     var has_list: bool = mid_text.strip_edges() != ""
+    # THE LIST WAS NOT TOUCHED, only a bound: the list on screen is then just
+    # the row's own read-out, not something the player typed, and reading it
+    # back as an instruction would keep every note the OLD bounds covered
+    # ruled out -- so widening "5 <" to "2 <" would reopen nothing. Instead
+    # the row keeps the marks it had strictly inside the old bounds and the
+    # new bounds decide the ends.
+    var list_untouched: bool = mid_text.strip_edges() == str(now[1])
+    var old_lo: int = int(str(now[0])) if str(now[0]) != "" else 0
+    var old_hi: int = int(str(now[2])) if str(now[2]) != "" else n + 1
+    if list_untouched:
+        has_list = false
     if has_list and not bad:
         for raw in mid_text.split(","):
             var tok: String = raw.strip_edges()
@@ -3417,6 +3425,8 @@ func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: St
     for t2 in range(1, n + 1):
         var state: int = _deduction._repeat_note_state_for_record(record_idx, t2)
         var allowed: bool = t2 > lo and t2 < hi and (not has_list or listed.has(t2))
+        if list_untouched and state == 3 and t2 > old_lo and t2 < old_hi:
+            allowed = false   # a mark the player made inside the old bounds stays
         if confirmed.has(t2) and allowed:
             if state == 0 or state == 3:
                 to_join.append(t2)

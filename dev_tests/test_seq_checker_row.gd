@@ -493,8 +493,31 @@ func run() -> void:
 	hostt.add_child(trow)
 	var tedits: Array = trow.find_children("*", "LineEdit", true, false)
 	ok(tedits.size() == 3 and _strip_buttons(trow).is_empty(), "Classic entry shows three boxes and no note buttons (%d boxes)" % tedits.size())
-	ok(wt._seq_notes_typed_texts(trec) == ["", "", ""], "an untouched row reads blank in all three (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	ok(wt._seq_notes_typed_texts(trec) == ["", "1-8", ""], "an untouched row reads _ < 1-8 < _: every note possible (got %s)" % str(wt._seq_notes_typed_texts(trec)))
 	trow.free()
+	# REPORTED 2026-10-13 from a live Archon board: with only the upper bound
+	# set to 7 the list stayed blank where 1-6 belonged, and typing 1-6 into it
+	# read straight back as blank. The list was only shown once something
+	# INSIDE the bounds had been marked.
+	await wt._commit_sequence_notes_typed(trec, "", "1-8", "7")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(wt._seq_notes_typed_texts(trec) == ["", "1-6", "7"], "upper bound 7 alone reads _ < 1-6 < 7 (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	await wt._commit_sequence_notes_typed(trec, "", "1-6", "7")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(wt._seq_notes_typed_texts(trec) == ["", "1-6", "7"], "typing 1-6 into the list keeps it there (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	# A mark inside the bounds survives a change to a bound...
+	await wt._commit_sequence_notes_typed(trec, "", "1-3,5-6", "7")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	await wt._commit_sequence_notes_typed(trec, "1", "1-3,5-6", "7")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(wt._seq_notes_typed_texts(trec) == ["1", "2-3,5-6", "7"], "raising the lower bound keeps note 4 ruled out (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	# ...and widening a bound, with the list left as it was shown, reopens
+	# what the old bound covered.
+	await wt._commit_sequence_notes_typed(trec, "", "2-3,5-6", "")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(wt._seq_notes_typed_texts(trec) == ["", "1-3,5-8", ""], "clearing both bounds reopens notes 1, 7 and 8 and still keeps 4 out (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	await wt._commit_sequence_notes_typed(trec, "", "", "")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
 	# lower 2: no note up to 2. upper 7: no note from 7 on.
 	await wt._commit_sequence_notes_typed(trec, "2", "", "7")
 	trec = dt._get_or_create_match_record_for_name("Pyrios")
@@ -502,7 +525,7 @@ func run() -> void:
 	for tt in range(1, 9):
 		st_typed.append(dt._repeat_note_state_for_record(trec, tt))
 	ok(st_typed == [3, 3, 0, 0, 0, 0, 3, 3], "'2 < _ < 7' rules out notes 1, 2, 7, 8 and leaves 3 to 6 open (states %s)" % str(st_typed))
-	ok(wt._seq_notes_typed_texts(trec) == ["2", "", "7"], "and reads back as 2 < (blank) < 7 (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	ok(wt._seq_notes_typed_texts(trec) == ["2", "3-6", "7"], "and reads back as 2 < 3-6 < 7 (got %s)" % str(wt._seq_notes_typed_texts(trec)))
 	# The list: 3 and 5-6 possible, so 4 is ruled out.
 	await wt._commit_sequence_notes_typed(trec, "2", "3,5-6", "7")
 	trec = dt._get_or_create_match_record_for_name("Pyrios")
@@ -543,12 +566,67 @@ func run() -> void:
 	for junk in [["x", "", ""], ["", "3,banana", ""], ["", "9", ""], ["6", "", "7"]]:
 		await wt._commit_sequence_notes_typed(trec, str(junk[0]), str(junk[1]), str(junk[2]))
 		trec = dt._get_or_create_match_record_for_name("Pyrios")
-	ok(wt._seq_notes_typed_texts(trec) == ["2", "", "7"], "a letter, a note past the end, and bounds leaving nothing are all refused (still %s)" % str(wt._seq_notes_typed_texts(trec)))
+	ok(wt._seq_notes_typed_texts(trec) == ["2", "3-6", "7"], "a letter, a note past the end, and bounds leaving nothing are all refused (still %s)" % str(wt._seq_notes_typed_texts(trec)))
 	# The Star Map's widget uses the same boxes in Classic entry.
 	var srec: int = dt._get_or_create_match_record_for_star_idx(0)
-	ok(wt._seq_notes_typed_texts(srec) == ["", "", ""] and wt._make_sequence_notes_typed_row(srec, Color.WHITE).find_children("*", "LineEdit", true, false).size() == 3,
+	ok(wt._seq_notes_typed_texts(srec) == ["", "1-8", ""] and wt._make_sequence_notes_typed_row(srec, Color.WHITE).find_children("*", "LineEdit", true, false).size() == 3,
 		"a map star's entry gets the same three boxes")
 	hostt.queue_free()
+
+	# A COLOUR SLOT STAYS ANONYMOUS AFTER A NOTE IS PLACED ON A MAP STAR
+	# (reported 2026-10-13: "Color Slots are being assigned to specific stars
+	# again ... the puzzle thinks that slot is a different star of the same
+	# color"). Stars 0 and 1 share a colour. The player places a note on star
+	# 0's own widget, then opens the Sort: Color tab and puts star 1's pitch
+	# into the first slot of that colour.
+	print("\n=== a colour slot is not a map star's own entry ===")
+	for old_behaviour in [true, false]:
+		var hc = await _make_host()
+		var dc = hc._deduction
+		var wc = hc._widgets
+		hc._melody_seq_pos_sequence = [1, 2, 3, 1, 4, 5, 2, 6]
+		hc._melody_star_sequence = [0, 1, 2, 0, 3, 4, 1, 5]
+		hc._repeat_count = [1, 1, 0, 0, 0, 0]
+		# one pitch per star, so star 1's pitch names star 1
+		hc._pitch_freqs = [440.0, 493.88, 523.25, 554.37, 587.33, 659.26]
+		hc._star_pitch_index = [0, 1, 2, 3, 4, 5]
+		wc.clear_pitch_caches()
+		dc._load_match_records([])
+		dc.color_slot_adopts_star_widgets = old_behaviour
+		for s7 in 6:
+			dc._get_or_create_match_record_for_star_idx(s7)   # the Star Map's own entries
+		await hc._on_pitch_listen_star_clicked(0)
+		await hc._on_pitch_listen_star_clicked(1)
+		var star0_rec: int = dc._find_match_record_by_star_idx(0)
+		await wc._on_seq_note_select(star0_rec, 4)
+		star0_rec = dc._find_match_record_by_star_idx(0)
+		var shared_colour: int = int(hc._star_colors[0])
+		var slot_a: int = dc._get_or_create_match_record_for_color_slot(shared_colour, 0)
+		dc._full_propagation_refresh()
+		slot_a = dc._get_or_create_match_record_for_color_slot(shared_colour, 0)
+		var slot_is_star0: bool = slot_a == star0_rec or int(dc.record_at(slot_a).get("star_idx", -1)) == 0
+		# Star 1's pitch goes into that slot.
+		dc._propagate_pitch_confirmed_same_record(slot_a, wc._note_name_for_star(1))
+		dc._save_puzzle_notes()
+		dc._full_propagation_refresh()
+		slot_a = dc._get_or_create_match_record_for_color_slot(shared_colour, 0)
+		var complaints: int = dc._contradictions.size()
+		if old_behaviour:
+			ok(slot_is_star0, "(old behaviour, to show the fault) the slot WAS star 0's own entry")
+			ok(complaints > 0 or dc._effective_star_idx(slot_a) != 1,
+				"(old behaviour) star 1's pitch in it then clashes or does not land on star 1 (%d complaints, slot's star %d)" % [complaints, dc._effective_star_idx(slot_a)])
+		else:
+			ok(not slot_is_star0 and (dc.record_at(dc._find_match_record_by_star_idx(0)).get("melody_ticks", []) as Array).has(4),
+				"the slot is a separate, anonymous entry; star 0's entry keeps its note")
+			ok(complaints == 0, "star 1's pitch goes into it with no error (%d complaints)" % complaints)
+			ok(dc._effective_star_idx(slot_a) == 1, "and the slot is now worked out to be star 1, the star that data came from (got %d)" % dc._effective_star_idx(slot_a))
+			# A save made while the fault was live: the label comes off the
+			# star's entry and the slot starts clean.
+			dc.record_at(dc._find_match_record_by_star_idx(0))["color_slot_label"] = "%s B" % str(hc.COLOR_NAME_LABELS[shared_colour])
+			var slot_b: int = dc._get_or_create_match_record_for_color_slot(shared_colour, 1)
+			ok(slot_b != dc._find_match_record_by_star_idx(0) and str(dc.record_at(dc._find_match_record_by_star_idx(0)).get("color_slot_label", "")) == "",
+				"a slot label left on a star's own entry by the fault is taken off, and the slot gets a fresh entry")
+		hc.queue_free()
 
 	print("\n=== the scroll position survives a rebuild ===")
 	# A click rebuilds the whole row; the strip must come back where it was.
