@@ -82,9 +82,24 @@ func _pick(ticks: Array, pick: Dictionary) -> Array:
 	return [ticks[k - 1]] if k >= 1 and k <= ticks.size() else []
 
 
+## A star a clue names only by a note label ("the star that first fires on note
+## 5") is whoever owns that note in the assignment being tried (2026-10-14):
+## the fact's "label_refs" says which fields, and which note.
+func _resolve_label_refs(fd: Dictionary, notes: Array) -> Dictionary:
+	if not (fd.get("label_refs", {}) as Dictionary).is_empty():
+		var out: Dictionary = fd.duplicate()
+		for field in fd["label_refs"]:
+			for s in notes.size():
+				if (notes[s] as Array).has(int(fd["label_refs"][field])):
+					out[field] = s
+		return out
+	return fd
+
+
 ## `notes[s]` = the notes star s fires on in the assignment being tried
 ## (ascending). `label` = the note number a Sequence label prints for a rank.
-func _fact_ok(fd: Dictionary, notes: Array, label: Array) -> bool:
+func _fact_ok(fd_in: Dictionary, notes: Array, label: Array) -> bool:
+	var fd: Dictionary = _resolve_label_refs(fd_in, notes)
 	match str(fd.get("kind", "")):
 		# A label names a star by its FIRST note (2026-10-14): "the star that
 		# first fires on note T", or "fires T-th note" for a star that fires once.
@@ -204,6 +219,8 @@ func run() -> void:
 	var agree: int = 0
 	var seen_not_unique: int = 0
 	var seam_too_generous: int = 0
+	var label_seam_too_generous: int = 0
+	var label_ref_facts: int = 0
 	var kinds_seen: Dictionary = {}
 	var unread: Dictionary = {}
 	var cases: Array = [
@@ -233,6 +250,8 @@ func run() -> void:
 		for f in facts:
 			var k: String = str(f.get("kind", ""))
 			kinds_seen[k] = int(kinds_seen.get(k, 0)) + 1
+			if not (f.get("label_refs", {}) as Dictionary).is_empty():
+				label_ref_facts += 1
 			if (k.begins_with("ordinal_") and not READ_KINDS.has(k) and k != "ordinal_pair_set"):
 				unread[k] = true
 
@@ -272,6 +291,12 @@ func run() -> void:
 				if old.size() == 1 and not g._last_solve_inconclusive:
 					seam_too_generous += 1
 				g.first_notes_hidden = true
+				# The proof before 2026-10-14 read a note label as the real star.
+				g.label_refs_honoured = false
+				var old_lab: Array = await g._solve_notes(rest_seq, 2, rest)
+				if old_lab.size() == 1 and not g._last_solve_inconclusive:
+					label_seam_too_generous += 1
+				g.label_refs_honoured = true
 
 	print("\n=== solver vs brute force, one clue removed at a time ===")
 	print("    fact kinds in these puzzles: %s" % str(kinds_seen))
@@ -281,6 +306,9 @@ func run() -> void:
 	ok(seen_not_unique > 0, "'more than one answer' actually occurred (%d times), so the comparison can fail" % seen_not_unique)
 	ok(seam_too_generous > 0,
 		"the older proof, which takes the first notes as given, called %d of those %d non-unique clue sets unique" % [seam_too_generous, seen_not_unique])
+	ok(label_ref_facts > 0, "the shipped clues name stars by a note label alone (%d facts read as 'whoever owns that note')" % label_ref_facts)
+	ok(label_seam_too_generous > 0,
+		"reading a note label as the real star (the proof before 2026-10-14) called %d of those %d non-unique clue sets unique" % [label_seam_too_generous, seen_not_unique])
 
 	if fails == 0:
 		print("\nALL PASS (0 failures)")

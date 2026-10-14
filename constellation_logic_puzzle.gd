@@ -325,6 +325,56 @@ func _note_repeat_verb(star: int, repeats: bool) -> void:
     _rendered_repeat_verbs[star] = repeats
 
 
+## The star fields of each fact kind the note proof reads.
+const LABEL_REF_FIELDS: Dictionary = {
+    "ordinal_exact": ["s"], "ordinal_neg": ["s"], "ordinal_either_or": ["s"], "ordinal_range": ["s"],
+    "ordinal_extreme": ["s"], "ordinal_count_before": ["s"], "firing_position": ["s"],
+    "ordinal_cmp": ["a", "b"], "ordinal_adjacent": ["a", "b"], "ordinal_offset": ["a", "b"],
+    "firing_relation": ["a", "b"], "values_same": ["a", "b"], "ordinal_chain": ["a", "mid", "b"],
+    "repeat_count_range": ["star"],
+}
+
+
+## Marks, on each fact of the clue being committed, every star field the clue
+## names ONLY by a note label: fact["label_refs"] = {field: label note}. The
+## note proof reads such a field as "whoever owns that note" (author ruling
+## 2026-10-14: the proof was reading "the star that first fires on note 5" as a
+## star the player could already point at; measured, 6 of 12 generated
+## Beginner puzzles were unique only because of that).
+##
+## A star the clue ALSO names another way ("Oraeides is the star that first
+## fires on note 5") is a real star in its facts: that clue states the link.
+## The exception is an either/or: "Oraeides is either the star that first fires
+## on note 5 or ..." carries each option's own label fact, and the true
+## option's is about Oraeides too; it says nothing beyond its label, so it
+## reads as the label (the ordinal_either_or fact carries the claim).
+func _annotate_label_refs(facts: Array) -> void:
+    var either_opts: Dictionary = {}   # "star:rank" of either/or options
+    for f0 in facts:
+        if f0 is Dictionary and str((f0 as Dictionary).get("kind", "")) == "ordinal_either_or":
+            either_opts["%d:%d" % [int(f0["s"]), int(f0["r1"])]] = true
+            either_opts["%d:%d" % [int(f0["s"]), int(f0["r2"])]] = true
+    for f in facts:
+        if not (f is Dictionary):
+            continue
+        var fd: Dictionary = f
+        var kind: String = str(fd.get("kind", ""))
+        if not LABEL_REF_FIELDS.has(kind):
+            continue
+        var refs: Dictionary = {}
+        for field in LABEL_REF_FIELDS[kind]:
+            var x: int = int(fd.get(field, -1))
+            if not _rendered_star_handles.has(x) or not bool(_rendered_star_handles[x]["label"]):
+                continue
+            var only_label: bool = not bool(_rendered_star_handles[x]["other"])
+            if kind == "ordinal_exact" and either_opts.has("%d:%d" % [x, int(fd["r"])]):
+                only_label = true
+            if only_label:
+                refs[field] = _seq_first_tick(x)
+        if not refs.is_empty():
+            fd["label_refs"] = refs
+
+
 ## The recorded verbs as facts, and the record cleared.
 func _take_repeat_verb_facts() -> Array:
     var out: Array = []
@@ -1960,7 +2010,12 @@ func check_solution(candidate: Array) -> bool:
 # the proof reads every label as the star's FIRST note), "last" and "one of the
 # firings of" are gone, and window counts are only built for stars that fire
 # once. A version-9 puzzle was proven for the old meaning of its labels.
-const CACHE_VERSION: int = 10
+#
+# version 11 (2026-10-14, same day): the note proof reads a star a clue names
+# only by a note label as "whoever owns that note" (facts carry label_refs). A
+# version-10 puzzle may be unique only because its proof treated such a label
+# as a star the player could already point at.
+const CACHE_VERSION: int = 11
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -2555,6 +2610,22 @@ func _note_rendered_term(kind: String, value) -> void:
     _rendered_terms["%s:%s" % [kind, str(value)]] = true
 
 
+## WHICH STARS THE CLUE NAMES ONLY BY A NOTE LABEL (2026-10-14). To the reader
+## "the star that first fires on note 5" is whoever owns note 5, not a star
+## they can point at; the note proof must treat it that way (see
+## _annotate_label_refs). Recorded here, per star, by how the clue being
+## built names it: "label" (a Sequence label) and/or "other" (a name, a
+## colour or pitch only it has, a hop from a named star, a repeat count only
+## it has). Reset wherever _rendered_terms is.
+var _rendered_star_handles: Dictionary = {}
+
+
+func _note_star_handle(star: int, is_label: bool) -> void:
+    if not _rendered_star_handles.has(star):
+        _rendered_star_handles[star] = {"label": false, "other": false}
+    _rendered_star_handles[star]["label" if is_label else "other"] = true
+
+
 ## For the GROUP phrasings a few Forms build themselves rather than through
 ## _characteristic_label ("every blue star", "a star that plays A#4", "the
 ## blue stars"). Those state a colour or a pitch just as explicitly as a
@@ -2589,6 +2660,9 @@ func _characteristic_label(ch: Dictionary) -> String:
     # the definite/indefinite distinction matters for OTHER text (group
     # descriptions, decoy values) built elsewhere, not for this function.
     var s: int = int(ch["star"])
+    _note_star_handle(s, int(ch["cat"]) == Category.SEQUENCE)
+    if int(ch["cat"]) == Category.DISTANCE:
+        _note_star_handle(int(ch["ref"]), false)   # "... from Theryis" names the reference star
     match int(ch["cat"]):
         Category.NAME:
             _note_rendered_term("N", star_names[s])
@@ -2663,6 +2737,7 @@ func _characteristic_label(ch: Dictionary) -> String:
 ## the Search tab still finds a clue by the value its sentence shows.
 func _characteristic_predicate(ch: Dictionary) -> String:
     var s: int = int(ch["star"])
+    _note_star_handle(s, int(ch["cat"]) == Category.SEQUENCE)
     match int(ch["cat"]):
         Category.NAME:
             _note_rendered_term("N", star_names[s])
@@ -8721,6 +8796,7 @@ func _try_build_and_commit(form_id: int, sequence_solver_facts: Array,
     # labels and then bails still dirtied the accumulator, and those terms
     # belong to no clue.
     _rendered_terms = {}
+    _rendered_star_handles = {}
     _rendered_repeat_verbs = {}
     var result: Dictionary = _build_name_binding_clue(coverage_star, coverage_which) \
         if coverage_star >= 0 else _build_form(form_id, chain)
@@ -8759,6 +8835,8 @@ func _commit_clue_result(form_id: int, result: Dictionary, sequence_solver_facts
             return false
     var chars: Array = result["chars"]
     _commit_characteristics(chars)
+    var verb_facts: Array = _take_repeat_verb_facts()
+    _annotate_label_refs(_coerce_array(result.get("solver_facts"), []) + _coerce_array(result.get("value_facts"), []) + verb_facts)
     chosen_form_clues.append({
         "form_id": form_id,
         "form_name": str(FORM_NAMES.get(form_id, "")),
@@ -8781,7 +8859,7 @@ func _commit_clue_result(form_id: int, result: Dictionary, sequence_solver_facts
         # unique against; value_facts carries the Colour/Pitch content the
         # CSP has no use for.
         "disclosures": (_coerce_array(result.get("solver_facts"), []) + _coerce_array(result.get("value_facts"), [])
-            + _take_repeat_verb_facts()).duplicate(true),
+            + verb_facts).duplicate(true),
     })
     if result.has("solver_facts"):
         for f in result["solver_facts"]:
@@ -9066,6 +9144,7 @@ func _commit_repair_clue(star: int, rank: int, pin: bool, sequence_solver_facts:
         "is_true": pin,
     }
     _rendered_terms = {}
+    _rendered_star_handles = {}
     _rendered_repeat_verbs = {}
     var result: Dictionary = _identity_result_for_cell(cell) if pin else _negation_result_for_cell(cell)
     return _commit_clue_result(1 if pin else 2, result,
@@ -9215,6 +9294,7 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
             var b_triples: Array = _betweenness_two_disjoint_triples(b_axis)
             for b_triple in b_triples:
                 _rendered_terms = {}
+                _rendered_star_handles = {}
                 _rendered_repeat_verbs = {}
                 var b_result: Dictionary = _betweenness_render_triple(b_triple, b_axis)
                 _commit_clue_result(17, b_result, sequence_solver_facts,
@@ -10046,6 +10126,12 @@ var first_notes_hidden: bool = true
 const NOTE_OWNER_NODE_BUDGET: int = 400000
 var _note_owner_nodes: int = 0
 var _note_owner_budget_hit: bool = false
+## Measurements, never read by generation: hidden-first solves run, their
+## total milliseconds and search nodes, and how many ran out of budget.
+var note_owner_solves: int = 0
+var note_owner_msec: int = 0
+var note_owner_nodes_spent: int = 0
+var note_owner_budget_hits: int = 0
 
 
 func _first_notes_hidden() -> bool:
@@ -10071,6 +10157,11 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
     var counts_at_begin: Array = []
     var unary: Array = []
     var not_first_at: Array = []  # notes a star may not BEGIN on (ordinal_neg)
+    # Notes some label names as a FIRST note ("the star that first fires on
+    # note 5"): whoever fires there is beginning there.
+    var must_begin: Array = []
+    must_begin.resize(n_notes + 1)
+    must_begin.fill(false)
     for _s in star_count:
         deadline.append(n_notes)
         before.append([])
@@ -10082,8 +10173,18 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
     var window_end: Array = []    # note -> the count facts whose window ends there
     for _t3 in n_notes + 1:
         window_end.append([])
+    var dynamic: Array = []   # facts naming a star only by a note label: see _note_owner_dyn_ok
     for f in seq_facts:
         var fd: Dictionary = f
+        if label_refs_honoured and not (fd.get("label_refs", {}) as Dictionary).is_empty():
+            for lf in fd["label_refs"]:
+                must_begin[int(fd["label_refs"][lf])] = true
+            var applied: int = _note_owner_label_constant(fd, allowed, deadline, before, label_note)
+            if applied < 0:
+                return []   # the facts contradict each other
+            if applied == 0:
+                dynamic.append(fd)
+            continue
         match str(fd.get("kind", "")):
             "ordinal_exact":
                 # first(s) = T: s fires on T and on no note before it.
@@ -10131,6 +10232,11 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
             if not (f2 is Dictionary) or not _fact_is_repeat_fact(f2):
                 continue
             var vd: Dictionary = f2
+            if label_refs_honoured and not (vd.get("label_refs", {}) as Dictionary).is_empty():
+                for lf2 in vd["label_refs"]:
+                    must_begin[int(vd["label_refs"][lf2])] = true
+                dynamic.append(vd)
+                continue
             match str(vd["kind"]):
                 "firing_position":
                     (unary[int(vd["s"])] as Array).append(vd)
@@ -10178,7 +10284,9 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
         "room": room, "window_end": window_end,
         "n": n_notes, "need": need, "allowed": allowed, "deadline": deadline, "before": before,
         "counts_at_begin": counts_at_begin, "unary": unary, "binary": binary, "at_leaf": at_leaf,
-        "not_first_at": not_first_at,
+        "not_first_at": not_first_at, "must_begin": must_begin,
+        "free_begins": star_count - must_begin.count(true), "free_used": 0,
+        "dyn": dynamic, "dyn_by_star": [], "dyn_by_note": [],
         "label_note": label_note, "cap": cap,
         "first": [], "notes": [], "owners": [], "solutions": [],
     }
@@ -10187,9 +10295,31 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
         (st["notes"] as Array).append([])
     for _t2 in n_notes:
         (st["owners"] as Array).append(-1)
+    # Index the label-reference facts by what can settle them: a star getting
+    # a note (a fixed star in the fact, or a neighbour it compares against) or
+    # a note being assigned (a label's note, or a note an ordinal fact names).
+    for _s4 in star_count:
+        (st["dyn_by_star"] as Array).append([])
+    for _t6 in n_notes + 1:
+        (st["dyn_by_note"] as Array).append([])
+    for dfact in dynamic:
+        var drefs: Dictionary = dfact["label_refs"]
+        for field in LABEL_REF_FIELDS[str(dfact["kind"])]:
+            if drefs.has(field):
+                ((st["dyn_by_note"] as Array)[int(drefs[field])] as Array).append(dfact)
+            else:
+                ((st["dyn_by_star"] as Array)[int(dfact[field])] as Array).append(dfact)
+        for nbr in dfact.get("neighbors", []):
+            ((st["dyn_by_star"] as Array)[int(nbr)] as Array).append(dfact)
     _note_owner_nodes = NOTE_OWNER_NODE_BUDGET
     _note_owner_budget_hit = false
+    var t_solve: int = Time.get_ticks_msec()
     await _note_owner_search(st)
+    note_owner_solves += 1
+    note_owner_msec += Time.get_ticks_msec() - t_solve
+    note_owner_nodes_spent += NOTE_OWNER_NODE_BUDGET - _note_owner_nodes
+    if _note_owner_budget_hit:
+        note_owner_budget_hits += 1
     var out: Array = []
     var rticks: Array = _repeat_ticks()
     for owners in st["solutions"]:
@@ -10290,6 +10420,8 @@ func _note_owner_unplace(t: int, st: Dictionary) -> void:
     owners[t - 1] = -1
     if int((st["first"] as Array)[s]) == t:
         (st["first"] as Array)[s] = 0
+        if not bool((st["must_begin"] as Array)[t]):
+            st["free_used"] = int(st["free_used"]) - 1
 
 
 ## Puts star `s_try` on note t if no fact forbids it yet. True = it is placed;
@@ -10310,6 +10442,13 @@ func _note_owner_place(t: int, s_try: int, st: Dictionary) -> bool:
         if mine.size() >= int(need[s]):
             continue
         var begins: bool = int(first[s]) == 0
+        # A note a label names as a first note can only take a star beginning there.
+        if not begins and bool((st["must_begin"] as Array)[t]):
+            continue
+        # Every label names a different first note. A star may begin on a note
+        # no label names only while some star is left without a labelled one.
+        if begins and not bool((st["must_begin"] as Array)[t]) and int(st["free_used"]) >= int(st["free_begins"]):
+            continue
         # Nobody else may be left past the last note they are allowed to begin on.
         var ok: bool = true
         for u in star_count:
@@ -10354,6 +10493,17 @@ func _note_owner_place(t: int, s_try: int, st: Dictionary) -> bool:
                 if inside < int(wf["lo"]) or inside > int(wf["hi"]):
                     ok = false
                     break
+        # Facts about a star named only by a note label: those this placement
+        # can settle (about s, about note t, or about a note s already holds).
+        if ok and not (st["dyn"] as Array).is_empty():
+            var to_check: Array = ((st["dyn_by_star"] as Array)[s] as Array) + ((st["dyn_by_note"] as Array)[t] as Array)
+            for held_t in mine:
+                if int(held_t) != t:
+                    to_check += (st["dyn_by_note"] as Array)[int(held_t)]
+            for dfact in to_check:
+                if not _note_owner_dyn_ok(dfact, st, false):
+                    ok = false
+                    break
         # Every star must still have room for the notes it is owed.
         if ok:
             var room: Array = st["room"]
@@ -10362,6 +10512,8 @@ func _note_owner_place(t: int, s_try: int, st: Dictionary) -> bool:
                     ok = false
                     break
         if ok:
+            if begins and not bool((st["must_begin"] as Array)[t]):
+                st["free_used"] = int(st["free_used"]) + 1
             return true
         mine.pop_back()
         owners[t - 1] = -1
@@ -10392,10 +10544,212 @@ func _note_owner_complete_ok(s: int, st: Dictionary) -> bool:
     return true
 
 
+## A label states its star's FIRST note ("the star that first fires on note 5"
+## begins on note 5), so in a fact about first notes a label side is simply
+## that number. Such a fact becomes plain bounds on its other, real stars,
+## applied once before the search instead of checked at every step:
+## 1 = applied, 0 = not a first-note fact (checked during the search, see
+## _note_owner_dyn_ok), -1 = the facts contradict each other.
+func _note_owner_label_constant(fd: Dictionary, allowed: Array, deadline: Array, before: Array, label_note: Array) -> int:
+    var refs: Dictionary = fd["label_refs"]
+    var kind: String = str(fd["kind"])
+    match kind:
+        "ordinal_exact", "ordinal_neg", "ordinal_either_or", "ordinal_range":
+            if not refs.has("s"):
+                return 0
+            var t: int = int(refs["s"])
+            var good: bool = true
+            match kind:
+                "ordinal_exact":
+                    good = t == int(label_note[int(fd["r"])])
+                "ordinal_neg":
+                    good = t != int(label_note[int(fd["r"])])
+                "ordinal_either_or":
+                    good = t == int(label_note[int(fd["r1"])]) or t == int(label_note[int(fd["r2"])])
+                _:
+                    if int(fd["lo"]) > 0 and t < int(label_note[int(fd["lo"])]):
+                        good = false
+                    if int(fd["hi"]) < star_count - 1 and t > int(label_note[int(fd["hi"])]):
+                        good = false
+            return 1 if good else -1
+        "ordinal_cmp":
+            var later: String = "a" if bool(fd["a_gt_b"]) else "b"
+            var earlier: String = "b" if bool(fd["a_gt_b"]) else "a"
+            return _note_owner_first_order(fd, refs, earlier, later, allowed, deadline, before)
+        "ordinal_chain":
+            var r1: int = _note_owner_first_order(fd, refs, "a", "mid", allowed, deadline, before)
+            if r1 < 0:
+                return -1
+            return _note_owner_first_order(fd, refs, "mid", "b", allowed, deadline, before)
+        "ordinal_extreme":
+            if not refs.has("s"):
+                return 0
+            var ts: int = int(refs["s"])
+            for nb in fd["neighbors"]:
+                if bool(fd["want_lowest"]):
+                    _note_owner_first_after(int(nb), ts, allowed)
+                else:
+                    deadline[int(nb)] = mini(int(deadline[int(nb)]), ts - 1)
+            return 1
+    return 0
+
+
+## first(<earlier>) < first(<later>) for one ordered pair of a fact's fields,
+## either of which may be a label (a known first note).
+func _note_owner_first_order(fd: Dictionary, refs: Dictionary, earlier: String, later: String,
+        allowed: Array, deadline: Array, before: Array) -> int:
+    if refs.has(earlier) and refs.has(later):
+        return 1 if int(refs[earlier]) < int(refs[later]) else -1
+    if refs.has(earlier):
+        _note_owner_first_after(int(fd[later]), int(refs[earlier]), allowed)
+    elif refs.has(later):
+        var x: int = int(fd[earlier])
+        deadline[x] = mini(int(deadline[x]), int(refs[later]) - 1)
+    else:
+        (before[int(fd[later])] as Array).append(int(fd[earlier]))
+    return 1
+
+
+## Star x begins after note t: it fires on none of notes 1..t.
+func _note_owner_first_after(x: int, t: int, allowed: Array) -> void:
+    for t0 in range(1, t + 1):
+        allowed[t0] &= ~(1 << x)
+
+
+## TEST SEAM. False = a star a clue names only by a note label is read as the
+## real star behind it (the proof before 2026-10-14). Generation runs with it
+## true; see _annotate_label_refs.
+var label_refs_honoured: bool = true
+
+## Order facts that only need the stars' FIRST notes.
+const _DYN_FIRST_KINDS: Array = ["ordinal_cmp", "ordinal_chain", "ordinal_extreme", "ordinal_count_before",
+    "ordinal_range", "ordinal_exact", "ordinal_neg", "ordinal_either_or"]
+
+
+## A fact with label references (fact["label_refs"]: field -> note T, read as
+## "whoever owns note T") against the assignment so far. False only when it is
+## certainly broken; `full` = every note is assigned, so everything is decided.
+## Same reading of each kind as the fast path in _solve_note_owners.
+func _note_owner_dyn_ok(fd: Dictionary, st: Dictionary, full: bool) -> bool:
+    var owners: Array = st["owners"]
+    var notes: Array = st["notes"]
+    var need: Array = st["need"]
+    var label_note: Array = st["label_note"]
+    var refs: Dictionary = fd["label_refs"]
+    var kind: String = str(fd["kind"])
+    var who: Dictionary = {}
+    for field in LABEL_REF_FIELDS[kind]:
+        var w: int = int(owners[int(refs[field]) - 1]) if refs.has(field) else int(fd[field])
+        if w < 0:
+            return true   # the label's note is not assigned yet
+        who[field] = w
+    if not full:
+        if _DYN_FIRST_KINDS.has(kind):
+            if who.has("s"):
+                if (notes[int(who["s"])] as Array).is_empty():
+                    return true
+            else:
+                # A star not begun yet begins after every star that has.
+                var begun: int = 0
+                for field2 in who:
+                    if not (notes[int(who[field2])] as Array).is_empty():
+                        begun += 1
+                if begun == 0 or begun < who.size() - 1:
+                    return true
+        elif kind == "repeat_count_range" or kind == "values_same":
+            pass   # about firing COUNTS, which Listen gives: decided once the star is known
+        elif kind == "firing_position":
+            if (notes[int(who["s"])] as Array).size() < _firing_notes_needed(fd["sel"], int(need[int(who["s"])])):
+                return true
+        elif kind == "firing_relation":
+            if (notes[int(who["a"])] as Array).size() < _firing_pick_needed(fd["pick_a"], int(need[int(who["a"])])) \
+                    or (notes[int(who["b"])] as Array).size() < _firing_pick_needed(fd["pick_b"], int(need[int(who["b"])])):
+                return true
+        else:
+            return true   # ordinal_adjacent / ordinal_offset: the order every star begins in
+    match kind:
+        "ordinal_exact":
+            return _dyn_first(notes, int(who["s"])) == int(label_note[int(fd["r"])])
+        "ordinal_neg":
+            return _dyn_first(notes, int(who["s"])) != int(label_note[int(fd["r"])])
+        "ordinal_either_or":
+            var fe: int = _dyn_first(notes, int(who["s"]))
+            return fe == int(label_note[int(fd["r1"])]) or fe == int(label_note[int(fd["r2"])])
+        "ordinal_range":
+            var f0: int = _dyn_first(notes, int(who["s"]))
+            if int(fd["lo"]) > 0 and f0 < int(label_note[int(fd["lo"])]):
+                return false
+            if int(fd["hi"]) < star_count - 1 and f0 > int(label_note[int(fd["hi"])]):
+                return false
+            return true
+        "ordinal_cmp":
+            return (_dyn_first(notes, int(who["a"])) > _dyn_first(notes, int(who["b"]))) == bool(fd["a_gt_b"])
+        "ordinal_chain":
+            return _dyn_first(notes, int(who["a"])) < _dyn_first(notes, int(who["mid"])) \
+                and _dyn_first(notes, int(who["mid"])) < _dyn_first(notes, int(who["b"]))
+        "ordinal_extreme":
+            for nb in fd["neighbors"]:
+                if (_dyn_first(notes, int(who["s"])) < _dyn_first(notes, int(nb))) != bool(fd["want_lowest"]):
+                    return false
+            return true
+        "ordinal_count_before":
+            var before: int = 0
+            for nb2 in fd["neighbors"]:
+                if _dyn_first(notes, int(nb2)) < _dyn_first(notes, int(who["s"])):
+                    before += 1
+            return before == int(fd["k"])
+        "ordinal_adjacent", "ordinal_offset":
+            var ranks: Array = _ranks_from_owners(owners)
+            return int(ranks[int(who["a"])]) == int(ranks[int(who["b"])]) + int(fd.get("offset", 1))
+        "firing_position":
+            var v: int = _firing_value(notes[int(who["s"])], fd["sel"])
+            return v >= 0 and v >= int(fd["lo"]) and v <= int(fd["hi"])
+        "firing_relation":
+            return _firing_rel_holds(_firing_pick_notes(notes[int(who["a"])], fd["pick_a"]),
+                _firing_pick_notes(notes[int(who["b"])], fd["pick_b"]), fd["spec"])
+        "values_same":
+            return int(need[int(who["a"])]) == int(need[int(who["b"])])
+        "repeat_count_range":
+            var reps: int = int(need[int(who["star"])]) - 1
+            return (reps >= int(fd["lo"]) and reps <= int(fd["hi"])) != bool(fd.get("negated", false))
+    return true
+
+
+## How many of a star's notes (assigned in melody order) a selector needs
+## before its value is final: the k-th firing needs k, a gap up to the j-th
+## firing needs j; a count, "last" and an open-ended gap need them all.
+func _firing_notes_needed(sel: Dictionary, all_notes: int) -> int:
+    match str(sel["kind"]):
+        "nth":
+            return int(sel["k"]) if int(sel["k"]) > 0 else all_notes
+        "span":
+            return int(sel["j"]) if int(sel["j"]) > 0 else all_notes
+    return all_notes
+
+
+## The same for a Firing Relation pick.
+func _firing_pick_needed(pick: Dictionary, all_notes: int) -> int:
+    match str(pick["kind"]):
+        "first":
+            return 1
+        "nth":
+            return int(pick["k"])
+    return all_notes
+
+
+## A star's first note in the assignment so far; one not begun yet is later
+## than every note.
+func _dyn_first(notes: Array, s: int) -> int:
+    return int((notes[s] as Array)[0]) if not (notes[s] as Array).is_empty() else 999999
+
+
 func _note_owner_leaf_ok(st: Dictionary) -> bool:
     var owners: Array = st["owners"]
     var label_note: Array = st["label_note"]
     var ranks: Array = []
+    for dfact in st["dyn"]:
+        if not _note_owner_dyn_ok(dfact, st, true):
+            return false
     for f in st["at_leaf"]:
         match str(f["kind"]):
             "ordinal_either_or":
@@ -10564,6 +10918,7 @@ func _commit_repeat_pin(tick: int, sequence_solver_facts: Array, name_revealed: 
         sel = {"kind": "count", "lo": tick, "hi": tick}   # its only firing: "fires on note T"
     for id_cat in [Category.NAME, Category.SEQUENCE]:
         _rendered_terms = {}
+        _rendered_star_handles = {}
         _rendered_repeat_verbs = {}
         var result: Dictionary = _firing_position_hidden_result({"cat": int(id_cat), "star": star},
             sel, tick if sel["kind"] == "nth" else 1, tick if sel["kind"] == "nth" else 1, false)
