@@ -563,10 +563,47 @@ func run() -> void:
 	# Something unreadable changes nothing.
 	await wt._commit_sequence_notes_typed(trec, "2", "", "7")
 	trec = dt._get_or_create_match_record_for_name("Pyrios")
-	for junk in [["x", "", ""], ["", "3,banana", ""], ["", "9", ""], ["6", "", "7"]]:
+	# (each as the three boxes would read with ONE of them changed from 2 < 3-6 < 7)
+	for junk in [["x", "3-6", "7"], ["2", "3,banana", "7"], ["2", "9", "7"], ["6", "3-6", "7"]]:
 		await wt._commit_sequence_notes_typed(trec, str(junk[0]), str(junk[1]), str(junk[2]))
 		trec = dt._get_or_create_match_record_for_name("Pyrios")
 	ok(wt._seq_notes_typed_texts(trec) == ["2", "3-6", "7"], "a letter, a note past the end, and bounds leaving nothing are all refused (still %s)" % str(wt._seq_notes_typed_texts(trec)))
+	# REPORTED 2026-10-13 (Archon, the F5 row): typing "1-2" into the list
+	# snapped back to what was shown before, though typing 3 into the upper
+	# box worked. Every commit rebuilds the row; the OLD boxes then lose
+	# focus and commit again with their old texts. That second commit carried
+	# an upper box still blank where the row now read 3, took the blank for
+	# "no upper bound", and reopened everything. The commit is given what the
+	# boxes showed when they were built, exactly as the row's own wiring does.
+	await wt._commit_sequence_notes_typed(trec, "", "", "", wt._seq_notes_typed_texts(trec))
+	await wt._commit_sequence_notes_typed(trec, "", "", "")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	var built: Array = wt._seq_notes_typed_texts(trec)
+	ok(built == ["", "1-8", ""], "precondition: an open row, _ < 1-8 < _ (got %s)" % str(built))
+	await wt._commit_sequence_notes_typed(trec, "", "1-2", "", built)
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(wt._seq_notes_typed_texts(trec) == ["", "1-2", "3"], "typing 1-2 into the list leaves only notes 1 and 2 (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	# the old boxes losing focus: the SAME texts, the SAME 'built' read-out
+	await wt._commit_sequence_notes_typed(trec, "", "1-2", "", built)
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(wt._seq_notes_typed_texts(trec) == ["", "1-2", "3"], "and the old boxes committing again changes nothing (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	# And the fault itself, so this section can fail: the stale repeat WITHOUT
+	# what the boxes showed (how it was before) does reopen everything.
+	await wt._commit_sequence_notes_typed(trec, "", "1-2", "")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(wt._seq_notes_typed_texts(trec) == ["", "1-8", ""], "(the old way, to show the fault) the same repeat judged against the row as it now stands snaps back to 1-8 (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	# The same for a bound: 5 typed into the upper box, then the stale repeat.
+	await wt._commit_sequence_notes_typed(trec, "", "", "")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	built = wt._seq_notes_typed_texts(trec)
+	await wt._commit_sequence_notes_typed(trec, "", "1-8", "5", built)
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	await wt._commit_sequence_notes_typed(trec, "", "1-8", "5", built)
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+	ok(wt._seq_notes_typed_texts(trec) == ["", "1-4", "5"], "an upper bound of 5 survives its own stale repeat too (got %s)" % str(wt._seq_notes_typed_texts(trec)))
+	await wt._commit_sequence_notes_typed(trec, "", "", "")
+	trec = dt._get_or_create_match_record_for_name("Pyrios")
+
 	# The Star Map's widget uses the same boxes in Classic entry.
 	var srec: int = dt._get_or_create_match_record_for_star_idx(0)
 	ok(wt._seq_notes_typed_texts(srec) == ["", "1-8", ""] and wt._make_sequence_notes_typed_row(srec, Color.WHITE).find_children("*", "LineEdit", true, false).size() == 3,

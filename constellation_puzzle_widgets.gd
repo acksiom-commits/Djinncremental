@@ -3331,8 +3331,8 @@ func _make_sequence_notes_typed_row(record_idx: int, row_color: Color) -> HBoxCo
 
     var ridx := record_idx
     for e in [edit_lo, edit_mid, edit_hi]:
-        (e as LineEdit).text_submitted.connect(func(_t): _commit_sequence_notes_typed(ridx, edit_lo.text, edit_mid.text, edit_hi.text))
-        (e as LineEdit).focus_exited.connect(func(): _commit_sequence_notes_typed(ridx, edit_lo.text, edit_mid.text, edit_hi.text))
+        (e as LineEdit).text_submitted.connect(func(_t): _commit_sequence_notes_typed(ridx, edit_lo.text, edit_mid.text, edit_hi.text, texts))
+        (e as LineEdit).focus_exited.connect(func(): _commit_sequence_notes_typed(ridx, edit_lo.text, edit_mid.text, edit_hi.text, texts))
 
     var copy_btn := Button.new()
     copy_btn.text = "⎘"
@@ -3349,26 +3349,52 @@ func _make_sequence_notes_typed_row(record_idx: int, row_color: Color) -> HBoxCo
 ## bounds that leave nothing) changes nothing; the refresh puts the boxes back
 ## to what the row really says. Unchanged boxes change nothing either, so
 ## merely clicking through the row is harmless.
-func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: String, hi_text: String) -> void:
+##
+## ONLY THE BOXES THE PLAYER CHANGED ARE READ AS INSTRUCTIONS. `shown` is what
+## the three boxes displayed when the row was built; a box still showing that
+## is the row's own read-out, not something typed. (Reported 2026-10-13:
+## typing "1-2" into the list snapped back. Every commit rebuilds the row, the
+## old boxes then lose focus and commit AGAIN with their old texts -- an upper
+## box still blank where the row now read "3" -- and that second commit read
+## the stale blank as "no upper bound" and reopened everything.)
+##   - list changed: the list says which notes are possible. A bound the
+##     player did not also change adds nothing to it.
+##   - only a bound changed: the marks made inside the current bounds stay,
+##     the other bound stays, and the changed one moves.
+## A repeat of the same commit therefore changes nothing. With `shown`
+## omitted the boxes are compared with what the row says now.
+func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: String, hi_text: String, shown: Array = []) -> void:
     if record_idx < 0 or record_idx >= _deduction.record_count():
         return
     var now: Array = _seq_notes_typed_texts(record_idx)
-    if lo_text.strip_edges() == str(now[0]) and mid_text.strip_edges() == str(now[1]) and hi_text.strip_edges() == str(now[2]):
+    if shown.size() != 3:
+        shown = now
+    var lo_edited: bool = lo_text.strip_edges() != str(shown[0])
+    var mid_edited: bool = mid_text.strip_edges() != str(shown[1])
+    var hi_edited: bool = hi_text.strip_edges() != str(shown[2])
+    if not (lo_edited or mid_edited or hi_edited):
         return
     var n: int = _deduction._melody_tick_count()
-    var lo: int = 0
-    var hi: int = n + 1
+    var now_lo: int = int(str(now[0])) if str(now[0]) != "" else 0
+    var now_hi: int = int(str(now[2])) if str(now[2]) != "" else n + 1
+    # A bound not touched: nothing extra when the list was typed, else as it stands.
+    var lo: int = 0 if mid_edited else now_lo
+    var hi: int = n + 1 if mid_edited else now_hi
     var bad: bool = false
-    if lo_text.strip_edges() != "":
-        if lo_text.strip_edges().is_valid_int():
-            lo = int(lo_text.strip_edges())
-        else:
-            bad = true
-    if hi_text.strip_edges() != "":
-        if hi_text.strip_edges().is_valid_int():
-            hi = int(hi_text.strip_edges())
-        else:
-            bad = true
+    if lo_edited:
+        lo = 0
+        if lo_text.strip_edges() != "":
+            if lo_text.strip_edges().is_valid_int():
+                lo = int(lo_text.strip_edges())
+            else:
+                bad = true
+    if hi_edited:
+        hi = n + 1
+        if hi_text.strip_edges() != "":
+            if hi_text.strip_edges().is_valid_int():
+                hi = int(hi_text.strip_edges())
+            else:
+                bad = true
     if lo < 0 or hi > n + 1 or hi - lo < 2:
         bad = true
     var listed: Dictionary = {}     # note -> true where the list allows it
@@ -3380,9 +3406,9 @@ func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: St
     # ruled out -- so widening "5 <" to "2 <" would reopen nothing. Instead
     # the row keeps the marks it had strictly inside the old bounds and the
     # new bounds decide the ends.
-    var list_untouched: bool = mid_text.strip_edges() == str(now[1])
-    var old_lo: int = int(str(now[0])) if str(now[0]) != "" else 0
-    var old_hi: int = int(str(now[2])) if str(now[2]) != "" else n + 1
+    var list_untouched: bool = not mid_edited
+    var old_lo: int = now_lo
+    var old_hi: int = now_hi
     if list_untouched:
         has_list = false
     if has_list and not bad:
