@@ -45,6 +45,10 @@ func _small_puzzle(melody: Array, star_count: int, seed: int):
 		lines.append([i, (i + 1) % star_count])
 	var g = PuzzleScript.new()
 	g.difficulty = "easy"
+	# This file checks the NOTE proof, with names read as their real stars (its
+	# brute force does the same). The joint name-and-note proof is checked
+	# against an independent reader in test_joint_name_note_proof.gd.
+	g.names_honoured = false
 	g.setup(star_count, lines, melody, seed, 0, def.get("name_theme", {}),
 		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
 	return g

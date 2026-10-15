@@ -375,6 +375,82 @@ func _annotate_label_refs(facts: Array) -> void:
             fd["label_refs"] = refs
 
 
+## For the joint name-and-note proof (_solve_joint): on each fact of the clue
+## being committed, how each star field is named, fact["ents"] = {field: entity}
+## with entity {"name": x} (whichever map star the name x turns out to be),
+## {"note": T} (whoever owns note T; also in label_refs) or {"hop": ref,
+## "hops": d} (the star d hops from whichever star the name ref is). A field
+## named by a colour or pitch only it has, or not named at all, is the map star
+## itself and gets no entry. Returns the extra facts the clue implies: a name
+## and a visible handle on the same star in one clue state that the name IS
+## that star ({"kind": "name_is_star"}), and a pitch comparison states the
+## pitch order of the stars it names ({"kind": "pitch_order"}; those clues
+## carried no fact before, so no proof read them).
+func _annotate_entities(facts: Array, text: String, chars: Array) -> Array:
+    var extra: Array = []
+    var linked: Dictionary = {}
+    for f in facts:
+        if not (f is Dictionary):
+            continue
+        var fd: Dictionary = f
+        var kind: String = str(fd.get("kind", ""))
+        if not LABEL_REF_FIELDS.has(kind):
+            continue
+        var ents: Dictionary = {}
+        for field in LABEL_REF_FIELDS[kind]:
+            var e: Dictionary = _entity_for_star(int(fd.get(field, -1)), linked)
+            if (fd.get("label_refs", {}) as Dictionary).has(field):
+                e = {"note": int(fd["label_refs"][field])}
+            if not e.is_empty():
+                ents[field] = e
+        if not ents.is_empty():
+            fd["ents"] = ents
+    for x in linked:
+        extra.append({"kind": "name_is_star", "name_star": int(x)})
+    if text.contains(" is pitched "):
+        var k: int = 3 if (text.contains(", which is pitched") or text.contains(" is pitched between ")) else 2
+        var stars: Array = []
+        var pents: Array = []
+        for ch in chars.slice(0, k):
+            stars.append(int(ch["star"]))
+            pents.append(_entity_for_star(int(ch["star"]), linked, int(ch["cat"])))
+        var mode: String = "order"
+        if text.contains(" is pitched between "):
+            mode = "between"
+        elif text.contains(" is pitched exactly "):
+            mode = "step"
+        extra.append({"kind": "pitch_order", "mode": mode, "stars": stars, "stars_ents": pents})
+    return extra
+
+
+## How the clue being committed names star x, as an entity ({} = the map star
+## itself). `cat` >= 0 = the descriptor's own category, when known.
+func _entity_for_star(x: int, linked: Dictionary, cat: int = -1) -> Dictionary:
+    if cat == Category.SEQUENCE:
+        return {"note": _seq_first_tick(x)}
+    if cat == Category.NAME:
+        return {"name": x}
+    if cat == Category.DISTANCE:
+        var hh: Dictionary = _rendered_star_handles.get(x, {}).get("hop", {})
+        return {"hop": int(hh["ref"]), "hops": int(hh["hops"])} if not hh.is_empty() else {}
+    if cat >= 0:
+        return {}
+    if not _rendered_star_handles.has(x):
+        return {}
+    var h: Dictionary = _rendered_star_handles[x]
+    if bool(h["fixed"]):
+        if bool(h["name"]):
+            linked[x] = true
+        return {}
+    if bool(h["name"]):
+        return {"name": x}
+    if not (h["hop"] as Dictionary).is_empty():
+        return {"hop": int(h["hop"]["ref"]), "hops": int(h["hop"]["hops"])}
+    if bool(h["label"]):
+        return {"note": _seq_first_tick(x)}
+    return {}
+
+
 ## The recorded verbs as facts, and the record cleared.
 func _take_repeat_verb_facts() -> Array:
     var out: Array = []
@@ -2015,7 +2091,11 @@ func check_solution(candidate: Array) -> bool:
 # only by a note label as "whoever owns that note" (facts carry label_refs). A
 # version-10 puzzle may be unique only because its proof treated such a label
 # as a star the player could already point at.
-const CACHE_VERSION: int = 11
+#
+# version 12 (2026-10-14, same day): names and notes are proven together
+# (_solve_joint). A version-11 puzzle read every name as its real map star and
+# may have a second answer with other names (3 of 12 measured did).
+const CACHE_VERSION: int = 12
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -2610,20 +2690,46 @@ func _note_rendered_term(kind: String, value) -> void:
     _rendered_terms["%s:%s" % [kind, str(value)]] = true
 
 
-## WHICH STARS THE CLUE NAMES ONLY BY A NOTE LABEL (2026-10-14). To the reader
-## "the star that first fires on note 5" is whoever owns note 5, not a star
-## they can point at; the note proof must treat it that way (see
-## _annotate_label_refs). Recorded here, per star, by how the clue being
-## built names it: "label" (a Sequence label) and/or "other" (a name, a
-## colour or pitch only it has, a hop from a named star, a repeat count only
-## it has). Reset wherever _rendered_terms is.
+## HOW THE CLUE BEING BUILT NAMES EACH STAR (2026-10-14). To the reader a name
+## is not a map star (which star is Oraeides is half the puzzle), "the star that
+## first fires on note 5" is whoever owns note 5, and "the star 2 hops from
+## Oraeides" depends on which star Oraeides is; only a colour or pitch the star
+## alone has (or its Listen-given repeat count) points at a map star outright.
+## The proofs read every fact through this (_annotate_label_refs,
+## _annotate_entities). Per star: "label", "name", "fixed" (colour/pitch/repeat
+## count), "hop" ({ref, hops}), and "other" = any but a label. Reset wherever
+## _rendered_terms is.
 var _rendered_star_handles: Dictionary = {}
 
 
-func _note_star_handle(star: int, is_label: bool) -> void:
+func _note_star_handle(star: int, how: String, hop: Dictionary = {}) -> void:
     if not _rendered_star_handles.has(star):
-        _rendered_star_handles[star] = {"label": false, "other": false}
-    _rendered_star_handles[star]["label" if is_label else "other"] = true
+        _rendered_star_handles[star] = {"label": false, "other": false, "name": false, "fixed": false, "hop": {}}
+    var h: Dictionary = _rendered_star_handles[star]
+    match how:
+        "label":
+            h["label"] = true
+        "name":
+            h["name"] = true
+            h["other"] = true
+        "hop":
+            h["hop"] = hop
+            h["other"] = true
+        _:
+            h["fixed"] = true
+            h["other"] = true
+
+
+## The handle kind for a characteristic's category.
+func _handle_kind(cat: int) -> String:
+    match cat:
+        Category.SEQUENCE:
+            return "label"
+        Category.NAME:
+            return "name"
+        Category.DISTANCE:
+            return "hop"
+    return "fixed"
 
 
 ## For the GROUP phrasings a few Forms build themselves rather than through
@@ -2660,9 +2766,12 @@ func _characteristic_label(ch: Dictionary) -> String:
     # the definite/indefinite distinction matters for OTHER text (group
     # descriptions, decoy values) built elsewhere, not for this function.
     var s: int = int(ch["star"])
-    _note_star_handle(s, int(ch["cat"]) == Category.SEQUENCE)
     if int(ch["cat"]) == Category.DISTANCE:
-        _note_star_handle(int(ch["ref"]), false)   # "... from Theryis" names the reference star
+        _note_star_handle(s, "hop", {"ref": int(ch["ref"]), "hops": int(_distances[int(ch["ref"])][s])})
+    else:
+        _note_star_handle(s, _handle_kind(int(ch["cat"])))
+    if int(ch["cat"]) == Category.DISTANCE:
+        _note_star_handle(int(ch["ref"]), "name")   # "... from Theryis" names the reference star
     match int(ch["cat"]):
         Category.NAME:
             _note_rendered_term("N", star_names[s])
@@ -2737,7 +2846,7 @@ func _characteristic_label(ch: Dictionary) -> String:
 ## the Search tab still finds a clue by the value its sentence shows.
 func _characteristic_predicate(ch: Dictionary) -> String:
     var s: int = int(ch["star"])
-    _note_star_handle(s, int(ch["cat"]) == Category.SEQUENCE)
+    _note_star_handle(s, _handle_kind(int(ch["cat"])))
     match int(ch["cat"]):
         Category.NAME:
             _note_rendered_term("N", star_names[s])
@@ -8837,6 +8946,8 @@ func _commit_clue_result(form_id: int, result: Dictionary, sequence_solver_facts
     _commit_characteristics(chars)
     var verb_facts: Array = _take_repeat_verb_facts()
     _annotate_label_refs(_coerce_array(result.get("solver_facts"), []) + _coerce_array(result.get("value_facts"), []) + verb_facts)
+    var entity_facts: Array = _annotate_entities(_coerce_array(result.get("solver_facts"), []) + _coerce_array(result.get("value_facts"), []) + verb_facts,
+        text, chars)
     chosen_form_clues.append({
         "form_id": form_id,
         "form_name": str(FORM_NAMES.get(form_id, "")),
@@ -8859,7 +8970,7 @@ func _commit_clue_result(form_id: int, result: Dictionary, sequence_solver_facts
         # unique against; value_facts carries the Colour/Pitch content the
         # CSP has no use for.
         "disclosures": (_coerce_array(result.get("solver_facts"), []) + _coerce_array(result.get("value_facts"), [])
-            + verb_facts).duplicate(true),
+            + verb_facts + entity_facts).duplicate(true),
     })
     if result.has("solver_facts"):
         for f in result["solver_facts"]:
@@ -9393,6 +9504,10 @@ const VALUE_FACT_KINDS: Array = [
     # header). Read only by _solve_repeat_notes, never by the Sequence solver
     # or the Name closure.
     "firing_position", "firing_relation", "repeat_count_range",
+    # The joint name-and-note proof (2026-10-14): a pitch comparison ("X is
+    # pitched higher than Y") and a clue that ties a name to a visible star.
+    # Read only by _solve_joint; the player side skips kinds it does not score.
+    "pitch_order", "name_is_star",
 ]
 
 ## Above this many surviving name-solutions the pruning pass gives up on a
@@ -10051,6 +10166,8 @@ func _solve_notes(seq_facts: Array, cap: int = 2, source_clues = null) -> Array:
             out.append({"ranks": ranks, "repeats": []})
         return out
     if _first_notes_hidden():
+        if names_honoured:
+            return await _solve_joint(cap, source_clues)
         return await _solve_note_owners(seq_facts, cap, source_clues)
     if not note_proof_joint:
         # TEST SEAM: the two-stage arrangement of 2026-10-10. The firing order
@@ -10141,7 +10258,7 @@ func _first_notes_hidden() -> bool:
 ## Every assignment of a star to each note the clues allow, up to `cap`:
 ## {"owners": star per note, "ranks": the order the stars begin in (star ->
 ## rank), "repeats": the owners of the notes _repeat_ticks() lists}.
-func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> Array:
+func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null, ident_facts: Array = []) -> Array:
     _last_solve_inconclusive = false
     var n_notes: int = melody_star_sequence.size()
     var label_note: Array = _first_fire_ticks()
@@ -10277,6 +10394,12 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
         for t4 in range(n_notes, 0, -1):
             col[t4] = int(col[t4 + 1]) + (1 if int(allowed[t4]) & (1 << s3) else 0)
         room.append(col)
+    # A label in a fact about which star it is ("the star that first fires on
+    # note 5 is not red") names a first note too.
+    for idf0 in ident_facts:
+        for e0 in idf0["ents"]:
+            if (e0 as Dictionary).has("note"):
+                must_begin[int(e0["note"])] = true
     for t5 in range(1, n_notes + 1):
         if int(allowed[t5]) == 0:
             return []   # a note nobody may fire on: the facts contradict each other
@@ -10287,6 +10410,7 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
         "not_first_at": not_first_at, "must_begin": must_begin,
         "free_begins": star_count - must_begin.count(true), "free_used": 0,
         "dyn": dynamic, "dyn_by_star": [], "dyn_by_note": [],
+        "ident": ident_facts, "ident_by_note": [],
         "label_note": label_note, "cap": cap,
         "first": [], "notes": [], "owners": [], "solutions": [],
     }
@@ -10311,6 +10435,14 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null) -> 
                 ((st["dyn_by_star"] as Array)[int(dfact[field])] as Array).append(dfact)
         for nbr in dfact.get("neighbors", []):
             ((st["dyn_by_star"] as Array)[int(nbr)] as Array).append(dfact)
+    for _t7 in n_notes + 1:
+        (st["ident_by_note"] as Array).append([])
+    for idf2 in ident_facts:
+        var last_note: int = 0
+        for e2 in idf2["ents"]:
+            if (e2 as Dictionary).has("note"):
+                last_note = maxi(last_note, int(e2["note"]))
+        ((st["ident_by_note"] as Array)[last_note] as Array).append(idf2)
     _note_owner_nodes = NOTE_OWNER_NODE_BUDGET
     _note_owner_budget_hit = false
     var t_solve: int = Time.get_ticks_msec()
@@ -10504,6 +10636,13 @@ func _note_owner_place(t: int, s_try: int, st: Dictionary) -> bool:
                 if not _note_owner_dyn_ok(dfact, st, false):
                     ok = false
                     break
+        # Facts about WHICH star a label's note belongs to (colour, pitch,
+        # distance, ...): settled once the last note they name is assigned.
+        if ok:
+            for idf in (st["ident_by_note"] as Array)[t]:
+                if not _note_owner_ident_ok(idf, owners):
+                    ok = false
+                    break
         # Every star must still have room for the notes it is owed.
         if ok:
             var room: Array = st["room"]
@@ -10582,15 +10721,10 @@ func _note_owner_label_constant(fd: Dictionary, allowed: Array, deadline: Array,
                 return -1
             return _note_owner_first_order(fd, refs, "mid", "b", allowed, deadline, before)
         "ordinal_extreme":
-            if not refs.has("s"):
-                return 0
-            var ts: int = int(refs["s"])
-            for nb in fd["neighbors"]:
-                if bool(fd["want_lowest"]):
-                    _note_owner_first_after(int(nb), ts, allowed)
-                else:
-                    deadline[int(nb)] = mini(int(deadline[int(nb)]), ts - 1)
-            return 1
+            # "...among ITS connected stars": with the star named by a label,
+            # whose star it is (and so its neighbours) is only known during the
+            # search, so it is checked there (_note_owner_dyn_ok).
+            return 0
     return 0
 
 
@@ -10614,6 +10748,379 @@ func _note_owner_first_order(fd: Dictionary, refs: Dictionary, earlier: String, 
 func _note_owner_first_after(x: int, t: int, allowed: Array) -> void:
     for t0 in range(1, t + 1):
         allowed[t0] &= ~(1 << x)
+
+
+# ==================================================
+# THE JOINT NAME-AND-NOTE PROOF (2026-10-14)
+# ==================================================
+# Which map star each NAME is and who fires on each NOTE are both unknown to
+# the player, and the clues tie them together. The note proof alone used to
+# read every name as its real map star, and the Name closure took the note
+# proof's one answer as given, so neither looked at an answer where names and
+# notes both differ. Measured on 12 Beginner puzzles: 3 had such a second
+# answer (verified by hand against every clue). A puzzle must have exactly one
+# answer from the clues alone (author: guessing or two valid endings is never
+# acceptable).
+#
+# _solve_joint lists every assignment of names to map stars that the clues
+# about names, colours, pitches, map distances and repeat counts allow, and
+# for each one runs the note proof with every fact read through it. A label
+# stays "whoever owns that note"; a hop ("the star 2 hops from X") is resolved
+# through X. An answer is (names, notes); the puzzle is unique when exactly
+# one exists. How each fact's stars are named comes from fact["ents"]
+# (_annotate_entities); a fact without it reads its stars as the map stars.
+
+## TEST SEAM. False = names are read as their real map stars (the proof before
+## the joint version of 2026-10-14).
+var names_honoured: bool = true
+## Name assignments one joint solve may try; more is INCONCLUSIVE.
+const JOINT_NAME_BUDGET: int = 20000
+## Measurement: name assignments tried by joint solves, in total.
+var joint_name_assignments_tried: int = 0
+
+
+## An entity of a name fact by the descriptor's category.
+func _joint_cat_ent(cat: int, star: int) -> Dictionary:
+    match cat:
+        Category.NAME:
+            return {"name": star}
+        Category.SEQUENCE:
+            return {"note": _seq_first_tick(star)}
+        Category.DISTANCE:
+            return {"unknown": true}
+    return {"star": star}
+
+
+## An entity under one name assignment: {"star": s}, {"note": T}, or {} when
+## it cannot be pinned to one star ("a star 2 hops from X" with several).
+func _joint_resolve(e: Dictionary, pi: Array) -> Dictionary:
+    if e.has("name"):
+        return {"star": int(pi[int(e["name"])])}
+    if e.has("hop"):
+        var at: Array = _stars_at_distance(int(pi[int(e["hop"])]), int(e["hops"]))
+        return {"star": int(at[0])} if at.size() == 1 else {}
+    if e.has("note"):
+        return {"note": int(e["note"])}
+    if e.has("star"):
+        return {"star": int(e["star"])}
+    return {}
+
+
+## Names an entity depends on.
+func _joint_names_of(e: Dictionary) -> Array:
+    if e.has("name"):
+        return [int(e["name"])]
+    if e.has("hop"):
+        return [int(e["hop"])]
+    return []
+
+
+## Does a fact about WHICH stars some entities are hold, given those stars?
+func _ident_holds(kind: String, p: Dictionary, s: Array) -> bool:
+    match kind:
+        "in":
+            return (p["set"] as Array).has(int(s[0]))
+        "out":
+            return not (p["set"] as Array).has(int(s[0]))
+        "eq":
+            return int(s[0]) == int(s[1])
+        "eq_any":
+            return int(s[0]) == int(s[1]) or int(s[0]) == int(s[2])
+        "dist":
+            return (int(_distances[int(s[0])][int(s[1])]) == int(p["hops"])) != bool(p["negated"])
+        "same_key":
+            return _name_group_key(int(p["cat"]), int(s[0])) == _name_group_key(int(p["cat"]), int(s[1]))
+        "diff_key":
+            return _name_group_key(int(p["cat"]), int(s[0])) != _name_group_key(int(p["cat"]), int(s[1]))
+        "need_range":
+            var reps: int = _star_ticks(int(s[0])).size() - 1
+            return (reps >= int(p["lo"]) and reps <= int(p["hi"])) != bool(p["negated"])
+        "pitch_order":
+            return _pitch_order_holds(p, s)
+    return true
+
+
+## The stars a pitch sentence names stand in their real pitch order: "between"
+## fixes only which one is in the middle, a step the exact gap in steps.
+func _pitch_order_holds(p: Dictionary, s: Array) -> bool:
+    var ts: Array = p["true_stars"]
+    var mode: String = str(p["mode"])
+    if mode == "step":
+        return _pitch_step_of(int(s[0])) - _pitch_step_of(int(s[1])) == _pitch_step_of(int(ts[0])) - _pitch_step_of(int(ts[1]))
+    if mode == "between":
+        var mid: int = 0
+        for i in 3:
+            var o0: int = (i + 1) % 3
+            var o1: int = (i + 2) % 3
+            var ti: float = _freq_for_star(int(ts[i]))
+            if ti > minf(_freq_for_star(int(ts[o0])), _freq_for_star(int(ts[o1]))) \
+                    and ti < maxf(_freq_for_star(int(ts[o0])), _freq_for_star(int(ts[o1]))):
+                mid = i
+        var a: int = (mid + 1) % 3
+        var b: int = (mid + 2) % 3
+        var fm: float = _freq_for_star(int(s[mid]))
+        return fm > minf(_freq_for_star(int(s[a])), _freq_for_star(int(s[b]))) \
+            and fm < maxf(_freq_for_star(int(s[a])), _freq_for_star(int(s[b])))
+    for i2 in ts.size():
+        for j2 in ts.size():
+            if (_freq_for_star(int(ts[i2])) < _freq_for_star(int(ts[j2]))) != (_freq_for_star(int(s[i2])) < _freq_for_star(int(s[j2]))):
+                return false
+    return true
+
+
+## A star's pitch as a step among the map's distinct pitches, lowest = 0.
+func _pitch_step_of(s: int) -> int:
+    var fr: Array = []
+    for x in star_count:
+        var v: float = _freq_for_star(x)
+        if not fr.has(v):
+            fr.append(v)
+    fr.sort()
+    return fr.find(_freq_for_star(s))
+
+
+## An identity fact inside the note search: its labels resolved to the stars
+## that own those notes so far (it is only checked once they are assigned).
+func _note_owner_ident_ok(idf: Dictionary, owners: Array) -> bool:
+    var stars: Array = []
+    for e in idf["ents"]:
+        if (e as Dictionary).has("note"):
+            var w: int = int(owners[int(e["note"]) - 1])
+            if w < 0:
+                return true
+            stars.append(w)
+        else:
+            stars.append(int(e["star"]))
+    return _ident_holds(str(idf["kind"]), idf["p"], stars)
+
+
+## The members of a visible group (colour, pitch, repeat count).
+func _joint_group(cat: int, key: int) -> Array:
+    var members: Array = []
+    for s in star_count:
+        if _name_group_key(cat, s) == key:
+            members.append(s)
+    return members
+
+
+## The facts of `clues` split in two: identity facts ({kind, ents, p}: which
+## star is which, over raw entities name / note / hop / star), and the rest,
+## which _joint_translate reads through each name assignment.
+func _joint_split(clues: Array) -> Dictionary:
+    var ident: Array = []
+    var other: Array = []
+    for cl in clues:
+        for d0 in _coerce_array((cl as Dictionary).get("disclosures"), []):
+            if not (d0 is Dictionary):
+                continue
+            var d: Dictionary = d0
+            var k: String = str(d.get("kind", ""))
+            match k:
+                "name_group", "name_group_neg":
+                    if int(d["cat"]) == Category.SEQUENCE:
+                        other.append(d)
+                    else:
+                        ident.append({"kind": "in" if k == "name_group" else "out", "ents": [{"name": int(d["name_star"])}],
+                            "p": {"set": _joint_group(int(d["cat"]), int(d["group_key"]))}})
+                "name_is_star":
+                    ident.append({"kind": "eq", "ents": [{"name": int(d["name_star"])}, {"star": int(d["name_star"])}], "p": {}})
+                "descriptor_either_or":
+                    if int(d["cat_a"]) == Category.NAME and int(d["cat_b"]) == Category.SEQUENCE:
+                        other.append(d)
+                    else:
+                        ident.append({"kind": "eq_any", "ents": [_joint_cat_ent(int(d["cat_a"]), int(d["star_a"])),
+                            _joint_cat_ent(int(d["cat_b"]), int(d["s1"])), _joint_cat_ent(int(d["cat_b"]), int(d["s2"]))], "p": {}})
+                "descriptor_not_in_group":
+                    if int(d["group_cat"]) == Category.SEQUENCE:
+                        continue   # never built; skipping only leaves more answers standing
+                    ident.append({"kind": "out", "ents": [_joint_cat_ent(int(d["cat"]), int(d["star"]))],
+                        "p": {"set": _joint_group(int(d["group_cat"]), int(d["group_key"]))}})
+                "distance_hop":
+                    ident.append({"kind": "dist", "ents": [_joint_cat_ent(int(d["ref_cat"]), int(d["ref"])), _joint_cat_ent(int(d["target_cat"]), int(d["target"]))],
+                        "p": {"hops": int(d["hops"]), "negated": bool(d.get("negated", false))}})
+                "name_same_group", "name_different_group":
+                    ident.append({"kind": "same_key" if k == "name_same_group" else "diff_key",
+                        "ents": [{"name": int(d["name_star_a"])}, {"name": int(d["name_star_b"])}], "p": {"cat": int(d["cat"])}})
+                "pitch_order":
+                    var pents: Array = []
+                    for i in (d["stars"] as Array).size():
+                        var e0: Dictionary = (d["stars_ents"] as Array)[i]
+                        pents.append(e0 if not e0.is_empty() else {"star": int(d["stars"][i])})
+                    ident.append({"kind": "pitch_order", "ents": pents, "p": {"mode": str(d["mode"]), "true_stars": d["stars"]}})
+                "values_same":
+                    if int(d.get("cat", -1)) == Category.REPEAT or int(d.get("cat", -1)) == Category.SEQUENCE:
+                        other.append(d)
+                    else:
+                        var ents_v: Dictionary = d.get("ents", {})
+                        ident.append({"kind": "same_key", "ents": [ents_v.get("a", {"star": int(d["a"])}), ents_v.get("b", {"star": int(d["b"])})],
+                            "p": {"cat": int(d["cat"])}})
+                "repeat_count_range":
+                    var e_r: Dictionary = (d.get("ents", {}) as Dictionary).get("star", {"star": int(d["star"])})
+                    ident.append({"kind": "need_range", "ents": [e_r], "p": {"lo": int(d["lo"]), "hi": int(d["hi"]), "negated": bool(d.get("negated", false))}})
+                _:
+                    other.append(d)
+    return {"ident": ident, "other": other}
+
+
+## The facts `other` holds, read through one name assignment, in the note
+## proof's own vocabulary (star indices; labels kept in label_refs), split into
+## its two inputs. A fact that cannot be pinned (an ambiguous hop) is dropped,
+## which only ever leaves more answers standing.
+func _joint_translate(other: Array, pi: Array) -> Dictionary:
+    var seq: Array = []
+    var rep: Array = []
+    for d in other:
+        var k: String = str(d.get("kind", ""))
+        var c: Dictionary = {}
+        match k:
+            "name_group", "name_group_neg":
+                c = {"kind": "ordinal_exact" if k == "name_group" else "ordinal_neg", "s": int(pi[int(d["name_star"])]), "r": int(d["group_key"])}
+            "descriptor_either_or":
+                c = {"kind": "ordinal_either_or", "s": int(pi[int(d["star_a"])]),
+                    "r1": int(sequence_rank_solution[int(d["s1"])]), "r2": int(sequence_rank_solution[int(d["s2"])])}
+            "name_rank_range":
+                c = {"kind": "ordinal_range", "s": int(pi[int(d["name_star"])]), "lo": int(d["lo"]), "hi": int(d["hi"])}
+            "name_nbr_count":
+                var sn: int = int(pi[int(d["name_star"])])
+                c = {"kind": "ordinal_count_before", "s": sn, "k": int(d["k"]), "neighbors": proximity[sn]}
+            "name_nbr_extreme":
+                var se: int = int(pi[int(d["name_star"])])
+                c = {"kind": "ordinal_extreme", "s": se, "want_lowest": bool(d["want_lowest"]), "neighbors": proximity[se]}
+            "name_precedes_group", "name_follows_group", "name_extreme_in_group":
+                var sx: int = int(pi[int(d["name_star"])])
+                var later: bool = k == "name_follows_group" or (k == "name_extreme_in_group" and not bool(d["want_lowest"]))
+                for m in _joint_group(int(d["cat"]), int(d["group_key"])):
+                    if int(m) != sx:
+                        seq.append({"kind": "ordinal_cmp", "a": sx, "b": int(m), "a_gt_b": later})
+                continue
+            _:
+                if not LABEL_REF_FIELDS.has(k):
+                    continue
+                c = d.duplicate(true)
+                c.erase("ents")
+                var ents: Dictionary = d.get("ents", {})
+                var dropped: bool = false
+                for field in ents:
+                    var r: Dictionary = _joint_resolve(ents[field], pi)
+                    if r.is_empty():
+                        dropped = true
+                    elif r.has("star"):
+                        c[field] = int(r["star"])
+                        if c.has("label_refs"):
+                            (c["label_refs"] as Dictionary).erase(field)
+                if dropped:
+                    continue
+                # "...among its connected stars": the neighbours of the star it
+                # turned out to be.
+                if (k == "ordinal_extreme" or k == "ordinal_count_before") and ents.has("s") \
+                        and not (c.get("label_refs", {}) as Dictionary).has("s"):
+                    c["neighbors"] = proximity[int(c["s"])]
+                if c.has("label_refs") and (c["label_refs"] as Dictionary).is_empty():
+                    c.erase("label_refs")
+        if _fact_is_repeat_fact(c):
+            rep.append(c)
+        elif k != "ordinal_pair_set":
+            seq.append(c)
+    return {"seq": seq, "rep": [{"disclosures": rep}]}
+
+
+## Every (names, notes) answer the clues allow, up to `cap`:
+## [{"owners", "ranks", "repeats", "names"}]. See the section header.
+func _solve_joint(cap: int = 2, source_clues = null) -> Array:
+    var clues: Array = chosen_form_clues if source_clues == null else (source_clues as Array)
+    var split: Dictionary = _joint_split(clues)
+    # Identity facts with no label are about names and visible stars only:
+    # they prune the name assignments, each checked at the last name it needs.
+    var by_name: Array = []
+    for _n in star_count:
+        by_name.append([])
+    var with_notes: Array = []
+    for idf in split["ident"]:
+        var has_note: bool = false
+        var unknown: bool = false
+        var last_name: int = -1
+        for e in idf["ents"]:
+            if (e as Dictionary).has("note"):
+                has_note = true
+            if (e as Dictionary).has("unknown"):
+                unknown = true
+            for nm in _joint_names_of(e):
+                last_name = maxi(last_name, int(nm))
+        if unknown:
+            continue   # a descriptor this proof cannot place; skipping leaves more answers
+        if has_note:
+            with_notes.append(idf)
+        elif last_name >= 0:
+            (by_name[last_name] as Array).append(idf)
+    var found: Array = []
+    var pi: Array = []
+    pi.resize(star_count)
+    pi.fill(-1)
+    var state: Dictionary = {"tried": 0, "inconclusive": false, "used": {}}
+    await _joint_dfs(0, pi, by_name, with_notes, split["other"], cap, found, state)
+    _last_solve_inconclusive = bool(state["inconclusive"]) and found.size() < cap
+    return found
+
+
+func _joint_dfs(i: int, pi: Array, by_name: Array, with_notes: Array, other: Array, cap: int, found: Array, state: Dictionary) -> void:
+    if found.size() >= cap or bool(state["inconclusive"]) or abort_requested:
+        return
+    if i == star_count:
+        state["tried"] = int(state["tried"]) + 1
+        joint_name_assignments_tried += 1
+        if int(state["tried"]) > JOINT_NAME_BUDGET:
+            state["inconclusive"] = true
+            inconclusive_solves += 1
+            return
+        var tr: Dictionary = _joint_translate(other, pi)
+        var ident: Array = []
+        for idf in with_notes:
+            var ents: Array = []
+            var ok_e: bool = true
+            for e in idf["ents"]:
+                var r: Dictionary = _joint_resolve(e, pi)
+                if r.is_empty():
+                    ok_e = false
+                    break
+                ents.append(r)
+            if ok_e:
+                ident.append({"kind": idf["kind"], "ents": ents, "p": idf["p"]})
+        var sols: Array = await _solve_note_owners(tr["seq"], cap - found.size(), tr["rep"], ident)
+        if _last_solve_inconclusive:
+            state["inconclusive"] = true
+        for sol in sols:
+            sol["names"] = pi.duplicate()
+            found.append(sol)
+        return
+    # The real star first, so a unique puzzle meets its answer early.
+    var order: Array = [i]
+    for s0 in star_count:
+        if s0 != i:
+            order.append(s0)
+    for s in order:
+        if (state["used"] as Dictionary).has(s):
+            continue
+        pi[i] = s
+        var good: bool = true
+        for idf2 in by_name[i]:
+            var stars: Array = []
+            var pinned: bool = true
+            for e2 in idf2["ents"]:
+                var r2: Dictionary = _joint_resolve(e2, pi)
+                if r2.is_empty():
+                    pinned = false
+                    break
+                stars.append(int(r2["star"]))
+            if pinned and not _ident_holds(str(idf2["kind"]), idf2["p"], stars):
+                good = false
+                break
+        if good:
+            state["used"][s] = true
+            await _joint_dfs(i + 1, pi, by_name, with_notes, other, cap, found, state)
+            (state["used"] as Dictionary).erase(s)
+        pi[i] = -1
+        if found.size() >= cap or bool(state["inconclusive"]) or abort_requested:
+            return
 
 
 ## TEST SEAM. False = a star a clue names only by a note label is read as the
@@ -10688,13 +11195,13 @@ func _note_owner_dyn_ok(fd: Dictionary, st: Dictionary, full: bool) -> bool:
             return _dyn_first(notes, int(who["a"])) < _dyn_first(notes, int(who["mid"])) \
                 and _dyn_first(notes, int(who["mid"])) < _dyn_first(notes, int(who["b"]))
         "ordinal_extreme":
-            for nb in fd["neighbors"]:
+            for nb in _dyn_neighbors(fd, refs, int(who["s"])):
                 if (_dyn_first(notes, int(who["s"])) < _dyn_first(notes, int(nb))) != bool(fd["want_lowest"]):
                     return false
             return true
         "ordinal_count_before":
             var before: int = 0
-            for nb2 in fd["neighbors"]:
+            for nb2 in _dyn_neighbors(fd, refs, int(who["s"])):
                 if _dyn_first(notes, int(nb2)) < _dyn_first(notes, int(who["s"])):
                     before += 1
             return before == int(fd["k"])
@@ -10737,6 +11244,15 @@ func _firing_pick_needed(pick: Dictionary, all_notes: int) -> int:
     return all_notes
 
 
+## "Its connected stars": the map neighbours of the star the fact is about.
+## When a label names that star, it is whichever star owns the note, so the
+## neighbours are read off that star rather than the fact's stored list.
+func _dyn_neighbors(fd: Dictionary, refs: Dictionary, s: int) -> Array:
+    if refs.has("s"):
+        return proximity[s]
+    return fd["neighbors"]
+
+
 ## A star's first note in the assignment so far; one not begun yet is later
 ## than every note.
 func _dyn_first(notes: Array, s: int) -> int:
@@ -10747,6 +11263,9 @@ func _note_owner_leaf_ok(st: Dictionary) -> bool:
     var owners: Array = st["owners"]
     var label_note: Array = st["label_note"]
     var ranks: Array = []
+    for idf in st["ident"]:
+        if not _note_owner_ident_ok(idf, st["owners"]):
+            return false
     for dfact in st["dyn"]:
         if not _note_owner_dyn_ok(dfact, st, true):
             return false
@@ -10866,6 +11385,7 @@ func _repair_note_owners(sequence_solver_facts: Array, name_revealed: Array,
     var n_notes: int = melody_star_sequence.size()
     var firsts: Array = _first_fire_ticks()
     var pinned: Dictionary = {}
+    var name_pinned: Dictionary = {}
     var added: int = 0
     while pinned.size() < n_notes and not abort_requested:
         var sols: Array = await _solve_notes(sequence_solver_facts, 2)
@@ -10875,6 +11395,25 @@ func _repair_note_owners(sequence_solver_facts: Array, name_revealed: Array,
         if sols.is_empty() and not inconclusive:
             push_error("ConstellationLogicPuzzle [%d]: INCONSISTENT NOTE FACT -- no assignment of stars to notes satisfies the clues." % constellation_id)
             break
+        # A second answer with other NAMES (_solve_joint): tie one of those
+        # names to its star by something visible ("Oraeides is the star that
+        # plays C5"). That answer has the name elsewhere, so the clue rules it
+        # out; each name is tied at most once, so this ends.
+        var name_target: int = -1
+        for sol0 in sols:
+            var nms: Array = sol0.get("names", [])
+            for x in nms.size():
+                if int(nms[x]) != x and not name_pinned.has(x):
+                    name_target = x
+                    break
+            if name_target >= 0:
+                break
+        if name_target >= 0:
+            name_pinned[name_target] = true
+            if _commit_name_pin(name_target, sequence_solver_facts, name_revealed, tier_counts, form_counts):
+                added += 1
+                name_pins_added += 1
+            continue
         var target: int = -1
         for sol in sols:
             var owners: Array = sol["owners"]
@@ -10926,6 +11465,32 @@ func _commit_repeat_pin(tick: int, sequence_solver_facts: Array, name_revealed: 
                 name_revealed, tier_counts, form_counts):
             return true
     return false
+
+
+## Clues the joint repair added to tie a name to its star (a measurement).
+var name_pins_added: int = 0
+
+
+## "<Name> is the star that plays C5" (or "the red star", or "the star that
+## repeats twice"): ties a name to its map star by something only that star
+## has. Falls back to its note label when nothing visible is unique to it.
+func _commit_name_pin(star: int, sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> bool:
+    for cat in [Category.PITCH, Category.COLOR, Category.REPEAT]:
+        if _group_size(int(cat), star) > 1:
+            continue
+        var cell: Dictionary = {
+            "cat_a": Category.NAME, "val_a": int(_cat_star_to_value[Category.NAME][star]), "star_a": star,
+            "cat_b": int(cat), "val_b": int(_cat_star_to_value[int(cat)][star]), "star_b": star,
+            "is_true": true,
+        }
+        _rendered_terms = {}
+        _rendered_star_handles = {}
+        _rendered_repeat_verbs = {}
+        if _commit_clue_result(1, _identity_result_for_cell(cell), sequence_solver_facts,
+                name_revealed, tier_counts, form_counts):
+            return true
+    return _commit_repair_clue(star, 0, true, sequence_solver_facts, name_revealed, tier_counts, form_counts)
 
 
 func _generate_clues_forms_attempt() -> Dictionary:
