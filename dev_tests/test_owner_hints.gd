@@ -258,7 +258,7 @@ func run() -> void:
 	# before the player has marked it: Beta's count is not on the board.
 	var c_rep_b: Dictionary = _clue("Beta is one of the stars that repeat once.", ["N:Beta"],
 		[{"kind": "repeat_count_range", "star": 1, "lo": 1, "hi": 1, "negated": false}])
-	var c_gap: Dictionary = _clue("The first and last times Beta fires are exactly 5 notes apart.", ["N:Beta"],
+	var c_gap: Dictionary = _clue("The second firing of Beta is exactly 5 notes after its first firing.", ["N:Beta"],
 		[{"kind": "firing_position", "s": 1, "sel": {"kind": "span", "i": 1, "j": -1}, "lo": 5, "hi": 5}])
 	var world: Dictionary = dm._owner_world([c_rep_b, c_gap], [0, 1], dm._hint_solver_for(4))
 	var beta_must: Array = []
@@ -266,7 +266,7 @@ func run() -> void:
 		for wk in world["verdicts"]:
 			if str(world["rows"][wk]["frame"]["label"]) == "Beta":
 				beta_must = world["verdicts"][wk]["must"]
-	ok(beta_must == [1, 6], "'Beta repeats once' + 'first and last 5 notes apart': Beta must fire on notes 1 and 6 (got %s)" % str(beta_must))
+	ok(beta_must == [1, 6], "'Beta repeats once' + 'second firing 5 notes after its first': Beta must fire on notes 1 and 6 (got %s)" % str(beta_must))
 	# Two rows the board has not joined are kept apart: a clue about "the red
 	# star" says nothing about Alpha's row, though Alpha IS the red star.
 	var c_red: Dictionary = _clue("The red star fires on note 2.", ["C:" + str(hm.COLOR_NAME_LABELS[0])],

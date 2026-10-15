@@ -2095,7 +2095,13 @@ func check_solution(candidate: Array) -> bool:
 # version 12 (2026-10-14, same day): names and notes are proven together
 # (_solve_joint). A version-11 puzzle read every name as its real map star and
 # may have a second answer with other names (3 of 12 measured did).
-const CACHE_VERSION: int = 12
+#
+# version 13 (2026-10-14): "within 2 notes of" became "at most 2 notes before
+# or after", and "the first and second firings of X are N notes apart" became
+# "the second firing of X is N notes after its first firing" (both read as a
+# pitch interval). Regenerated so no cached puzzle
+# keeps the old wording.
+const CACHE_VERSION: int = 13
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -4826,7 +4832,9 @@ func _firing_sentence(label: String, sel: Dictionary, lo: int, hi: int) -> Strin
         if lo <= int(dom[0]):
             return "%s fires at most %s %s." % [label, _firing_times_word(hi), win]
         return "%s fires between %d and %d times %s." % [label, lo, hi, win]
-    var pair: String = "%s and %s" % [_firing_ordinal(int(sel["i"])), _firing_ordinal(int(sel["j"]))]
+    # Said as one firing AFTER another, never "N notes apart": on this panel
+    # "notes" are also pitches and "apart" read as an interval (author,
+    # 2026-10-14). "after" makes it a count of places in the melody.
     var gap: String
     if lo == hi:
         gap = "exactly %s" % _firing_notes_word(lo)
@@ -4836,7 +4844,7 @@ func _firing_sentence(label: String, sel: Dictionary, lo: int, hi: int) -> Strin
         gap = "at most %s" % _firing_notes_word(hi)
     else:
         gap = "between %d and %d notes" % [lo, hi]
-    return "The %s firings of %s are %s apart." % [pair, label, gap]
+    return "The %s firing of %s is %s after its %s firing." % [_firing_ordinal(int(sel["j"])), label, gap, _firing_ordinal(int(sel["i"]))]
 
 
 func _build_form_firing_position(chain: Dictionary) -> Dictionary:
@@ -5204,7 +5212,12 @@ func _firing_relation_sentence(label_a: String, pick_a: Dictionary, label_b: Str
     elif rel == "atleast":
         phrase = "at least %s %s" % [_firing_notes_word(n), dir_word]
     else:
-        phrase = "within %s of" % _firing_notes_word(n)
+        # Never "within 2 notes of": on this panel "notes" are also pitches, and
+        # that read as a musical interval (author, 2026-10-14: unacceptable).
+        # "before or after" makes it a count of places in the melody.
+        var near: String = "more than %s before or after" if bool(spec["neg"]) else "at most %s before or after"
+        return "%s is %s %s." % [_firing_pick_phrase(label_a, pick_a, star_a), near % _firing_notes_word(n),
+            _firing_pick_phrase(label_b, pick_b, star_b)]
     return "%s is %s%s %s." % [_firing_pick_phrase(label_a, pick_a, star_a), "not " if bool(spec["neg"]) else "",
         phrase, _firing_pick_phrase(label_b, pick_b, star_b)]
 
@@ -8617,7 +8630,11 @@ const DIFFICULTY_PROFILES := {
             # to the loop and survives pruning far better than Range does, so one
             # early guaranteed instance is what puts the family in front of the
             # player at all.
-            1, 1, 1, 11, 8, 25, 1,
+            # Exact Identity, as NAME tied to a visible star (2026-10-14): once
+            # names were proven as unknowns, a random identity ("the star that
+            # plays C5 is the red star") gave the player no foothold on names.
+            {"form": 1, "name_visible": true}, {"form": 1, "name_visible": true},
+            {"form": 1, "name_visible": true}, 11, 8, 25, {"form": 1, "name_visible": true},
         ],
     },
 }
@@ -9341,6 +9358,45 @@ func _record_anchor_identity_link() -> void:
 ## times and simply skipped if the matrix cannot supply it — no retry
 ## storm, and an Easy puzzle on an awkward constellation degrades to the
 ## normal loop rather than failing.
+## A Beginner foothold (2026-10-14): "<Name> is the star that plays C5" (or
+## "...is the red star"), for a random name whose star alone has that pitch or
+## colour. With every star Listened, one such clue puts a name on the map at
+## once, and every clue that mentions the name becomes usable. Since names are
+## proven as unknowns (_solve_joint) nothing else does that directly. Skips a
+## pairing already stated and one two earlier anchors already imply.
+func _commit_name_visible_anchor(sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> bool:
+    var options: Array = []
+    for s in star_count:
+        for cat in [Category.PITCH, Category.COLOR]:
+            if _group_size(int(cat), s) > 1:
+                continue
+            var vn: int = int(_cat_star_to_value[Category.NAME][s])
+            var vc: int = int(_cat_star_to_value[int(cat)][s])
+            if bool(_matrix_cell(Category.NAME, vn, int(cat), vc)["used"]):
+                continue
+            var key_a: String = _anchor_uf_key(Category.NAME, s)
+            var key_b: String = _anchor_uf_key(int(cat), s)
+            if _anchor_uf_find(key_a) == _anchor_uf_find(key_b):
+                continue
+            options.append([s, int(cat), vn, vc])
+    _shuffle_array(options)
+    for opt in options:
+        var cell: Dictionary = {
+            "cat_a": Category.NAME, "val_a": int(opt[2]), "star_a": int(opt[0]),
+            "cat_b": int(opt[1]), "val_b": int(opt[3]), "star_b": int(opt[0]),
+            "is_true": true,
+        }
+        _rendered_terms = {}
+        _rendered_star_handles = {}
+        _rendered_repeat_verbs = {}
+        if _commit_clue_result(1, _identity_result_for_cell(cell), sequence_solver_facts,
+                name_revealed, tier_counts, form_counts):
+            _record_anchor_identity_link()
+            return true
+    return false
+
+
 func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
         tier_counts: Dictionary, form_counts: Dictionary) -> void:
     var anchors: Array = _profile()["opening_anchors"]
@@ -9410,6 +9466,11 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
                 var b_result: Dictionary = _betweenness_render_triple(b_triple, b_axis)
                 _commit_clue_result(17, b_result, sequence_solver_facts,
                     name_revealed, tier_counts, form_counts)
+            continue
+        # A name tied to something visible ("Oraeides is the star that plays
+        # C5"): see _commit_name_visible_anchor.
+        if form_id == 1 and slot is Dictionary and bool(slot.get("name_visible", false)):
+            _commit_name_visible_anchor(sequence_solver_facts, name_revealed, tier_counts, form_counts)
             continue
         var tries_max: int = int((slot as Dictionary).get("tries", 3)) if slot is Dictionary else 3
         _prefer_true_cells = bool((slot as Dictionary).get("prefer_true", true)) if slot is Dictionary else true
@@ -10443,6 +10504,25 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null, ide
             if (e2 as Dictionary).has("note"):
                 last_note = maxi(last_note, int(e2["note"]))
         ((st["ident_by_note"] as Array)[last_note] as Array).append(idf2)
+    # Lookups the search makes at every step, built once (2026-10-14: the
+    # slowest Beginner generations spent ~0.12 ms per search node, a third of
+    # it scanning every star and every relation on each placement).
+    #   binary_by_star[s]: the relations involving s, read when s completes.
+    #   due_by[t]: stars that must have begun by note t (deadline <= t).
+    st["binary_by_star"] = []
+    for _s5 in star_count:
+        (st["binary_by_star"] as Array).append([])
+    for bf in binary:
+        ((st["binary_by_star"] as Array)[int(bf["a"])] as Array).append(bf)
+        if int(bf["b"]) != int(bf["a"]):
+            ((st["binary_by_star"] as Array)[int(bf["b"])] as Array).append(bf)
+    st["due_by"] = []
+    for t8 in n_notes + 1:
+        var due: Array = []
+        for u8 in star_count:
+            if int(deadline[u8]) <= t8:
+                due.append(u8)
+        (st["due_by"] as Array).append(due)
     _note_owner_nodes = NOTE_OWNER_NODE_BUDGET
     _note_owner_budget_hit = false
     var t_solve: int = Time.get_ticks_msec()
@@ -10502,6 +10582,9 @@ func _note_owner_search(st: Dictionary) -> void:
     var cap: int = int(st["cap"])
     var solutions: Array = st["solutions"]
     var owners: Array = st["owners"]
+    var allowed: Array = st["allowed"]
+    var notes_of: Array = st["notes"]
+    var need_of: Array = st["need"]
     var cursor: Array = []
     cursor.resize(n + 2)
     cursor.fill(0)
@@ -10521,8 +10604,14 @@ func _note_owner_search(st: Dictionary) -> void:
             _note_owner_unplace(t, st)
         var placed: bool = false
         var s: int = int(cursor[t])
+        # The two cheapest refusals, checked here before the call: most stars
+        # are refused on most notes, and each call of _note_owner_place starts
+        # with several dictionary lookups (measured 2026-10-14: ~0.12 ms per
+        # search node on the slowest Beginner puzzles).
+        var mask_t: int = int(allowed[t])
         while s < star_count:
-            if _note_owner_place(t, s, st):
+            if (mask_t & (1 << s)) != 0 and (notes_of[s] as Array).size() < int(need_of[s]) \
+                    and _note_owner_place(t, s, st):
                 placed = true
                 break
             s += 1
@@ -10583,8 +10672,8 @@ func _note_owner_place(t: int, s_try: int, st: Dictionary) -> bool:
             continue
         # Nobody else may be left past the last note they are allowed to begin on.
         var ok: bool = true
-        for u in star_count:
-            if u != s and int(first[u]) == 0 and int(deadline[u]) <= t:
+        for u in (st["due_by"] as Array)[t]:
+            if int(u) != s and int(first[int(u)]) == 0:
                 ok = false
                 break
         if not ok:
@@ -10628,14 +10717,18 @@ func _note_owner_place(t: int, s_try: int, st: Dictionary) -> bool:
         # Facts about a star named only by a note label: those this placement
         # can settle (about s, about note t, or about a note s already holds).
         if ok and not (st["dyn"] as Array).is_empty():
-            var to_check: Array = ((st["dyn_by_star"] as Array)[s] as Array) + ((st["dyn_by_note"] as Array)[t] as Array)
-            for held_t in mine:
-                if int(held_t) != t:
-                    to_check += (st["dyn_by_note"] as Array)[int(held_t)]
-            for dfact in to_check:
+            for dfact in (st["dyn_by_star"] as Array)[s]:
                 if not _note_owner_dyn_ok(dfact, st, false):
                     ok = false
                     break
+            if ok:
+                for held_t in mine:
+                    for dfact2 in (st["dyn_by_note"] as Array)[int(held_t)]:
+                        if not _note_owner_dyn_ok(dfact2, st, false):
+                            ok = false
+                            break
+                    if not ok:
+                        break
         # Facts about WHICH star a label's note belongs to (colour, pitch,
         # distance, ...): settled once the last note they name is assigned.
         if ok:
@@ -10670,11 +10763,9 @@ func _note_owner_complete_ok(s: int, st: Dictionary) -> bool:
         var v: int = _firing_value(notes[s], f["sel"])
         if v < 0 or v < int(f["lo"]) or v > int(f["hi"]):
             return false
-    for f2 in st["binary"]:
+    for f2 in (st["binary_by_star"] as Array)[s]:
         var a: int = int(f2["a"])
         var b: int = int(f2["b"])
-        if a != s and b != s:
-            continue
         if (notes[a] as Array).size() != int(need[a]) or (notes[b] as Array).size() != int(need[b]):
             continue
         if not _firing_rel_holds(_firing_pick_notes(notes[a], f2["pick_a"]),

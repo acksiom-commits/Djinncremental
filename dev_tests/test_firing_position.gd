@@ -148,11 +148,13 @@ func _parse(text: String, n: int) -> Dictionary:
 			return -1
 		return {"kind": "nth", "shape": shape, "last": k == -1, "lo": win[0], "hi": win[1], "value": nth_fn,
 			"label": nth_label}
-	m = RegEx.create_from_string("^The (\\w+) and (\\w+) firings of (.+) are (.+) apart\\.$").search(text)
-	if m and ORDS.has(m.get_string(1)) and ORDS.has(m.get_string(2)):
-		var i: int = int(ORDS[m.get_string(1)])
-		var j: int = int(ORDS[m.get_string(2)])
-		var gap: String = m.get_string(4)
+	# 2026-10-14: a gap is one firing AFTER another ("The third firing of X is at
+	# least 4 notes after its first firing"), never "N notes apart".
+	m = RegEx.create_from_string("^The (\\w+) firing of (.+) is (.+) after its (\\w+) firing\\.$").search(text)
+	if m and ORDS.has(m.get_string(1)) and ORDS.has(m.get_string(4)):
+		var i: int = int(ORDS[m.get_string(4)])
+		var j: int = int(ORDS[m.get_string(1)])
+		var gap: String = m.get_string(3)
 		var lo2: int = 0
 		var hi2: int = 99999
 		var shape2: String = ""
@@ -182,7 +184,7 @@ func _parse(text: String, n: int) -> Dictionary:
 				return -1
 			return int(t[jj - 1]) - int(t[i - 1])
 		return {"kind": "span", "shape": shape2, "last": j == -1, "lo": lo2, "hi": hi2, "value": span_fn,
-			"label": m.get_string(3)}
+			"label": m.get_string(2)}
 	# count family: the window comes last
 	var counted: Array = [
 		["^(.+) does not fire (.+)\\.$", "zero"],

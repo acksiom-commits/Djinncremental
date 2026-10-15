@@ -112,7 +112,7 @@ func _parse_pick(p: String) -> Dictionary:
 
 ## -> {left, right (picks), neg, rel, n, dir, shape} or {}.
 func _parse(text: String) -> Dictionary:
-	var re = RegEx.create_from_string("^(.+?) is (not )?(immediately (after|before)|exactly (\\d+) notes? (after|before)|at least (\\d+) notes? (after|before)|within (\\d+) notes? of) (one of the firings of .+|the \\w+ firing of .+)\\.$")
+	var re = RegEx.create_from_string("^(.+?) is (not )?(immediately (after|before)|exactly (\\d+) notes? (after|before)|at least (\\d+) notes? (after|before)|(at most|more than) (\\d+) notes? before or after) (one of the firings of .+|the \\w+ firing of .+)\\.$")
 	var m = re.search(text)
 	if not m:
 		return {}
@@ -122,10 +122,12 @@ func _parse(text: String) -> Dictionary:
 	if left_text.begins_with("One ") or left_text.begins_with("The "):
 		left_text = left_text[0].to_lower() + left_text.substr(1)
 	var left: Dictionary = _parse_pick(left_text)
-	var right: Dictionary = _parse_pick(m.get_string(10))
+	var right: Dictionary = _parse_pick(m.get_string(11))
 	if left.is_empty() or right.is_empty():
 		return {}
-	var out: Dictionary = {"left": left, "right": right, "neg": m.get_string(2) != ""}
+	# The near form carries its negation in the words ("more than 2 notes before
+	# or after"), never "is not" (2026-10-14).
+	var out: Dictionary = {"left": left, "right": right, "neg": m.get_string(2) != "" or m.get_string(9) == "more than"}
 	if m.get_string(4) != "":
 		out["rel"] = "exact"
 		out["n"] = 1
@@ -143,7 +145,7 @@ func _parse(text: String) -> Dictionary:
 		out["shape"] = "atleast"
 	else:
 		out["rel"] = "within"
-		out["n"] = int(m.get_string(9))
+		out["n"] = int(m.get_string(10))
 		out["dir"] = 1
 		out["shape"] = "within"
 	return out

@@ -7062,6 +7062,44 @@ func _owner_verdict_from_sets(frame: Dictionary, sets: Array) -> Dictionary:
     return {"must": must, "cannot": cannot}
 
 
+## Every combination of one listed set per related star (stars[i:]) that shares
+## no note with the others and satisfies each relation once both its stars are
+## chosen; marks the set indices taking part in keep[i].
+func _owner_rel_combos(solver, binary: Array, stars: Array, listed: Dictionary, i: int,
+        chosen: Dictionary, chosen_idx: Array, keep: Array) -> void:
+    if i == stars.size():
+        for k in chosen_idx.size():
+            (keep[k] as Dictionary)[int(chosen_idx[k])] = true
+        return
+    var s: int = int(stars[i])
+    var sets: Array = listed[s]
+    for idx in sets.size():
+        var one: Array = sets[idx]
+        var clash: bool = false
+        for other in chosen:
+            for t in one:
+                if (chosen[other] as Array).has(t):
+                    clash = true   # one note is one star
+                    break
+            if clash:
+                break
+        if clash:
+            continue
+        chosen[s] = one
+        var good: bool = true
+        for bf in binary:
+            if chosen.has(int(bf["a"])) and chosen.has(int(bf["b"])) \
+                    and (int(bf["a"]) == s or int(bf["b"]) == s) \
+                    and not _owner_pair_holds(solver, bf, chosen):
+                good = false
+                break
+        if good:
+            chosen_idx.append(idx)
+            _owner_rel_combos(solver, binary, stars, listed, i + 1, chosen, chosen_idx, keep)
+            chosen_idx.pop_back()
+        chosen.erase(s)
+
+
 func _hint_owner_steps(clues: Array, solver) -> Array[Dictionary]:
     var out: Array[Dictionary] = []
     for ci in clue_indices_with_something_to_give(clues):
@@ -7091,52 +7129,38 @@ func _hint_owner_steps(clues: Array, solver) -> Array[Dictionary]:
                 contradiction = true   # the board already contradicts the clue: not a hint
         if contradiction:
             continue
-        # Two stars the clue relates, both listable: keep only the pairs of
-        # sets that share no note and satisfy every relation between them.
-        var pair_stars: Array = []
+        # The stars the clue relates (two, or three for a chain or a
+        # Betweenness), all listable: keep only the combinations of sets that
+        # share no note and satisfy every relation between them. Three-star
+        # clues were left to their weakest outright reading until 2026-10-14
+        # ("Helios fires after Keriion, which fires after the star that plays
+        # C#5" gave nothing even with every count known).
+        var rel_stars: Array = []
         for bf in binary:
             for key in ["a", "b"]:
-                if not pair_stars.has(int(bf[key])):
-                    pair_stars.append(int(bf[key]))
-        if pair_stars.size() == 2 and listed.has(pair_stars[0]) and listed.has(pair_stars[1]) \
-                and (listed[pair_stars[0]] as Array).size() * (listed[pair_stars[1]] as Array).size() <= OWNER_STEP_PAIR_BUDGET:
-            var sa: int = int(pair_stars[0])
-            var sb: int = int(pair_stars[1])
-            var keep_a: Dictionary = {}
-            var keep_b: Dictionary = {}
-            var sets_a: Array = listed[sa]
-            var sets_b: Array = listed[sb]
-            for ia in sets_a.size():
-                for ib in sets_b.size():
-                    var na: Array = sets_a[ia]
-                    var nb: Array = sets_b[ib]
-                    var clash: bool = false
-                    for t in nb:
-                        if na.has(t):
-                            clash = true   # one note is one star
-                            break
-                    if clash:
-                        continue
-                    var good: bool = true
-                    for bf2 in binary:
-                        if not _owner_pair_holds(solver, bf2, {sa: na, sb: nb}):
-                            good = false
-                            break
-                    if good:
-                        keep_a[ia] = true
-                        keep_b[ib] = true
-            if keep_a.is_empty():
+                if not rel_stars.has(int(bf[key])):
+                    rel_stars.append(int(bf[key]))
+        var rel_ok: bool = rel_stars.size() >= 2 and rel_stars.size() <= 3
+        var combos: int = 1
+        for rs in rel_stars:
+            if not listed.has(rs):
+                rel_ok = false
+                break
+            combos *= maxi(1, (listed[rs] as Array).size())
+        if rel_ok and combos <= OWNER_STEP_PAIR_BUDGET:
+            var keep: Array = []
+            for _k in rel_stars.size():
+                keep.append({})
+            _owner_rel_combos(solver, binary, rel_stars, listed, 0, {}, [], keep)
+            if (keep[0] as Dictionary).is_empty():
                 continue   # contradiction
-            var la: Array = []
-            for ia2 in sets_a.size():
-                if keep_a.has(ia2):
-                    la.append(sets_a[ia2])
-            var lb: Array = []
-            for ib2 in sets_b.size():
-                if keep_b.has(ib2):
-                    lb.append(sets_b[ib2])
-            listed[sa] = la
-            listed[sb] = lb
+            for ki in rel_stars.size():
+                var sk: int = int(rel_stars[ki])
+                var kept_sets: Array = []
+                for idx in (listed[sk] as Array).size():
+                    if (keep[ki] as Dictionary).has(idx):
+                        kept_sets.append(listed[sk][idx])
+                listed[sk] = kept_sets
         for s2 in frames:
             var frame: Dictionary = frames[s2]
             var verdict: Dictionary
