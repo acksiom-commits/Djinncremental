@@ -8576,6 +8576,10 @@ const DIFFICULTY_PROFILES := {
         # Pseudo-True Pairs (21/22): deliberately near-miss phrasing whose
         #   whole point is to be misread — actively hostile at Easy.
         "excluded_forms": [3, 9, 14, 20, 21, 22],
+        # Direct note clues kept on top of the minimal set (_add_spare_note_pins).
+        # Measured 2026-10-15 on 12 Beginner puzzles, hint reach (notes): 0 ->
+        # 40%, 3 -> 67%, 4 -> 75%, 5 -> 76%; it levels off at four.
+        "spare_note_pins": 4,
         # Measured at 12.7 and 11.7 per puzzle respectively; capped to a
         # presence rather than a dominance.
         "form_caps": {12: 4, 15: 4},
@@ -11584,6 +11588,75 @@ func _commit_name_pin(star: int, sequence_solver_facts: Array, name_revealed: Ar
     return _commit_repair_clue(star, 0, true, sequence_solver_facts, name_revealed, tier_counts, form_counts)
 
 
+## Clues _add_spare_note_pins added (a measurement).
+var spare_note_pins_added: int = 0
+
+
+## TEST SEAM. False = spare note clues go on random later notes (the first
+## version, measured 2026-10-15: they mostly handed over answers).
+var spare_pins_aimed: bool = true
+## TEST SEAM: >= 0 replaces the profile's spare_note_pins (for measuring counts).
+var spare_note_pins_override: int = -1
+
+
+## Up to `count` direct clues about later firings ("The second firing of
+## Nyxaos is on note 11"), added on top of the pruned clue set.
+##
+## AIMED (2026-10-15): a note pin helps the player most when other clues are
+## waiting on that star's later notes -- the Firing Position / Firing Relation
+## clues about it ("the third firing of X is exactly 7 notes after ..."), which
+## a player cannot use until they know where X's notes are. Each candidate
+## note scores the clues of that kind mentioning its star, plus the star's
+## repeats; the best go first, at most one per star, and a note a clue
+## already states outright is skipped. Random placement measured: 36 pins
+## raised reach by only 28 notes.
+func _add_spare_note_pins(count: int, sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> void:
+    var firsts: Array = _first_fire_ticks()
+    var waiting: Dictionary = {}   # star -> clues about its later firings
+    var stated: Dictionary = {}    # notes some clue already pins
+    for cl in chosen_form_clues:
+        var stars_here: Dictionary = {}
+        for d in _coerce_array(cl.get("disclosures"), []):
+            if not (d is Dictionary):
+                continue
+            match str(d.get("kind", "")):
+                "firing_relation":
+                    stars_here[int(d["a"])] = true
+                    stars_here[int(d["b"])] = true
+                "firing_position":
+                    stars_here[int(d["s"])] = true
+                    if int(d["lo"]) == int(d["hi"]) and str(d["sel"]["kind"]) == "nth":
+                        stated[int(d["lo"])] = true
+                    elif str(d["sel"]["kind"]) == "count" and int(d["sel"]["lo"]) == int(d["sel"]["hi"]) and int(d["lo"]) >= 1:
+                        stated[int(d["sel"]["lo"])] = true
+        for s0 in stars_here:
+            waiting[s0] = int(waiting.get(s0, 0)) + 1
+    var notes: Array = []
+    for t in range(1, melody_star_sequence.size() + 1):
+        if not firsts.has(t) and not stated.has(t):
+            notes.append(t)
+    _shuffle_array(notes)
+    if spare_pins_aimed:
+        var score_of: Dictionary = {}
+        for t1 in notes:
+            var s1: int = int(melody_star_sequence[int(t1) - 1])
+            score_of[t1] = 2 * int(waiting.get(s1, 0)) + int(repeat_count[s1])
+        notes.sort_custom(func(x, y): return int(score_of[x]) > int(score_of[y]))
+    var added: int = 0
+    var pinned_stars: Dictionary = {}
+    for t2 in notes:
+        if added >= count:
+            break
+        var s2: int = int(melody_star_sequence[int(t2) - 1])
+        if spare_pins_aimed and pinned_stars.has(s2):
+            continue
+        if _commit_repeat_pin(int(t2), sequence_solver_facts, name_revealed, tier_counts, form_counts):
+            added += 1
+            pinned_stars[s2] = true
+    spare_note_pins_added += added
+
+
 func _generate_clues_forms_attempt() -> Dictionary:
     _build_record_array()
     _build_matrix()
@@ -11819,6 +11892,14 @@ func _generate_clues_forms_attempt() -> Dictionary:
         # change the OTHER made — see _final_redundancy_safety_net's own
         # header.
         await _final_redundancy_safety_net(name_revealed)
+        sequence_solver_facts = _seq_facts_from_clues()
+    # Spare footholds (Easy, 2026-10-15): pruning leaves a minimal set, so
+    # every note needs a chain of clues. A few direct, redundant note clues
+    # give the player more than one way in. Added after pruning so they stay;
+    # true clues cannot make the answer less unique.
+    var spare: int = int(_profile().get("spare_note_pins", 0)) if spare_note_pins_override < 0 else spare_note_pins_override
+    if spare > 0 and _repeats_hidden():
+        _add_spare_note_pins(spare, sequence_solver_facts, name_revealed, tier_counts, form_counts)
         sequence_solver_facts = _seq_facts_from_clues()
     var _t_prune_end: int = Time.get_ticks_msec()
     if DEBUG_GEN_TIMING:
