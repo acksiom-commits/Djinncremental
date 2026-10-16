@@ -5,9 +5,9 @@ extends "res://dev_tests/test_base.gd"
 #
 #   - clues[0]: Mutual Exclusion, EXACTLY 4 categories.
 #   - clues[1]: Mutual Exclusion, EXACTLY 3 categories.
-#   - Then a guaranteed pair of Sequence-axis and a guaranteed pair of
-#     Pitch-axis Betweenness ("[x] fires before [y], which fires before
-#     [z]" / the Pitch equivalent) chain clues -- 2 of each, always.
+#   - Then a guaranteed pair of Sequence-axis Betweenness chain clues ("[x]
+#     fires before [y], which fires before [z]") -- 2, always. The Pitch-axis
+#     pair that followed was dropped 2026-10-15 (author), so none is opened.
 #
 # The chain-pair guarantee needed its own mechanism
 # (_betweenness_two_disjoint_triples in constellation_logic_puzzle.gd):
@@ -92,7 +92,10 @@ func run() -> void:
 					pitch_chains += 1
 				i += 1
 			ok(seq_chains == 2, "%s: exactly 2 surviving Sequence-axis chain clues (got %d)" % [tag, seq_chains])
-			ok(pitch_chains == 2, "%s: exactly 2 surviving Pitch-axis chain clues (got %d)" % [tag, pitch_chains])
+			# The Pitch pair was dropped from Easy's openers 2026-10-15 (author): with
+			# every star Listened, pitch order is visible, and removing it made
+			# puzzles shorter AND easier. None may be guaranteed any more.
+			ok(pitch_chains == 0, "%s: no opening Pitch-axis chain clue (got %d)" % [tag, pitch_chains])
 
 	print("\nALL PASS (%d failures)" % fails if fails == 0 else "\nFAILURES (%d failures)" % fails)
 	finish()

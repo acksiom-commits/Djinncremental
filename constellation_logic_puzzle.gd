@@ -8642,7 +8642,10 @@ const DIFFICULTY_PROFILES := {
             {"form": 13, "prefer_true": false, "min_elements": 4, "max_elements": 4, "tries": 12},
             {"form": 13, "prefer_true": false, "min_elements": 3, "max_elements": 3, "tries": 12},
             {"form": 17, "axis": Category.SEQUENCE, "paired": true},
-            {"form": 17, "axis": Category.PITCH, "paired": true},
+            # The Pitch Betweenness pair was dropped 2026-10-15 (author): with every
+            # star Listened, pitch order is visible; measured on 12 puzzles, removing
+            # it cut 2.2 clues per puzzle and RAISED hint reach (notes 84% -> 85%,
+            # names 74% -> 84%, first firings 92% -> 96%).
             # 25 (Firing Position) is skipped unless the melody repeats, and is an
             # anchor because, like Range, it needs cells the main loop's cheap
             # negations use up: measured on Beginner it ships ~1% of clues when left
@@ -9726,6 +9729,11 @@ var prune_enabled: bool = true
 var _prune_needed_by_notes: Dictionary = {}
 ## TEST SEAM. False = every pass re-proves every clue (output must be the same).
 var prune_memo_enabled: bool = true
+## Search nodes one pruning trial may spend (the ship gate keeps
+## NOTE_OWNER_NODE_BUDGET). See _try_prune_clue_at.
+const PRUNE_TRIAL_NODE_BUDGET: int = 20000
+## > 0 replaces NOTE_OWNER_NODE_BUDGET for the next searches (set by pruning).
+var note_owner_budget_override: int = 0
 
 
 func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
@@ -9739,15 +9747,24 @@ func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
     #   - a name only this clue binds stays bound only by it.
     # So the recheck and safety-net passes need not prove it again; they spent
     # most of the slowest generations (~50-65 of ~75 s) doing exactly that. An
-    # INCONCLUSIVE verdict (a budget hit) is never remembered.
+    # A trial that runs out of its search budget keeps the clue (see below).
     if prune_memo_enabled and _prune_needed_by_notes.has(str(removed.get("text", ""))):
         return false
     chosen_form_clues.remove_at(idx)
     # The note proof: firing order AND repeat notes, together (_solve_notes).
     # An INCONCLUSIVE solve (node budget hit) is not proof of uniqueness, so
     # it must never license a removal: keep the clue.
+    # A trial gets a smaller search budget than the ship gate (2026-10-15): on
+    # the largest Beginner melodies a removal that leaves exactly one answer
+    # took up to ~400k nodes (~20 s) to prove. Running out is not a proof, so
+    # the clue stays -- the worst case is one extra clue, never a wrong puzzle.
+    note_owner_budget_override = PRUNE_TRIAL_NODE_BUDGET
     var trial_sols: Array = await _solve_notes(_seq_facts_from_clues(), 2)
-    var needed_for_sure: bool = trial_sols.size() >= 2
+    note_owner_budget_override = 0
+    var trial_ran_out: bool = _last_solve_inconclusive and trial_sols.size() < 2
+    # Kept for lack of budget is remembered too: a smaller set is no easier to
+    # prove, so later passes would only spend the same budget again.
+    var needed_for_sure: bool = trial_sols.size() >= 2 or trial_ran_out
     var trial_seq: Array = []
     if trial_sols.size() == 1 and not _last_solve_inconclusive:
         trial_seq = [trial_sols[0]["ranks"]]
@@ -10583,7 +10600,7 @@ func _solve_note_owners(seq_facts: Array, cap: int = 2, source_clues = null, ide
             if int(deadline[u8]) <= t8:
                 due.append(u8)
         (st["due_by"] as Array).append(due)
-    _note_owner_nodes = NOTE_OWNER_NODE_BUDGET
+    _note_owner_nodes = NOTE_OWNER_NODE_BUDGET if note_owner_budget_override <= 0 else note_owner_budget_override
     _note_owner_budget_hit = false
     var t_solve: int = Time.get_ticks_msec()
     await _note_owner_search(st)
