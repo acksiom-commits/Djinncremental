@@ -5018,6 +5018,10 @@ func _on_staff_name_check(record_idx: int, star_name: String, _row: StaffPopupRo
         r["name_states"] = name_states
         if str(r.get("name", "")) == star_name:
             r["name"] = ""
+    elif _deduction._name_row_too_full_for(record_idx, star_name):
+        # That name's row already holds as many notes as it fires (2026-10-16):
+        # joining this entry would overfill it, so the confirm does nothing.
+        return
     else:
         _deduction._propagate_name_states_confirmed_same_record(record_idx, star_name)
     _deduction._save_puzzle_notes()

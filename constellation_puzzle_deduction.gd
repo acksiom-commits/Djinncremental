@@ -305,6 +305,17 @@ func _detect_contradictions() -> void:
         var r: Dictionary = _match_records[i]
         var who: String = _record_display_name(i)
 
+        # MORE NOTES THAN IT FIRES (2026-10-16). A row can reach this by entries
+        # being joined to it (naming them, "Same star as note"), which the
+        # row's own buttons cannot stop. Reported: Dobraan on five notes at R3.
+        var held_notes: int = (r.get("melody_ticks", []) as Array).size()
+        var fires_n: int = _known_fire_count_for_record(i)
+        if fires_n > 0 and held_notes > fires_n:
+            _contradictions.append({
+                "record": i, "axis": "notes",
+                "text": "%s is entered on %d notes, but fires only %d time%s." % [who, held_notes, fires_n, "" if fires_n == 1 else "s"],
+            })
+
         # Candidate stars is the strongest single check — it already
         # intersects colour, degree and listened pitch, so it catches
         # combinations no per-axis check would.
@@ -3088,12 +3099,41 @@ func _effective_name_state(record_idx: int, name_str: String, collapse_soft: boo
         return 1 if rn == name_str else 2
 
     var soft: int = _record_effective_state(record_idx, "name_states", "protected_staff_names", name_str)
+    # THE NAME'S ROW IS FULL (2026-10-16). Reported: the player confirmed
+    # "Dobraan" on the entries of notes 6, 9 and 14 one at a time; each joined
+    # Dobraan's row, which ended up on five notes for a star that fires four
+    # times, and nothing objected. A name whose row already holds as many notes
+    # as it fires (or would go over by taking this entry's notes) cannot be
+    # this entry -- unless the entry is already that row.
+    if soft == 0 and _name_row_too_full_for(record_idx, name_str):
+        return 2
     if not collapse_soft:
         return soft
     match soft:
         3: return 2
         4: return 0
         _: return soft
+
+
+## Would joining note entry `record_idx` to `name_str`'s row put that row over
+## the number of times it fires? Only for an entry that holds notes; false
+## when the count is not known or the entry already is that row.
+func _name_row_too_full_for(record_idx: int, name_str: String) -> bool:
+    var mine: Array = _match_records[record_idx].get("melody_ticks", [])
+    if mine.is_empty():
+        return false
+    var nr: int = _find_match_record_by_name(name_str)
+    if nr < 0 or nr == record_idx:
+        return false
+    var fires: int = _known_fire_count_for_record(nr)
+    if fires <= 0:
+        return false
+    var theirs: Array = _match_records[nr].get("melody_ticks", [])
+    var together: int = theirs.size()
+    for t in mine:
+        if not theirs.has(t):
+            together += 1
+    return together > fires
 
 
 func _effective_degree_state(record_idx: int, degree: int) -> int:
