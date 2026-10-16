@@ -683,6 +683,13 @@ func run() -> void:
 	for pair2 in [[0, 11], [2, 11]]:
 		g = _beginner(int(pair2[0]), int(pair2[1]))
 		g.names_honoured = false
+		# The Easy settings of the day those second answers were found: no spare
+		# clues, historical pruning order (the later Easy extras happen to make
+		# these two seeds unique even under the old proof).
+		g.spare_note_pins_override = 0
+		g.spare_first_pins_override = 0
+		g.spare_name_ties_override = 0
+		g.prune_first_forms = [-1]
 		await g.generate_clues_forms()
 		lbl_of_rank = g._first_fire_ticks()
 		var tag2: String = "c%d s%d" % [int(pair2[0]), int(pair2[1])]

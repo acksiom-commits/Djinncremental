@@ -8579,7 +8579,22 @@ const DIFFICULTY_PROFILES := {
         # Direct note clues kept on top of the minimal set (_add_spare_note_pins).
         # Measured 2026-10-15 on 12 Beginner puzzles, hint reach (notes): 0 ->
         # 40%, 3 -> 67%, 4 -> 75%, 5 -> 76%; it levels off at four.
-        "spare_note_pins": 4,
+        "spare_note_pins": 0,
+        # "<Name> is the star that first fires on note T" on top of the minimal
+        # set (_add_spare_first_pins). The author: placing the EARLIER firings
+        # is the second-slowest part of a Beginner solve; the slowest is the
+        # number of clues. Measured 2026-10-15, 12 puzzles, hint reach:
+        #   4 later-note pins (before):        23.4 clues, first firings 73%, notes 75%
+        #   4 first-note pins + weak pruned:   23.3 clues, first firings 92%, notes 84%
+        #   2 first-note pins + weak pruned:   21.3 clues, first firings 80%, notes 65%
+        #   none, weak pruned:                 19.3 clues, first firings 71%, notes 49%
+        "spare_first_pins": 4,
+        # Weak clues pruning gives up first, so the direct ones survive: Single
+        # Negation, Group Negation, Distance Existential, Equality Pair, Group
+        # Membership, Non-Adjacency, Disjunction (same measurement).
+        "prune_first_forms": [2, 24, 15, 12, 23, 19, 4],
+        # Names tied to a visible star on top of the minimal set (_add_spare_name_ties).
+        "spare_name_ties": 0,
         # Measured at 12.7 and 11.7 per puzzle respectively; capped to a
         # presence rather than a dominance.
         "form_caps": {12: 4, 15: 4},
@@ -9403,6 +9418,9 @@ func _commit_name_visible_anchor(sequence_solver_facts: Array, name_revealed: Ar
             return true
     return false
 
+## TEST SEAM: indices into the profile's opening_anchors to leave out.
+var opening_anchor_skip: Array = []
+
 
 func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
         tier_counts: Dictionary, form_counts: Dictionary) -> void:
@@ -9437,7 +9455,10 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
     # on a clean matrix is far from guaranteed on any single draw (the
     # category draw can strand the DISTANCE element), and 3 was sized for
     # Forms that either fit the sampled cell or do not.
-    for slot in anchors:
+    for slot_i in anchors.size():
+        if opening_anchor_skip.has(slot_i):
+            continue   # TEST SEAM: measuring what one opener is worth
+        var slot = anchors[slot_i]
         var form_id: int = int(slot["form"]) if slot is Dictionary else int(slot)
         # Firing Position needs a repeating melody. Skipped BEFORE anything is
         # attempted, because an attempt draws a chain characteristic from the
@@ -9763,6 +9784,8 @@ func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
 
 ## Form ids whose clues _prune_redundant_clues tries to remove FIRST (in this
 ## order). Empty = the historical newest-first order, byte-for-byte.
+## Empty = the difficulty profile's "prune_first_forms" (none = newest first);
+## a list here overrides it ([-1] names no Form: the historical order).
 var prune_first_forms: Array = []
 
 
@@ -9812,7 +9835,8 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
     # same information. Candidates are tracked by TEXT (unique per clue),
     # since indices shift as clues are removed.
     var order: Array[String] = []
-    for f in prune_first_forms:
+    var first_forms: Array = prune_first_forms if not prune_first_forms.is_empty() else (_profile().get("prune_first_forms", []) as Array)
+    for f in first_forms:
         var j: int = chosen_form_clues.size() - 1
         while j >= protected_count:
             if int(chosen_form_clues[j].get("form_id", -1)) == int(f) and not _prune_skips_form(int(f)):
@@ -11624,6 +11648,107 @@ func _commit_name_pin(star: int, sequence_solver_facts: Array, name_revealed: Ar
 var spare_note_pins_added: int = 0
 
 
+## TEST SEAM: >= 0 replaces the profile's spare_first_pins (for measuring counts).
+var spare_first_pins_override: int = -1
+## Clues _add_spare_first_pins added (a measurement).
+var spare_first_pins_added: int = 0
+
+
+## Up to `count` clues "<Name> is the star that first fires on note T", added
+## on top of the pruned clue set (2026-10-15, Beginner-Easy). The author finds
+## placing the EARLIER firings the second-slowest part of a Beginner solve; one
+## such clue places a star's first note and ties its name to that note.
+## AIMED: names whose first note no clue states outright, most-mentioned first.
+func _add_spare_first_pins(count: int, sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> void:
+    var stated: Dictionary = {}
+    var mentions: Dictionary = {}
+    for cl in chosen_form_clues:
+        for d in _coerce_array(cl.get("disclosures"), []):
+            if not (d is Dictionary):
+                continue
+            if str(d.get("kind", "")) == "name_group" and int(d["cat"]) == Category.SEQUENCE:
+                stated[int(d["name_star"])] = true
+            var ents: Dictionary = d.get("ents", {})
+            for field in ents:
+                if (ents[field] as Dictionary).has("name"):
+                    mentions[int(ents[field]["name"])] = int(mentions.get(int(ents[field]["name"]), 0)) + 1
+            if d.has("name_star"):
+                mentions[int(d["name_star"])] = int(mentions.get(int(d["name_star"]), 0)) + 1
+    var names: Array = []
+    for s in star_count:
+        if not stated.has(s):
+            names.append(s)
+    _shuffle_array(names)
+    names.sort_custom(func(x, y): return int(mentions.get(x, 0)) > int(mentions.get(y, 0)))
+    var added: int = 0
+    for s2 in names:
+        if added >= count:
+            break
+        if _commit_repair_clue(int(s2), 0, true, sequence_solver_facts, name_revealed, tier_counts, form_counts):
+            added += 1
+    spare_first_pins_added += added
+
+
+## TEST SEAM: >= 0 replaces the profile's spare_name_ties (for measuring counts).
+var spare_name_ties_override: int = -1
+## Clues _add_spare_name_ties added (a measurement).
+var spare_name_ties_added: int = 0
+
+
+## Up to `count` clues "<Name> is the star that plays C5" (or "...the red
+## star"), added on top of the pruned clue set (2026-10-15, Beginner-Easy).
+## AIMED: only names no clue yet ties to something visible, most-mentioned
+## first -- a name the clues talk about most unlocks the most once it is on the
+## map. True clues, so the answer stays unique.
+func _add_spare_name_ties(count: int, sequence_solver_facts: Array, name_revealed: Array,
+        tier_counts: Dictionary, form_counts: Dictionary) -> void:
+    var tied: Dictionary = {}
+    var mentions: Dictionary = {}
+    for cl in chosen_form_clues:
+        for d in _coerce_array(cl.get("disclosures"), []):
+            if not (d is Dictionary):
+                continue
+            var k: String = str(d.get("kind", ""))
+            if k == "name_is_star":
+                tied[int(d["name_star"])] = true
+            elif k == "name_group" and int(d["cat"]) != Category.SEQUENCE and _joint_group(int(d["cat"]), int(d["group_key"])).size() == 1:
+                tied[int(d["name_star"])] = true
+            var ents: Dictionary = d.get("ents", {})
+            for field in ents:
+                if (ents[field] as Dictionary).has("name"):
+                    var nm: int = int(ents[field]["name"])
+                    mentions[nm] = int(mentions.get(nm, 0)) + 1
+            if d.has("name_star"):
+                mentions[int(d["name_star"])] = int(mentions.get(int(d["name_star"]), 0)) + 1
+    var names: Array = []
+    for s in star_count:
+        if not tied.has(s):
+            names.append(s)
+    _shuffle_array(names)
+    names.sort_custom(func(x, y): return int(mentions.get(x, 0)) > int(mentions.get(y, 0)))
+    var added: int = 0
+    for s2 in names:
+        if added >= count:
+            break
+        for cat in [Category.PITCH, Category.COLOR]:
+            if _group_size(int(cat), int(s2)) > 1:
+                continue
+            var cell: Dictionary = {
+                "cat_a": Category.NAME, "val_a": int(_cat_star_to_value[Category.NAME][int(s2)]), "star_a": int(s2),
+                "cat_b": int(cat), "val_b": int(_cat_star_to_value[int(cat)][int(s2)]), "star_b": int(s2),
+                "is_true": true,
+            }
+            _rendered_terms = {}
+            _rendered_star_handles = {}
+            _rendered_repeat_verbs = {}
+            if _commit_clue_result(1, _identity_result_for_cell(cell), sequence_solver_facts,
+                    name_revealed, tier_counts, form_counts):
+                added += 1
+                break
+    spare_name_ties_added += added
+
+
 ## TEST SEAM. False = spare note clues go on random later notes (the first
 ## version, measured 2026-10-15: they mostly handed over answers).
 var spare_pins_aimed: bool = true
@@ -11932,6 +12057,14 @@ func _generate_clues_forms_attempt() -> Dictionary:
     var spare: int = int(_profile().get("spare_note_pins", 0)) if spare_note_pins_override < 0 else spare_note_pins_override
     if spare > 0 and _repeats_hidden():
         _add_spare_note_pins(spare, sequence_solver_facts, name_revealed, tier_counts, form_counts)
+        sequence_solver_facts = _seq_facts_from_clues()
+    var spare_names: int = int(_profile().get("spare_name_ties", 0)) if spare_name_ties_override < 0 else spare_name_ties_override
+    if spare_names > 0 and _repeats_hidden():
+        _add_spare_name_ties(spare_names, sequence_solver_facts, name_revealed, tier_counts, form_counts)
+        sequence_solver_facts = _seq_facts_from_clues()
+    var spare_firsts: int = int(_profile().get("spare_first_pins", 0)) if spare_first_pins_override < 0 else spare_first_pins_override
+    if spare_firsts > 0 and _repeats_hidden():
+        _add_spare_first_pins(spare_firsts, sequence_solver_facts, name_revealed, tier_counts, form_counts)
         sequence_solver_facts = _seq_facts_from_clues()
     var _t_prune_end: int = Time.get_ticks_msec()
     if DEBUG_GEN_TIMING:

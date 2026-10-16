@@ -29,7 +29,9 @@ func _gen(cd, cid: int, seed: int, order: Array, diff: String) -> Dictionary:
 	g.setup(scn, cdef["line_pairs"], sq, seed, cid, cdef.get("name_theme", {}),
 		cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
 	g.difficulty = diff
-	g.prune_first_forms = order
+	# An empty list now means "use the difficulty profile's own list" (Easy has one
+	# since 2026-10-15); [-1] names no Form, so it is the historical order.
+	g.prune_first_forms = order if not order.is_empty() else [-1]
 	var res: Dictionary = await g._generate_clues_forms_attempt()
 	var texts: Array = []
 	var single_neg: int = 0
