@@ -49,6 +49,12 @@ func _small_puzzle(melody: Array, star_count: int, seed: int):
 	# brute force does the same). The joint name-and-note proof is checked
 	# against an independent reader in test_joint_name_note_proof.gd.
 	g.names_honoured = false
+	# Easy as of 2026-10-14 (no spare clues, historical pruning order): the
+	# later Easy extras leave no clue set the old label reading gets wrong.
+	g.spare_note_pins_override = 0
+	g.spare_first_pins_override = 0
+	g.spare_name_ties_override = 0
+	g.prune_first_forms = [-1]
 	g.setup(star_count, lines, melody, seed, 0, def.get("name_theme", {}),
 		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
 	return g

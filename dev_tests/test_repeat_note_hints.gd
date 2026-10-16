@@ -41,6 +41,13 @@ func _beginner_puzzle(cid: int, seed: int, earned: bool = true):
 	var sq: Array = eng.get_correct_star_sequence(cid)
 	var g = PuzzleScript.new()
 	g.difficulty = "easy"
+	# The Easy settings this file was written against (2026-10-11): no spare
+	# clues, historical pruning order. Spare clues and pruning weak Forms first
+	# (2026-10-15) leave too few group clues here for its checks to bite.
+	g.spare_note_pins_override = 0
+	g.spare_first_pins_override = 0
+	g.spare_name_ties_override = 0
+	g.prune_first_forms = [-1]
 	g.repeats_earned = earned
 	g.setup(int(def["star_count"]), def["line_pairs"], sq, seed, cid, def.get("name_theme", {}),
 		cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
@@ -208,7 +215,9 @@ func run() -> void:
 	# each clue's own fact (who the connected stars are) and the real melody.
 	var group_clues: int = 0
 	var group_bad: Array = []
-	for cid2 in [4, 0, 1]:
+	# Six constellations (three until 2026-10-15): the slimmer Easy openers left
+	# only 5 such clues on three, under the bar below.
+	for cid2 in [4, 0, 1, 2, 5, 3]:
 		var gm = _beginner_puzzle(cid2, 11)[0]
 		gm.prune_enabled = false
 		await gm.generate_clues_forms()
