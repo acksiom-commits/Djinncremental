@@ -11444,7 +11444,7 @@ func _joint_dfs(i: int, pi: Array, by_name: Array, with_notes: Array, other: Arr
             state["inconclusive"] = true
             inconclusive_solves += 1
             return
-        var tr: Dictionary = _joint_translate(other, pi)
+        var translated: Dictionary = _joint_translate(other, pi)
         var ident: Array = []
         for idf in with_notes:
             var ents: Array = []
@@ -11457,7 +11457,7 @@ func _joint_dfs(i: int, pi: Array, by_name: Array, with_notes: Array, other: Arr
                 ents.append(r)
             if ok_e:
                 ident.append({"kind": idf["kind"], "ents": ents, "p": idf["p"]})
-        var sols: Array = await _solve_note_owners(tr["seq"], cap - found.size(), tr["rep"], ident)
+        var sols: Array = await _solve_note_owners(translated["seq"], cap - found.size(), translated["rep"], ident)
         if _last_solve_inconclusive:
             state["inconclusive"] = true
         for sol in sols:
