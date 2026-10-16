@@ -690,6 +690,7 @@ func run() -> void:
 		g.spare_first_pins_override = 0
 		g.spare_name_ties_override = 0
 		g.prune_first_forms = [-1]
+		g.seq_chain_len_override = 3
 		await g.generate_clues_forms()
 		lbl_of_rank = g._first_fire_ticks()
 		var tag2: String = "c%d s%d" % [int(pair2[0]), int(pair2[1])]

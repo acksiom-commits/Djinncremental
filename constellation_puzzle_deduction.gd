@@ -6776,6 +6776,11 @@ func _hint_note_steps(clues: Array, solver, seq_grid: Array, ticks: Dictionary) 
 const OWNER_STEP_MAX_SETS: int = 3000
 ## Most pairs of ways tried for a clue relating two stars.
 const OWNER_STEP_PAIR_BUDGET: int = 40000
+## The limit _hint_owner_steps uses for a clue relating several stars (the
+## const by default; a seam for measuring).
+var owner_rel_budget: int = OWNER_STEP_PAIR_BUDGET
+## Measurement: what happened to each clue relating two or more stars.
+var owner_rel_outcomes: Dictionary = {}
 
 
 ## The note a Sequence label prints for a star / for a 0-based rank. A number
@@ -7249,14 +7254,23 @@ func _hint_owner_steps(clues: Array, solver) -> Array[Dictionary]:
             for key in ["a", "b"]:
                 if not rel_stars.has(int(bf[key])):
                     rel_stars.append(int(bf[key]))
-        var rel_ok: bool = rel_stars.size() >= 2 and rel_stars.size() <= 3
+        var rel_ok: bool = rel_stars.size() >= 2 and rel_stars.size() <= 5   # Easy chains name up to five (2026-10-16)
         var combos: int = 1
         for rs in rel_stars:
             if not listed.has(rs):
                 rel_ok = false
                 break
             combos *= maxi(1, (listed[rs] as Array).size())
-        if rel_ok and combos <= OWNER_STEP_PAIR_BUDGET:
+        if rel_stars.size() >= 2:
+            var why_key: String = "%d stars: " % rel_stars.size()
+            if not rel_ok:
+                why_key += "a star not listable"
+            elif combos > owner_rel_budget:
+                why_key += "over budget"
+            else:
+                why_key += "combined"
+            owner_rel_outcomes[why_key] = int(owner_rel_outcomes.get(why_key, 0)) + 1
+        if rel_ok and combos <= owner_rel_budget:
             var keep: Array = []
             for _k in rel_stars.size():
                 keep.append({})

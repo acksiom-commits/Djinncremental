@@ -80,18 +80,27 @@ func run() -> void:
 			# clues right after the two Mutex anchors -- capped at 4 so a
 			# later, unrelated main-loop Betweenness draw can't be
 			# mistaken for part of the guarantee.
+			# A chain's chars are its stars' labels, then one axis entry per
+			# star, so the last entry carries the axis whatever the length.
 			var seq_chains: int = 0
 			var pitch_chains: int = 0
+			var seq_sizes: Array = []
 			var i: int = 2
 			while i < clues.size() and i < 6 and int((clues[i] as Dictionary).get("form_id", -1)) == 17:
 				var chars: Array = (clues[i] as Dictionary).get("chars", [])
-				var axis_cat: int = int((chars[3] as Dictionary).get("cat", -1)) if chars.size() >= 4 else -1
+				var axis_cat: int = int((chars[chars.size() - 1] as Dictionary).get("cat", -1)) if chars.size() >= 6 else -1
 				if axis_cat == Category.SEQUENCE:
 					seq_chains += 1
+					@warning_ignore("integer_division")
+					seq_sizes.append(chars.size() / 2)
 				elif axis_cat == Category.PITCH:
 					pitch_chains += 1
 				i += 1
 			ok(seq_chains == 2, "%s: exactly 2 surviving Sequence-axis chain clues (got %d)" % [tag, seq_chains])
+			# Four stars each from 2026-10-16 (author), sharing one star where two
+			# separate fours don't fit, so any map of 7 or more stars gets them.
+			if scn >= 7:
+				ok(seq_sizes == [4, 4], "%s: both chains name four stars (got %s)" % [tag, str(seq_sizes)])
 			# The Pitch pair was dropped from Easy's openers 2026-10-15 (author): with
 			# every star Listened, pitch order is visible, and removing it made
 			# puzzles shorter AND easier. None may be guaranteed any more.

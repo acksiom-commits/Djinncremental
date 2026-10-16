@@ -553,10 +553,14 @@ const BUILT_IN = [
             "fixed_star_positions": [
                 [-0.127816, -0.055971,  0.990217],  # 0: top-left
                 [-0.130000,  0.057297,  0.989857],  # 1: bottom-left
-                [-0.014548, -0.013534,  0.999803],  # 2: upper-waist-left
-                [ 0.023831, -0.013846,  0.999620],  # 3: upper-waist-right
-                [-0.014548,  0.014236,  0.999793],  # 4: lower-waist-left
-                [ 0.020399,  0.014236,  0.999691],  # 5: lower-waist-right
+                # The four waist stars were moved a quarter of the way along
+                # their own lines toward their corners (2026-10-16, author):
+                # their info displays overlapped. Were at x -0.0145/+0.0238/
+                # -0.0145/+0.0204, y -0.0135/-0.0138/+0.0142/+0.0142.
+                [-0.042865, -0.024143,  0.998789],  # 2: upper-waist-left
+                [ 0.047468, -0.026015,  0.998534],  # 3: upper-waist-right
+                [-0.043411,  0.025001,  0.998744],  # 4: lower-waist-left
+                [ 0.046376,  0.025703,  0.998593],  # 5: lower-waist-right
                 [ 0.118377, -0.062523,  0.990998],  # 6: top-right
                 [ 0.124305,  0.060105,  0.990422],  # 7: bottom-right
             ],

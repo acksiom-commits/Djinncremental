@@ -2101,7 +2101,9 @@ func check_solution(candidate: Array) -> bool:
 # "the second firing of X is N notes after its first firing" (both read as a
 # pitch interval). Regenerated so no cached puzzle
 # keeps the old wording.
-const CACHE_VERSION: int = 13
+#
+# version 14 (2026-10-16): Easy's firing-order chains name four stars.
+const CACHE_VERSION: int = 14
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -4556,6 +4558,8 @@ func _build_form_range(chain: Dictionary) -> Dictionary:
         return {}
     var subject_star: int = int(a["star"])
     var r: int = _order_value(Category.SEQUENCE, subject_star)
+    if _exact_shapes() and _melody_repeats():
+        return _build_range_narrow(a, subject_star, r)
     var want_first: bool = _rng.randf() < 0.5
     @warning_ignore("integer_division")
     var n: int = mini(star_count, 2 + _rng.randi_range(0, maxi(1, star_count / 3)))
@@ -4646,6 +4650,47 @@ func _build_form_range(chain: Dictionary) -> Dictionary:
         "solver_facts": solver_facts,
         # The same [lo, hi] the Sequence solver gets, keyed on the Name
         # instead of the star — the only ABSOLUTE-rank fact the closure has.
+        "value_facts": _name_rank_range_facts(id_ch, lo, hi),
+    }
+
+
+## Range on Easy (_exact_shapes): a window of two or three places around the
+## subject's first note, "X first fires from note 5 to note 9", rather than a
+## loose "within the first 9 notes". At either end it keeps the one-sided
+## wording. Same facts and cells as the loose Range.
+func _build_range_narrow(a: Dictionary, subject_star: int, r: int) -> Dictionary:
+    var w: int = mini(star_count, 2 + _rng.randi_range(0, 1))
+    var lo: int = clampi(r - _rng.randi_range(0, w - 1), 0, star_count - w)
+    var hi: int = lo + w - 1
+    var id_ch: Dictionary = {"cat": int(a["id_cat"]), "star": subject_star}
+    var seq_ch: Dictionary = {"cat": Category.SEQUENCE, "star": subject_star}
+    var verb: String = _seq_fire_verb([subject_star])
+    var t_lo: int = _seq_first_tick(int(_cat_value_to_star[Category.SEQUENCE][lo]))
+    var t_hi: int = _seq_first_tick(int(_cat_value_to_star[Category.SEQUENCE][hi]))
+    var text: String
+    if lo == 0:
+        text = "%s %s within the first %d notes." % [_characteristic_label(id_ch), verb, t_hi]
+    elif hi == star_count - 1:
+        text = "%s %s no earlier than note %d." % [_characteristic_label(id_ch), verb, t_lo]
+    else:
+        text = "%s %s from note %d to note %d." % [_characteristic_label(id_ch), verb, t_lo, t_hi]
+    var solver_facts: Array = _seq_fact_for_label(id_ch)
+    solver_facts.append({"kind": "ordinal_range", "s": subject_star, "lo": lo, "hi": hi})
+    var grid_updates: Array = []
+    for v in star_count:
+        if v >= lo and v <= hi:
+            continue
+        grid_updates.append({
+            "cat_a": int(a["id_cat"]), "val_a": int(a["id_val"]),
+            "cat_b": Category.SEQUENCE, "val_b": int(v), "is_true": false,
+        })
+    if not _any_cell_fresh(grid_updates):
+        return {}
+    return {
+        "chars": [id_ch, seq_ch],
+        "text": text,
+        "grid_updates": grid_updates,
+        "solver_facts": solver_facts,
         "value_facts": _name_rank_range_facts(id_ch, lo, hi),
     }
 
@@ -4779,7 +4824,25 @@ func _firing_domain(sel: Dictionary) -> Array:
 
 ## The predicate interval [lo, hi] around the true value v: exactly, at most,
 ## at least, or between. Clamped to the selector's domain.
+## TEST SEAM: -1 = the profile's "exact_shapes", 0 = off, 1 = on.
+var exact_shapes_override: int = -1
+
+
+## EXACT SHAPES (Easy, 2026-10-16). The author finds placing the earlier firings
+## the slow part of a Beginner solve, and order/gap clues mostly worded loosely:
+## "at least 4 notes after", "between 3 and 6", "within the first 9 notes", a
+## negated gap. With this on, Firing Position and Firing Relation clues state the
+## exact value, are never negated, and a Range is a window of two or three
+## places around the star's first note.
+func _exact_shapes() -> bool:
+    if exact_shapes_override >= 0:
+        return exact_shapes_override == 1
+    return bool(_profile().get("exact_shapes", false))
+
+
 func _firing_pick_interval(v: int, dlo: int, dhi: int) -> Array:
+    if _exact_shapes():
+        return [v, v]   # Easy: the exact value (_exact_shapes)
     var lo: int = v
     var hi: int = v
     match _rng.randi_range(0, 3):
@@ -5263,7 +5326,7 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
     var ticks_b: Array = _star_ticks(star_b)
     if ticks_a.is_empty() or ticks_b.is_empty():
         return {}
-    var neg: bool = mode == "free" and _rng.randf() < 0.2
+    var neg: bool = mode == "free" and not _exact_shapes() and _rng.randf() < 0.2
     var pick_a: Dictionary
     var pick_b: Dictionary
     if mode == "adjacent":
@@ -5320,7 +5383,7 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
                 return {}
             spec = {"rel": "exact", "n": ad, "dir": dir, "neg": false}
         else:
-            match _rng.randi_range(0, 2):
+            match (0 if _exact_shapes() else _rng.randi_range(0, 2)):
                 0:
                     spec = {"rel": "exact", "n": ad, "dir": dir, "neg": false}
                 1:
@@ -7457,34 +7520,48 @@ func _betweenness_eligible_pool(axis: int) -> Array:
 ## graceful-degradation spirit as every other anchor.
 const BETWEENNESS_PAIR_ATTEMPTS: int = 6
 
-func _betweenness_two_disjoint_triples(axis: int) -> Array:
+func _betweenness_two_disjoint_triples(axis: int, k: int = 3) -> Array:
+    return _betweenness_pick_chains(axis, [k, k], 0)
+
+
+## One chain per entry of `sizes`, each internally rank-distinct, picked from
+## one shared pool. Chains share no star, except that up to `max_shared` stars
+## in all may appear in a second chain as well (2026-10-16: two four-star
+## chains on a 7-star map share one). With max_shared 0 this draws exactly
+## what the disjoint-only version did.
+func _betweenness_pick_chains(axis: int, sizes: Array, max_shared: int = 0) -> Array:
     for _attempt in BETWEENNESS_PAIR_ATTEMPTS:
         var pool: Array = _betweenness_eligible_pool(axis)
-        var triples: Array = []
+        var chains: Array = []
         var used_stars: Dictionary = {}
+        var shared: int = 0
         var ok: bool = true
-        for _t in 2:
-            var triple: Array = []
+        for size in sizes:
+            var chain: Array = []
             var ranks_seen: Dictionary = {}
+            var shared_here: int = 0
             for entry in pool:
                 var star: int = int(entry["star"])
-                if used_stars.has(star):
+                if used_stars.has(star) and shared + shared_here >= max_shared:
                     continue
                 var rank: int = int(entry["rank"])
                 if ranks_seen.has(rank):
                     continue
-                triple.append(entry)
+                if used_stars.has(star):
+                    shared_here += 1
+                chain.append(entry)
                 ranks_seen[rank] = true
-                if triple.size() == 3:
+                if chain.size() == int(size):
                     break
-            if triple.size() < 3:
+            if chain.size() < int(size):
                 ok = false
                 break
-            for entry in triple:
+            shared += shared_here
+            for entry in chain:
                 used_stars[int(entry["star"])] = true
-            triples.append(triple)
+            chains.append(chain)
         if ok:
-            return triples
+            return chains
     return []
 
 
@@ -7582,6 +7659,88 @@ func _betweenness_render_triple(participants: Array, axis: int) -> Dictionary:
         "grid_updates": grid_updates,
         "solver_facts": solver_facts,
     }
+
+
+## TEST SEAM: -1 = the profile's "seq_chain_len", else that length.
+var seq_chain_len_override: int = -1
+
+
+## How many stars Easy's guaranteed firing-order chains name (2026-10-16): a
+## longer chain gives the order of more first firings in one clue.
+func _seq_chain_len() -> int:
+    if seq_chain_len_override > 0:
+        return seq_chain_len_override
+    return int(_profile().get("seq_chain_len", 3))
+
+
+## TEST SEAMS: -1 = the profile's "chain_share_one" / "chain_mixed_fallback",
+## else 0 (off) or 1 (on).
+var chain_share_one_override: int = -1
+var chain_mixed_fallback_override: int = -1
+
+
+## When two separate chains of the chosen length don't fit (2026-10-16):
+## let the two chains share one star...
+func _chain_share_one() -> bool:
+    if chain_share_one_override >= 0:
+        return chain_share_one_override == 1
+    return bool(_profile().get("chain_share_one", false))
+
+
+## ...or keep one chain at the chosen length and shorten only the other to three.
+func _chain_mixed_fallback() -> bool:
+    if chain_mixed_fallback_override >= 0:
+        return chain_mixed_fallback_override == 1
+    return bool(_profile().get("chain_mixed_fallback", false))
+
+
+## A firing-order chain of four or more stars: "A first fires before B, which
+## first fires before C, which first fires before D." (or the same going
+## "after", from the last). Facts: one ordinal_chain per consecutive three, so
+## every reader that knows three-star chains reads it. Cells: each star's
+## identity, and the ranks it cannot have for the stars before / after it.
+func _betweenness_render_chain(participants: Array, axis: int) -> Dictionary:
+    var info_of: Dictionary = {}
+    var ranked: Array = []
+    for p in participants:
+        info_of[int(p["star"])] = p
+        ranked.append(int(p["star"]))
+    ranked.sort_custom(func(x, y): return _order_value(axis, x) < _order_value(axis, y))
+    var ids: Array = []
+    for s in ranked:
+        ids.append({"cat": int(info_of[s]["id_cat"]), "star": int(s)})
+    var descending: bool = _rng.randf() < 0.5
+    var order: Array = ids.duplicate()
+    if descending:
+        order.reverse()
+    var text: String = "%s %s %s %s" % [_characteristic_label(order[0]), _order_verb_for_subject(axis, int(order[0]["star"])),
+        _order_chain_word(axis, descending), _characteristic_label(order[1])]
+    for i in range(1, order.size() - 1):
+        text += ", which %s %s %s" % [_order_verb_for_subject(axis, int(order[i]["star"])), _order_chain_word(axis, descending),
+            _characteristic_label(order[i + 1])]
+    text += "%s." % _seq_obj_tail(order[order.size() - 1])
+    var solver_facts: Array = []
+    for id in ids:
+        solver_facts += _seq_fact_for_label(id)
+    for i2 in range(0, ranked.size() - 2):
+        solver_facts.append({"kind": "ordinal_chain", "a": int(ranked[i2]), "mid": int(ranked[i2 + 1]), "b": int(ranked[i2 + 2])})
+    var grid_updates: Array = []
+    var n_last: int = star_count - 1
+    var k: int = ranked.size()
+    for i3 in k:
+        var info: Dictionary = info_of[int(ranked[i3])]
+        grid_updates.append({"cat_a": int(info["id_cat"]), "val_a": int(info["id_val"]), "cat_b": axis, "val_b": int(info["axis_val"]), "is_true": true})
+        var excluded: Array = []
+        for rk in i3:
+            excluded.append(rk)               # i3 stars fire before it
+        for rk2 in (k - 1 - i3):
+            excluded.append(n_last - rk2)     # k-1-i3 fire after it
+        for rk3 in excluded:
+            grid_updates.append({"cat_a": int(info["id_cat"]), "val_a": int(info["id_val"]), "cat_b": axis, "val_b": int(rk3), "is_true": false})
+    var chars: Array = ids.duplicate()
+    for s2 in ranked:
+        chars.append({"cat": axis, "star": int(s2)})
+    return {"chars": chars, "text": text, "grid_updates": grid_updates, "solver_facts": solver_facts}
 
 
 # ── Form 20: Cross-Domain Bridge — first pass ────────────────────────────
@@ -8598,6 +8757,14 @@ const DIFFICULTY_PROFILES := {
         # Measured at 12.7 and 11.7 per puzzle respectively; capped to a
         # presence rather than a dominance.
         "form_caps": {12: 4, 15: 4},
+        # The paired Sequence chains name four stars, and share one star where
+        # two separate fours don't fit (2026-10-16, author). Measured on 30
+        # puzzles against three-star chains, the rest of each puzzle's draws
+        # held fixed: 21.5 -> 20.9 clues, names tied by hints 80% -> 85%, notes
+        # unchanged at 78%, generation 532 s -> 237 s. A 6-star map still gets
+        # three-star chains.
+        "seq_chain_len": 4,
+        "chain_share_one": true,
         # Built before the main loop, in this order, while True cells are
         # still unconsumed. Exact Identity ("X is Y") is the strongest
         # foothold in the game; Extreme and Range are the next most direct.
@@ -8743,10 +8910,13 @@ func _tiers_by_underrepresentation(tier_counts: Dictionary) -> Array:
 ## Forms in `tier` that this difficulty permits AND that have not already
 ## hit their per-Form cap this attempt. Caps exist because two Forms
 ## (Equality Pair, Distance Existential) otherwise supply 55% of every
+## TEST SEAM: Forms excluded on top of the profile's (for measuring).
+var extra_excluded_forms: Array = []
+
 ## clueset — see DIFFICULTY_PROFILES.
 func _forms_in_tier(tier: int, form_counts: Dictionary = {}) -> Array:
     var profile: Dictionary = _profile()
-    var excluded: Array = profile["excluded_forms"]
+    var excluded: Array = (profile["excluded_forms"] as Array) + extra_excluded_forms
     var caps: Dictionary = profile["form_caps"]
     var out: Array = []
     for form_id in AUTOMATED_FORM_IDS:
@@ -9489,14 +9659,48 @@ func _build_opening_anchors(sequence_solver_facts: Array, name_revealed: Array,
         # move on to the next slot.
         if form_id == 17 and slot is Dictionary and bool(slot.get("paired", false)):
             var b_axis: int = int(slot.get("axis", Category.SEQUENCE))
-            var b_triples: Array = _betweenness_two_disjoint_triples(b_axis)
+            # Easy chains name more stars (2026-10-16, "seq_chain_len"): two
+            # disjoint chains of k, falling back to three where the map is too
+            # small for two of k.
+            var b_len: int = _seq_chain_len() if b_axis == Category.SEQUENCE else 3
+            # Longer chains draw from the RNG differently, which would change
+            # every later clue too. So the RNG is first run through the
+            # three-star draw (picks and wording, thrown away), and resumes
+            # from there after the real chains: the rest of the puzzle draws
+            # the same numbers whatever these two chains are.
+            # Each pick below also starts from b_state0, so a pick that fails
+            # leaves the next one the same draws.
+            var b_resume: int = 0
+            var b_state0: int = _rng.state
+            if b_len > 3:
+                var b_subrank0: int = subrank_labels_rendered
+                for b_dry in _betweenness_two_disjoint_triples(b_axis, 3):
+                    _rendered_terms = {}
+                    _rendered_star_handles = {}
+                    _rendered_repeat_verbs = {}
+                    _betweenness_render_triple(b_dry, b_axis)
+                b_resume = _rng.state
+                _rng.state = b_state0
+                subrank_labels_rendered = b_subrank0
+            var b_triples: Array = _betweenness_pick_chains(b_axis, [b_len, b_len])
+            if b_triples.is_empty() and b_len > 3 and _chain_share_one():
+                _rng.state = b_state0
+                b_triples = _betweenness_pick_chains(b_axis, [b_len, b_len], 1)
+            if b_triples.is_empty() and b_len > 3 and _chain_mixed_fallback():
+                _rng.state = b_state0
+                b_triples = _betweenness_pick_chains(b_axis, [b_len, 3])
+            if b_triples.is_empty() and b_len > 3:
+                _rng.state = b_state0
+                b_triples = _betweenness_pick_chains(b_axis, [3, 3])
             for b_triple in b_triples:
                 _rendered_terms = {}
                 _rendered_star_handles = {}
                 _rendered_repeat_verbs = {}
-                var b_result: Dictionary = _betweenness_render_triple(b_triple, b_axis)
+                var b_result: Dictionary = _betweenness_render_triple(b_triple, b_axis) if (b_triple as Array).size() == 3 else _betweenness_render_chain(b_triple, b_axis)
                 _commit_clue_result(17, b_result, sequence_solver_facts,
                     name_revealed, tier_counts, form_counts)
+            if b_len > 3:
+                _rng.state = b_resume
             continue
         # A name tied to something visible ("Oraeides is the star that plays
         # C5"): see _commit_name_visible_anchor.
