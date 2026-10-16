@@ -8963,6 +8963,9 @@ func _commit_clue_result(form_id: int, result: Dictionary, sequence_solver_facts
     for c in chosen_form_clues:
         if str(c.get("text", "")) == text:
             return false
+    # A new clue can make an old one redundant, so what pruning remembered
+    # about needed clues no longer holds (_try_prune_clue_at).
+    _prune_needed_by_notes = {}
     var chars: Array = result["chars"]
     _commit_characteristics(chars)
     var verb_facts: Array = _take_repeat_verb_facts()
@@ -9697,15 +9700,40 @@ var prune_enabled: bool = true
 ## _recheck_anchors_for_redundancy can reuse the exact same test without
 ## also re-walking (and potentially disturbing) every other clue — see
 ## that function's header for why a second full walk isn't safe here.
+## Clue texts the note proof showed are needed during this attempt's pruning
+## (see _try_prune_clue_at). Cleared when pruning starts.
+var _prune_needed_by_notes: Dictionary = {}
+## TEST SEAM. False = every pass re-proves every clue (output must be the same).
+var prune_memo_enabled: bool = true
+
+
 func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
     var removed: Dictionary = chosen_form_clues[idx]
+    # ONCE NEEDED, ALWAYS NEEDED (2026-10-15). Pruning only removes clues, and a
+    # definite "this clue is needed" stays true for every smaller set:
+    #   - a second answer for the notes without it still fits every clue left;
+    #   - the name check compares against the closure size at the start of the
+    #     pass, which cannot change between passes (a removal is only accepted
+    #     if it keeps the closure within it), and fewer clues never shrink it;
+    #   - a name only this clue binds stays bound only by it.
+    # So the recheck and safety-net passes need not prove it again; they spent
+    # most of the slowest generations (~50-65 of ~75 s) doing exactly that. An
+    # INCONCLUSIVE verdict (a budget hit) is never remembered.
+    if prune_memo_enabled and _prune_needed_by_notes.has(str(removed.get("text", ""))):
+        return false
     chosen_form_clues.remove_at(idx)
     # The note proof: firing order AND repeat notes, together (_solve_notes).
     # An INCONCLUSIVE solve (node budget hit) is not proof of uniqueness, so
     # it must never license a removal: keep the clue.
-    var trial_seq: Array = await _unique_note_order(_seq_facts_from_clues())
+    var trial_sols: Array = await _solve_notes(_seq_facts_from_clues(), 2)
+    var needed_for_sure: bool = trial_sols.size() >= 2
+    var trial_seq: Array = []
+    if trial_sols.size() == 1 and not _last_solve_inconclusive:
+        trial_seq = [trial_sols[0]["ranks"]]
     if trial_seq.size() == 1:
         var trial_closure: Array = _solve_name_closure(trial_seq, baseline + 1)
+        if trial_closure.size() > baseline and not _last_solve_inconclusive:
+            needed_for_sure = true
         if trial_closure.size() <= baseline and not _last_solve_inconclusive:
             # Third condition, alongside Sequence uniqueness and the
             # closure: no name that is still bound may lose its binding.
@@ -9726,6 +9754,9 @@ func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
                 for n in cur_revealed.size():
                     cur_revealed[n] = trial_revealed[n]
                 return true
+            needed_for_sure = true
+    if needed_for_sure:
+        _prune_needed_by_notes[str(removed.get("text", ""))] = true
     chosen_form_clues.insert(idx, removed)
     return false
 
@@ -9736,6 +9767,7 @@ var prune_first_forms: Array = []
 
 
 func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array[Dictionary]:
+    _prune_needed_by_notes = {}
     var seq_facts: Array[Dictionary] = _seq_facts_from_clues()
     var seq_sols: Array = await _unique_note_order(seq_facts)
     if seq_sols.size() != 1:
