@@ -297,6 +297,75 @@ func _sync_derived_size() -> void:
 var _contradictions: Array[Dictionary] = []
 
 
+# ==================================================
+# THE ANSWER CHECK FOR A FILLED CHARACTERISTIC (author, 2026-10-16)
+# ==================================================
+# Everything else on the board is checked against the clues and the player's
+# own marks, never against the answer. Once a whole characteristic is filled
+# in, though, comparing it with the answer gives nothing away that playing
+# the melody would not, and it saves finishing, playing, failing and not
+# knowing which entry is wrong. Author's choice for Beginner-Easy: show which
+# entries are wrong ("option 2").
+#   Notes: filled when every note belongs to a row the board has down to one
+#          map star; wrong = notes whose star is not the one that fires there.
+#   Names: filled when every map star's tag shows a name; wrong = map stars
+#          showing a name that is not theirs.
+# Recomputed at the end of every refresh, so fixing an entry clears its mark.
+
+## -1 = on for Easy only (the author's choice), 0 = off, 1 = on. Tests set it.
+var answer_check_mode: int = -1
+## {"notes": {"filled", "wrong": [ticks]}, "names": {"filled", "wrong": [map stars]}}
+var answer_check: Dictionary = {}
+
+
+func _answer_check_on() -> bool:
+    if answer_check_mode >= 0:
+        return answer_check_mode == 1
+    if _host._gc == null or _host._constellation_id < 0:
+        return false
+    return str(_host._gc.get_constellation_difficulty(_host._constellation_id)) == "easy"
+
+
+func _check_filled_against_answer() -> void:
+    answer_check = {}
+    if not _answer_check_on():
+        return
+    var truth: Array = _host._melody_star_sequence
+    var n_notes: int = _melody_tick_count()
+    if truth.size() == n_notes and n_notes > 0:
+        var filled: bool = true
+        var wrong: Array = []
+        for t in range(1, n_notes + 1):
+            var rec: int = _find_match_record_by_melody_tick(t)
+            var cands: Array = _candidate_stars_for_record(rec) if rec >= 0 else []
+            if cands.size() != 1:
+                filled = false
+                break
+            if int(cands[0]) != int(truth[t - 1]):
+                wrong.append(t)
+        answer_check["notes"] = {"filled": filled, "wrong": wrong if filled else []}
+    var names_filled: bool = true
+    var wrong_names: Array = []
+    for s in _host._star_count:
+        var shown: String = str(_host._widgets._confirmed_name_for_star(s))
+        if shown == "":
+            names_filled = false
+            break
+        if shown != str(_host._star_names[s]):
+            wrong_names.append(s)
+    answer_check["names"] = {"filled": names_filled, "wrong": wrong_names if names_filled else []}
+
+
+## Is this note marked wrong by the answer check?
+func answer_check_note_wrong(tick: int) -> bool:
+    return (answer_check.get("notes", {}).get("wrong", []) as Array).has(tick)
+
+
+## Is this map star's name marked wrong by the answer check?
+func answer_check_name_wrong(star: int) -> bool:
+    return (answer_check.get("names", {}).get("wrong", []) as Array).has(star)
+
+
 func _detect_contradictions() -> void:
     _contradictions.clear()
     var all_notes: Array = _host._widgets._distinct_note_names()
@@ -9695,6 +9764,7 @@ func _full_propagation_refresh() -> void:
         if _derived_fact_count() == before:
             break
     _detect_contradictions()
+    _check_filled_against_answer()
     _host._refresh_contradiction_banner()
     _host._widgets._build_star_widgets()
     _host._widgets._build_star_tags()

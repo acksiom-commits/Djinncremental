@@ -4370,6 +4370,11 @@ func _fit_string_to_width(font: Font, text: String, size: int, max_w: float) -> 
     return ""
 
 
+## Red for an entry the answer check found wrong (answer_check in the
+## deduction engine; Easy, 2026-10-16).
+const ANSWER_WRONG_COLOR := Color(1.0, 0.35, 0.3)
+
+
 func _draw_melody_staff() -> void:
     var panel_size: Vector2 = _host._melody_staff_panel.size
     # One tick per melody note-EVENT, not per star (2026-09-28, per user
@@ -4493,11 +4498,14 @@ func _draw_melody_staff() -> void:
         # note in the tune this is — not seq_pos/rank, so a repeat's two
         # ticks show two different numerals (e.g. "2" and "9") over the
         # same name/pitch/colour, matching the melody they actually play.
-        var num_label: String = str(tick)
+        # The answer check (Easy, 2026-10-16): with every note filled in, a
+        # note given to the wrong star shows its numeral red with a cross.
+        var check_wrong: bool = _deduction.answer_check_note_wrong(tick)
+        var num_label: String = (str(tick) + "✗") if check_wrong else str(tick)
         var nw: float = font.get_string_size(num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small).x
         _host._melody_staff_panel.draw_string(font,
             Vector2(x - nw * 0.5, panel_size.y - NUMERAL_BASELINE_PAD),
-            num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, pos_col)
+            num_label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size_small, ANSWER_WRONG_COLOR if check_wrong else pos_col)
 
 
 ## Resolves a melody TICK (1-indexed staff position, 1..tick_count in
@@ -5918,9 +5926,12 @@ func _build_star_tags_impl() -> void:
 
         var name_lbl := Label.new()
         name_lbl.name = "NameLabel"
-        name_lbl.text = name_str
+        # The answer check (Easy, 2026-10-16): with every star named, a name
+        # on the wrong star shows red with a cross.
+        var name_wrong: bool = _deduction.answer_check_name_wrong(i)
+        name_lbl.text = (name_str + " ✗") if name_wrong else name_str
         name_lbl.add_theme_font_size_override("font_size", 19)
-        name_lbl.add_theme_color_override("font_color", star_color)
+        name_lbl.add_theme_color_override("font_color", ANSWER_WRONG_COLOR if name_wrong else star_color)
         name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
         var seq_lbl := Label.new()

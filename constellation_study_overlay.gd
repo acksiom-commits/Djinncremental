@@ -1178,19 +1178,56 @@ func _refresh_contradiction_banner() -> void:
     if _contradiction_banner == null:
         return
     var found: Array = _deduction._contradictions
-    if found.is_empty():
+    var parts: Array[String] = []
+    if not found.is_empty():
+        var lines: Array[String] = []
+        for c in found:
+            lines.append("• " + str((c as Dictionary).get("text", "")))
+        # Named as a conflict between the player's own marks, not as a puzzle
+        # error and not as a hint: the engine knows the set is empty, not which
+        # mark is the mistake.
+        var head: String = "[b]Impossible state — one of your marks must be wrong:[/b]"
+        parts.append("[color=#ff8a66]%s\n%s[/color]" % [head, "\n".join(lines)])
+    # The answer check for a filled characteristic (Easy, 2026-10-16): the
+    # wrong entries are also marked red on the staff and the map.
+    var checked: Array[String] = _answer_check_lines()
+    if not checked.is_empty():
+        parts.append("\n".join(checked))
+    if parts.is_empty():
         _contradiction_banner.visible = false
         _contradiction_banner.text = ""
         return
-    var lines: Array[String] = []
-    for c in found:
-        lines.append("• " + str((c as Dictionary).get("text", "")))
-    # Named as a conflict between the player's own marks, not as a puzzle
-    # error and not as a hint: the engine knows the set is empty, not which
-    # mark is the mistake.
-    var head: String = "[b]Impossible state — one of your marks must be wrong:[/b]"
-    _contradiction_banner.text = "[color=#ff8a66]%s\n%s[/color]" % [head, "\n".join(lines)]
+    _contradiction_banner.text = "\n".join(parts)
     _contradiction_banner.visible = true
+
+
+## The answer check's banner lines: one per filled characteristic.
+func _answer_check_lines() -> Array[String]:
+    var out: Array[String] = []
+    var ac: Dictionary = _deduction.answer_check
+    var notes: Dictionary = ac.get("notes", {})
+    if bool(notes.get("filled", false)):
+        var wrong: Array = notes.get("wrong", [])
+        if wrong.is_empty():
+            out.append("[color=#7fe08a][b]All %d notes are filled in and correct.[/b][/color]" % _melody_seq_pos_sequence.size())
+        else:
+            var nums: PackedStringArray = []
+            for t in wrong:
+                nums.append(str(t))
+            out.append("[color=#ff8a66][b]All notes are filled in; %d %s wrong:[/b] note%s %s (marked red on the staff).[/color]" % [
+                wrong.size(), "is" if wrong.size() == 1 else "are", "" if wrong.size() == 1 else "s", ", ".join(nums)])
+    var names: Dictionary = ac.get("names", {})
+    if bool(names.get("filled", false)):
+        var wrong_n: Array = names.get("wrong", [])
+        if wrong_n.is_empty():
+            out.append("[color=#7fe08a][b]Every star has a name, and every name is correct.[/b][/color]")
+        else:
+            var shown: PackedStringArray = []
+            for s in wrong_n:
+                shown.append(str(_widgets._confirmed_name_for_star(int(s))))
+            out.append("[color=#ff8a66][b]Every star has a name; %d %s on the wrong star:[/b] %s (marked red on the map).[/color]" % [
+                wrong_n.size(), "is" if wrong_n.size() == 1 else "are", ", ".join(shown)])
+    return out
 
 
 func _select_clue(bbcode_text: String) -> void:
