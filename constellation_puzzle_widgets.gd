@@ -5381,10 +5381,15 @@ func _build_star_widgets_impl() -> void:
         # then — Pitch is designed to be primarily Listen-revealed rather
         # than deduced, so this deliberately doesn't show a state that was
         # only inferred some other way.
+        # Asked of the STAR, not of this one record (reported 2026-10-16): a
+        # star can have two entries the board knows are the same, the one
+        # Listen marked and the one the player named, and this record may be
+        # the named one. _pitch_earned_for_star counts every entry tied to the
+        # star, the same gate the map tag reads.
         var pitch_lbl := Label.new()
         pitch_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         pitch_lbl.add_theme_font_size_override("font_size", 16)
-        if bool(_deduction.record_at(existing_record).get("pitch_revealed", false)):
+        if _deduction._pitch_earned_for_star(i):
             pitch_lbl.text = _confirmed_pitch_str_for_star(i)
             pitch_lbl.add_theme_color_override("font_color", star_color)
         else:
