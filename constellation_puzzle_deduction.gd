@@ -1284,6 +1284,13 @@ func _save_puzzle_notes() -> void:
     # Every mutation path calls this, so it's the reliable choke point for
     # invalidating the derived caches — see _clear_deduction_caches().
     _clear_deduction_caches()
+    # The history is the board's own, whether or not there is a save to write.
+    if _board_next_save_kept:
+        # Listen or a note placement: kept by Backstep, so not a step of its own.
+        _board_next_save_kept = false
+        _board_baseline = _board_state()
+    elif not _board_history_paused:
+        _record_board_step()
     if not _host._cd or _host._constellation_id < 0:
         return
     var notes: Dictionary = {}
@@ -1308,7 +1315,327 @@ func _save_puzzle_notes() -> void:
     # no legacy key to preserve.
     notes["repeat_bucket_values"] = _repeat_bucket_values.duplicate()
     notes["repeat_bucket_slot_counts"] = _repeat_bucket_slot_counts.duplicate()
+    notes["board_undo"] = _board_undo.duplicate(true)
+    notes["board_redo"] = _board_redo.duplicate(true)
+    notes["record_uid_next"] = _next_record_uid
     _host._cd.set_player_puzzle_notes(_host._constellation_id, notes)
+
+
+# ==================================================
+# BOARD HISTORY — Backstep / Forward (2026-10-17, author)
+# ==================================================
+# Every save compares the board with the one before it and keeps the entries
+# that changed, before and after, keyed by each entry's permanent uid. Backstep
+# puts the last step's entries back; Forward re-applies them. The author's
+# scope: two things are NOT undone, they are re-applied from the current
+# board after every Backstep and Forward:
+#   - which entry each placed note belongs to (and a note's own entry's
+#     position pin, which is how the Staff popup places a note);
+#   - which stars have been Listened to.
+# Everything else is: names, positions, every check and cross, repeats,
+# Sort-tab rows and buckets, the section Undo buttons. Free-text notes and
+# filed clues are not board entries. RESET builds a new puzzle with an empty
+# board, so it starts the history over. Saved with the board, the last
+# BOARD_HISTORY_CAP steps.
+
+const BOARD_HISTORY_CAP: int = 200
+
+var _next_record_uid: int = 1
+var _board_undo: Array = []
+var _board_redo: Array = []
+## The board as of the last save: {"order": [uid], "recs": {uid: record},
+## "buckets": {...}}. Steps are taken against it.
+var _board_baseline: Dictionary = {}
+var _board_history_paused: bool = false
+## Set by Listen and the note-placing handlers just before they save: what
+## they change is kept by Backstep, so it is not recorded as a step.
+var _board_next_save_kept: bool = false
+
+
+func can_backstep() -> bool:
+    return not _board_undo.is_empty()
+
+
+func can_forward() -> bool:
+    return not _board_redo.is_empty()
+
+
+## Restores a board's history from its saved notes; no history -> empty.
+func _load_board_history(notes: Dictionary) -> void:
+    _board_undo = _coerce_array(notes.get("board_undo"), []).duplicate(true)
+    _board_redo = _coerce_array(notes.get("board_redo"), []).duplicate(true)
+    _next_record_uid = maxi(_next_record_uid, _coerce_int(notes.get("record_uid_next"), 1))
+    _board_baseline = _board_state()
+
+
+func _ensure_unique_record_uids() -> void:
+    var seen: Dictionary = {}
+    for r in _match_records:
+        var u: int = int(r.get("uid", 0))
+        if u <= 0 or seen.has(u):
+            u = _next_record_uid
+            _next_record_uid += 1
+            r["uid"] = u
+        seen[u] = true
+        _next_record_uid = maxi(_next_record_uid, u + 1)
+
+
+## An entry that is only somewhere to hang a row: a name, a map star or a
+## slot label and nothing entered on it. The Notes and Sort tabs and the star
+## popups create these as they draw, so their coming and going is not a step.
+func _record_is_placeholder(r: Dictionary) -> bool:
+    var s: Dictionary = _stripped_record(r)
+    for k in ["uid", "name", "star_idx", "color_slot_label", "pitch_slot_label", "degree_slot_label", "repeat_slot_label"]:
+        s.erase(k)
+    return s.is_empty()
+
+
+func _record_defaults() -> Dictionary:
+    return _new_match_record({"uid": -1})
+
+
+## A record without the fields still at their defaults: what a step stores.
+func _stripped_record(r: Dictionary) -> Dictionary:
+    var defaults: Dictionary = _record_defaults()
+    var out: Dictionary = {}
+    for k in r:
+        if k == "uid" or not defaults.has(k) or r[k] != defaults[k]:
+            out[k] = r[k]
+    return out.duplicate(true)
+
+
+func _board_state() -> Dictionary:
+    var order: Array = []
+    var recs: Dictionary = {}
+    for r in _match_records:
+        var u: int = int(r.get("uid", 0))
+        order.append(u)
+        recs[u] = (r as Dictionary).duplicate(true)
+    return {"order": order, "recs": recs, "buckets": {
+        "values": _repeat_bucket_values.duplicate(),
+        "slots": _repeat_bucket_slot_counts.duplicate()}}
+
+
+## Pushes one step if the board differs from the baseline, and moves the
+## baseline on. A new step clears Forward.
+func _record_board_step(clear_redo: bool = true) -> void:
+    if _board_baseline.is_empty():
+        _board_baseline = _board_state()
+        return
+    var now: Dictionary = _board_state()
+    var before: Dictionary = {}
+    var after: Dictionary = {}
+    var old_recs: Dictionary = _board_baseline["recs"]
+    var new_recs: Dictionary = now["recs"]
+    for u in old_recs:
+        if not new_recs.has(u):
+            if not _record_is_placeholder(old_recs[u]):
+                before[str(u)] = _stripped_record(old_recs[u])
+                after[str(u)] = null
+        elif old_recs[u] != new_recs[u]:
+            before[str(u)] = _stripped_record(old_recs[u])
+            after[str(u)] = _stripped_record(new_recs[u])
+    for u2 in new_recs:
+        if not old_recs.has(u2) and not _record_is_placeholder(new_recs[u2]):
+            before[str(u2)] = null
+            after[str(u2)] = _stripped_record(new_recs[u2])
+    var buckets_changed: bool = _board_baseline["buckets"] != now["buckets"]
+    if before.is_empty() and not buckets_changed:
+        _board_baseline = now   # placeholders came or went: not a step
+        return
+    var step: Dictionary = {
+        "before": before, "after": after,
+        "order_before": (_board_baseline["order"] as Array).duplicate(),
+        "order_after": (now["order"] as Array).duplicate(),
+    }
+    if buckets_changed:
+        step["buckets_before"] = (_board_baseline["buckets"] as Dictionary).duplicate(true)
+        step["buckets_after"] = (now["buckets"] as Dictionary).duplicate(true)
+    _board_undo.append(step)
+    while _board_undo.size() > BOARD_HISTORY_CAP:
+        _board_undo.pop_front()
+    if clear_redo:
+        _board_redo.clear()
+    _board_baseline = now
+
+
+## What Backstep and Forward never take back, read off the board as it is.
+func _board_kept_facts() -> Dictionary:
+    var ticks: Dictionary = {}
+    var pins: Dictionary = {}
+    var listened: Array = []
+    for i in _match_records.size():
+        var r: Dictionary = _match_records[i]
+        var mt: Array = r.get("melody_ticks", [])
+        for t in mt:
+            ticks[int(t)] = int(r.get("uid", 0))
+        if mt.size() == 1 and _is_note_only_record(i):
+            pins[int(mt[0])] = {"seq_lo": r.get("seq_lo", 0), "seq_hi": r.get("seq_hi", 0),
+                "seq_tick_lo": r.get("seq_tick_lo", 0), "seq_tick_hi": r.get("seq_tick_hi", 0),
+                "seq_candidates": (r.get("seq_candidates", []) as Array).duplicate()}
+        if bool(r.get("pitch_revealed", false)) and int(r.get("star_idx", -1)) >= 0:
+            listened.append(int(r["star_idx"]))
+    return {"ticks": ticks, "pins": pins, "listened": listened}
+
+
+## An entry that is nothing but one note: no name, no map star, no Sort slot.
+func _is_note_only_record(idx: int) -> bool:
+    var r: Dictionary = _match_records[idx]
+    return (r.get("melody_ticks", []) as Array).size() == 1 and str(r.get("name", "")) == "" \
+        and int(r.get("star_idx", -1)) < 0 and str(r.get("color_slot_label", "")) == "" \
+        and str(r.get("pitch_slot_label", "")) == "" and str(r.get("degree_slot_label", "")) == "" \
+        and str(r.get("repeat_slot_label", "")) == ""
+
+
+func _record_index_by_uid(u: int) -> int:
+    for i in _match_records.size():
+        if int(_match_records[i].get("uid", 0)) == u:
+            return i
+    return -1
+
+
+func _record_index_holding_tick(t: int) -> int:
+    for i in _match_records.size():
+        if (_match_records[i].get("melody_ticks", []) as Array).has(t):
+            return i
+    return -1
+
+
+## Puts the kept facts back onto a restored board: each placed note onto the
+## entry that holds it now (joining a note's own entry to it, as placing it
+## did), each note's own position pin, and every Listen.
+func _board_replay_kept(kept: Dictionary) -> void:
+    var ticks: Dictionary = kept["ticks"]
+    for t in ticks:
+        var owner: int = _record_index_by_uid(int(ticks[t]))
+        if owner < 0:
+            continue   # its entry is gone with the step: the note stays where it was
+        var holder: int = _record_index_holding_tick(int(t))
+        if holder == owner:
+            continue
+        if holder >= 0 and _is_note_only_record(holder):
+            _merge_match_records(owner, holder, false)
+            if _record_index_holding_tick(int(t)) == _record_index_by_uid(int(ticks[t])):
+                continue
+            holder = _record_index_holding_tick(int(t))
+        if holder >= 0:
+            var hticks: Array = (_match_records[holder].get("melody_ticks", []) as Array).duplicate()
+            hticks.erase(int(t))
+            _match_records[holder]["melody_ticks"] = hticks
+        owner = _record_index_by_uid(int(ticks[t]))
+        var oticks: Array = (_match_records[owner].get("melody_ticks", []) as Array).duplicate()
+        if not oticks.has(int(t)):
+            oticks.append(int(t))
+            oticks.sort()
+        _match_records[owner]["melody_ticks"] = oticks
+    var pins: Dictionary = kept["pins"]
+    for t2 in pins:
+        var h: int = _record_index_holding_tick(int(t2))
+        if h >= 0 and _is_note_only_record(h):
+            for k in pins[t2]:
+                _match_records[h][k] = pins[t2][k]
+    for s in kept["listened"]:
+        var rec: int = _get_or_create_match_record_for_star_idx(int(s))
+        if bool(_match_records[rec].get("pitch_revealed", false)):
+            continue
+        var p: int = int(_host._star_pitch_index[int(s)]) if int(s) < _host._star_pitch_index.size() else -1
+        if p < 0 or p >= _host._pitch_freqs.size():
+            continue
+        _propagate_pitch_confirmed_same_record(rec, ConstellationLogicPuzzle.note_name_for_freq(_host._pitch_freqs[p]))
+        _match_records[rec]["pitch_revealed"] = true
+        if int(s) < _host._repeat_count.size() and int(_host._repeat_count[int(s)]) >= 0:
+            _ensure_repeat_bucket_for(int(_host._repeat_count[int(s)]))
+    _clear_deduction_caches()
+
+
+## The board as the player sees it, ignoring entry ids and order: two boards
+## with the same signature look the same.
+func _board_signature() -> String:
+    var parts: Array = []
+    for r in _match_records:
+        if _record_is_placeholder(r):
+            continue
+        var c: Dictionary = (r as Dictionary).duplicate(true)
+        c.erase("uid")
+        parts.append(var_to_str(c))
+    parts.sort()
+    return "\n".join(parts) + "\n" + var_to_str(_repeat_bucket_values) + var_to_str(_repeat_bucket_slot_counts)
+
+
+## Applies one side ("before" or "after") of a step to the current board.
+func _apply_board_step_side(step: Dictionary, side: String) -> void:
+    var recs: Dictionary = {}
+    var cur_order: Array = []
+    for r in _match_records:
+        recs[int(r.get("uid", 0))] = (r as Dictionary).duplicate(true)
+        cur_order.append(int(r.get("uid", 0)))
+    var changes: Dictionary = _coerce_dict(step.get(side), {})
+    for key in changes:
+        var u: int = _coerce_int_key(key, 0)   # stored as text: dictionary keys
+        var v = changes[key]
+        if v == null:
+            recs.erase(u)
+        else:
+            var full: Dictionary = (v as Dictionary).duplicate(true)
+            full["uid"] = u
+            recs[u] = full
+    var out: Array = []
+    var placed: Dictionary = {}
+    for o in _coerce_array(step.get("order_" + side), []):
+        var u2: int = _coerce_int(o, 0)
+        if recs.has(u2) and not placed.has(u2):
+            out.append(recs[u2])
+            placed[u2] = true
+    for u3 in cur_order + recs.keys():
+        if recs.has(int(u3)) and not placed.has(int(u3)):
+            out.append(recs[int(u3)])
+            placed[int(u3)] = true
+    _load_match_records(out)
+    if step.has("buckets_" + side):
+        var b: Dictionary = _coerce_dict(step["buckets_" + side], {})
+        _repeat_bucket_values.clear()
+        for bv in _coerce_array(b.get("values"), []):
+            _repeat_bucket_values.append(_coerce_int(bv, 0))
+        _repeat_bucket_slot_counts.clear()
+        var slots: Dictionary = _coerce_dict(b.get("slots"), {})
+        for bk in slots:
+            var key2: int = _coerce_int_key(bk, -1)
+            if key2 >= 0:
+                _repeat_bucket_slot_counts[key2] = maxi(1, _coerce_int(slots[bk], 1))
+
+
+## Backstep (forward = false) or Forward: moves steps from one stack to the
+## other until the board visibly changes, re-applying the kept facts each
+## time. A step that only placed a note changes nothing once the note is put
+## back, so it is passed over rather than spent on a click that does nothing.
+## Returns whether anything changed.
+func board_step(forward: bool) -> bool:
+    # Anything not yet saved (a refresh's merges) is part of the last step,
+    # and must not clear Forward.
+    _record_board_step(false)
+    var from: Array = _board_redo if forward else _board_undo
+    var to: Array = _board_undo if forward else _board_redo
+    if from.is_empty():
+        return false
+    var kept: Dictionary = _board_kept_facts()
+    var start_sig: String = _board_signature()
+    var changed: bool = false
+    _board_history_paused = true
+    while not from.is_empty():
+        var step: Dictionary = from.pop_back()
+        to.append(step)
+        _apply_board_step_side(step, "after" if forward else "before")
+        _board_replay_kept(kept)
+        _full_propagation_refresh()
+        if _board_signature() != start_sig:
+            changed = true
+            break
+    # After the refresh, so the merges it makes are not mistaken for a new
+    # step by the next save (a new step would clear Forward).
+    _board_baseline = _board_state()
+    _save_puzzle_notes()
+    _board_history_paused = false
+    return changed
 
 # ==================================================
 # DEDUCTION ENGINE CORE — record lookups, elimination
@@ -1735,9 +2062,18 @@ func _new_match_record(overrides: Dictionary = {}) -> Dictionary:
         # position set above. A record holding one of these notes is then
         # provably a different star (_compute_records_provably_distinct).
         "seq_note_blocks": [],
+        # Permanent id (2026-10-17), what the Backstep history refers to an
+        # entry by: indexes shift when a merge removes one. 0 = assign the
+        # next one; -1 = none (a template, see _record_defaults).
+        "uid": 0,
     }
     for k in overrides:
         r[k] = overrides[k]
+    if int(r["uid"]) == 0:
+        r["uid"] = _next_record_uid
+        _next_record_uid += 1
+    elif int(r["uid"]) >= _next_record_uid:
+        _next_record_uid = int(r["uid"]) + 1
     return r
 
 
@@ -2707,7 +3043,10 @@ func _load_match_records(data: Array) -> void:
             "repeat_slot_label": str(e.get("repeat_slot_label", "")),
             "melody_ticks": melody_ticks,
             "seq_note_blocks": seq_note_blocks,
+            "uid": maxi(_coerce_int(e.get("uid"), 0), 0),
         }))
+    _ensure_unique_record_uids()
+    _board_baseline = _board_state()
     # Sized against the now-FULLY-populated _match_records, not the
     # transiently-empty one right after .clear() above — _reset_derived()
     # used to run before this loop, so _derived came back sized 0 against
@@ -9803,6 +10142,7 @@ func _full_propagation_refresh() -> void:
     _detect_contradictions()
     _check_filled_against_answer()
     _host._refresh_contradiction_banner()
+    _host._refresh_history_buttons()
     _host._widgets._build_star_widgets()
     _host._widgets._build_star_tags()
     _host._melody_staff_panel.queue_redraw()

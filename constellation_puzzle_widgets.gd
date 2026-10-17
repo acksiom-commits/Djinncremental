@@ -2669,6 +2669,7 @@ func _on_seq_note_select(record_idx: int, tick: int) -> void:
             _deduction._detach_melody_tick(tick, record_idx)
         else:
             _release_repeat_note(tick)   # the note's own record sat on the same position
+        _deduction._board_next_save_kept = true   # a note placement, kept by Backstep
         _deduction._save_puzzle_notes()
         _deduction._full_propagation_refresh()
         return
@@ -2679,6 +2680,7 @@ func _on_seq_note_select(record_idx: int, tick: int) -> void:
     var note_idx: int = _release_repeat_note(tick)
     if note_idx != record_idx and note_idx >= 0:
         await _deduction._merge_match_records(record_idx, note_idx)
+    _deduction._board_next_save_kept = true   # a note placement, kept by Backstep
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
 
@@ -4892,6 +4894,7 @@ func _on_staff_identity_select(tick: int, rank: int) -> void:
     var first: String = str(_deduction._first_tick_for_rank(rank))
     (edits[0] as LineEdit).text = first
     (edits[2] as LineEdit).text = first
+    _deduction._board_next_save_kept = true   # a note placement, kept by Backstep
     await _commit_sequence_range(record_idx, edits[0], edits[1], edits[2])
     for e in edits:
         (e as LineEdit).queue_free()
@@ -4913,6 +4916,7 @@ func _on_staff_identity_toggle(tick: int, rank: int) -> void:
 
 func _on_staff_identity_undo(tick: int) -> void:
     _release_repeat_note(tick)
+    _deduction._board_next_save_kept = true   # a note placement, kept by Backstep
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
     _open_staff_popup(tick, _host._staff_popup.position)

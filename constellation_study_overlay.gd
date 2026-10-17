@@ -58,6 +58,8 @@ const MARKERS_BASE_PATH:    String = PANE1_BASE_PATH + "/MarkersVBox"
 ## RESET press, since both now share one confirmed signal.
 var _difficulty_btn: Button = null
 var _seq_mode_btn: Button = null
+var _backstep_btn: Button = null
+var _forward_btn: Button = null
 var _pending_difficulty_change: String = ""
 const _RESET_DIALOG_TEXT := "Generate a brand new arrangement for this constellation?\nStar names, colors, and which star plays which note will all reshuffle. Your clues, deduction notes, and current progress on this constellation will be lost.\nThis cannot be undone."
 @onready var _selected_clue_display: RichTextLabel = get_node(HEADER_BASE_PATH + "/SelectedClueDisplay")
@@ -580,6 +582,7 @@ func _load_constellation_data() -> void:
     # typed value would hang at the call boundary, one hop before that
     # function's own body (not yet reviewed this session) ever runs.
     _deduction._load_match_records(_coerce_array(notes.get("match_records"), []))
+    _deduction._load_board_history(notes)
 
     # Sequence position + clue text caches (for Markers Panel display).
     _sequence_rank_solution = []
@@ -1008,6 +1011,7 @@ func _on_pitch_listen_star_clicked(star_idx: int) -> void:
     # was ever listened to — see _reconcile_unique_pitch_slot for why
     # this is only safe/needed for notes with exactly one star.
     record_idx = await _deduction._reconcile_unique_pitch_slot(record_idx, note_name)
+    _deduction._board_next_save_kept = true   # Listen is kept by Backstep
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
 
@@ -1134,6 +1138,39 @@ func _build_difficulty_toggle() -> void:
     bar.add_child(_seq_mode_btn)
     bar.move_child(_seq_mode_btn, _difficulty_btn.get_index())
     _refresh_seq_mode_button()
+
+    # Backstep / Forward through the board's history (2026-10-17, author),
+    # just left of RESET. See the BOARD HISTORY section of the deduction engine.
+    _backstep_btn = Button.new()
+    _backstep_btn.text = "↶"
+    _backstep_btn.tooltip_text = "Backstep: undo your last entry"
+    _forward_btn = Button.new()
+    _forward_btn.text = "↷"
+    _forward_btn.tooltip_text = "Forward: redo the entry Backstep undid"
+    for b in [_backstep_btn, _forward_btn]:
+        (b as Button).focus_mode = Control.FOCUS_NONE
+        (b as Button).add_theme_font_size_override("font_size", 19)
+        bar.add_child(b)
+        bar.move_child(b, _reset_btn.get_index())
+    _backstep_btn.pressed.connect(func(): _on_board_step_pressed(false))
+    _forward_btn.pressed.connect(func(): _on_board_step_pressed(true))
+    _refresh_history_buttons()
+
+
+func _on_board_step_pressed(forward: bool) -> void:
+    # A popup open on an entry may be showing one the step removes.
+    for p in [_staff_popup, _name_checklist_popup, _pitch_checklist_popup, _repeat_checklist_popup]:
+        if p != null and is_instance_valid(p):
+            (p as Control).hide()
+    _deduction.board_step(forward)
+    _refresh_history_buttons()
+
+
+func _refresh_history_buttons() -> void:
+    if _backstep_btn:
+        _backstep_btn.disabled = not _deduction.can_backstep()
+    if _forward_btn:
+        _forward_btn.disabled = not _deduction.can_forward()
 
 
 func _refresh_seq_mode_button() -> void:
