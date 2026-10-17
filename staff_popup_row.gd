@@ -34,7 +34,7 @@ signal row_right_clicked
     set(value):
         count_value = value
         if _count_label:
-            _count_label.text = "(%d)" % value
+            _count_label.text = "(%d)" % value if value >= 0 else "(?)"
 
 @export var label_color: Color = STATE_COLORS.neutral:
     set(value):
@@ -101,7 +101,7 @@ func _ready() -> void:
         _label.add_theme_font_size_override("font_size", label_font_size)
     _count_label.visible = show_count
     if count_value != 0:
-        _count_label.text = "(%d)" % count_value
+        _count_label.text = "(%d)" % count_value if count_value >= 0 else "(?)"
     if count_font_size != 11:
         _count_label.add_theme_font_size_override("font_size", count_font_size)
     _count_label.add_theme_color_override("font_color", count_color)

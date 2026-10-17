@@ -2866,6 +2866,29 @@ func _repeat_count_star_count(value: int) -> int:
     return count
 
 
+## The number a note's row shows in the pitch popups (2026-10-16, author). On a
+## repeating melody: how many times the note fires, once every star playing it
+## has been Listened (-1 until then, shown as "?"), the same gate as the
+## repeat count on the star tags (_repeat_given_for_record). On a 1:1 melody:
+## how many stars play it, which is also how many times it fires.
+func _pitch_row_count(note_name: String) -> int:
+    if not _seq_repeats():
+        return _pitch_star_count(note_name)
+    var firings: int = 0
+    for s in _host._star_count:
+        if s >= _host._star_pitch_index.size():
+            continue
+        var p: int = int(_host._star_pitch_index[s])
+        if p < 0 or p >= _host._pitch_freqs.size():
+            continue
+        if ConstellationLogicPuzzle.note_name_for_freq(_host._pitch_freqs[p]) != note_name:
+            continue
+        if not _player_knows_star_pitch(s) or s >= _host._repeat_count.size():
+            return -1
+        firings += int(_host._repeat_count[s]) + 1
+    return firings
+
+
 func _pitch_star_count(note_name: String) -> int:
     # Same shape as _color_star_count, keyed by note name instead of color
     # index — ground-truth incidence count, used to gate

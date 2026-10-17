@@ -1862,7 +1862,7 @@ func _open_pitch_checklist_popup(record_idx: int, screen_pos: Vector2) -> void:
     var excluded_pitches: Array[String] = _deduction._compute_excluded_pitches_for(record_idx)
     for f in _pitch_freqs_low_to_high():
         var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(f)
-        var incidence_count: int = _deduction._pitch_star_count(note_name)
+        var incidence_count: int = _deduction._pitch_row_count(note_name)
         # See the name checklist above for collapse_soft / the 0-or-4 rule.
         var state: int = _deduction._effective_pitch_state(record_idx, note_name, false)
         if (state == 0 or state == 4) and excluded_pitches.has(note_name):
@@ -4623,7 +4623,7 @@ func _open_staff_popup(tick: int, screen_pos: Vector2, rows_per_column: int = ST
     var excluded_pitches: Array[String] = _deduction._compute_excluded_pitches_for(record_idx)
     for f in _pitch_freqs_low_to_high():
         var note_name: String = ConstellationLogicPuzzle.note_name_for_freq(f)
-        var incidence_count: int = _deduction._pitch_star_count(note_name)
+        var incidence_count: int = _deduction._pitch_row_count(note_name)
         # See _open_name_checklist_popup for collapse_soft / the 0-or-4 rule.
         var state: int = _deduction._effective_pitch_state(record_idx, note_name, false)
         if (state == 0 or state == 4) and excluded_pitches.has(note_name):
