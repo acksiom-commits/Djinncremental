@@ -2103,7 +2103,10 @@ func check_solution(candidate: Array) -> bool:
 # keeps the old wording.
 #
 # version 14 (2026-10-16): Easy's firing-order chains name four stars.
-const CACHE_VERSION: int = 14
+#
+# version 15 (2026-10-16): no Firing clue speaks only of firings its labels
+# already print (_firing_named_by_label); a version-14 puzzle may carry one.
+const CACHE_VERSION: int = 15
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -4936,6 +4939,10 @@ func _build_form_firing_position(chain: Dictionary) -> Dictionary:
     var kinds: Array = ["count"]
     if m >= 2:
         kinds = ["nth", "span"]
+    elif int(a["id_cat"]) == Category.SEQUENCE:
+        # Its only firing is the note its label prints, so where it falls in a
+        # window is decided by the label alone (see _firing_named_by_label).
+        return {}
     var kind: String = str(kinds[_rng.randi_range(0, kinds.size() - 1)])
     var sel: Dictionary = {"kind": kind}
     if kind == "nth":
@@ -5234,6 +5241,13 @@ func _firing_random_pick(m: int, _specific_only: bool) -> Dictionary:
     return _firing_pick_for_index(k)
 
 
+## Is this firing the note its star's label already prints? A Sequence label
+## names a star by its first note ("the star that first fires on note 5"), so
+## that star's first (or only) firing is known from the label itself.
+func _firing_named_by_label(id_cat: int, pick: Dictionary) -> bool:
+    return id_cat == Category.SEQUENCE and str(pick.get("kind", "")) == "first"
+
+
 ## The pick for a star's k-th firing (1-based): "first" or {"nth", k}.
 func _firing_pick_for_index(k: int) -> Dictionary:
     if k <= 1:
@@ -5352,6 +5366,12 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
         pick_a = {"kind": "first"}
     if ticks_b.size() == 1:
         pick_b = {"kind": "first"}
+    # Both firings are the very notes their labels print, so the sentence is
+    # decided by the labels alone (reported 2026-10-16, author: "The only
+    # firing of the star that fires 8th note is not immediately before the
+    # first firing of the star that first fires on note 5").
+    if _firing_named_by_label(int(a["id_cat"]), pick_a) and _firing_named_by_label(int(b["id_cat"]), pick_b):
+        return {}
     var notes_a: Array = _firing_pick_notes(ticks_a, pick_a)
     var notes_b: Array = _firing_pick_notes(ticks_b, pick_b)
     if notes_a.is_empty() or notes_b.is_empty():

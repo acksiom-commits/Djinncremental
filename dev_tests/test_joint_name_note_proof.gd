@@ -676,11 +676,15 @@ func run() -> void:
 
 	print("\n=== 3. what changed: puzzles proven by reading names as their real stars ===")
 	# Built with names_honoured = false, the proof before the joint one. On
-	# 2026-10-14 this reader found a second answer for these two (verified by
-	# hand for The Archon); the joint proof must see it too.
+	# 2026-10-14 this reader found a second answer for c0 s11 and c2 s11
+	# (verified by hand for The Archon); the joint proof must see it too. Any
+	# generator change moves the draws, so those two stopped reproducing it
+	# (twice, 2026-10-16): search on to the first puzzle that has one.
 	var caught: int = 0
 	var old_tried: int = 0
-	for pair2 in [[0, 11], [2, 11]]:
+	for pair2 in [[0, 11], [2, 11], [0, 23], [2, 23], [1, 11], [3, 11], [5, 11], [0, 37], [2, 37], [1, 23], [3, 23], [5, 23]]:
+		if caught > 0:
+			break
 		g = _beginner(int(pair2[0]), int(pair2[1]))
 		g.names_honoured = false
 		# The Easy settings of the day those second answers were found: no spare
