@@ -1699,14 +1699,25 @@ func _find_match_record_by_name(name_str: String) -> int:
 
 func _star_elim_state(star_idx: int, name_str: String) -> int:
     var idx: int = _find_match_record_by_name(name_str)
+    if idx >= 0:
+        var r: Dictionary = _match_records[idx]
+        if _effective_star_idx(idx) == star_idx:
+            return 1
+        var own: int = int(r.get("star_elim", {}).get(star_idx, 0))
+        if own != 0:
+            return own      # the player's own X or check always wins
+    # A star has one name, so another name confirmed on it rules this one out
+    # (reported 2026-10-17: confirming Seloeus in a star's popup left every
+    # other name in that popup open). The column direction, Seloeus ruled out
+    # on every other star, already held: that is the confirmed name's own row.
+    for other in _host._star_names:
+        if str(other) == name_str:
+            continue
+        var oi: int = _find_match_record_by_name(str(other))
+        if oi >= 0 and _effective_star_idx(oi) == star_idx:
+            return 2
     if idx < 0:
         return 0
-    var r: Dictionary = _match_records[idx]
-    if _effective_star_idx(idx) == star_idx:
-        return 1
-    var own: int = int(r.get("star_elim", {}).get(star_idx, 0))
-    if own != 0:
-        return own      # the player's own X or check always wins
     return _derived_state(idx, "star_elim", star_idx)
 
 
