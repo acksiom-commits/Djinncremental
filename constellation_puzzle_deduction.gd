@@ -4787,6 +4787,14 @@ func _share_player_marks(src: int, dst: int) -> void:
     if src < 0 or src >= _match_records.size() or dst < 0 or dst >= _match_records.size():
         return
     var s: Dictionary = _match_records[src]
+    # The name an entry stands for is a mark too (2026-10-18): a Sort:Name row
+    # IS its name, so once it is tied to a star by the player's crosses, the
+    # star's other entries learn the name. Without this, a note placed in the
+    # star's popup stayed unnamed on the Staff bar while the popup and the row
+    # agreed on the star.
+    var own_name: String = str(s.get("name", ""))
+    if own_name != "":
+        _add_derived_state(dst, "name_states", own_name, 1)
     for pair in [["name_states", "name_states"], ["color_states", "color_states"],
             ["pitch_states", "pitch_states"], ["degree_states", "degree_states"],
             ["repeat_states", "repeat_states"]]:
@@ -5647,6 +5655,23 @@ func _cell_was_stated(cell: Dictionary, terms: Array) -> bool:
 # far better left in Useful one refresh too long than moved to Used Up
 # while it still has something to give.
 # ==================================================
+
+## This record and every other entry for the same star, the star's own map
+## entry included even while it is unnamed: that is where the player marked
+## the star's notes in its popup before any name was tied to it, and the popup
+## moves to the named entry once one is (_find_match_record_by_star_idx). Just
+## this record when its star is not known. Callers read only the entries' own
+## note marks (melody_ticks / seq_note_blocks), never a ground-truth tier.
+func _records_sharing_star(record_idx: int) -> Array:
+    var out: Array = [record_idx]
+    var s: int = _effective_star_idx(record_idx)
+    if s < 0:
+        return out
+    for i in _match_records.size():
+        if i != record_idx and _effective_star_idx(i) == s:
+            out.append(i)
+    return out
+
 
 ## LOCATED tier: records bound to `star` as a map POSITION, whether the
 ## player placed them there or the engine derived it.
@@ -9822,16 +9847,29 @@ func _known_fire_count_for_record(record_idx: int) -> int:
 func _repeat_note_state_for_record(record_idx: int, tick: int) -> int:
     if record_idx < 0 or record_idx >= _match_records.size():
         return 0
-    var r: Dictionary = _match_records[record_idx]
-    if (r.get("melody_ticks", []) as Array).has(tick):
+    # Asked of the STAR, not of this one entry (reported 2026-10-18: the star
+    # popups and the Staff bar disagreed). The engine never merges a named
+    # entry into a star's own entry (see _settle_identical_records); it binds
+    # them, so a star's notes can sit on either. Every entry bound to the same
+    # star counts: the notes they hold, and the player's crosses on them.
+    var held: Array = []
+    var blocked: bool = false
+    for j in _records_sharing_star(record_idx):
+        var rj: Dictionary = _match_records[j]
+        for t in (rj.get("melody_ticks", []) as Array):
+            if not held.has(int(t)):
+                held.append(int(t))
+        if (rj.get("seq_note_blocks", []) as Array).has(tick):
+            blocked = true
+    if held.has(tick):
         return 1
-    if (r.get("seq_note_blocks", []) as Array).has(tick):
+    if blocked:
         return 3
     # THE COUNT CAPS THE ROW (author ruling 2026-10-12, replacing the earlier
     # "hint step only"): a star known to fire n times that already holds n
     # notes fires on no other.
     var fires: int = _known_fire_count_for_record(record_idx)
-    if fires > 0 and (r.get("melody_ticks", []) as Array).size() >= fires:
+    if fires > 0 and held.size() >= fires:
         return 2
     var note_rec: int = _find_match_record_by_melody_tick(tick)
     if _notes_hidden():

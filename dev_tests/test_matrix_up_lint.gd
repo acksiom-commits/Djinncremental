@@ -138,6 +138,14 @@ const ALLOW_STUB_BLIND := {
 		+ "_player_knows_star_pitch. Stubs included on purpose for the same "
 		+ "reason as above: the map star's own widget is where the player marks "
 		+ "that star's notes before any name is known",
+	# Added 2026-10-18 (reported: star popups and the Staff bar disagreed).
+	"_records_sharing_star":
+		"includes stubs ON PURPOSE, one site: groups a record with every entry "
+		+ "for the same star so _repeat_note_state_for_record reads the notes "
+		+ "the player placed in the star's popup before a name was tied to it "
+		+ "(the popup then moves to the named entry and stranded them). Callers "
+		+ "read only each entry's OWN melody_ticks / seq_note_blocks, never a "
+		+ "Name or Pitch tier",
 }
 
 # ── PRE-EXISTING DEBT, found when this lint was introduced (2026-08-13). ───
