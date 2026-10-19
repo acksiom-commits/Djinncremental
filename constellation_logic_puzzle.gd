@@ -2106,7 +2106,10 @@ func check_solution(candidate: Array) -> bool:
 #
 # version 15 (2026-10-16): no Firing clue speaks only of firings its labels
 # already print (_firing_named_by_label); a version-14 puzzle may carry one.
-const CACHE_VERSION: int = 15
+#
+# version 16 (2026-10-18): Easy prunes clues the spare "first fires on note"
+# clues decide (reprune_mode "narrow").
+const CACHE_VERSION: int = 16
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -9938,6 +9941,78 @@ const PRUNE_YIELD_INTERVAL: int = 2
 ## Same spirit as `difficulty` being test-settable.
 var prune_enabled: bool = true
 
+## The second pruning pass after the spare clues: "narrow", "full" or "off"
+## (see where it runs). A test seam; "narrow" is what ships.
+var reprune_mode: String = "narrow"
+
+
+## Names a "<Name> is the star that first fires on note T" clue ties to a first
+## note, as {star index: true} (facts name a star by its index).
+func _names_pinned_to_first_notes() -> Dictionary:
+    var out: Dictionary = {}
+    for cl in chosen_form_clues:
+        for f in (cl as Dictionary).get("disclosures", []):
+            var fd: Dictionary = f
+            if str(fd.get("kind", "")) != "ordinal_exact":
+                continue
+            var h: Dictionary = (fd.get("ents", {}) as Dictionary).get("s", {})
+            if h.has("name"):
+                out[int(h["name"])] = true
+    return out
+
+
+const DECIDED_ORDINAL_KINDS: Array = ["ordinal_exact", "ordinal_range", "ordinal_neg", "ordinal_cmp",
+    "ordinal_chain", "ordinal_offset", "ordinal_pair_set", "ordinal_adjacent"]
+
+
+## Does this clue speak of nothing but first firings the player already knows
+## the notes of? A star counts as known when the clue names it by its first
+## note (a Sequence label) or by a name some clue pins to a first note. Then
+## the clue is decided before it is read. Conservative: any other kind of
+## fact (later firings, groups, pitch, colour, distance, an either-or), or a
+## star named any other way (by its pitch, say, which does not tell the player
+## which name it is), and it is not.
+func _clue_decided_by_known_first_notes(clue: Dictionary, pinned: Dictionary) -> bool:
+    var facts: Array = clue.get("disclosures", [])
+    # How this clue names each star it mentions, from its facts' handles.
+    var known: Dictionary = {}
+    var named_any: Dictionary = {}
+    for f in facts:
+        var ents: Dictionary = (f as Dictionary).get("ents", {})
+        for field in ents:
+            var h: Dictionary = ents[field]
+            var star: int = int((f as Dictionary).get(field, -1))
+            if star < 0:
+                continue
+            named_any[star] = true
+            var self_pin: bool = str((f as Dictionary).get("kind", "")) == "ordinal_exact" and h.has("name")
+            if h.has("note") or (h.has("name") and pinned.has(int(h["name"])) and not self_pin):
+                known[star] = true
+    var saw_order_fact: bool = false
+    for f2 in facts:
+        var fd: Dictionary = f2
+        var kind: String = str(fd.get("kind", ""))
+        if kind == "repeat_count_range":
+            continue
+        if kind == "name_rank_range":
+            if not known.has(int(fd.get("name_star", -1))):
+                return false
+            continue
+        if kind == "firing_relation":
+            if str((fd.get("pick_a", {}) as Dictionary).get("kind", "")) != "first" \
+                    or str((fd.get("pick_b", {}) as Dictionary).get("kind", "")) != "first":
+                return false
+        elif kind == "firing_position":
+            if str((fd.get("sel", {}) as Dictionary).get("kind", "")) != "count":
+                return false
+        elif not DECIDED_ORDINAL_KINDS.has(kind):
+            return false
+        for field2 in ["a", "b", "mid", "s"]:
+            if fd.has(field2) and not known.has(int(fd[field2])):
+                return false
+        saw_order_fact = true
+    return saw_order_fact
+
 
 ## Tests whether the clue currently at index `idx` can be dropped from
 ## chosen_form_clues without breaking Sequence uniqueness, growing the
@@ -10030,7 +10105,7 @@ func _try_prune_clue_at(idx: int, baseline: int, cur_revealed: Array) -> bool:
 var prune_first_forms: Array = []
 
 
-func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array[Dictionary]:
+func _prune_redundant_clues(name_revealed: Array, protected_count: int, keep_texts: Dictionary = {}) -> Array[Dictionary]:
     _prune_needed_by_notes = {}
     var seq_facts: Array[Dictionary] = _seq_facts_from_clues()
     var seq_sols: Array = await _unique_note_order(seq_facts)
@@ -10080,13 +10155,14 @@ func _prune_redundant_clues(name_revealed: Array, protected_count: int) -> Array
     for f in first_forms:
         var j: int = chosen_form_clues.size() - 1
         while j >= protected_count:
-            if int(chosen_form_clues[j].get("form_id", -1)) == int(f) and not _prune_skips_form(int(f)):
+            if int(chosen_form_clues[j].get("form_id", -1)) == int(f) and not _prune_skips_form(int(f)) \
+                    and not keep_texts.has(str(chosen_form_clues[j].get("text", ""))):
                 order.append(str(chosen_form_clues[j].get("text", "")))
             j -= 1
     var k: int = chosen_form_clues.size() - 1
     while k >= protected_count:
         var t: String = str(chosen_form_clues[k].get("text", ""))
-        if not order.has(t) and not _prune_skips_form(int(chosen_form_clues[k].get("form_id", -1))):
+        if not order.has(t) and not keep_texts.has(t) and not _prune_skips_form(int(chosen_form_clues[k].get("form_id", -1))):
             order.append(t)
         k -= 1
     for text in order:
@@ -12295,6 +12371,7 @@ func _generate_clues_forms_attempt() -> Dictionary:
     # every note needs a chain of clues. A few direct, redundant note clues
     # give the player more than one way in. Added after pruning so they stay;
     # true clues cannot make the answer less unique.
+    var before_spares: int = chosen_form_clues.size()
     var spare: int = int(_profile().get("spare_note_pins", 0)) if spare_note_pins_override < 0 else spare_note_pins_override
     if spare > 0 and _repeats_hidden():
         _add_spare_note_pins(spare, sequence_solver_facts, name_revealed, tier_counts, form_counts)
@@ -12306,6 +12383,40 @@ func _generate_clues_forms_attempt() -> Dictionary:
     var spare_firsts: int = int(_profile().get("spare_first_pins", 0)) if spare_first_pins_override < 0 else spare_first_pins_override
     if spare_firsts > 0 and _repeats_hidden():
         _add_spare_first_pins(spare_firsts, sequence_solver_facts, name_revealed, tier_counts, form_counts)
+        sequence_solver_facts = _seq_facts_from_clues()
+    # Prune again after the spare clues (2026-10-17, author: "Redundant clue is
+    # redundant"). A spare clue can settle what an earlier clue said:
+    # "Aetherios is the star that first fires on note 14" next to "The first
+    # firing of the star that first fires on note 10 is exactly 4 notes before
+    # the first firing of Aetherios". The first pass ran before the spares
+    # existed, so it kept the earlier clue.
+    #   "narrow" (the default, author's choice 2026-10-18): only clues that
+    #     speak of nothing but first firings already known to the player, by a
+    #     note label or by a name a "first fires on note" clue pins
+    #     (_clue_decided_by_known_first_notes). Measured against "full".
+    #   "full": every clue the set no longer needs, the spares kept, then the
+    #     anchors. Measured 2026-10-17: 21.1 -> 17.4 clues, but names tied by
+    #     hints 82% -> 61%.
+    #   "off": the behaviour before.
+    if prune_enabled and reprune_mode != "off" and chosen_form_clues.size() > before_spares:
+        var keep: Dictionary = {}
+        if reprune_mode == "full":
+            for si in range(before_spares, chosen_form_clues.size()):
+                keep[str(chosen_form_clues[si].get("text", ""))] = true
+            sequence_solver_facts = await _prune_redundant_clues(name_revealed, protected_clue_count, keep)
+            await _recheck_anchors_for_redundancy(anchor_texts, name_revealed)
+        else:
+            var pinned: Dictionary = _names_pinned_to_first_notes()
+            var any_candidate: bool = false
+            for ci in chosen_form_clues.size():
+                var cl: Dictionary = chosen_form_clues[ci]
+                if ci < before_spares and not _is_redundancy_exempt_form(int(cl.get("form_id", -1))) \
+                        and _clue_decided_by_known_first_notes(cl, pinned):
+                    any_candidate = true
+                else:
+                    keep[str(cl.get("text", ""))] = true
+            if any_candidate:
+                sequence_solver_facts = await _prune_redundant_clues(name_revealed, 0, keep)
         sequence_solver_facts = _seq_facts_from_clues()
     var _t_prune_end: int = Time.get_ticks_msec()
     if DEBUG_GEN_TIMING:
