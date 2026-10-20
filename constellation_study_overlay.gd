@@ -1222,9 +1222,11 @@ func _build_difficulty_toggle() -> void:
 
 func _on_board_step_pressed(forward: bool) -> void:
     # A popup open on an entry may be showing one the step removes.
+    # Window, not Control: these are all PopupPanels, so `as Control` was null
+    # and every Backstep/Forward press died here (reported 2026-10-20).
     for p in [_staff_popup, _name_checklist_popup, _pitch_checklist_popup, _repeat_checklist_popup]:
         if p != null and is_instance_valid(p):
-            (p as Control).hide()
+            (p as Window).hide()
     _deduction.board_step(forward)
     _refresh_history_buttons()
 

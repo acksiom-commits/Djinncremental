@@ -102,6 +102,20 @@ func run() -> void:
 	ok(not d.can_forward(), "a new mark clears Forward")
 	ok(d.can_backstep(), "and can itself be backstepped")
 
+	print("\n=== the Backstep / Forward BUTTONS ===")
+	# Everything above calls board_step directly. The buttons go through
+	# _on_board_step_pressed, which first closes any open popup; those are
+	# PopupPanels (Windows), so its `as Control` cast was null and every press
+	# died there (reported 2026-10-20).
+	host._staff_popup.show()
+	ok(host._staff_popup.visible, "precondition: the Staff popup is open")
+	var had_delta: bool = _blocked(d, 2, "Delta")
+	host._on_board_step_pressed(false)
+	ok(not host._staff_popup.visible, "the Backstep button closes the open popup")
+	ok(_blocked(d, 2, "Delta") != had_delta, "and steps the board back")
+	host._on_board_step_pressed(true)
+	ok(_blocked(d, 2, "Delta") == had_delta, "the Forward button re-applies it")
+
 	print("\n=== the history is saved with the board ===")
 	var host2 = await _host()
 	var d2 = host2._deduction
