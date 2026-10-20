@@ -2112,7 +2112,9 @@ func check_solution(candidate: Array) -> bool:
 #
 # version 17 (2026-10-19): Easy states repeat firings only directly
 # ("repeat_clues_direct").
-const CACHE_VERSION: int = 17
+#
+# version 18 (2026-10-19): Easy adds 2 spare direct repeat-note pins.
+const CACHE_VERSION: int = 18
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -8790,8 +8792,13 @@ const DIFFICULTY_PROFILES := {
         "excluded_forms": [3, 9, 14, 20, 21, 22],
         # Direct note clues kept on top of the minimal set (_add_spare_note_pins).
         # Measured 2026-10-15 on 12 Beginner puzzles, hint reach (notes): 0 ->
-        # 40%, 3 -> 67%, 4 -> 75%, 5 -> 76%; it levels off at four.
-        "spare_note_pins": 0,
+        # 40%, 3 -> 67%, 4 -> 75%, 5 -> 76%; it levels off at four. Set to 0 that
+        # day for the spare first-note pins, then to 2 on 2026-10-19 (author),
+        # with the repeat clues direct: measured on 30 puzzles, 0 / 2 / 4 pins
+        # (1.5 and 1.8 actually added, one per star at most) gave 21.1 / 22.5 /
+        # 22.8 clues, hints placing 75% / 86% / 89% of repeat notes and the whole
+        # melody in 10 / 15 / 16 puzzles; all unique.
+        "spare_note_pins": 2,
         # "<Name> is the star that first fires on note T" on top of the minimal
         # set (_add_spare_first_pins). The author: placing the EARLIER firings
         # is the second-slowest part of a Beginner solve; the slowest is the
