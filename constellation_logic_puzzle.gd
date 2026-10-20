@@ -2114,7 +2114,10 @@ func check_solution(candidate: Array) -> bool:
 # ("repeat_clues_direct").
 #
 # version 18 (2026-10-19): Easy adds 2 spare direct repeat-note pins.
-const CACHE_VERSION: int = 18
+#
+# version 19 (2026-10-20): a Mutual Exclusion's hop reference is none of its
+# other elements, and says so; a version-18 clue could put it in a colour group.
+const CACHE_VERSION: int = 19
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -6296,6 +6299,15 @@ func _mutex_axis_groups(axis: int) -> Array:
 ## Theryis" — has no fact kind. Rendering it would put a sentence in front
 ## of the player that no gate can check, which is the exact failure this
 ## file spent 2026-08-19 removing. It needs a kind first.
+## The stars a distinct-set element rules out for the others: its members, and
+## for a hop element its reference star too (see the non-overlap check).
+func _mutex_element_covers(e: Dictionary) -> Array:
+    var out: Array = (e["members"] as Array).duplicate()
+    if int(e["cat"]) == Category.DISTANCE and not out.has(int(e["ref"])):
+        out.append(int(e["ref"]))
+    return out
+
+
 func _mutex_build_distinct_set() -> Dictionary:
     var cats: Array = [Category.NAME, Category.SEQUENCE, Category.COLOR,
         Category.PITCH, Category.DISTANCE]
@@ -6394,10 +6406,17 @@ func _mutex_build_distinct_set() -> Dictionary:
     # (a 4-member colour group and a 3-member pitch group usually do
     # intersect in 15 stars). That is the correct price: the clues this
     # rejects were the unsound ones.
+    #
+    # A hop element also COVERS its reference star (2026-10-20, author): "...
+    # every white star, and every star 3 hops from Oraeides are all different
+    # stars" was drawn with Oraeides white, in 171 of 953 hop draws, while the
+    # sentence reads as Oraeides being none of the other elements. The anchor
+    # consumption above only kept the reference out of the elements' SAMPLED
+    # stars, never out of a Colour/Pitch group's other members.
     for i in chosen.size():
         for j in range(i + 1, chosen.size()):
-            for x in (chosen[i]["members"] as Array):
-                if (chosen[j]["members"] as Array).has(x):
+            for x in _mutex_element_covers(chosen[i]):
+                if _mutex_element_covers(chosen[j]).has(x):
                     return {}
 
     # Render. GROUP ELEMENTS TAKE THE UNIVERSAL PHRASING — "every yellow
@@ -6548,6 +6567,37 @@ func _mutex_build_distinct_set() -> Dictionary:
                 })
                 if int(nm["cat"]) == Category.NAME:
                     value_facts.append_array(_name_group_facts(nm, gp, false))
+    # THE REFERENCE IS ONE OF THE "DIFFERENT STARS" TOO (2026-10-20, author).
+    # "... and every star 3 hops from Oraeides are all different stars" names
+    # Oraeides, and is read as Oraeides being none of the other elements; the
+    # non-overlap check above now guarantees it. Said here the way a printed
+    # Name element is said against the others: a false cell against a Sequence
+    # element, "not in that group" against a Colour/Pitch one. Against a Name
+    # element nothing is needed (two names are two stars). These cells were not
+    # part of the freshness test above: the reference is not printed as an
+    # element, so a cell it already had is not a stale element.
+    for de in chosen:
+        if int(de["cat"]) != Category.DISTANCE:
+            continue
+        var ref_el: Dictionary = {"cat": Category.NAME, "star": int(de["ref"]), "members": [int(de["ref"])]}
+        var ref_val: int = int(_cat_star_to_value[Category.NAME][int(de["ref"])])
+        for oe in chosen:
+            var oc: int = int(oe["cat"])
+            if oc == Category.DISTANCE or oc == Category.NAME:
+                continue
+            for om2 in (oe["members"] as Array):
+                grid_updates.append({
+                    "cat_a": Category.NAME, "val_a": ref_val,
+                    "cat_b": oc, "val_b": int(_cat_star_to_value[oc][int(om2)]), "is_true": false,
+                })
+            if oc == Category.COLOR or oc == Category.PITCH:
+                value_facts.append({
+                    "kind": "descriptor_not_in_group",
+                    "cat": Category.NAME, "star": int(de["ref"]),
+                    "group_cat": oc,
+                    "group_key": _name_group_key(oc, int(oe["star"])),
+                })
+                value_facts.append_array(_name_group_facts(ref_el, oe, false))
     if not all_fresh:
         return {}
 

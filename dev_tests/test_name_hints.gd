@@ -463,8 +463,12 @@ func run() -> void:
 	var other_lies: int = 0
 	var total_steps: int = 0
 	var total_cells: int = 0
-	for cid2 in [2, 3]:
-		var sw: Dictionary = await _sweep_constellation(cd, cid2, 11)
+	# Four puzzles (2026-10-20): with the hop-reference facts the two seed-11
+	# draws fell to 70 cells, short of the 100 this check asks; a larger sample,
+	# not a lower bar.
+	for case in [[2, 11], [3, 11], [2, 23], [3, 23]]:
+		var cid2: int = int(case[0])
+		var sw: Dictionary = await _sweep_constellation(cd, cid2, int(case[1]))
 		for kk in sw["kinds"]:
 			all_kinds[kk] = int(all_kinds.get(kk, 0)) + int(sw["kinds"][kk])
 		other_lies += int(sw["lies"])
