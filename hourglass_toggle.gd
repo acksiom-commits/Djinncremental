@@ -5,7 +5,8 @@ extends Control
 # On its side = not targeted (low alpha, rotated 90°).
 # Clicking toggles this operation in/out of the target set, subject to
 # the cap of assigned Child Volitions on the Hourglass constellation slot.
-# Invisible until the Hourglass puzzle has been solved.
+# Invisible until the Hourglass puzzle has been solved, and while no Volition
+# is assigned to the Hourglass (2026-10-19).
 # v0.4: Added _game_loaded flag to prevent drawing stale state before load.
 
 @export var operation_key: String = ""
@@ -41,7 +42,7 @@ func _ready() -> void:
 
 func _on_game_loaded(_elapsed: float) -> void:
     _game_loaded = true
-    var unlocked := _hourglass_unlocked()
+    var unlocked := _hourglass_shown()
     visible = unlocked
     _set_row_clickable(unlocked)
     if unlocked:
@@ -82,6 +83,13 @@ func _hourglass_unlocked() -> bool:
     return gc._assignment_int("constellation_2_solve_count", 0) >= 1
 
 
+## Shown only while the Hourglass is solved AND has a Volition assigned
+## (2026-10-19, author): with no Volition on it the Hourglass directs nothing,
+## so the genbar icons go away rather than sitting there inert.
+func _hourglass_shown() -> bool:
+    return _hourglass_unlocked() and _get_hourglass_volition_cap() >= 1
+
+
 func _get_hourglass_volition_cap() -> int:
     if not gc: return 0
     if gc.has_method("get_volition_count_for_constellation"):
@@ -92,7 +100,7 @@ func _get_hourglass_volition_cap() -> int:
 func _process(_delta: float) -> void:
     if not _game_loaded:
         return
-    var unlocked := _hourglass_unlocked()
+    var unlocked := _hourglass_shown()
     if visible != unlocked:
         visible = unlocked
         _set_row_clickable(unlocked)
@@ -104,7 +112,7 @@ func _gui_input(event: InputEvent) -> void:
     if not event is InputEventMouseButton: return
     if not (event as InputEventMouseButton).pressed: return
     if (event as InputEventMouseButton).button_index != MOUSE_BUTTON_LEFT: return
-    if not gc or not _hourglass_unlocked(): return
+    if not gc or not _hourglass_shown(): return
     var cap: int = _get_hourglass_volition_cap()
     var current_ops: Array[String] = gc.hourglass_target_ops
     if current_ops.has(operation_key):
@@ -119,7 +127,7 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-    if not _hourglass_unlocked(): return
+    if not _hourglass_shown(): return
     var is_active := _is_targeted()
     var is_parent: bool = is_active and gc != null \
                      and gc.has_method("has_parent_volition_for_constellation") \
