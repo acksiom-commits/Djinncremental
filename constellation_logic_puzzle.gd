@@ -2117,7 +2117,11 @@ func check_solution(candidate: Array) -> bool:
 #
 # version 19 (2026-10-20): a Mutual Exclusion's hop reference is none of its
 # other elements, and says so; a version-18 clue could put it in a colour group.
-const CACHE_VERSION: int = 19
+#
+# version 20 (2026-10-20): a Mutual Exclusion's Name element (and its hop
+# reference) against a Sequence element carries name_group_neg; a version-19
+# clue stated that only as a cell, which no hint or proof reads.
+const CACHE_VERSION: int = 20
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -6533,6 +6537,20 @@ func _mutex_build_distinct_set() -> Dictionary:
                         "cat_a": int(a["cat"]), "val_a": av,
                         "cat_b": int(b["cat"]), "val_b": bv, "is_true": false,
                     })
+            # A Name element against a Sequence element (2026-10-20): "Oraeides
+            # is not the star that first fires on note 6", the same
+            # name_group_neg Single Negation states for that cell. Until now
+            # only the cell above said it, and the hints, the board and the
+            # joint proof read facts only. It is keyed by the label's RANK and
+            # never names the label's star, so the joint proof reads it as
+            # "Oraeides's first note is not note 6" (_joint_translate) and not
+            # as "Oraeides is not that map star", the over-reading fixed on
+            # 2026-10-14. No ordinal_neg: the Sequence CSP reads a name as its
+            # real map star.
+            if int(a["cat"]) == Category.NAME and int(b["cat"]) == Category.SEQUENCE:
+                value_facts.append_array(_name_group_facts(a, b, false))
+            elif int(a["cat"]) == Category.SEQUENCE and int(b["cat"]) == Category.NAME:
+                value_facts.append_array(_name_group_facts(b, a, false))
             # A Name element against a Colour/Pitch GROUP is exactly
             # "this name is not in that group" — the kind the player's
             # board is scored against.
@@ -6597,6 +6615,9 @@ func _mutex_build_distinct_set() -> Dictionary:
                     "group_cat": oc,
                     "group_key": _name_group_key(oc, int(oe["star"])),
                 })
+                value_facts.append_array(_name_group_facts(ref_el, oe, false))
+            elif oc == Category.SEQUENCE:
+                # Same fact as a printed Name element gets above.
                 value_facts.append_array(_name_group_facts(ref_el, oe, false))
     if not all_fresh:
         return {}
