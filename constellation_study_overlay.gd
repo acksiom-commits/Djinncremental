@@ -61,6 +61,14 @@ var _seq_mode_btn: Button = null
 var _backstep_btn: Button = null
 var _forward_btn: Button = null
 var _pending_difficulty_change: String = ""
+## constellation_id -> true while its RESET / difficulty-change rebuild runs
+## (2026-10-20). The board stayed live during the rebuild, so marks went onto a
+## puzzle about to be replaced and were silently dropped (its cache entry is
+## already gone, see ConstellationData.set_player_puzzle_notes), and the swap
+## to the new puzzle then looked like the reset landing late, after input.
+## While set, _regen_cover blocks the board. Cleared by regeneration_finished.
+var _regenerating: Dictionary = {}
+var _regen_cover: Control = null
 const _RESET_DIALOG_TEXT := "Generate a brand new arrangement for this constellation?\nStar names, colors, and which star plays which note will all reshuffle. Your clues, deduction notes, and current progress on this constellation will be lost.\nThis cannot be undone."
 @onready var _selected_clue_display: RichTextLabel = get_node(HEADER_BASE_PATH + "/SelectedClueDisplay")
 @onready var _synth:    Node   = get_node_or_null("../RootUI/PuzzleSynths")
@@ -335,6 +343,7 @@ func _ready() -> void:
     _selected_clue_display.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
     _selected_clue_display.gui_input.connect(_on_selected_clue_display_gui_input)
     _build_contradiction_banner()
+    _build_regeneration_cover()
     _fork = ConstellationForkPuzzle.new()
     _fork.setup(_synth, _star_map_control, _fork_btn)
     _fork_btn.pressed.connect(_on_fork_toggle_pressed)
@@ -362,9 +371,10 @@ func _ready() -> void:
         # to read as "the reset/difficulty change did nothing" even though
         # generation is correctly running with the new setting.
         _title_label.text = "Regenerating puzzle…"
-        _reset_btn.disabled = true
-        if _difficulty_btn:
-            _difficulty_btn.disabled = true
+        _regenerating[_constellation_id] = true
+        _close_selected_star_widget()
+        get_viewport().gui_release_focus()   # no typing into a covered box
+        _refresh_difficulty_button()
         reset_requested.emit(_constellation_id))
     _reset_confirm.canceled.connect(func(): _pending_difficulty_change = "")
     _reset_confirm.get_ok_button().text = "Yes, Reset"
@@ -1120,6 +1130,48 @@ func _build_contradiction_banner() -> void:
     vbox.move_child(_contradiction_banner, 1)
 
 
+## Covers the whole carousel (map, Sort tabs, clues) while this constellation
+## is regenerating; the header (title, Close) stays usable. Built in code for
+## the same reason as the banner above.
+func _build_regeneration_cover() -> void:
+    var clip := get_node_or_null(PANEL_ROOT_PATH + "/OuterMargin/OuterVBox/CarouselClip") as Control
+    if clip == null:
+        return
+    var cover := ColorRect.new()
+    cover.color = Color(0.0, 0.0, 0.0, 0.7)
+    cover.mouse_filter = Control.MOUSE_FILTER_STOP
+    cover.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    cover.visible = false
+    var lbl := Label.new()
+    lbl.text = "Regenerating puzzle…"
+    lbl.add_theme_font_size_override("font_size", 24)
+    lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    cover.add_child(lbl)
+    clip.add_child(cover)   # last child: drawn over the panes, and hit first
+    _regen_cover = cover
+
+
+## root_ui.gd calls this when a RESET / difficulty-change rebuild for
+## `constellation_id` has finished (accepted or refused) or could not start.
+func regeneration_finished(constellation_id: int) -> void:
+    _regenerating.erase(constellation_id)
+    if constellation_id == _constellation_id:
+        _refresh_difficulty_button()
+
+
+func _close_selected_star_widget() -> void:
+    if _selected_star < 0 or _selected_star >= _star_widgets.size():
+        return
+    var w = _star_widgets[_selected_star]
+    if not is_instance_valid(w) or not (w as Control).visible:
+        return
+    _widget_closed[_selected_star] = true
+    (w as Control).visible = false
+
+
 ## Easy/Hard toggle, placed right before RESET in the same tab-bar row —
 ## same "add via code" reasoning as _build_contradiction_banner() above.
 func _build_difficulty_toggle() -> void:
@@ -1194,15 +1246,18 @@ func _refresh_seq_mode_button() -> void:
 ## refresh timing as the title) so the label is right after a switch, and
 ## again once reset_requested's regeneration actually lands.
 func _refresh_difficulty_button() -> void:
-    # Re-enables both buttons regardless of whether they were disabled --
-    # this is the "regeneration landed" signal (see _reset_confirm.confirmed
-    # above, the only place that disables them), reached via show_for_
-    # constellation() -> _update_header() every time, including the
-    # completion callback that fires once a reset/difficulty-change
-    # actually finishes generating.
-    _reset_btn.disabled = false
+    # Disabled, and the board covered, exactly while THIS constellation is
+    # regenerating (_regenerating). Reached via show_for_constellation() ->
+    # _update_header() every time, so a switch to another constellation or a
+    # reopen mid-rebuild shows the right state; regeneration_finished() lifts it.
+    var busy: bool = _regenerating.has(_constellation_id)
+    _reset_btn.disabled = busy
     if _difficulty_btn:
-        _difficulty_btn.disabled = false
+        _difficulty_btn.disabled = busy
+    if _regen_cover:
+        _regen_cover.visible = busy
+        if busy:
+            _regen_cover.move_to_front()
     if not _difficulty_btn or not _gc or _constellation_id < 0:
         return
     var current: String = _gc.get_constellation_difficulty(_constellation_id)

@@ -1137,12 +1137,29 @@ func _on_constellation_selected_logic_puzzle(constellation_id: int) -> void:
     _start_puzzle_generation(constellation_id)
 
 
+## constellation_id -> the ConstellationLogicPuzzle being built for it now. ONE
+## build per constellation (2026-10-20). Selecting a constellation whose cache
+## is empty used to start a build even while one was running, and a RESET clears
+## the cache before its own build starts, so picking the constellation during
+## a reset ran a second build from another seed; whichever finished last
+## replaced the puzzle, so it looked as if the reset happened twice. Now a
+## build that something newer (a RESET, a dev recompute) replaces is aborted and
+## its result dropped, and a build that only fills a missing cache is not
+## started at all while another is running. See _generate_puzzle.
+var _puzzle_builds: Dictionary = {}
+
+
 func _start_puzzle_generation(constellation_id: int) -> void:
     var cd = get_node_or_null("/root/ConstellationData")
     if not cd:
         return
+    # Fills a MISSING puzzle only. The pre-generation calls on each prestige
+    # used to rebuild unconditionally, which would replace a puzzle (and the
+    # notes on it) the player already had.
+    if _puzzle_builds.has(constellation_id) or not cd.get_puzzle_cache(constellation_id).is_empty():
+        return
     var def: Dictionary = cd.get_constellation_def(constellation_id)
-    _generate_puzzle(constellation_id, cd, def, cd.player_seed,
+    _generate_puzzle(constellation_id, cd, def, cd.get_puzzle_seed(constellation_id),
         "puzzle generation",
         func(cid: int, puzzle: ConstellationLogicPuzzle): _on_puzzle_generation_complete(cid, puzzle))
 
@@ -1252,12 +1269,25 @@ func reset_constellation_puzzle(constellation_id: int) -> void:
 
     var def: Dictionary = cd.get_constellation_def(constellation_id)
     var new_seed: int = randi()
-    _generate_puzzle(constellation_id, cd, def, new_seed,
+    # Recorded so the puzzle counts as built from the right seed later: the
+    # boot check for The Archon, and a rebuild after a lost cache.
+    cd.puzzle_seed_overrides[str(constellation_id)] = new_seed
+    var started: bool = _generate_puzzle(constellation_id, cd, def, new_seed,
         "puzzle reset",
         func(cid: int, puzzle: ConstellationLogicPuzzle):
             _accept_generated_puzzle(cd, cid, puzzle)
+            _end_study_regeneration(cid)
             if _study_overlay and _study_overlay.visible and _study_overlay.has_method("show_for_constellation"):
                 _study_overlay.show_for_constellation(cid))
+    if not started:
+        _end_study_regeneration(constellation_id)
+
+
+## Lifts the Study panel's "Regenerating" cover for this constellation (see
+## constellation_study_overlay.gd's regeneration_finished).
+func _end_study_regeneration(constellation_id: int) -> void:
+    if _study_overlay and _study_overlay.has_method("regeneration_finished"):
+        _study_overlay.regeneration_finished(constellation_id)
 
 
 # ==================================================
@@ -1286,21 +1316,22 @@ func _coerce_def_dict(val, default: Dictionary) -> Dictionary:
     return default
 
 
+## Returns whether a build was started (on_complete is called only if so).
 func _generate_puzzle(constellation_id: int, cd: Node, def: Dictionary,
-        puzzle_seed: int, warning_context: String, on_complete: Callable) -> void:
+        puzzle_seed: int, warning_context: String, on_complete: Callable) -> bool:
     if def.is_empty():
-        return
+        return false
     # def can be a player/patron constellation's dict, loaded straight from
     # save data — its fields aren't guaranteed the right type, and a typed
     # Array/Dictionary/int assignment from a wrong-typed value hangs the
     # engine rather than raising a catchable error (confirmed this session).
     var star_count: int = _coerce_def_int(def.get("star_count"), 0)
     if star_count <= 0:
-        return
+        return false
     var overlay := get_parent().find_child("ConstellationOverlay", true, false)
     if not overlay or not overlay.has_method("get_correct_star_sequence"):
         push_warning("RootUI: ConstellationOverlay not found for %s." % warning_context)
-        return
+        return false
     var line_pairs: Array = _coerce_def_array(def.get("line_pairs"), [])
     var correct_star_sequence: Array = overlay.get_correct_star_sequence(constellation_id)
     var name_theme: Dictionary = _coerce_def_dict(def.get("name_theme"), {})
@@ -1313,9 +1344,20 @@ func _generate_puzzle(constellation_id: int, cd: Node, def: Dictionary,
             star_pitch_index, pitch_freqs, self)
     if game_context:
         puzzle.difficulty = game_context.get_constellation_difficulty(constellation_id)
+    # The newest build wins; an older one still running (built before a reset
+    # changed the note assignment, or a duplicate) stops and is ignored.
+    var superseded = _puzzle_builds.get(constellation_id)
+    if superseded != null:
+        superseded.abort_requested = true
+    _puzzle_builds[constellation_id] = puzzle
     puzzle.generation_complete.connect(
-        func(cid: int): on_complete.call(cid, puzzle))
+        func(cid: int):
+            if _puzzle_builds.get(cid) != puzzle:
+                return
+            _puzzle_builds.erase(cid)
+            on_complete.call(cid, puzzle))
     puzzle.generate_clues_async.call_deferred()
+    return true
 
 
 func _on_uonite_name_requested() -> void:
@@ -1408,7 +1450,10 @@ func _on_game_loaded(offline_seconds: float) -> void:
         # Dictionary/Array and a typed int HANGS the engine (confirmed
         # directly), same danger class as a typed assignment from a wrong-
         # typed value — so these must be coerced to int before comparing.
-        var seed_matches: bool = _coerce_def_int(cached_boot.get("player_seed_used"), -1) == cd_boot.player_seed
+        # get_puzzle_seed, not player_seed: a RESET builds from its own seed,
+        # and comparing with player_seed rebuilt every reset Archon puzzle
+        # (and dropped its notes) on each load.
+        var seed_matches: bool = _coerce_def_int(cached_boot.get("player_seed_used"), -1) == cd_boot.get_puzzle_seed(0)
         # FIXED 2026-07-27 — was hardcoded to 3, a stale literal that never
         # matched ConstellationLogicPuzzle.CACHE_VERSION (2). That meant this
         # check was ALWAYS false, silently discarding a perfectly valid

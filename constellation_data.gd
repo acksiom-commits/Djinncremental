@@ -1491,7 +1491,15 @@ var player_seed:            int        = 0
 # touching anything else. See reset_note_assignment()'s own comment for why
 # this needed to be its own seed rather than just regenerating player_seed.
 var note_assignment_seed_overrides: Dictionary = {}
-var active_per_octant:      Array      = [-1, -1, -1, -1, -1, -1, -1, -1]
+# Per-constellation seed for the logic puzzle itself (names, colours, clues),
+# keyed by str(constellation_id); missing means player_seed. Set by the Study
+# panel's RESET (root_ui.gd's reset_constellation_puzzle), which builds from a
+# fresh seed: without a record of it, the boot check for The Archon read every
+# reset puzzle as "built from the wrong seed" and rebuilt it on load, and a
+# rebuild after a lost cache came back as a different puzzle. See
+# get_puzzle_seed().
+var puzzle_seed_overrides: Dictionary = {}
+var active_per_octant:     Array      = [-1, -1, -1, -1, -1, -1, -1, -1]
 var unlocked:               Array      = []
 var player_constellations:  Array      = []
 var patron_constellations:  Array      = []
@@ -2382,6 +2390,12 @@ func reset_note_assignment(constellation_id: int) -> void:
     note_assignment_seed_overrides[str(constellation_id)] = randi()
 
 
+## The seed this constellation's logic puzzle is built from: the RESET's seed
+## once it has been reset, else player_seed.
+func get_puzzle_seed(constellation_id: int) -> int:
+    return _coerce_int(puzzle_seed_overrides.get(str(constellation_id)), player_seed)
+
+
 # ==================================================
 # PATRON CONSTELLATION LOADING
 # ==================================================
@@ -2409,7 +2423,8 @@ func get_save_data() -> Dictionary:
     return {
         "player_seed":           player_seed,
         "note_assignment_seed_overrides": note_assignment_seed_overrides,
-        "active_per_octant":     active_per_octant,
+        "puzzle_seed_overrides": puzzle_seed_overrides,
+        "active_per_octant":    active_per_octant,
         "last_selected_id":      _last_selected_id,
         "unlocked":              unlocked,
         "player_constellations": player_constellations,
@@ -2468,6 +2483,12 @@ func load_save_data(data: Dictionary) -> void:
     if _raw_overrides is Dictionary:
         for k in _raw_overrides:
             note_assignment_seed_overrides[str(k)] = _coerce_int(_raw_overrides[k], 0)
+
+    puzzle_seed_overrides = {}
+    var _raw_puzzle_seeds = data.get("puzzle_seed_overrides")
+    if _raw_puzzle_seeds is Dictionary:
+        for k2 in _raw_puzzle_seeds:
+            puzzle_seed_overrides[str(k2)] = _coerce_int(_raw_puzzle_seeds[k2], 0)
 
     var _raw_apo = data.get("active_per_octant")
     active_per_octant = []
