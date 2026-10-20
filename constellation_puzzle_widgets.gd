@@ -3280,7 +3280,9 @@ func _seq_notes_typed_texts(record_idx: int) -> Array:
     return [str(lo) if lo > 0 else "", ",".join(parts), str(hi) if hi <= n else ""]
 
 
-func _make_sequence_notes_typed_row(record_idx: int, row_color: Color) -> HBoxContainer:
+## `after_commit` runs (deferred) once a box's entry is written: the Staff
+## popup passes its own redraw, as its buttons redraw it after a click.
+func _make_sequence_notes_typed_row(record_idx: int, row_color: Color, after_commit: Callable = Callable()) -> HBoxContainer:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
     var texts: Array = _seq_notes_typed_texts(record_idx)
@@ -3333,8 +3335,16 @@ func _make_sequence_notes_typed_row(record_idx: int, row_color: Color) -> HBoxCo
 
     var ridx := record_idx
     for e in [edit_lo, edit_mid, edit_hi]:
-        (e as LineEdit).text_submitted.connect(func(_t): _commit_sequence_notes_typed(ridx, edit_lo.text, edit_mid.text, edit_hi.text, texts))
-        (e as LineEdit).focus_exited.connect(func(): _commit_sequence_notes_typed(ridx, edit_lo.text, edit_mid.text, edit_hi.text, texts))
+        # Only an entry that changed something redraws: closing the popup takes
+        # the focus off these boxes, and an unchanged commit must not reopen it.
+        (e as LineEdit).text_submitted.connect(func(_t):
+            var wrote: bool = await _commit_sequence_notes_typed(ridx, edit_lo.text, edit_mid.text, edit_hi.text, texts)
+            if wrote and after_commit.is_valid():
+                after_commit.call_deferred())
+        (e as LineEdit).focus_exited.connect(func():
+            var wrote: bool = await _commit_sequence_notes_typed(ridx, edit_lo.text, edit_mid.text, edit_hi.text, texts)
+            if wrote and after_commit.is_valid():
+                after_commit.call_deferred())
 
     var copy_btn := Button.new()
     copy_btn.text = "⎘"
@@ -3365,9 +3375,9 @@ func _make_sequence_notes_typed_row(record_idx: int, row_color: Color) -> HBoxCo
 ##     the other bound stays, and the changed one moves.
 ## A repeat of the same commit therefore changes nothing. With `shown`
 ## omitted the boxes are compared with what the row says now.
-func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: String, hi_text: String, shown: Array = []) -> void:
+func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: String, hi_text: String, shown: Array = []) -> bool:
     if record_idx < 0 or record_idx >= _deduction.record_count():
-        return
+        return false
     var now: Array = _seq_notes_typed_texts(record_idx)
     if shown.size() != 3:
         shown = now
@@ -3375,7 +3385,7 @@ func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: St
     var mid_edited: bool = mid_text.strip_edges() != str(shown[1])
     var hi_edited: bool = hi_text.strip_edges() != str(shown[2])
     if not (lo_edited or mid_edited or hi_edited):
-        return
+        return false
     var n: int = _deduction._melody_tick_count()
     var now_lo: int = int(str(now[0])) if str(now[0]) != "" else 0
     var now_hi: int = int(str(now[2])) if str(now[2]) != "" else n + 1
@@ -3445,7 +3455,7 @@ func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: St
     if bad:
         request_markers_rebuild()
         _build_star_widgets()
-        return
+        return false
     # What the boxes say about each note: fires here / could / does not.
     var blocks: Array = []
     var to_join: Array = []
@@ -3487,6 +3497,7 @@ func _commit_sequence_notes_typed(record_idx: int, lo_text: String, mid_text: St
             rec = await _deduction._merge_match_records(rec, note_idx)
     _deduction._save_puzzle_notes()
     _deduction._full_propagation_refresh()
+    return true
 
 
 # ==================================================
@@ -4595,7 +4606,11 @@ func _open_staff_popup(tick: int, screen_pos: Vector2, rows_per_column: int = ST
     # are repeats. A 1:1 melody has nothing to ask.
     var id_row: Control = null
     if _deduction._notes_hidden():
-        id_row = _make_staff_note_link_row(tick, record_idx)
+        # The Entry switch (Classic / Checks) covers this row as it covers the
+        # Sort rows and the star popups (reported 2026-10-20: the Staff popup
+        # kept the note buttons in Classic).
+        id_row = _make_staff_note_link_row(tick, record_idx) if _seq_checker_enabled() \
+            else _make_staff_note_classic_row(tick, record_idx)
     elif not _deduction._tick_is_first_fire(tick):
         id_row = _make_staff_identity_row(tick, record_idx)
     _host._staff_popup.set_identity_row(id_row)
@@ -4826,6 +4841,26 @@ func _make_staff_note_link_row(tick: int, record_idx: int) -> Control:
     undo_btn.disabled = not any_mark
     undo_btn.pressed.connect(func(): _on_staff_note_link_undo(tick))
     flow.add_child(undo_btn)
+    return box
+
+
+## The same question in Classic entry: the three note boxes (lower < list <
+## upper) for this note's star, the row the Sort tabs and the star popups show
+## in Classic. They write the same marks the buttons above write
+## (melody_ticks / seq_note_blocks), so the two forms always agree. The popup
+## redraws after an entry, as it does after a button click.
+func _make_staff_note_classic_row(tick: int, record_idx: int) -> Control:
+    var box := VBoxContainer.new()
+    box.add_theme_constant_override("separation", 2)
+    var lbl := Label.new()
+    lbl.text = "Notes this star fires on:"
+    lbl.add_theme_font_size_override("font_size", 16)
+    lbl.tooltip_text = "The notes this note's star could fire on, e.g. 5-9,12; =3 for a note it does fire on. The outer boxes: no note up to / from that one."
+    lbl.mouse_filter = Control.MOUSE_FILTER_STOP
+    box.add_child(lbl)
+    var t := tick
+    box.add_child(_make_sequence_notes_typed_row(record_idx, STATE_COLORS.neutral,
+        func(): _open_staff_popup(t, _host._staff_popup.position)))
     return box
 
 
