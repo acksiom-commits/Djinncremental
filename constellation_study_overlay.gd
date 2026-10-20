@@ -1044,6 +1044,11 @@ func _on_fork_toggle_pressed() -> void:
         for wi in _star_widgets.size():
             if is_instance_valid(_star_widgets[wi]):
                 _star_widgets[wi].visible = false
+        # The melody is already on the Staff bar, every note on the right star
+        # (2026-10-19, author): play it through instead of asking for it again
+        # click by click. Otherwise SOLVE is the click-through it always was.
+        if _deduction.staff_sequence_correct():
+            _fork.autoplay()
 
 
 # ==================================================

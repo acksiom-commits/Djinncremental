@@ -93,6 +93,13 @@ func toggle_mode() -> void:
         _star_map_control.queue_redraw()
 
 
+## Plays the solution through and completes the puzzle (see
+## ClickSequencePuzzleEngine.autoplay_solution). The caller decides when the
+## player has earned it.
+func autoplay() -> void:
+    _engine.autoplay_solution()
+
+
 func force_off() -> void:
     _fork_mode = false
     if is_instance_valid(_fork_btn):

@@ -356,6 +356,34 @@ func _check_filled_against_answer() -> void:
     answer_check["names"] = {"filled": names_filled, "wrong": wrong_names if names_filled else []}
 
 
+## Has the player put the whole melody on the Staff bar correctly: every note
+## settled to exactly the star that really fires it? Gates SOLVE's autoplay
+## (2026-10-19, author), on any difficulty. A note with an entry of its own is
+## read through it, the way the Staff bar names it; one read only through its
+## position (a 1:1 melody) through the Sequence descriptor's column, the stars
+## the board still allows at that position. The true star is only the handle
+## naming that column, as every disclosure names a value.
+func staff_sequence_correct() -> bool:
+    var truth: Array = _host._melody_star_sequence
+    var n_notes: int = _melody_tick_count()
+    if n_notes <= 0 or truth.size() != n_notes:
+        return false
+    for t in range(1, n_notes + 1):
+        var want: int = int(truth[t - 1])
+        var rec: int = _find_match_record_by_melody_tick(t)
+        if rec >= 0:
+            var cands: Array = _candidate_stars_for_record(rec)
+            if cands.size() == 1 and int(cands[0]) == want:
+                continue
+            return false
+        if _seq_pos_for_melody_tick(t) <= 0:
+            return false
+        var at_pos: Array = _stars_possible_for_descriptor(ConstellationLogicPuzzle.Category.SEQUENCE, want)
+        if not (at_pos.size() == 1 and int(at_pos[0]) == want):
+            return false
+    return true
+
+
 ## Is this note marked wrong by the answer check?
 func answer_check_note_wrong(tick: int) -> bool:
     return (answer_check.get("notes", {}).get("wrong", []) as Array).has(tick)

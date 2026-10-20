@@ -45,6 +45,8 @@ var replay_gap:         float  = 0.0
 var replay_lit_star:    int    = -1
 var high_water:         int    = 0
 var fanfare_lit_star:   int    = -1
+## True while autoplay_solution's replay runs; its end completes the puzzle.
+var autoplay_active:    bool   = false
 
 
 # ==================================================
@@ -106,6 +108,7 @@ func reset() -> void:
     wrong_flash_timer = 0.0
     replay_active = false
     replay_lit_star = -1
+    autoplay_active = false
     fanfare_lit_star = -1
     state = State.IDLE
 
@@ -238,6 +241,26 @@ func force_complete() -> void:
     _on_puzzle_complete()
 
 
+## Plays the whole melody, lighting each star as its note sounds, then
+## completes the puzzle as if the player had clicked it through (2026-10-19:
+## SOLVE autoplays once the Staff bar holds the right melody). Rides the
+## wrong-click replay: the same pacing and lit star, clicks ignored while it
+## runs. Only from an active, unsolved puzzle.
+func autoplay_solution() -> void:
+    if state != State.ACTIVE or correct_sequence.is_empty():
+        return
+    step = 0
+    wrong_star = -1
+    wrong_flash_timer = 0.0
+    replay_active = true
+    replay_step = 0
+    replay_limit = correct_sequence.size()
+    replay_timer = 0.0
+    replay_gap = 0.3
+    replay_lit_star = -1
+    autoplay_active = true
+
+
 func tick(delta: float) -> void:
     if wrong_flash_timer > 0.0:
         wrong_flash_timer -= delta
@@ -253,6 +276,13 @@ func tick(delta: float) -> void:
             if replay_step >= replay_limit or replay_step >= sequence.size():
                 replay_active   = false
                 replay_lit_star = -1
+                if autoplay_active:
+                    autoplay_active = false
+                    step = replay_step
+                    high_water = maxi(high_water, step)
+                    if gc:
+                        gc.assignments["constellation_%d_high_water" % constellation_id] = high_water
+                    _on_puzzle_complete()
             else:
                 var pitch_idx: int = _coerce_int(sequence[replay_step], -1)
                 play_note_by_pitch_index(pitch_idx)
