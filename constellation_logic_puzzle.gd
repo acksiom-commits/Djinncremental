@@ -2109,7 +2109,10 @@ func check_solution(candidate: Array) -> bool:
 #
 # version 16 (2026-10-18): Easy prunes clues the spare "first fires on note"
 # clues decide (reprune_mode "narrow").
-const CACHE_VERSION: int = 16
+#
+# version 17 (2026-10-19): Easy states repeat firings only directly
+# ("repeat_clues_direct").
+const CACHE_VERSION: int = 17
 
 # get_puzzle_cache() only guarantees the outer Dictionary it returns is a
 # real Dictionary — the save-derived fields inside it aren't typed-checked
@@ -4941,7 +4944,7 @@ func _build_form_firing_position(chain: Dictionary) -> Dictionary:
     # note 3 to note 9", "does not fire within...") is for single-firing stars.
     var kinds: Array = ["count"]
     if m >= 2:
-        kinds = ["nth", "span"]
+        kinds = ["nth"] if _repeat_direct() else ["nth", "span"]
     elif int(a["id_cat"]) == Category.SEQUENCE:
         # Its only firing is the note its label prints, so where it falls in a
         # window is decided by the label alone (see _firing_named_by_label).
@@ -4954,6 +4957,10 @@ func _build_form_firing_position(chain: Dictionary) -> Dictionary:
         var si: int = _rng.randi_range(1, m - 1)
         sel["i"] = si
         sel["j"] = _rng.randi_range(si + 1, m)
+    elif _repeat_direct():
+        # Direct: the one note it fires on ("<X> fires on note 7"), not a window.
+        sel["lo"] = int(ticks[0])
+        sel["hi"] = int(ticks[0])
     else:
         var wa: int = 1
         var wb: int = n
@@ -4973,7 +4980,7 @@ func _build_form_firing_position(chain: Dictionary) -> Dictionary:
     if v < 0:
         return {}
     var dom: Array = _firing_domain(sel)
-    var iv: Array = _firing_pick_interval(v, int(dom[0]), int(dom[1]))
+    var iv: Array = [v, v] if _repeat_direct() else _firing_pick_interval(v, int(dom[0]), int(dom[1]))
     var lo: int = int(iv[0])
     var hi: int = int(iv[1])
     if hidden:
@@ -5355,6 +5362,13 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
             for kb in ticks_b.size():
                 if absi(int(ticks_a[ka]) - int(ticks_b[kb])) == 1:
                     beside_pairs.append([ka + 1, kb + 1])
+        if _repeat_direct():
+            # Direct repeats: a relation only between two first firings.
+            var firsts_only: Array = []
+            for p0 in beside_pairs:
+                if int(p0[0]) == 1 and int(p0[1]) == 1:
+                    firsts_only.append(p0)
+            beside_pairs = firsts_only
         if beside_pairs.is_empty():
             return {}
         var bp: Array = beside_pairs[_rng.randi_range(0, beside_pairs.size() - 1)]
@@ -5365,9 +5379,9 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
         pick_b = _firing_random_pick(ticks_b.size(), neg or mode == "offset")
     # A star that fires once has one firing: its first. The fact says so, and
     # the sentence reads "the only firing of" (_firing_pick_phrase).
-    if ticks_a.size() == 1:
+    if ticks_a.size() == 1 or _repeat_direct():
         pick_a = {"kind": "first"}
-    if ticks_b.size() == 1:
+    if ticks_b.size() == 1 or _repeat_direct():
         pick_b = {"kind": "first"}
     # Both firings are the very notes their labels print, so the sentence is
     # decided by the labels alone (reported 2026-10-16, author: "The only
@@ -7696,6 +7710,22 @@ func _seq_chain_len() -> int:
     return int(_profile().get("seq_chain_len", 3))
 
 
+## TEST SEAM: -1 = the profile's "repeat_clues_direct", else 0 (off) / 1 (on).
+var repeat_direct_override: int = -1
+
+
+## Repeat firings stated only directly (2026-10-19, author: working out the
+## repeat clues was the main time sink on Beginner-Easy). A repeating star's
+## later firings only as "the second firing of X is on note N", a star that
+## fires once only as "X fires on note N"; no windows, spans, or relations
+## that involve a repeat firing (relations between two first firings stay:
+## they are about the firing order). The repair pins the rest the same way.
+func _repeat_direct() -> bool:
+    if repeat_direct_override >= 0:
+        return repeat_direct_override == 1
+    return bool(_profile().get("repeat_clues_direct", false))
+
+
 ## TEST SEAMS: -1 = the profile's "chain_share_one" / "chain_mixed_fallback",
 ## else 0 (off) or 1 (on).
 var chain_share_one_override: int = -1
@@ -8788,6 +8818,12 @@ const DIFFICULTY_PROFILES := {
         # three-star chains.
         "seq_chain_len": 4,
         "chain_share_one": true,
+        # Repeat firings stated only directly (2026-10-19, author: working out
+        # the repeat clues was the main time sink). Measured on 30 puzzles: 3.9
+        # indirect repeat clues per puzzle -> 0, clues 20.7 -> 21.1, hints place
+        # 79% -> 84% of notes, 67% -> 75% of repeat notes, tie 80% -> 83% of
+        # names, all unique, generation 228 s -> 100 s. See _repeat_direct.
+        "repeat_clues_direct": true,
         # Built before the main loop, in this order, while True cells are
         # still unconsumed. Exact Identity ("X is Y") is the strongest
         # foothold in the game; Extreme and Range are the next most direct.
@@ -11780,7 +11816,9 @@ func _build_repeat_note_clues(sequence_solver_facts: Array, name_revealed: Array
     for attempt in REPEAT_PHASE_ATTEMPTS:
         if abort_requested:
             break
-        var form_id: int = FIRING_POSITION_FORM_ID if attempt % 2 == 0 else FIRING_RELATION_FORM_ID
+        # Direct repeats: only Firing Position states a repeat note; a Firing
+        # Relation is then between first firings and pins none.
+        var form_id: int = FIRING_POSITION_FORM_ID if attempt % 2 == 0 or _repeat_direct() else FIRING_RELATION_FORM_ID
         if _try_build_and_commit(form_id, sequence_solver_facts, name_revealed, tier_counts, form_counts):
             added += 1
             if await _repeat_notes_unique():

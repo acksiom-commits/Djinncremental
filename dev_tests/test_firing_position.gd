@@ -60,6 +60,10 @@ func _beginner_puzzle(cid: int, seed: int):
 	g.difficulty = "easy"
 	g.setup(int(def["star_count"]), def["line_pairs"], sq, seed, cid, def.get("name_theme", {}),
 		cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
+	# Every shape this Form can draw is under test, so not Easy's direct-only
+	# repeat clues (repeat_clues_direct, 2026-10-19), which draw only exact
+	# firings; test_repeat_clues_direct covers that setting.
+	g.repeat_direct_override = 0
 	g._build_record_array()
 	g._build_matrix()
 	return g
@@ -75,6 +79,10 @@ func _hard_puzzle(cid: int, seed: int):
 	var g = PuzzleScript.new()
 	g.setup(int(def["star_count"]), def["line_pairs"], sq, seed, cid, def.get("name_theme", {}),
 		cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
+	# Every shape this Form can draw is under test, so not Easy's direct-only
+	# repeat clues (repeat_clues_direct, 2026-10-19), which draw only exact
+	# firings; test_repeat_clues_direct covers that setting.
+	g.repeat_direct_override = 0
 	g._build_record_array()
 	g._build_matrix()
 	return g
