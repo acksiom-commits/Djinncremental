@@ -10969,7 +10969,7 @@ func _note_owner_search(st: Dictionary) -> void:
     var spins: int = 0
     while t >= 1:
         spins += 1
-        if _host and (spins & 63) == 0 \
+        if _host and (spins & 7) == 0 \
                 and Time.get_ticks_msec() - _note_slice_started_msec >= NOTE_PROOF_SLICE_MSEC:
             note_proof_frame_yields += 1
             await _host.get_tree().process_frame
