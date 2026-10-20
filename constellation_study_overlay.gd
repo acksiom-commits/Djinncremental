@@ -471,6 +471,12 @@ func show_for_constellation(constellation_id: int) -> void:
     _constellation_id = constellation_id
     _player_seed = _cd.player_seed if _cd else 0
     _load_constellation_data()
+    # Loading a board clears everything the board works out from the player's
+    # marks (bindings, eliminations, shared marks: _reset_derived), and only a
+    # refresh rebuilds it. Without this the panel opened showing the bare marks
+    # until the first click refreshed it (reported 2026-10-19: after loading a
+    # save, 16 of 20 star tags and popups on one board were out of date).
+    _deduction._full_propagation_refresh()
     _update_header()
     _widgets._set_marker_tab(_active_marker_tab)
     _widgets._build_star_widgets()
