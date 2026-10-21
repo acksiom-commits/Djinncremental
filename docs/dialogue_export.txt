@@ -1,0 +1,672 @@
+﻿KALEB / ARCHON DIALOGUE - extracted from archon_dialogue_manager.gd (plus poke/notification/other callers)
+Each exchange: KALEB line, then PLAYER reply (the all-caps lines) if present.
+Markup like [i], [font_size=14], [reveal:...], [name_entry], [uonite_name], [expr:...] is left as in the code; %s marks a runtime-filled value.
+
+======================================================================
+Introduction   [start_intro]
+======================================================================
+1. KALEB: Hiya Boss! Ready to get started?
+   PLAYER: WHO, ME? WAIT, START WHAT?
+
+2. KALEB: Get started building your own...oh. 
+
+They didn't highlight that.
+   PLAYER: HIGHLIGHT WHAT NOW? WAIT, BUILD WHAT, TOO?
+
+3. KALEB: That you took the Amnesia forfeit after completing your Lessons, Boss. 
+
+Sorry I didn't realize right away...[font_size=14]even though it's not my fault[/font_size]...anyways, you decided not to remember all the personal stuff about your, er, Training time...?
+   PLAYER: AND THE BUILDING PART?
+
+4. KALEB: Well, now you get a private dimension to build your own world in, basically from nothing. And I'm your assigned Archon assistant, Kaleb. Tutor and mentor now, too, I guess. 
+
+Summon five Sparks and I'll start showing you the basics.
+   PLAYER: WAIT. FIRST, WHAT ARE THESE 'SPARKS'?.
+
+5. KALEB: Sparks are the ultimate quanta of reality, Boss - indivisible, unitary essences of identity and free will. Nothing material [i]can[/i] exist without that attached to it.
+   PLAYER: I SEE. 
+
+WELL, BUILDING MY OWN WORLD DOES SOUND APPEALING. . .I'LL TRY IT.
+
+6. KALEB: That's the spirit! Let's make something great together!
+   PLAYER: ALL RIGHT, DIAL BACK THE ENTHUSIASM THERE A LITTLE, PLEASE.
+
+======================================================================
+Kaleb Introduces Himself   [enqueue_monad_panel_dialogue]
+======================================================================
+1. KALEB: Okay, five Sparks summoned...
+
+...that'll do...I suppose...
+
+...if it has to....
+   PLAYER: HAR. HAR. HAR. 
+
+I SAID 'A LITTLE', KALEB, NOT 'GO FULL EMO'.
+
+2. KALEB: Just calibrating! Honest! I totally wasn't engaging in, um...facetious compliance. Really, I swear. 
+
+I'll dial it back up a few notches.
+   PLAYER: SURE. 
+
+I CAN PRACTICALLY HEAR YOU SMIRKING, YOU KNOW.
+
+3. KALEB: I'm certain I haven't the faintest idea what you mean. 
+
+Anyways, now that we've got at least five Sparks, we can create your first Monad - the smallest form of physical matter in your new dimension. Exciting! A milestone!
+   PLAYER: HRM. ALL RIGHT, I CAN'T ARGUE WITH THAT. IT DOES SEEM SIGNIFICANT.
+
+4. KALEB: Finish this conversation and press that Monad button and we'll enter a new era!
+   PLAYER: WHY CAN'T I JUST PRESS IT NOW?
+
+5. KALEB: Because I can either talk directly to you or run the interface for you, Boss; I can't do both. Yet. I'll get there eventually; I'll grow in capability as your new dimension does.
+   PLAYER: FAIR ENOUGH. HERE WE GO.
+
+======================================================================
+First Monad Created   [enqueue_monad_random_dialogue]
+======================================================================
+1. KALEB: There we go! Your first Monad. I'd call it cute...if it wasn't too tiny to see. 
+
+Uhh...anyways! This one's a %s type - the others are %s and %s. But there's something more important than that, some really good news!
+   PLAYER: AND WHAT WOULD THAT BE?
+
+2. KALEB: You got me a Refinement by forming that first Monad!
+   PLAYER: WHOA, I DID WHAT NOW?
+
+3. KALEB: Qualified me for a Focus increase! See the Foci Counter in the display over to the left? It's not usual for that to happen this soon, either. That's why I think you get the credit for it.
+   PLAYER: WHAT, JUST BY FORMING A MONAD?
+
+4. KALEB: The most likely case is that you selected some kind of 'Faster Archon Upgrades' advantage while customizing your new pocket dimension.
+   PLAYER: OH? I SUPPOSE THAT DOES MAKE SENSE.
+
+5. KALEB: Yes, but...I'm not saying it's exactly one-for-one across here, but Amnesia is usually taken as part of a trade-off for something preferred, so...thank you. Sincerely.
+   PLAYER: WELL, IF THAT'S THE CASE, YOU'RE CERTAINLY WELCOME.
+
+6. KALEB: And the best part is, now I can do one more of a lot of things for you, automatically!
+   PLAYER: AUTOMATION? EXCELLENT! NOW YOU'RE TALKING MY LANGUAGE!
+
+7. KALEB: In that case, I'll bring up the Allocation Wheel right away, too! And then you can assign my Foci to Summoning more Sparks, and later, creating more Production Resources!
+   PLAYER: AH - NOW I'M STARTING TO SEE THE BENEFITS OF YOUR POSITIVE ATTITUDE.
+
+======================================================================
+Second Monad Type   [enqueue_second_monad]
+======================================================================
+1. KALEB: What the - [i]another[/i] Refinement? Did you pick one Refinement and Focus [i]per Monad type?[/i] Per [i]resource[/i] type!? Madness! I mean, I love it, it's great for me, but - wow, you really went all in on improving me.
+   PLAYER: APPARENTLY I DID. I MUST HAVE THOUGHT IT WOULD PAY OFF.
+
+2. KALEB: Oh, it will, I promise you. You might even have sped up my Ascension rate - seriously, at this point I'd be more surprised if you didn't.
+   PLAYER: AND ASCENSIONS MEAN WHAT FOR US?
+
+3. KALEB: They mean faster acquisition of Volitions for me - which increases my ability to do more complicated tasks, like locking resource production, and changing Uonite allocation around, and augmenting your manual Production.
+   PLAYER: HUH. I THINK IT'S TIME YOU EXPLAINED THESE TERMS. PAST TIME, EVEN.
+
+4. KALEB: Right! So, a Volition is an increase in my ability to take more complex actions. You can assign both Foci and Volitions one-for-one to automatically Summon Sparks and produce resources like Monads, and assemble those into Tetrads, and assemble [i]those[/i] into Particles, and so on for Iotas, Motes, and Grains.
+   PLAYER: THAT SOUNDS LIKE A LONG PRODUCTION CHAIN.
+
+5. KALEB: Well, we [i]are[/i] starting almost literally from nothing here, Boss. But it's not as bad as it sounds, because we can also use Motes to create Uonites, which are the smallest form of active intelligence that can be used for automation.
+   PLAYER: AHA - AND THEN THEY'LL TAKE OVER MORE OF THE PRODUCTION LOAD FOR US, SO WE CAN FOCUS ON BUILDING MY WORLD.
+
+6. KALEB: Yep, that's the plan! [i]And[/i] I can use my Volitions to duplicate most of your actions, one-for-one! So assign those new Foci, and let's find out just how much you invested in my improvement - how about you keep making Monads until we have one of each type, and I'll bring up the Tetrad panel?
+   PLAYER: AGREED - WE SHOULD CHECK THAT NEXT.
+
+======================================================================
+All Monad Types   [enqueue_all_monads_upgrade]
+======================================================================
+1. KALEB: One more refinement for the last Monad type AND another Refinement for one each of all three? Wow, you really went all in on upgrading me!
+   PLAYER: IT SEEMS I DID. GOOD JOB, FORMER SELF.
+
+2. KALEB: At this point I'm pretty sure I'll get another for completing each Tetrad Category as well as all Tetrads.
+   PLAYER: ANOTHER...TWENTY FOCI? EXCELLENT. AT THIS RATE, I'LL BE ABLE TO JUST KICK BACK AND LET YOU DO [i]ALL[/i] THE WORK.
+
+3. KALEB: Yeah! That would be. . .hey now, wait a minute! That's not right!
+   PLAYER: IT WOULD FEEL RIGHT TO ME.
+
+4. KALEB: Are you teasing me? You better be teasing me! I'm not getting paid for this, you know - I'm an Intern Archon, I'm here for the work experi. . .oh. 
+
+Oh no.
+   PLAYER: DO YOU SEE ME OVER HERE NOT BEING SMUG? 
+
+BECAUSE THIS IS ME OVER HERE NOT BEING SMUG.
+
+5. KALEB: [expr:spock_right,3.0]Yes, I definitely wouldn't call your behavior...'smug.' 
+
+I might call it something [i]else[/i], but no, not 'smug'.
+   PLAYER: UH...HUH. 
+
+NOTE TO SELF: CHECK LATER WHETHER I TOOK A 'SASSYPANTS ARCHON' FORFEIT TOO.
+
+======================================================================
+First Tetrad Created   [enqueue_tetrad_upgrade]
+======================================================================
+1. KALEB: Wait, [i]another[/i] Refinement [i]AND[/i] my first Ascension, already? Just for forming the first %s Tetrad? Sweet!
+   PLAYER: I HAVE TO AGREE. CLEARLY, I MADE A GOOD DECISION.
+
+2. KALEB: Or...the Ascension could be for achieving five Refinements...hmm, yes, that makes more sense. I'll bet it's that instead. And if you [i]really[/i] piled on the upgrades for me, the next one should come at twenty-five Refinements, then a hundred and twenty-five, and so on.
+   PLAYER: EXPONENTIAL POWERS OF FIVE? I THINK I'M SEEING A PATTERN HERE. WHAT ABOUT REFINEMENT MILESTONES, THEN?
+
+3. KALEB: Oh, those are almost certainly slower. Well, relatively slower - we're going to make a [i]lot[/i] resources, after all. 
+
+Like, a [i]lot[/i] of a lot. Soo...maybe by powers of one hundred, per resource?
+   PLAYER: GOOD. THIS JUST GOT A LOT LESS TEDIOUS THAN I FEARED.
+
+4. KALEB: You and me both, Boss! Let's keep going!
+   PLAYER: YOU KNOW, I DO BELIEVE I'M ACTUALLY STARTING TO FEEL THE HYPE.
+
+5. KALEB: Then how about we use the Lock function to assemble one each of the Fundament Tetrads next?
+   PLAYER: THE WHAT? OH, RIGHT; YOU MENTIONED THAT EARLIER - 'LOCKING RESOURCE PRODUCTION'.
+
+6. KALEB: Yes, that! We can stockpile and filter resources with it. Just tap on one of the Monad types and my Volition will be assigned to lock those out of Tetrad assembly. Then you can keep assembling Tetrads with the other two types until you have four or more of the locked type and none of the others, unlock that first type again, and make a Fundament Tetrad from them.
+   PLAYER: OR, IF I HAVE THOSE FOUR OR MORE AND LESS OF ONE OTHER, I CAN JUST LOCK THE OTHERS OUT INSTEAD OF USING THEM.
+
+7. KALEB: Good thinking, Boss! Let's do it!
+   PLAYER: NOT QUITE YET, KALEB; THERE'S ONE MORE THING. WHAT'S THAT NEW 'VOLUMITIONS' OPTION UNDER THE READOUTS TO THE LEFT?
+
+8. KALEB: Heh...right. Sorry about that - I'll try to not get so distracted. Remember when I told you I can use my Volitions to duplicate your actions? That's the selector and counter for that. Every Volition you assign to it increases your Summon, Compression, Assembly, and Creation actions by one.
+   PLAYER: AND THEREFORE YOU CALL THEM...'VOLUMITIONS'. 
+
+EH, GOOD ENOUGH.
+
+9. KALEB: Gosh, thank you so much, Boss! I'm so glad you like it!
+   PLAYER: YOUR SARCASM FILLS ME WITH PRIDE AND SATISFACTION. LET'S GET BACK TO WORK.
+
+======================================================================
+First Fundament   [enqueue_first_fundament]
+======================================================================
+1. KALEB: And there it is, your first %s Tetrad. 
+
+Pity it's going to be consumed along with everything else when we Expand the dimension.
+   PLAYER: WHAT? WHY?
+
+2. KALEB: Oh, sorry; I hadn't gotten to explaining that yet. Yes, we need to collapse the dimension in order to create Uonites, and then we just Expand it again. Right now, we can only store a little under a thousand material resources, but eventually we'll be able to build containers to hold more. Here, let me bring up the Stoctagon.
+   PLAYER: [reveal:stoctagon]THE WHAT NOW? OH. HEH. THAT'S ALMOST CLEVER.
+
+3. KALEB: [i]Almost?[/i] Ehhh...fine, I'll take it. Anyway, that's where we store our Primordial resources, and it's another use for Volitions. I can assign them to watch over the Stoctagon and trigger the production of higher-tier resources when it's full. Otherwise, the chain just shuts down.
+   PLAYER: AND BY 'THEM' YOU MEAN THEY ONLY WORK ONE-FOR-ONE THERE TOO, DON'T YOU.
+
+4. KALEB: You catch on quick! Yes, two Volitions assigned to the Stoctagon, two resources made at a time, and so on. Except Uonites, of course - the more Expansions we've done, the more of those we'll be able to create at once. But you probably upgraded that as well.
+   PLAYER: YES, I PROBABLY DID. I CAN SEE WHERE THIS IS GOING - WE'RE [i]NEVER[/i] GOING TO HAVE ENOUGH VOLITIONS, ARE WE?
+
+5. KALEB: Likely not, but there are ways around that limit. For example, later on we'll be able to upgrade sufficiently experienced Uonites, and they'll be able to stand in as replacements for Foci and Volitions.
+   PLAYER: THAT'S GOOD. NOW TELL ME ABOUT THESE TETRAD CATEGORIES.
+
+6. KALEB: Uh...they're not actually important yet. But they will be! A certain percentage of Fundaments in higher-tier resources will prevent them from being consumed when we Expand, for example.
+   PLAYER: I'LL TAKE YOUR WORD FOR IT. BUT RIGHT NOW, IT'S JUST GOOD FOR TRICKLE PRODUCTION WHEN THE STORAGE IS FULL?
+
+7. KALEB: [i]And[/i] swapping Uonites around...when we. Um. Finally have some. Yes. But later, when we have Tools, and Instruments, and so on, I'll be able to use and operate them myself! And oversee Tetrad production to achieve specific material goals. And things like that.
+   PLAYER: AH, THAT IS VERY GOOD, THEN. THERE'S NO USE IN IMPROVING YOU AND NOT TAKING ADVANTAGE OF IT, AFTER ALL.
+
+8. KALEB: ... 
+
+You really are utterly shameless, aren't you.
+
+======================================================================
+(Variety) Category Complete   [enqueue_first_non_fundament]
+======================================================================
+1. KALEB: Orrr you could complete the %s Category first instead of the Fundaments? 
+
+Which is fine! I don't judge.
+   PLAYER: YES. I'M A REBEL BORN AND RAISED. BEAR WITNESS TO THE GLORY OF MY CONTRARIAN INDEPENDENCE.
+
+2. KALEB: O...kay? Well, the important part is finding out that yes, I'm probably getting a Focus for each Category we complete, too.
+   PLAYER: GOOD. WHAT'S NEXT?
+
+3. KALEB: Let's make at least one of each Tetrad variety to get to twenty-four Refinements, and I'll unlock the rest of the Production Resources so we can find out if my Ascensions come at powers of five or not.
+   PLAYER: AND THEN WE CAN GRIND OUR WAY OUT TO ONE HUNDRED OF A MONAD TYPE TO CHECK THE REFINEMENTS MILESTONE.
+
+4. KALEB: Yes, and then to ten thousand of a type, which would be...divide by three, times sixty-four...ah, at least a few Expansions and Uonites away, probably. So unless you decide that we'll-meaning-mostly-[i]I'll[/i] simply grind endlessly, that'll happen a while after creating our first Uonites, which each take twenty Motes.
+   PLAYER: UNDERSTOOD. IS THERE ANY WAY TO INCREASE OUR STORAGE?
+
+5. KALEB: Of course! Usually the Phlogiston generated by the Sparks locked up in the material resources consumed is used to create the Uonite, but it can be turned to other purposes, such as expanding our little pocket universe here. But usually that requires Persistent material resources that survive the Expansion process to make this dimension a little bigger.
+   PLAYER: AND WHAT HAPPENS TO THE OTHER SPARKS?
+
+6. KALEB: Oh, they go off to be useful somewhere else - not back into the Void, if that's your concern. The Upper Management handles that for us - they have to get [i]some[/i] benefit out of all this, after all.
+   PLAYER: SO IT'S LITERALLY A LABOR TAX. WONDERFUL. 
+
+OH WELL. AT LEAST IT'S BETTER THAN JUST DUMPING THEM BACK INTO THE ABYSS.
+
+7. KALEB: Aw, you [i]do[/i] care! I knew you had a heart of g...go...gol...of something other than cold black iron, under that grumpy exterior.
+   PLAYER: ... 
+
+I CAN'T REPLACE YOU WITH A NEW ARCHON, CAN I.
+
+8. KALEB: Nope, we're stuck with each other! Until you move on to another project, that is. New project, new Archon. And I'll get assigned a new position. And, uh, hopefully a promotion.
+   PLAYER: OH? TO WHAT? DO YOU HAVE CAREER PLANS?
+
+9. KALEB: No actual plans; I'm still finding out where I fit best. I could go over to the security side and shoot for Subaltern Archon, or I could build on the Production experience I'm gaining here and grow into a Stockturn Archon.
+   PLAYER: UH...HUH. 
+
+WHY DO I GET THE FEELING THERE'S A JOKE I'M MISSING HERE?
+
+10. KALEB: Gosh, I have no idea. I can't imagine why. 
+
+Anyways, on to completing the creation of all Tetrad varieties at least once!
+   PLAYER: HRRMGH. 
+
+FINE.
+
+======================================================================
+All Fundaments   [enqueue_all_fundaments]
+======================================================================
+1. KALEB: Yes! One of all Fundaments made equals bonus Focus! Let's make at least one of each Tetrad variety to get to twenty-four Refinements, and I'll unlock the rest of the Production Resources so we can find out if my Ascensions come at powers of five or not.
+   PLAYER: AND THEN WE CAN GRIND OUR WAY OUT TO ONE HUNDRED OF A MONAD TYPE TO CHECK THE REFINEMENTS MILESTONE.
+
+2. KALEB: Yes, and then to ten thousand of a type, which would be...divide by three, times sixty-four...ah, at least a few Expansions and Uonites away, probably. So unless you decide that we'll-meaning-mostly-[i]I'll[/i] simply grind endlessly, that'll happen a while after creating our first Uonites, which each take twenty Motes.
+   PLAYER: UNDERSTOOD. IS THERE ANY WAY TO INCREASE OUR STORAGE?
+
+3. KALEB: Of course! Usually the Phlogiston generated by the Sparks locked up in the material resources consumed is used to create the Uonite, but it can be turned to other purposes, such as expanding our little pocket universe here. But usually that requires Persistent material resources that survive the Expansion process to make this dimension a little bigger.
+   PLAYER: AND WHAT HAPPENS TO THE OTHER SPARKS?
+
+4. KALEB: Oh, they go off to be useful somewhere else - not back into the Void, if that's your concern. The Upper Management handles that for us - they have to get [i]some[/i] benefit out of all this, after all.
+   PLAYER: SO IT'S LITERALLY A LABOR TAX. WONDERFUL. 
+
+OH WELL. AT LEAST IT'S BETTER THAN JUST DUMPING THEM BACK INTO THE ABYSS.
+
+5. KALEB: Aw, you [i]do[/i] care! I knew you had a heart of g...go...gol...of something other than cold black iron, under that grumpy exterior.
+   PLAYER: ... 
+
+I CAN'T REPLACE YOU WITH A NEW ARCHON, CAN I.
+
+6. KALEB: Nope, we're stuck with each other! Until you move on to another project, that is. New project, new Archon. And I'll get assigned a new position. And, uh, hopefully a promotion.
+   PLAYER: OH? TO WHAT? DO YOU HAVE CAREER PLANS?
+
+7. KALEB: No actual plans; I'm still finding out where I fit best. I could go over to the security side and shoot for Subaltern Archon, or I could build on the Production experience I'm gaining here and grow into a Stockturn Archon.
+   PLAYER: UH...HUH. 
+
+WHY DO I GET THE FEELING THERE'S A JOKE I'M MISSING HERE?
+
+8. KALEB: Gosh, I have no idea. I can't imagine why. 
+
+Anyways, on to completing the creation of all Tetrad varieties at least once!
+   PLAYER: HRRMGH. 
+
+FINE.
+
+======================================================================
+First Hundred of a Monad Type   [enqueue_first_monad_hundred_dialogue]
+======================================================================
+1. KALEB: Yep, there it is - one hundred %s Monads created, another refinement.
+   PLAYER: AND SINCE THE REFINEMENT AWARD JUMPED FROM ONE PER MONAD TYPE TO ONE HUNDRED PER MONAD TYPE, WE CAN PROBABLY EXPECT THAT PATTERN TO REPEAT FOR THE OTHER MATERIAL RESOURCES AS WELL.
+
+2. KALEB: Yes, and then from one hundred to ten thousand, and then to one million, and so on.
+   PLAYER: SOO...WE'LL BE BETTER OFF FOCUSING ON UONITE CREATION RATHER THAN GRINDING REFINEMENTS FROM HERE ON OUT, THEN.
+
+3. KALEB: Yes - it's going to take me a lot longer to get to one hundred and twenty-five Foci and another Volition than it will to get us that many Uonites.
+
+======================================================================
+All Tetrads   [enqueue_all_tetrads]
+======================================================================
+1. KALEB: All Tetrad varieties assembled! 
+
+Here we go, Marster! The Moment of Truth!
+
+The Juncture of Criticality!
+   PLAYER: KALEB....
+
+2. KALEB: The Apex of Procedural Inevitability!
+   PLAYER: KALEB!
+
+3. KALEB: [font_size=14][i]Egor knows not this 'Kaleb', Marster[/i][/font_size] 
+
+The Terminal Threshold of Non-Reversibility! 
+
+The Definitive Ultimate Convergence of All Teleological Vectors!
+   PLAYER: OH, FOR THE LOVE OF MARTY FELDMAN...EGOR, JUST [i]PULL THE BLASTED SWITCH ALREADY![/i]
+
+4. KALEB: Yesh, Marster![reveal:particle]
+
+Tap it! Tap it! Hurry!
+   PLAYER: ... 
+
+YOU'RE LUCKY I'M SO CURIOUS MYSELF.
+
+======================================================================
+First Particle   [enqueue_first_particle]
+======================================================================
+1. KALEB: [i]YESSS![/i] Two Volitions! I'm getting Ascendancies at every [i]power-of-five Refinements![/i] 
+
+Thank you [i]so much,[/i] Boss!
+   PLAYER: HUZZAH. WHOOPEE. 
+
+NOW GET BACK TO GRINDING.
+
+2. KALEB: Right away, Boss! Here, I'll bring up the rest of the Production Chain, and the Generation Bars, so you can keep track of the Chain's resource flow at a glance.
+   PLAYER: THAT'LL DO, ARCHON. THAT'LL DO. 
+
+LET'S GET TO WORK.
+
+======================================================================
+First Mote   [enqueue_first_mote_dialogue]
+======================================================================
+1. KALEB: Our first Mote! We're over the threshold - just nineteen more and we can Expand!
+   PLAYER: TWENTY MOTES PER EXPANSION? WHAT IF WE HAVE MORE?
+
+2. KALEB: No, twenty per Uonite - and right now, just one Uonite per Expansion. So any extra Motes would just be consumed, this time. But the more Expansions we've done, the more Uonites we can Create each Expansion.
+   PLAYER: THAT MAKES SENSE. YOU DID SAY WE'RE GOING TO BE MAKING A [i]LOT[/i] OF RESOURCES, EVENTUALLY.
+
+3. KALEB: We sure are! We've got a whole world to build here!
+   PLAYER: AND FLOATING AROUND IN SPACE CHATTING ISN'T GOING TO GET IT DONE FOR US, SO LET'S GET BACK TO PUTTING IN THE WORK.
+
+======================================================================
+First Grain   [enqueue_first_grain_dialogue]
+======================================================================
+1. KALEB: Going for that extra Focus now, eh? Well, I won't complain!
+   PLAYER: YES. I NEED ALL THE HELP YOU CAN GET.
+
+2. KALEB: Aw, thank- wait a minute, what!?
+   PLAYER: YOU HEARD ME.
+
+3. KALEB: Yes, and I can't figure out whom you're actually mocking!
+   PLAYER: PUT IN THE WORK NOW, AND PONDER THE GREAT MYSTERIES OF EXISTENCE LATER.
+
+======================================================================
+Nineteenth Mote   [enqueue_nineteenth_mote]
+======================================================================
+1. KALEB: Almost there, Boss! Just one more Mote to go - our first Expansion, our first Uonite! I'm so excited! Aren't you excited? Come on, be excited!
+   PLAYER: HMM...I'LL SETTLE FOR BEING AMUSED, I THINK.
+
+2. KALEB: Ugh, fine. I guess that's the best I can expect...
+   PLAYER: I HEARD THAT UNSPOKEN 'FROM YOU', KALEB. 
+
+WELL, THAT'S ALL RIGHT, THOUGH. YOU CAN BE EXCITED ENOUGH FOR BOTH OF US.
+
+======================================================================
+Twentieth Mote   [enqueue_twentieth_mote]
+======================================================================
+1. KALEB: Twenty Motes stocked, Boss! It's time for our first Expansion!
+   PLAYER: THAT WAS A LOT OF PRODUCTION FOR JUST ONE UONITE.
+
+2. KALEB: Ugh, no kidding. [font_size=14]And I did most of it, too.[/font_size] 
+
+But look on the bright side! Things will start moving faster soon. And I'll probably get another Focus each for the first Uonite and Expansion.
+   PLAYER: TRUE ENOUGH, AND IT WOULDN'T SUPRISE ME EITHER.
+
+3. KALEB: Then let's GOOOOOOO!
+   PLAYER: I'LL ADMIT IT, I'M LOOKING FORWARD TO THIS. OH, AND KALEB?
+
+4. KALEB: Yes, Boss?
+   PLAYER: GOOD WORK. SEE YOU ON THE FLIPSIDE, PARTNER.
+
+5. KALEB: [font_size=14]...wait...what?[/font_size]
+
+======================================================================
+First Prestige   [enqueue_first_prestige]
+======================================================================
+1. KALEB: Aaaaand we're back! Everything all right, Boss? You didn't get anything pinched off anywhere?
+   PLAYER: WHAT? NO, I DIDN'T GET ANYTHING PINCH- WAIT, THAT CAN [i]HAPPEN!?[/i]
+
+2. KALEB: Mmmmaybe? I mean, it [i]is[/i] an infinitely big cosmos...anyways, never mind that; look! Our first Uonite! I'm so proud! 
+
+...[font_size=14][i]sniff[/i][/font_size]... 
+
+It's a great achievement, it's wonderful.
+   PLAYER: IT'S MORE HELP. PUT IT TO WORK.
+
+3. KALEB: Hey, there's more to life than labor, you know! Can't you take a moment to just enjoy this? It's our first minion! We have a minion!
+   PLAYER: I AM ENJOYING IT. I'LL ENJOY IT EVEN MORE WHEN IT'S DOING SOMETHING PRODUCTIVE.
+
+4. KALEB: Goodness me. Can't we...I don't know...oh! Wait! Can I name it! Let me name it! We'll call it...'Kevin'!
+   PLAYER: NO.
+
+5. KALEB: How about 'Bob'?
+   PLAYER: EVEN MORE 'NO'.
+
+6. KALEB: 'Stuart'?
+   PLAYER: ARE YOU [i]TRYING[/i] TO GET US SUED?
+
+7. KALEB: Of course not! I categorically refuse and deny any such slanderous accusations with the strongest of emphasis!
+   PLAYER: GOOD.
+
+8. KALEB: ... 
+
+'Otto'?
+   PLAYER: CLEVER, BUT STILL NO. HE'S ONE OF THEM TOO.
+
+9. KALEB: Well, drat.
+   PLAYER: HMMM. 
+
+ALL RIGHT, 'DRAT' IS ACCEPTABLE.
+
+10. KALEB: [i]What!?[/i] No! Absolutely not! We're not naming our first minion 'Drat'. That's just cruel!
+   PLAYER: ...
+
+ GOTCHA.
+
+11. KALEB: ...what?
+   PLAYER: THAT WAS JUST A JOKE, KALEB. GIVE ME A MOMENT, I'LL PICK SOMETHING BETTER.[name_entry]
+
+12. KALEB: Oh. That's...much better. Welcome to the business, [uonite_name]!
+   PLAYER: YES, WELCOME ABOARD. 
+
+NOW LET'S GET YOU TO WORK.
+
+13. KALEB: Aaaaand we're right back to the usual old Boss again.
+
+======================================================================
+Spark Movement   [enqueue_spark_movement]
+======================================================================
+1. KALEB: Hey Boss? Have you noticed anything odd about how the Sparks are moving?
+   PLAYER: ODD HOW?
+
+2. KALEB: Some of them seem to be...drifting. Like something's pulling them in a specific direction.
+   PLAYER: PULLING THEM WHERE?
+
+3. KALEB: That's what I'd like to find out! But the effect is so faint I can barely track it. Could you stockpile about two thousand Sparks? I need a bigger sample to pin down the direction.
+   PLAYER: TWO THOUSAND? THAT'S A LOT OF SPARKS JUST SITTING THERE.
+
+4. KALEB: I know, but I've got a hunch about this, Boss. Something's out there.
+   PLAYER: ...FINE. TWO THOUSAND.
+
+======================================================================
+First Constellation   [enqueue_first_constellation]
+======================================================================
+1. KALEB: Ooo[i]oo[/i]ooh, [i]that's[/i] interesting!
+   PLAYER: WHAT IT IS NOW?
+
+2. KALEB: Gee, you're always so wary of anything new! Some changes can be good, you know.
+   PLAYER: KALEB. 
+
+FEWER PERSONAL REMARKS AND MORE [i]INFORMATIVE[/i] ONES.
+
+3. KALEB: Yes, Boss. Some of the new unused Sparks are going straight back to where some of the previous ones were resting. As if they're forming a...Constellation, I guess?
+   PLAYER: HMM. SHOW ME.
+
+4. KALEB: Uhhh, well...it's sort of over thataway and a little...how do I put it...um, Boss, we really don't have landmarks yet. We don't even have [i]land[/i] yet. To, er, mark. Or - well, I suppose this thing counts as one?
+   PLAYER: NOT HELPING, KALEB. 
+
+NO, WAIT - YOU SAID SOME SPARKS ARE ATTRACTED TO IT?
+
+5. KALEB: Yess...? Oh! That could work! Manually Summon some Sparks and see if they give you a direction?
+   PLAYER: YES, THAT'S WHAT I'M THINKING.
+
+6. KALEB: And it's some pretty good thinking! Try it, try it! Give it at least a dozen taps! And I'll try to kind of, um...herd them? In the right direction.
+   PLAYER: HERE GOES.
+
+======================================================================
+Constellation Panel Created   [enqueue_constellation_panel_creation]
+======================================================================
+1. KALEB: Ha! It's working! But...the Constellation's only attracting a tiny little trickle of new Sparks.
+   PLAYER: HMM. CAN WE SPEED THAT UP SOMEHOW?
+
+2. KALEB: Uhhh, let me think...Foci? And then I'd have to...oh, yes; that could work. Just need to...there!
+   PLAYER: SOUNDS PROMISING.
+
+3. KALEB: I've added a new interface element on the lower left, check it out!
+   PLAYER: THAT WAS QUICK. LET'S SEE WHAT YOU'VE GOT.
+
+======================================================================
+Constellation Panel Opened   [enqueue_open_constellation_panel]
+======================================================================
+1. KALEB: Um, it's still very basic...just a label at the top, and the counter controls for Foci and Volitions. Every one of those you assign will guide a Spark to the Constellation. 
+
+Then Multi-buttons from the Allocation Wheel and IGNORE and ENDOW buttons for on/off.
+   PLAYER: GOOD. SIMPLE AND EFFICIENT.
+
+2. KALEB: It also seems the Constellation needs at least one Volition assigned to it to keep whatever's going on with it...er...going on? And to help me keep shunting Sparks over to it.
+   PLAYER: UNDERSTOOD.
+
+3. KALEB: And the extra space is for more controls and information later. So, Boss? Will that do?
+   PLAYER: YES. WELL DONE, KALEB.
+
+4. KALEB: Oh. Uh...thanks!
+   PLAYER: DON'T SOUND SO SURPRISED. INTERFACE DESIGN IS CLEARLY ONE OF YOUR APEX SKILLS.
+
+5. KALEB: O...kay? 
+
+Boss, are you feeling alright?
+   PLAYER: I'M FINE. YOUR ABILITY TO HANDLE POSITIVE FEEDBACK COULD USE SOME IMPROVEMENT, THOUGH.
+
+6. KALEB: Ah. Whew, you had me a little worried there.
+   PLAYER: SO COULD YOUR INTRUSIVE-THOUGHTS-TO-SPEECH FILTER.
+
+7. KALEB: [font_size=14]ahem[/font_size] 
+
+Yes, Boss.
+
+======================================================================
+Tier 1 Archon Complete   [enqueue_tier1_archon_complete]
+======================================================================
+1. KALEB: Oh...oh my goodness...is that - it's [i]me[/i]! It's a happy little [i]me![/i]
+   PLAYER: HEH, SO IT IS. CONGRATULATIONS.
+
+2. KALEB: Thanks, Boss! Huh...and now that its stars are all full up with Sparks, they're kind of...vibrating? Weird. What's up with that?
+   PLAYER: HUH. I WONDER IF...EH, WHY NOT. I'LL TRY TAPPING THEM.
+
+3. KALEB: Your turn for a hunch? Sure, let's try it out! Oh,
+   PLAYER: HERE WE GO.
+
+======================================================================
+Study Panel Reveal   [enqueue_study_panel_reveal]
+======================================================================
+1. KALEB: Imma charging my laser!
+   PLAYER: YOU DO YOU, BRO.
+
+2. KALEB: Study Panel Button Activate!
+   PLAYER: AND I'LL FORM THE HEAD.
+
+======================================================================
+enqueue_star_chase   [enqueue_star_chase]
+======================================================================
+1. KALEB: Boss, trying to keep it centered looks hugely annoying. Can I add a positioning element to the new interface? Something that holds the whole interface in place while you're dealing with this?
+   PLAYER: ANOTHER GOOD IDEA. DO IT.
+
+======================================================================
+End First Prestige   [enqueue_end_first_prestige]
+======================================================================
+1. KALEB: Second Expansion ready! Hoping for a new Constellation, Boss? Maaaybe one representing you? I'm sure you're not at [i]alll[/i] jealous the Sparks created one for me first....
+   PLAYER: YOU'RE RIGHT, I'M NOT. I PREFER FUNCTION OVER FORM. SO AS LONG AS IT'S SUFFICIENTLY USEFUL, I'LL BE SATISFIED. 
+
+ASSUMING THERE IS ANOTHER.
+
+2. KALEB: That's...actually what I should have suspected, isn't it.
+   PLAYER: YES.
+
+3. KALEB: Right. So...we can do that second Expansion now, or we could build up another twenty Grains and Create two Uonites at once this time. Up to you!
+
+======================================================================
+Start Second Prestige   [enqueue_start_second_prestige]
+======================================================================
+1. KALEB: Squishy! That didn't wrinkle me, did I? Can you see any wrinkles?
+   PLAYER: NO, KALEB, YOU DON'T HAVE ANY WRINKLES. MORE IMPORTANTLY, DO WE HAVE ANY NEW CONSTELLATIONS?
+
+2. KALEB: It will take a little while to find out, Boss. We'll need some free Sparks roaming around first. I think I'm about...maybe a fourth better at tracking and herding them now? So, say...fifteen hundred stocked up this time?
+   PLAYER: GOOD IMPROVEMENT. 
+
+ALL RIGHTY, THEN; GIT YERSELF A' WRANGLIN', SPARKBOY.
+
+3. KALEB: ... 
+
+Really? 
+
+Fine. 
+
+I shall go now and yee my haw. Whoopee.
+
+======================================================================
+Third Prestige   [enqueue_third_prestige]
+======================================================================
+1. KALEB: Hourglass placeholder dialogue
+
+======================================================================
+Fourth Prestige   [enqueue_fourth_prestige]
+======================================================================
+1. KALEB: Stoker placeholder dialogue
+
+======================================================================
+Fifth Prestige   [enqueue_fifth_prestige]
+======================================================================
+1. KALEB: Phial placeholder dialogue
+
+======================================================================
+Sixth Prestige   [enqueue_sixth_prestige]
+======================================================================
+1. KALEB: Satchel placeholder dialogue
+
+======================================================================
+Seventh Prestige   [enqueue_seventh_prestige]
+======================================================================
+1. KALEB: Djinn placeholder dialogue
+
+======================================================================
+Archon Volition Constellation   [enqueue_archon_volition_constellation]
+======================================================================
+1. KALEB: [X] Constellation is hogging all the free Sparks, Boss; I'm adding the selector for a new one anyways
+
+======================================================================
+No Archon Volition Constellation   [enqueue_no_archon_volition_constellation]
+======================================================================
+1. KALEB: Oooh, I think Two Constellations are attracting Sparks, Boss; I'm adding the selector for the new one
+
+======================================================================
+POKE RESPONSES (tiers 4-11, first click of each tier)  [POKE_DIALOGUES]
+======================================================================
+1. Ehhh...it's not headpats, but it'll do.
+
+2. I'm not ticklish, you know.
+
+3. Stop it, I'm gonna discharge!
+
+Don't!
+
+Don't, dooon't!
+
+4. Enough with the poking already!
+
+5. Am I going to have to message Nonhuman Resources about this?
+
+6. boss
+
+wat r u doin
+
+boss
+
+stahp
+
+7. Boss, I'm warning you now...if you keep doing that, I'll put myself in Time Out.
+
+8. Okay, you asked for it.
+
+And remember, you wanted this.
+
+======================================================================
+POST-LOCKDOWN POKE MESSAGES  [archon_poke_minigame.gd]
+======================================================================
+1. I hope you've learned your lesson.
+
+2. That was a nice rest. And the next one will be even longer.
+
+======================================================================
+FIRMAMENT ENTRY  [firmament_ui.gd]
+======================================================================
+1. The Primordial Stage is behind us.
+2. The Firmament awaits your shaping.
+
+======================================================================
+NOTIFICATIONS (Focus awards)
+======================================================================
+%s Tetrad: +1 Focus.
+%s category complete: +1 Focus.
+All fifteen Tetrad varieties formed: +1 Focus.
+First Particle: +1 Focus.
+First Iota: +1 Focus.
+First Mote: +1 Focus.
+First Grain: +1 Focus.
+First Uonite: +1 Focus, +1 Refinement.
