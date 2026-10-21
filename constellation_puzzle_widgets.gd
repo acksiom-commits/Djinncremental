@@ -6287,9 +6287,32 @@ func _on_name_x(star_idx: int, star_name: String,
 # ==================================================
 # UNDO NAME-SELECTION/NAME-BLOCK CALLBACKS
 # ==================================================
+## A Listened record's star binding is the player's own Listen click on that
+## star, not a name selection, so undoing the Name row must not take it away.
+## Unbinding it (reported 2026-10-20) left the Listen orphaned on a record with
+## no star: the tag fell back to "R?" and the star lost its colour. Instead the
+## name comes off the record, the same way the Sort-tab checklist's own undo
+## retracts one, and the binding, colour and Listen stay. Returns false for a
+## record this doesn't apply to, which keeps the unbinding path below.
+func _undo_name_on_listened_record(record_idx: int, include_blocks: bool) -> bool:
+    if record_idx < 0:
+        return false
+    var r: Dictionary = _deduction.record_at(record_idx)
+    if int(r.get("star_idx", -1)) < 0 or not bool(r.get("pitch_revealed", false)):
+        return false
+    _deduction._undo_category_selects(record_idx, "name_states", "manual_name_blocks", "protected_staff_names", _host._star_names.duplicate())
+    if include_blocks:
+        _deduction._undo_category_blocks(record_idx, "name_states", "manual_name_blocks")
+    r["name"] = ""
+    # The name's own per-star marks (the confirm writes this star 1 and every
+    # other star 2); with the name gone from this record they mean nothing.
+    r["star_elim"] = {}
+    return true
+
+
 func _on_undo_name_selects(star_idx: int) -> void:
     var own_record: int = _deduction._find_match_record_by_star_idx(star_idx)
-    if own_record >= 0:
+    if not _undo_name_on_listened_record(own_record, false) and own_record >= 0:
         var r: Dictionary = _deduction.record_at(own_record)
         r["star_idx"] = -1
         # color_states was fully overwritten by _sync_color_states_from_star_idx
@@ -6335,7 +6358,7 @@ func _on_undo_name_blocks(star_idx: int) -> void:
 
 func _on_undo_name_all(star_idx: int) -> void:
     var own_record: int = _deduction._find_match_record_by_star_idx(star_idx)
-    if own_record >= 0:
+    if not _undo_name_on_listened_record(own_record, true) and own_record >= 0:
         var r: Dictionary = _deduction.record_at(own_record)
         r["star_idx"] = -1
         # color_states was fully overwritten by _sync_color_states_from_star_idx
