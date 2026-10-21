@@ -114,6 +114,7 @@ const FLOW_WALL_SPREAD_MIN:       float = 0.2   # per-icon crossing point along 
 const FLOW_WALL_SPREAD_MAX:       float = 0.8   # (kept off the very corners so icons don't pop into a THIRD wedge)
 const FLOW_GLIDE_ANGLE_JITTER_DEG: float = 25.0 # +/- degrees randomized off the base glide direction
 const FLOW_GLIDE_DIST_JITTER_FRAC: float = 0.3  # +/- fraction of FLOW_GLIDE_DISTANCE randomized per icon
+const CONFINE_PASSES:             int   = 3     # push-back passes per wedge confinement (see _confine_to_wedge)
 
 const RESOURCE_KEYS = [
     "monad", "tetrad", "particle", "iota_uonite", "mote_uonite", "grain", "uonite"
@@ -412,6 +413,14 @@ func _roll_flow_targets(leg: Dictionary) -> Dictionary:
     var angle: float      = deg_to_rad(_rng.randf_range(-FLOW_GLIDE_ANGLE_JITTER_DEG, FLOW_GLIDE_ANGLE_JITTER_DEG))
     var dist: float       = FLOW_GLIDE_DISTANCE * (1.0 + _rng.randf_range(-FLOW_GLIDE_DIST_JITTER_FRAC, FLOW_GLIDE_DIST_JITTER_FRAC))
     var glide_to: Vector2 = wall + leg["glide_dir"].rotated(angle) * dist
+    # Unclamped, ~15% of these landed outside the destination wedge (out
+    # through its rim or a seam) and _confine_to_wedge() then snapped the
+    # icon back by up to ~18px in one frame -- the visible "skip" over a
+    # wedge boundary. Landing inside the icon-sized inset instead means the
+    # glide ends where confinement already agrees it may be.
+    if leg["terminal"] == "wedge":
+        var half: float = ICON_SIZES.get(leg["next"], 7.0) * 0.5
+        glide_to = _clamp_to_wedge(glide_to, leg["dest_wedge"], half)
     return {"wall": wall, "glide_to": glide_to}
 
 
@@ -700,6 +709,10 @@ func _update_icons(delta: float) -> void:
 # and hands the icon back to normal drift+bounce behavior in place, no
 # removal needed.
 func _advance_flow_icon(icon: Dictionary, delta: float) -> bool:
+    # Freshly spawned flow icons (see _start_flow_for_leg()) start at 0
+    # alpha and fade in here; repurposed storage icons are already at 1.
+    if icon["alpha"] < 1.0:
+        icon["alpha"] = minf(1.0, icon["alpha"] + delta / SPAWN_DURATION)
     if icon.get("flow_delay", 0.0) > 0.0:
         icon["flow_delay"] -= delta
         return false
@@ -760,16 +773,41 @@ func _confine_to_wedge(icon: Dictionary) -> void:
         return
     var icon_size = ICON_SIZES.get(icon["resource"], 7.0)
     var half      = icon_size * 0.5
-    for edge in _wedge_bounds[wedge]:
-        var point:   Vector2 = edge[0]
-        var outward: Vector2 = edge[1]
-        var to_icon = icon["pos"] - point
-        var dist    = to_icon.dot(outward)
-        if dist > -half:
-            icon["pos"] -= outward * (dist + half + 0.5)
-            var vel_out = icon["vel"].dot(outward)
-            if vel_out > 0:
-                icon["vel"] -= outward * vel_out * 1.6
+    # Several passes, not one: toward a wedge's narrow inner end, pushing
+    # an icon off one seam can carry it across the other, and a single pass
+    # left it there for a frame.
+    for _pass in CONFINE_PASSES:
+        var pushed := false
+        for edge in _wedge_bounds[wedge]:
+            var point:   Vector2 = edge[0]
+            var outward: Vector2 = edge[1]
+            var to_icon = icon["pos"] - point
+            var dist    = to_icon.dot(outward)
+            if dist > -half:
+                pushed = true
+                icon["pos"] -= outward * (dist + half + 0.5)
+                var vel_out = icon["vel"].dot(outward)
+                if vel_out > 0:
+                    icon["vel"] -= outward * vel_out * 1.6
+        if not pushed:
+            break
+
+
+# The position-only half of _confine_to_wedge(): where `pos` would end up
+# once confined, for picking targets that confinement won't then move.
+func _clamp_to_wedge(pos: Vector2, wedge: int, half: float) -> Vector2:
+    if wedge < 0 or wedge >= _wedge_bounds.size():
+        return pos
+    for _pass in CONFINE_PASSES:
+        var pushed := false
+        for edge in _wedge_bounds[wedge]:
+            var dist: float = (pos - edge[0]).dot(edge[1])
+            if dist > -half:
+                pushed = true
+                pos -= edge[1] * (dist + half + 0.5)
+        if not pushed:
+            break
+    return pos
 
 
 # Bounce within the central octagon's 8 inner edges — mirrors
@@ -825,20 +863,23 @@ func _start_flow_for_leg(leg_idx: int, count: int) -> void:
         icon["flow_glide_to"] = targets["glide_to"]
         started += 1
 
-    # Not enough existing icons on hand — spawn the remainder fresh at the
-    # source wedge's face, then immediately mark them flow_active so they
-    # animate straight into the crossing instead of drifting first.
+    # Not enough existing icons on hand — spawn the remainder fresh just
+    # inside the source wedge's face, then immediately mark them
+    # flow_active so they animate straight into the crossing instead of
+    # drifting first. They fade in on the way (_advance_flow_icon()): at
+    # full alpha centred ON the rim, they used to pop in half outside it.
     while started < count and _icons.size() < MAX_ICONS:
         var face_idx: int = RESOURCE_FACE.get(source, 1)
         if _face_midpoints.is_empty():
             break
         var targets: Dictionary = _roll_flow_targets(leg)
+        var inset: float = ICON_SIZES.get(source, 7.0) * 0.5 + 0.5
         var icon: Dictionary = {
             "resource":     source,
             "wedge":        face_idx,
-            "pos":          _face_midpoints[face_idx],
+            "pos":          _face_midpoints[face_idx] + _face_normals[face_idx] * inset,
             "vel":          Vector2.ZERO,
-            "alpha":        1.0,
+            "alpha":        0.0,
             "fading":       false,
             "spawning":     false,
             "spawn_t":      1.0,

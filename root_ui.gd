@@ -176,7 +176,8 @@ const UONITE_NAMES: Array = [
 ## own comment for why), so it always starts at 0 regardless of a loaded
 ## save's actual stockpile; a completion (the target wrapping back down)
 ## can never spuriously fire on the very first frame either, since nothing
-## is ever lower than this starting 0.
+## is ever lower than this starting 0. _do_prestige_reset() puts it back to
+## 0 for the same reason, since the reset zeroes mote_uonite.
 var _icosa_mote_display: int = 0
 
 # === TETRAD DISPLAY LABELS ===
@@ -1971,6 +1972,12 @@ func _do_prestige_reset() -> void:
         production_manager.reset_for_prestige()
     if _storage_display and _storage_display.has_method("clear_flow_icons"):
         _storage_display.clear_flow_icons()
+    # The reset just zeroed mote_uonite/mote_grains. Left alone, the
+    # cosmetic counters would read that drop as a "wrap" on the next frame
+    # and fire a completion -- dimming the icosahedron and spawning a fresh
+    # top-wedge mini-icon right after clear_flow_icons() emptied it.
+    _icosa_mote_display = 0
+    _grain_mote_display = 0
     _tetrad_assembly_ready = false
     if archon_dialogue_manager and archon_dialogue_manager.all_monads_upgrade_done:
         _tetrad_assembly_ready = true
