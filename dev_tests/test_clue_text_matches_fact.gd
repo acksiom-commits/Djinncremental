@@ -61,6 +61,7 @@ var _re_range_late: RegEx
 var _re_gorder_first: RegEx
 var _re_extr: RegEx
 var _re_count: RegEx
+var _re_one_nbr: RegEx
 var _re_gorder: RegEx
 var _re_bridge: RegEx
 var _re_member: RegEx
@@ -110,6 +111,8 @@ func _compile() -> void:
 	_re_range_late  = _rx("^(.+?) (?:first fires|fires) no earlier than note (\\d+)\\.$")
 	_re_extr    = _rx("(.+) is the (earliest|latest) to (?:first fire|fire) among its connected stars(?:, going by each star's first note)?\\.$")
 	_re_count   = _rx("^Exactly (\\d+) of (.+)'s connected stars (?:first fire|fire) before it(?: first fires)?\\.$")
+	# Extreme/Count on a subject with exactly ONE connected star.
+	_re_one_nbr = _rx("^(.+) (?:first fires|fires) (before|after) its only connected star(?: first fires)?\\.$")
 	_re_bridge  = _rx("^Among (the .+), the (earliest|latest)(?:-firing| first-firing) one is (.+)\\.$")
 	_re_gorder_first = _rx("^(.+?) (?:first fires|fires) (before|after) ((?:every|the) .+?)(?: first fires)?\\.$")
 	# Group Order renders its group as "every yellow star" / "every star that
@@ -606,6 +609,18 @@ func _try_parse(clue: Dictionary, text: String, form: String) -> void:
 				if _seq(int(nb2)) < _seq(sc2):
 					k += 1
 			_judge(form, text, k == int(mm.get_string(1)), "really %d neighbours before it" % k)
+		return
+
+	mm = _re_one_nbr.search(text)
+	if mm:
+		var so: int = _one_star(mm.get_string(1), m)
+		if so >= 0:
+			var nbrs: Array = _g.proximity[so]
+			var holdo: bool = nbrs.size() == 1
+			if holdo:
+				var before: bool = mm.get_string(2) == "before"
+				holdo = (_seq(so) < _seq(int(nbrs[0]))) == before
+			_judge(form, text, holdo, "%d connected star(s), position %d" % [nbrs.size(), _seq(so)])
 		return
 
 	# ── subject vs a collective group ───────────────────────────────────

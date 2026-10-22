@@ -244,10 +244,20 @@ func run() -> void:
 	var ex_n: int = 0
 	var ex_wrong: int = 0
 	var re_ex := RegEx.create_from_string("^(.+) is the (?:earliest|latest) to (first fire|fire) among its connected stars(, going by each star's first note)?\\.$")
+	# One connected star: "X (first) fires before/after its only connected star( first fires)."
+	var re_one := RegEx.create_from_string("^(.+?) (first fires|fires) (?:before|after) its only connected star( first fires)?\\.$")
 	for c2 in _draw(g, "_build_form_extreme", 300):
-		var m2 = re_ex.search(str(c2["text"]))
 		var subject: int = int((c2["chars"] as Array)[0]["star"])
 		ex_n += 1
+		if (g.proximity[subject] as Array).size() == 1:
+			var m1n = re_one.search(str(c2["text"]))
+			if m1n == null \
+					or (m1n.get_string(2) == "first fires") != _rep(g, subject) \
+					or (m1n.get_string(3) != "") != _rep(g, int(g.proximity[subject][0])):
+				ex_wrong += 1
+				print("    mismatch: ", c2["text"])
+			continue
+		var m2 = re_ex.search(str(c2["text"]))
 		if m2 == null \
 				or (m2.get_string(2) == "first fire") != _rep(g, subject) \
 				or (m2.get_string(3) != "") != _any_repeats(g, g.proximity[subject]):
@@ -260,9 +270,17 @@ func run() -> void:
 	var ct_wrong: int = 0
 	var re_ct := RegEx.create_from_string("^Exactly \\d+ of (.+)'s connected stars (first fire|fire) before it( first fires)?\\.$")
 	for c6 in _draw(g, "_build_form_count", 300):
-		var m6 = re_ct.search(str(c6["text"]))
 		var subject6: int = int((c6["chars"] as Array)[0]["star"])
 		ct_n += 1
+		if (g.proximity[subject6] as Array).size() == 1:
+			var m6n = re_one.search(str(c6["text"]))
+			if m6n == null \
+					or (m6n.get_string(2) == "first fires") != _rep(g, subject6) \
+					or (m6n.get_string(3) != "") != _rep(g, int(g.proximity[subject6][0])):
+				ct_wrong += 1
+				print("    mismatch: ", c6["text"])
+			continue
+		var m6 = re_ct.search(str(c6["text"]))
 		if m6 == null \
 				or (m6.get_string(2) == "first fire") != _any_repeats(g, g.proximity[subject6]) \
 				or (m6.get_string(3) != "") != _rep(g, subject6):

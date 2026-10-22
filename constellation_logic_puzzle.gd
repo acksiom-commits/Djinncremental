@@ -7226,6 +7226,19 @@ func _build_form_group_order(chain: Dictionary) -> Dictionary:
 
 # ── Forms 10, 11: local-neighborhood facts (map-adjacency via proximity[]) ──
 
+## A subject with ONE connected star: both Forms reduce to a single before/after
+## comparison, and the plural wording ("earliest among its connected stars",
+## "Exactly 0 of X's connected stars") reads wrong. Text only -- the facts are
+## the same ordinal_extreme / ordinal_count_before over the one neighbour. Verbs
+## per side as in the pairwise Forms: the subject's own, and a " first fires"
+## tail when the neighbour repeats.
+func _only_neighbor_order_text(subject_id: Dictionary, subject_star: int, neighbor: int, before: bool) -> String:
+    return "%s %s %s its only connected star%s." % [
+        _characteristic_label(subject_id), _seq_verb_for(subject_star),
+        "before" if before else "after",
+        " first fires" if _seq_verb_for(neighbor) == "first fires" else ""]
+
+
 func _build_form_extreme(chain: Dictionary) -> Dictionary:
     var axis: int = Category.SEQUENCE
     var a: Dictionary = _sample_identity_axis_cell(axis, chain, -1)
@@ -7257,9 +7270,13 @@ func _build_form_extreme(chain: Dictionary) -> Dictionary:
     # repeat; neighbours of both kinds have no honest wording (_seq_fire_verb).
     if _seq_group_mixed(neighbors):
         return {}
-    var text: String = "%s is the %s to %s among its connected stars%s." % [
-        _characteristic_label(subject_id), word, _seq_base_for(subject_star),
-        ", going by each star's first note" if _seq_fire_verb(neighbors) == "first fires" else ""]
+    var text: String
+    if neighbors.size() == 1:
+        text = _only_neighbor_order_text(subject_id, subject_star, int(neighbors[0]), want_lowest)
+    else:
+        text = "%s is the %s to %s among its connected stars%s." % [
+            _characteristic_label(subject_id), word, _seq_base_for(subject_star),
+            ", going by each star's first note" if _seq_fire_verb(neighbors) == "first fires" else ""]
     var solver_facts: Array = _seq_fact_for_label(subject_id)
     solver_facts.append({"kind": "ordinal_extreme", "s": subject_star, "want_lowest": want_lowest, "neighbors": neighbors})
     return {
@@ -7295,10 +7312,15 @@ func _build_form_count(chain: Dictionary) -> Dictionary:
     # and "it first fires" only if the subject itself repeats.
     if _seq_group_mixed(neighbors):
         return {}
-    var text: String = "Exactly %d of %s's connected stars %s before it%s." % [
-        k, _characteristic_label(subject_id),
-        "first fire" if _seq_fire_verb(neighbors) == "first fires" else "fire",
-        " first fires" if _seq_verb_for(subject_star) == "first fires" else ""]
+    var text: String
+    if neighbors.size() == 1:
+        # k is 0 or 1: none of it fires before the subject, or it does.
+        text = _only_neighbor_order_text(subject_id, subject_star, int(neighbors[0]), k == 0)
+    else:
+        text = "Exactly %d of %s's connected stars %s before it%s." % [
+            k, _characteristic_label(subject_id),
+            "first fire" if _seq_fire_verb(neighbors) == "first fires" else "fire",
+            " first fires" if _seq_verb_for(subject_star) == "first fires" else ""]
     var solver_facts: Array = _seq_fact_for_label(subject_id)
     solver_facts.append({"kind": "ordinal_count_before", "s": subject_star, "k": k, "neighbors": neighbors})
     return {

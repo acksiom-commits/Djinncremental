@@ -136,7 +136,10 @@ func _group_verb_problem(text: String, kind: String, counts: Array) -> String:
 	if any_repeat and any_once:
 		return "built over a group where some stars repeat and some do not"
 	var says_first: bool
-	if kind == "ordinal_count_before":
+	if text.contains("its only connected star"):
+		# One connected star, either Form: the tail marks that star repeating.
+		says_first = text.ends_with("its only connected star first fires.")
+	elif kind == "ordinal_count_before":
 		says_first = text.contains("connected stars first fire before")
 		if not says_first and not text.contains("connected stars fire before"):
 			return "unrecognised Count wording"
