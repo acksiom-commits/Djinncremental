@@ -50,6 +50,14 @@ func _check_oscillation_leaves_top_wedge_empty() -> void:
 	var display = root_ui._storage_display
 	display.set_process(false)
 
+	# RootUI's _ready() loaded the REAL save, so the cosmetic counter may
+	# already be ramping toward that save's mote_uonite mod 20. A remainder
+	# above 7 made the drop to 7 below read as a wrap and spawn a top-wedge
+	# icon, failing the setup check whenever the player's save sat there
+	# (2026-10-21: 111 Motes, remainder 11). Start from a known empty state.
+	root_ui._icosa_mote_display = 0
+	display.clear_flow_icons()
+
 	gc.ui_unlocks["uonite_creation"] = true
 	gc.mote_uonite = BigNum.from_int(7)
 	for k in 10:
