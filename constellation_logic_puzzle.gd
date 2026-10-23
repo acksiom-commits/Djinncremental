@@ -5436,6 +5436,28 @@ func _build_firing_relation(chain: Dictionary, mode: String) -> Dictionary:
                     spec = {"rel": "atleast", "n": maxi(1, ad - _rng.randi_range(0, 2)), "dir": dir, "neg": false}
                 _:
                     spec = {"rel": "within", "n": ad + _rng.randi_range(0, 3), "dir": dir, "neg": false}
+    # A firing whose label prints its note, sitting on the melody's first or
+    # last note, leaves the other firing only one side to be on, so "before or
+    # after" is half impossible (reported 2026-10-21: "...is at most 1 note
+    # before or after the first firing of the star that first fires on note
+    # 1"). Say the one side: within 1 is "immediately", "more than n" is "at
+    # least n+1"; a wider "at most n" has no one-sided wording, so draw again.
+    if str(spec["rel"]) == "within":
+        var forced_dir: int = 0
+        if _firing_named_by_label(int(b["id_cat"]), pick_b):
+            var tb0: int = int(notes_b[0])
+            forced_dir = 1 if tb0 == 1 else (-1 if tb0 == n_notes else 0)
+        elif _firing_named_by_label(int(a["id_cat"]), pick_a):
+            var ta0: int = int(notes_a[0])
+            forced_dir = -1 if ta0 == 1 else (1 if ta0 == n_notes else 0)
+        if forced_dir != 0:
+            if bool(spec["neg"]):
+                spec = {"rel": "atleast", "n": int(spec["n"]) + 1, "dir": forced_dir, "neg": false}
+                neg = false
+            elif int(spec["n"]) == 1:
+                spec = {"rel": "exact", "n": 1, "dir": forced_dir, "neg": false}
+            else:
+                return {}
     var rank_a: int = int(sequence_rank_solution[star_a])
     var rank_b: int = int(sequence_rank_solution[star_b])
     if not _firing_rel_holds(notes_a, notes_b, spec):

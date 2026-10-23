@@ -110,6 +110,27 @@ func _parse_pick(p: String) -> Dictionary:
 	return {}
 
 
+## Nonzero when one side's firing is the note its label prints (a Sequence label
+## names its star's first note, and the pick is that first/only firing) and that
+## note is the melody's first or last, so the other firing can only be on one
+## side of it (reported 2026-10-21). Reads the label category off the clue's
+## chars and the note off the melody, not the builder's own reasoning.
+func _label_pinned_edge_side(g, clue: Dictionary, p: Dictionary) -> int:
+	if p.is_empty():
+		return 0
+	var chars: Array = clue["chars"]
+	var n_notes: int = (g.melody_star_sequence as Array).size()
+	for side in [0, 1]:
+		var ch: Dictionary = chars[side]
+		var pick: Dictionary = p["left"] if side == 0 else p["right"]
+		if int(ch["cat"]) != PuzzleScript.Category.SEQUENCE or not bool(pick.get("first", false)):
+			continue
+		var t: int = int(_ticks_of(g.melody_star_sequence, int(ch["star"]))[0])
+		if t == 1 or t == n_notes:
+			return side + 1
+	return 0
+
+
 ## -> {left, right (picks), neg, rel, n, dir, shape} or {}.
 func _parse(text: String) -> Dictionary:
 	var re = RegEx.create_from_string("^(.+?) is (not )?(immediately (after|before)|exactly (\\d+) notes? (after|before)|at least (\\d+) notes? (after|before)|(at most|more than) (\\d+) notes? before or after) (one of the firings of .+|the \\w+ firing of .+)\\.$")
@@ -368,6 +389,8 @@ func run() -> void:
 	var form6_not_exact: int = 0
 	var form6_pitch: int = 0
 	var rank_wording: int = 0
+	var edge_pinned: int = 0       # one firing's label prints note 1 or the last note
+	var edge_both_sides: int = 0   # ...and the sentence still says "before or after"
 	for cid in range(0, 7):
 		for seed in [11, 12, 13]:
 			var g = _beginner_puzzle(cid, seed)
@@ -391,6 +414,13 @@ func run() -> void:
 					if why != "":
 						bad.append("c%d s%d F%d: %s" % [cid, seed, form_id, why])
 						continue
+					var edge: int = _label_pinned_edge_side(g, clue, _parse(text))
+					if edge != 0:
+						edge_pinned += 1
+						if text.contains("before or after"):
+							edge_both_sides += 1
+							if edge_both_sides <= 3:
+								print("    half-impossible 'before or after': ", text)
 					if form_id == 7 and not text.contains(" is immediately "):
 						form7_not_immediate += 1
 					if form_id == 6 and not text.contains(" is exactly "):
@@ -407,6 +437,8 @@ func run() -> void:
 	ok(form7_not_immediate == 0, "every Form 7 clue is melody adjacency ('is immediately after/before') (%d not)" % form7_not_immediate)
 	ok(form6_not_exact == 0, "every Form 6 Sequence clue is an exact gap in notes (%d not)" % form6_not_exact)
 	ok(rank_wording == 0, "the old rank-space wording never appears in a repeating melody (%d)" % rank_wording)
+	ok(edge_pinned > 0, "some clues relate to a firing its label pins on the first or last note (%d)" % edge_pinned)
+	ok(edge_both_sides == 0, "none of those says 'before or after' when only one side is possible (%d of %d)" % [edge_both_sides, edge_pinned])
 
 	print("\n=== the variety is real ===")
 	for key in ["shape_immediately", "shape_exactly", "shape_atleast", "shape_within", "pos", "neg",
