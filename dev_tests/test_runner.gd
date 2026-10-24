@@ -34,6 +34,16 @@ func _init() -> void:
 
 	print("running %d module(s) in ONE process\n" % modules.size())
 
+	# root.get_children() is [] until one frame has passed — the autoloads
+	# aren't attached yet. _run_one() snapshots root's children to know what
+	# NOT to clean up, so without this the first module's snapshot was empty.
+	# If that module awaited a frame (autoloads attach during it), its
+	# cleanup then queue_free()d every autoload, leaving every later module
+	# with no SaveManager/GameContext/etc. The unfiltered suite never hit it
+	# only because probe_live_clues.gd, first alphabetically, never awaits;
+	# `-- save` (intro-screen save gate first) did.
+	await process_frame
+
 	var results: Array[Dictionary] = []
 	for path in modules:
 		results.append(await _run_one(path))

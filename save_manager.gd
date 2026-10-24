@@ -27,6 +27,26 @@ const SAVE_PATH := "user://djinncremental_save.json"
 const TMP_PATH := "user://djinncremental_save.json.tmp"
 const BAK_PATH := "user://djinncremental_save.json.bak"
 
+# ── Save slots ────────────────────────────────────────────────────────
+# Slot 1 IS the pre-slot save (SAVE_PATH/TMP_PATH/BAK_PATH above), so every
+# save written before slots existed simply shows up as Slot 1 — no
+# migration. Slots 2+ get their own primary/.tmp/.bak trio, each with the
+# same atomic-rotation invariant as save_game() describes.
+const SLOT_COUNT: int = 3
+## The slot the running playthrough reads from and writes to. Every
+## automatic save (timer, quit, age transition) targets this slot only.
+var active_slot: int = 1
+## Off = the game writes only when the player presses Save (plus the
+## age-transition save, which RootUI's load-on-entry depends on — see
+## autosave()). Defaults on so a first-time player can't lose progress.
+var autosave_enabled: bool = true
+
+# Device-level preferences, not part of any playthrough: which slot to
+# boot into, and the autosave choice. Kept out of the save JSON on purpose —
+# switching slots must not change them, and they have to be readable before
+# any slot is loaded.
+const SETTINGS_PATH := "user://djinncremental_settings.cfg"
+
 signal game_loaded(offline_seconds: float)
 signal save_reset()
 ## Emitted when BOTH the primary save and its backup exist but neither can be
@@ -45,6 +65,10 @@ signal save_load_failed()
 ## surface this; even with no handler, at minimum it's now logged instead
 ## of silently discarded.
 signal save_failed()
+## Emitted by load_slot() when a NON-active slot's files exist but can't be
+## read. Unlike save_load_failed this leaves saving enabled: the running
+## game stays on its own slot, untouched, so there is nothing to protect.
+signal slot_load_failed(slot: int)
 
 ## Set true only when load found existing-but-unreadable save files. While set,
 ## save_game() refuses to write, so nothing overwrites the corrupt files.
@@ -68,21 +92,59 @@ var _save_disabled: bool = false
 # see root_ui.gd's quit_requested handler for that path's own save call.
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_CLOSE_REQUEST:
+        autosave()
+
+
+func _ready() -> void:
+    _load_settings()
+
+
+## Every save the game makes on its own (60s timer, quitting, one-shot
+## checkpoints) goes through here so the Settings panel's Autosave toggle
+## covers all of them. The age-transition saves in root_ui.gd/firmament_ui.gd
+## deliberately call save_game() instead: RootUI reloads from disk on entry
+## (_load_on_start), so skipping that save would roll the player back.
+func autosave() -> void:
+    if autosave_enabled:
         save_game()
 
 
+## True after a reset of, or a new game in, the active slot (until the app
+## restarts), or after a corrupt load. The Settings panel shows it so a
+## player isn't left wondering why nothing is being written.
+func saving_paused() -> bool:
+    return _save_disabled
+
+
+func set_autosave_enabled(on: bool) -> void:
+    autosave_enabled = on
+    _save_settings()
+
+
 func save_game() -> void:
+    _write_slot(active_slot)
+
+
+## Writes the running game into `slot` and makes it the active slot ("save
+## as"). The active slot only moves once the write has fully landed, so a
+## refused or failed write leaves the game bound where it was.
+func save_to_slot(slot: int) -> void:
+    if _write_slot(slot):
+        _set_active_slot(slot)
+
+
+func _write_slot(slot: int) -> bool:
     if _save_disabled:
         # A prior load found corrupt save files; writing now would overwrite
         # them and destroy any chance of manual recovery. Stay hands-off.
-        return
+        return false
     # The opening vessel-selection screen is not part of a playthrough yet.
     # Saving from it (the window-close hook below does, unconditionally)
     # wrote a blank-vessel save, and intro_screen.gd treats any save on disk
     # as "returning player" and skips the screen on every launch after.
     var scene: Node = get_tree().current_scene if get_tree() else null
     if scene and scene.has_method("is_awaiting_vessel_choice") and scene.is_awaiting_vessel_choice():
-        return
+        return false
     var gc:      Node = get_node_or_null("/root/GameContext")
     var cd:      Node = get_node_or_null("/root/ConstellationData")
     var adm:     Node = get_node_or_null("/root/ArchonDialogueManager")
@@ -94,7 +156,10 @@ func save_game() -> void:
         journal = get_tree().current_scene.find_child("JournalPopout", true, false)
     if not gc:
         push_error("SaveManager: GameContext not found.")
-        return
+        return false
+    var save_path: String = slot_save_path(slot)
+    var tmp_path:  String = save_path + ".tmp"
+    var bak_path:  String = save_path + ".bak"
     var data: Dictionary = gc.get_save_data()
     if cd and cd.has_method("get_save_data"):
         data["constellation"] = cd.get_save_data()
@@ -109,13 +174,13 @@ func save_game() -> void:
 
     # ── Atomic write ──────────────────────────────────────────────────
     # 1. Write the new save to a temp file. Until this fully succeeds the
-    #    live save (SAVE_PATH) is never touched, so a failure here leaves
+    #    live save (save_path) is never touched, so a failure here leaves
     #    the existing good save completely intact.
     var json_text: String = JSON.stringify(data)
-    var tmp := FileAccess.open(TMP_PATH, FileAccess.WRITE)
+    var tmp := FileAccess.open(tmp_path, FileAccess.WRITE)
     if not tmp:
         push_error("SaveManager: could not open temp save file for writing.")
-        return
+        return false
     tmp.store_string(json_text)
     tmp.close()
 
@@ -123,9 +188,9 @@ func save_game() -> void:
     #    write, a full disk, or a stringify that produced garbage) BEFORE
     #    we trust it enough to rotate the live save out. Never promote an
     #    unverified temp into the primary slot.
-    if not _is_readable_save(TMP_PATH):
+    if not _is_readable_save(tmp_path):
         push_error("SaveManager: temp save failed verification, keeping previous save.")
-        return
+        return false
 
     # 3. Rotate. Preserve the current primary as the backup, THEN move the
     #    verified temp into the primary slot. Moving primary→bak first means
@@ -144,24 +209,50 @@ func save_game() -> void:
     #    returns OK (and actually overwrites) when the destination already
     #    exists, and a non-OK Error code when it genuinely can't complete —
     #    that return value just needs to be looked at.
-    if FileAccess.file_exists(SAVE_PATH):
-        if FileAccess.file_exists(BAK_PATH):
-            var remove_err: Error = DirAccess.remove_absolute(BAK_PATH)
+    if FileAccess.file_exists(save_path):
+        if FileAccess.file_exists(bak_path):
+            var remove_err: Error = DirAccess.remove_absolute(bak_path)
             if remove_err != OK:
                 # Not fatal by itself — rename_absolute overwrites an
                 # existing destination fine, so still attempt the rotation.
                 push_warning("SaveManager: could not remove stale backup (error %d), attempting rotation anyway." % remove_err)
-        var to_backup_err: Error = DirAccess.rename_absolute(SAVE_PATH, BAK_PATH)
+        var to_backup_err: Error = DirAccess.rename_absolute(save_path, bak_path)
         if to_backup_err != OK:
             # Backup rotation failed but the primary is untouched — still
             # worth promoting the verified new save over it directly rather
             # than discarding a good write over one failed housekeeping
-            # step; BAK_PATH just ends up one cycle staler than usual.
+            # step; bak_path just ends up one cycle staler than usual.
             push_warning("SaveManager: could not rotate primary save to backup (error %d)." % to_backup_err)
-    var to_primary_err: Error = DirAccess.rename_absolute(TMP_PATH, SAVE_PATH)
+    var to_primary_err: Error = DirAccess.rename_absolute(tmp_path, save_path)
     if to_primary_err != OK:
-        push_error("SaveManager: could not promote new save into primary slot (error %d) — the new save is stranded in %s and never went live; the previous save is untouched." % [to_primary_err, TMP_PATH])
+        push_error("SaveManager: could not promote new save into primary slot (error %d) — the new save is stranded in %s and never went live; the previous save is untouched." % [to_primary_err, tmp_path])
         emit_signal("save_failed")
+        return false
+    return true
+
+
+func slot_save_path(slot: int) -> String:
+    if slot == 1:
+        return SAVE_PATH
+    return "user://djinncremental_save_slot%d.json" % slot
+
+
+## Presence only, same as has_existing_save() — says nothing about whether
+## the files parse.
+func slot_has_save(slot: int) -> bool:
+    var path: String = slot_save_path(slot)
+    return FileAccess.file_exists(path) or FileAccess.file_exists(path + ".bak")
+
+
+## Unix time the slot was last written, from the file's mtime rather than
+## its save_timestamp field so the Settings panel never parses a whole save
+## just to label a button. 0 = empty slot (or a filesystem with no mtimes).
+func slot_saved_unix(slot: int) -> int:
+    var path: String = slot_save_path(slot)
+    for p in [path, path + ".bak"]:
+        if FileAccess.file_exists(p):
+            return int(FileAccess.get_modified_time(p))
+    return 0
 
 
 ## Whether a playthrough already exists on disk — either file is enough
@@ -172,30 +263,26 @@ func save_game() -> void:
 ## save still counts as "existing" here; load_game() is what surfaces
 ## the corruption once actually loading is attempted. Used by
 ## intro_screen.gd to skip the vessel-selection sequence for a returning
-## player instead of replaying it on every single launch.
+## player instead of replaying it on every single launch. Checks the ACTIVE
+## slot only: booting into an empty slot (see start_new_game_in_slot())
+## is exactly how a new playthrough gets its vessel choice.
 func has_existing_save() -> bool:
-    return FileAccess.file_exists(SAVE_PATH) or FileAccess.file_exists(BAK_PATH)
+    return slot_has_save(active_slot)
 
 
 func load_game() -> void:
-    var gc:      Node = get_node_or_null("/root/GameContext")
-    var cd:      Node = get_node_or_null("/root/ConstellationData")
-    var adm:     Node = get_node_or_null("/root/ArchonDialogueManager")
-    var ar:      Node = get_node_or_null("/root/AchievementRegistry")
-    var journal: Node = null
-    if get_tree().current_scene:
-        journal = get_tree().current_scene.find_child("JournalPopout", true, false)
-    if not gc:
+    if not get_node_or_null("/root/GameContext"):
         push_error("SaveManager: GameContext not found.")
         return
 
     # Try the primary save first, then the rolling backup. _read_save returns
     # null for a missing OR unparseable file, so this transparently recovers
     # from a torn primary write by loading the previous good save.
-    var data = _read_save(SAVE_PATH)
+    var save_path: String = slot_save_path(active_slot)
+    var data = _read_save(save_path)
     var source := "primary"
     if data == null:
-        data = _read_save(BAK_PATH)
+        data = _read_save(save_path + ".bak")
         source = "backup"
 
     if data == null:
@@ -205,7 +292,7 @@ func load_game() -> void:
         # corruption — which the next autosave then wrote over the top of,
         # destroying any recovery chance. Now corruption halts loading and
         # disables saving so the files are preserved.
-        if FileAccess.file_exists(SAVE_PATH) or FileAccess.file_exists(BAK_PATH):
+        if slot_has_save(active_slot):
             push_error("SaveManager: save AND backup are both unreadable — halting load and disabling saves to preserve the files for recovery.")
             _save_disabled = true
             emit_signal("save_load_failed")
@@ -221,6 +308,57 @@ func load_game() -> void:
 
     if source == "backup":
         push_warning("SaveManager: primary save was unreadable, recovered from backup.")
+    _apply_save_data(data)
+
+
+## Switches the running game to another slot's playthrough, live — the same
+## in-place load the Load button has always done, just from a different
+## file. Returns false (and changes nothing) when the slot is empty or
+## unreadable. Leaving a slot autosaves it first, so switching away loses
+## nothing the 60s timer would have kept.
+func load_slot(slot: int) -> bool:
+    if slot == active_slot:
+        load_game()
+        return true
+    var save_path: String = slot_save_path(slot)
+    var data = _read_save(save_path)
+    if data == null:
+        data = _read_save(save_path + ".bak")
+    if data == null:
+        if slot_has_save(slot):
+            push_error("SaveManager: slot %d's save and backup are both unreadable — not switching." % slot)
+            emit_signal("slot_load_failed", slot)
+        return false
+    if not get_node_or_null("/root/GameContext"):
+        push_error("SaveManager: GameContext not found.")
+        return false
+    autosave()
+    _set_active_slot(slot)
+    _apply_save_data(data)
+    return true
+
+
+## Binds the running game to an EMPTY slot and stops all saving until the
+## app restarts — the same restart handshake reset_save() uses, since no
+## autoload can rewind its in-memory state to a fresh game. On the next
+## launch has_existing_save() is false, so the vessel choice plays and the
+## new playthrough's first save lands in this slot. The game being left
+## gets one last autosave into its own slot first.
+func start_new_game_in_slot(slot: int) -> void:
+    if slot != active_slot:
+        autosave()
+    _set_active_slot(slot)
+    _save_disabled = true
+
+
+func _apply_save_data(data: Dictionary) -> void:
+    var gc:      Node = get_node_or_null("/root/GameContext")
+    var cd:      Node = get_node_or_null("/root/ConstellationData")
+    var adm:     Node = get_node_or_null("/root/ArchonDialogueManager")
+    var ar:      Node = get_node_or_null("/root/AchievementRegistry")
+    var journal: Node = null
+    if get_tree().current_scene:
+        journal = get_tree().current_scene.find_child("JournalPopout", true, false)
 
     var raw_version = data.get("save_format_version")
     loaded_save_format_version = int(raw_version) if (raw_version is int or raw_version is float) else 0
@@ -260,22 +398,26 @@ func load_game() -> void:
 
 
 func reset_save() -> void:
+    reset_slot(active_slot)
+
+
+## Deletes one slot's files. Only resetting the ACTIVE slot needs the
+## restart handshake below — another slot's files aren't what the running
+## game writes to, so deleting them leaves this session's saving alone.
+func reset_slot(slot: int) -> void:
     # Return values checked for the same reason as save_game()'s rotation
     # (see its comment): a transient lock (antivirus/cloud-sync on Windows)
     # can silently no-op a delete with no error otherwise. Warn so it's at
     # least visible in the logs.
-    if FileAccess.file_exists(SAVE_PATH):
-        var err: Error = DirAccess.remove_absolute(SAVE_PATH)
-        if err != OK:
-            push_warning("SaveManager: could not remove primary save on reset (error %d)." % err)
-    if FileAccess.file_exists(BAK_PATH):
-        var err: Error = DirAccess.remove_absolute(BAK_PATH)
-        if err != OK:
-            push_warning("SaveManager: could not remove backup save on reset (error %d)." % err)
-    if FileAccess.file_exists(TMP_PATH):
-        var err: Error = DirAccess.remove_absolute(TMP_PATH)
-        if err != OK:
-            push_warning("SaveManager: could not remove temp save on reset (error %d)." % err)
+    var save_path: String = slot_save_path(slot)
+    for suffix in ["", ".bak", ".tmp"]:
+        var path: String = save_path + suffix
+        if FileAccess.file_exists(path):
+            var err: Error = DirAccess.remove_absolute(path)
+            if err != OK:
+                push_warning("SaveManager: could not remove %s on reset (error %d)." % [path, err])
+    if slot != active_slot:
+        return
     # Reset does NOT touch any autoload's live in-memory state (game_context,
     # archon_dialogue_manager, etc. keep running with the pre-reset session's
     # values) — nothing anywhere listens for the save_reset signal to clear
@@ -286,10 +428,35 @@ func reset_save() -> void:
     # (since the save-on-quit fix) literally any quit path would write the
     # still-loaded pre-reset state straight back into the file this just
     # deleted, making Reset look like it silently did nothing. load_game()
-    # re-enables saving once a real restart completes — see its two
-    # `_save_disabled = false` sites.
+    # re-enables saving once a real restart completes — see the
+    # `_save_disabled = false` sites in it and _apply_save_data().
     _save_disabled = true
     emit_signal("save_reset")
+
+
+func _set_active_slot(slot: int) -> void:
+    active_slot = slot
+    _save_settings()
+
+
+func _load_settings() -> void:
+    var cfg := ConfigFile.new()
+    if cfg.load(SETTINGS_PATH) != OK:
+        return   # first launch: slot 1, autosave on
+    var raw_slot = cfg.get_value("save", "active_slot", 1)
+    active_slot = clampi(int(raw_slot) if (raw_slot is int or raw_slot is float) else 1, 1, SLOT_COUNT)
+    var raw_auto = cfg.get_value("save", "autosave", true)
+    autosave_enabled = raw_auto if raw_auto is bool else true
+
+
+func _save_settings() -> void:
+    var cfg := ConfigFile.new()
+    cfg.load(SETTINGS_PATH)   # keep any other keys; missing file is fine
+    cfg.set_value("save", "active_slot", active_slot)
+    cfg.set_value("save", "autosave", autosave_enabled)
+    var err: Error = cfg.save(SETTINGS_PATH)
+    if err != OK:
+        push_warning("SaveManager: could not write %s (error %d)." % [SETTINGS_PATH, err])
 
 
 # Reads and parses a save file. Returns the parsed Dictionary, or null if the

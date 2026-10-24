@@ -83,12 +83,8 @@ func _ready() -> void:
         _settings_popout.save_requested.connect(save_game)
         _settings_popout.load_requested.connect(load_game)
         _settings_popout.reset_requested.connect(_on_reset_requested)
-        # A direct get_tree().quit() call bypasses NOTIFICATION_WM_CLOSE_
-        # REQUEST entirely (that only fires for an OS-level close request —
-        # see save_manager.gd's own handler for that path), so this button
-        # needs its own explicit save first. Mirrors root_ui.gd's identical
-        # quit_requested handler.
-        _settings_popout.quit_requested.connect(func(): save_game(); get_tree().quit())
+        _settings_popout.new_game_requested.connect(_on_new_game_requested)
+        _settings_popout.quit_requested.connect(_on_quit_requested)
 
     if save_manager:
         save_manager.game_loaded.connect(_on_game_loaded)
@@ -240,16 +236,29 @@ func _on_game_loaded(offline_seconds: float) -> void:
         archon_dialogue_manager.try_show_next_notification()
 
 
-func save_game() -> void:
-    if save_manager and save_manager.has_method("save_game"):
-        save_manager.save_game()
+func save_game(slot: int) -> void:
+    if save_manager and save_manager.has_method("save_to_slot"):
+        save_manager.save_to_slot(slot)
 
 
-func load_game() -> void:
-    if save_manager and save_manager.has_method("load_game"):
-        save_manager.load_game()
+func load_game(slot: int) -> void:
+    if save_manager and save_manager.has_method("load_slot"):
+        save_manager.load_slot(slot)
 
 
-func _on_reset_requested() -> void:
-    if save_manager and save_manager.has_method("reset_save"):
-        save_manager.reset_save()
+func _on_reset_requested(slot: int) -> void:
+    if save_manager and save_manager.has_method("reset_slot"):
+        save_manager.reset_slot(slot)
+
+
+func _on_new_game_requested(slot: int) -> void:
+    if save_manager and save_manager.has_method("start_new_game_in_slot"):
+        save_manager.start_new_game_in_slot(slot)
+
+
+# Mirrors root_ui.gd's identical _on_quit_requested() — get_tree().quit()
+# bypasses NOTIFICATION_WM_CLOSE_REQUEST, so the Quit button saves itself.
+func _on_quit_requested() -> void:
+    if save_manager:
+        save_manager.autosave()
+    get_tree().quit()

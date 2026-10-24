@@ -394,15 +394,8 @@ func _ready() -> void:
         _settings_popout.save_requested.connect(save_game)
         _settings_popout.load_requested.connect(load_game)
         _settings_popout.reset_requested.connect(_on_reset_requested)
-        # A direct get_tree().quit() call bypasses NOTIFICATION_WM_CLOSE_
-        # REQUEST entirely (that only fires for an OS-level close request —
-        # see save_manager.gd's own handler for that path), so this button
-        # needs its own explicit save first. Previously quit immediately
-        # with no save at all, relying purely on the 60s autosave timer —
-        # trivially lost a brand-new game's entire progress if the player
-        # quit here before that timer had ever fired (e.g. mid-way through
-        # the very first Monad tutorial dialogue).
-        _settings_popout.quit_requested.connect(func(): save_game(); get_tree().quit())
+        _settings_popout.new_game_requested.connect(_on_new_game_requested)
+        _settings_popout.quit_requested.connect(_on_quit_requested)
         _settings_popout.ui_minimal_requested.connect(_on_ui_minimal_requested)
         
     _constellation_popout = find_child("ConstellationPopout", true, false)
@@ -2249,7 +2242,7 @@ func _check_refund_warning() -> void:
         return
     game_context.refund_warning_shown = true
     if save_manager:
-        save_manager.save_game()
+        save_manager.autosave()
     var dlg := AcceptDialog.new()
     dlg.title = "Heads up"
     dlg.dialog_text = ("You've been playing for about 1 hour 45 minutes.\n\n"
@@ -3103,7 +3096,7 @@ func _process(delta: float) -> void:
     if _autosave_accum >= 60.0:
         _autosave_accum = 0.0
         if save_manager:
-            save_manager.save_game()
+            save_manager.autosave()
     game_context.total_playtime_seconds += delta
     _check_refund_warning()
 
@@ -3612,16 +3605,35 @@ func _load_on_start() -> void:
         archon_dialogue_manager.start_intro()
 
 
-func save_game() -> void:
-    if save_manager and save_manager.has_method("save_game"):
-        save_manager.save_game()
+func save_game(slot: int) -> void:
+    if save_manager and save_manager.has_method("save_to_slot"):
+        save_manager.save_to_slot(slot)
 
 
-func load_game() -> void:
-    if save_manager and save_manager.has_method("load_game"):
-        save_manager.load_game()
-        
-        
-func _on_reset_requested() -> void:
-    if save_manager and save_manager.has_method("reset_save"):
-        save_manager.reset_save()
+func load_game(slot: int) -> void:
+    if save_manager and save_manager.has_method("load_slot"):
+        save_manager.load_slot(slot)
+
+
+func _on_reset_requested(slot: int) -> void:
+    if save_manager and save_manager.has_method("reset_slot"):
+        save_manager.reset_slot(slot)
+
+
+func _on_new_game_requested(slot: int) -> void:
+    if save_manager and save_manager.has_method("start_new_game_in_slot"):
+        save_manager.start_new_game_in_slot(slot)
+
+
+# A direct get_tree().quit() call bypasses NOTIFICATION_WM_CLOSE_REQUEST
+# entirely (that only fires for an OS-level close request — see
+# save_manager.gd's own handler for that path), so the Quit button needs its
+# own save first. Previously quit immediately with no save at all, relying
+# purely on the 60s autosave timer — trivially lost a brand-new game's entire
+# progress if the player quit before that timer had ever fired (e.g. mid-way
+# through the very first Monad tutorial dialogue). An autosave, so the
+# Settings panel's Autosave toggle switches it off along with the timer.
+func _on_quit_requested() -> void:
+    if save_manager:
+        save_manager.autosave()
+    get_tree().quit()
