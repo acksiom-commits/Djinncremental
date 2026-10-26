@@ -44,8 +44,10 @@ func run() -> void:
     var pyrios: int = d._get_or_create_match_record_for_name("Pyrios")
     d._match_records[pyrios]["color_states"] = {WHITE: 2, YELLOW: 2}
 
-    ok(d._star_elim_state(white_star, "Pyrios") != 2,
-        "precondition: not yet ruled out before a refresh")
+    # The record's derived layer needs a refresh. The checklist reads the
+    # name's grid row as well (2026-10-26), so it may already show it.
+    ok(d._star_elim_state_for_record(pyrios, white_star) != 2,
+        "precondition: not yet derived onto the record before a refresh")
     d._full_propagation_refresh()
     ok(d._star_elim_state(white_star, "Pyrios") == 2,
         "white star's checklist now rules out Pyrios")

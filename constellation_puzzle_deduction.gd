@@ -1734,6 +1734,16 @@ func _star_elim_state(star_idx: int, name_str: String) -> int:
         var own: int = int(r.get("star_elim", {}).get(star_idx, 0))
         if own != 0:
             return own      # the player's own X or check always wins
+    # The name's own row on the grid: a star it can no longer be is ruled out
+    # here, whichever route placed it (reported 2026-10-26: Keriion, bound
+    # from its Sort:Name row, still read open in an unnamed star's popup).
+    # Only the popup's own check wrote this into the name's star_elim, so a
+    # name placed from a Sort row, through Listen, or by deduction never
+    # reached any other star's popup.
+    var v: int = _host._star_names.find(name_str)
+    if v >= 0 and not _stars_possible_for_descriptor(
+            ConstellationLogicPuzzle.Category.NAME, v).has(star_idx):
+        return 2
     # A star has one name, so another name confirmed on it rules this one out
     # (reported 2026-10-17: confirming Seloeus in a star's popup left every
     # other name in that popup open). The column direction, Seloeus ruled out
