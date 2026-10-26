@@ -220,7 +220,34 @@ func request_markers_rebuild() -> void:
     if _markers_dirty:
         return
     _markers_dirty = true
-    call_deferred("_populate_markers_panel")
+    call_deferred("_rebuild_markers_in_place")
+
+
+## Bumped by every in-place rebuild, so only the latest one releases the hold.
+var _markers_hold_gen: int = 0
+
+
+## A rebuild of the tab already on screen -- which every click ends in -- has
+## to leave the vertical scroll where it was. Near the bottom it did not
+## (reported 2026-10-25 on the bottom Sort slot): the old rows are freed while
+## the new rows' checker strips have not yet shown their horizontal
+## scrollbars, so for one layout pass the list is ~60px shorter than both the
+## old and the finished one, and the ScrollContainer clamps scroll_vertical to
+## that and keeps it. Holding the list at its old height until the next frame,
+## when the new rows have settled, means the clamp never sees the dip. A list
+## that really got shorter still clamps, a frame later, to its true bottom.
+func _rebuild_markers_in_place() -> void:
+    var content: Control = _host._markers_content
+    if not content.is_inside_tree():
+        _populate_markers_panel()
+        return
+    _markers_hold_gen += 1
+    var gen: int = _markers_hold_gen
+    content.custom_minimum_size.y = content.size.y
+    _populate_markers_panel()
+    await content.get_tree().process_frame
+    if gen == _markers_hold_gen and is_instance_valid(content):
+        content.custom_minimum_size.y = 0
 
 
 func _populate_markers_panel() -> void:
