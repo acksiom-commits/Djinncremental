@@ -81,6 +81,8 @@ const MULTI_GRID = [
 
 const DEFAULT_CUSTOM_AMOUNT := 100
 
+const HoldRepeat = preload("res://hold_repeat.gd")
+
 const COLOR_SELECTED    = Color(1.00, 1.00, 1.00, 1.00)
 const COLOR_ALLOCATED   = Color(1.00, 1.00, 1.00, 0.85)
 const COLOR_UNALLOCATED = Color(1.00, 1.00, 1.00, 0.30)
@@ -98,6 +100,9 @@ var selected_resource: String = "sparks"
 var selected_multiplier: int = 1
 var _custom_amount: int = DEFAULT_CUSTOM_AMOUNT
 var _custom_selected: bool = false
+
+# Hold-to-repeat on the Uonite and Focus +/- buttons — see hold_repeat.gd
+var _hold_repeat = HoldRepeat.new()
 
 # === SCENE NODE REFS ===
 @onready var _selected_label: RichTextLabel = $CenterVBox/SelectedLabel
@@ -159,10 +164,11 @@ func _ready() -> void:
     _minus_buttons = {"uonites": _minus_uonites,  "foci": _minus_foci,  "volitions": _minus_volitions}
     _value_rows    = {"uonites": _label_uonites,  "foci": _label_foci,  "volitions": _label_volitions}
 
-    _plus_uonites.pressed.connect(func(): _on_plus_pressed("uonites"))
-    _minus_uonites.pressed.connect(func(): _on_minus_pressed("uonites"))
-    _plus_foci.pressed.connect(func(): _on_plus_pressed("foci"))
-    _minus_foci.pressed.connect(func(): _on_minus_pressed("foci"))
+    _hold_repeat.connect_button(_plus_uonites,    func(): _on_plus_pressed("uonites"))
+    _hold_repeat.connect_button(_minus_uonites,   func(): _on_minus_pressed("uonites"))
+    _hold_repeat.connect_button(_plus_foci,       func(): _on_plus_pressed("foci"))
+    _hold_repeat.connect_button(_minus_foci,      func(): _on_minus_pressed("foci"))
+    # Volitions stay one click per press by design (see hold_repeat.gd).
     _plus_volitions.pressed.connect(func(): _on_plus_pressed("volitions"))
     _minus_volitions.pressed.connect(func(): _on_minus_pressed("volitions"))
 
@@ -613,6 +619,9 @@ func _process(_delta: float) -> void:
         return
     _update_icon_states()
     _update_center_values()
+    # After _update_center_values(), so a just-emptied pool's button is
+    # already disabled and the hold ends there.
+    _hold_repeat.tick(_delta)
 
 
 func _update_icon_states() -> void:

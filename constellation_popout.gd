@@ -152,6 +152,11 @@ var _custom_line_edit:    LineEdit = null
 var _show_sparks_numeric:   bool = true
 
 const SlotBorderFx = preload("res://slot_border_fx.gd")
+const HoldRepeat = preload("res://hold_repeat.gd")
+
+# Hold-to-repeat on the Focus +/- buttons only — Volitions stay one click per
+# Volition by design (see hold_repeat.gd).
+var _hold_repeat = HoldRepeat.new()
 
 const PANEL_BASE_PATH:      String = "ConstellationSelectorPanel/SelectorMargin/SelectorVBox"
 const ALLOCATION_BASE_PATH: String = PANEL_BASE_PATH + "/ConstellationAllocationVBox"
@@ -206,8 +211,8 @@ func _ready() -> void:
     # opens, top and bottom both flush.
     _tab_btn.position = Vector2(0.0, PANEL_BOTTOM_OFFSET - PANEL_HEIGHT)
     _tab_btn.pressed.connect(_on_tab_pressed)
-    _foci_minus.pressed.connect(_on_foci_minus)
-    _foci_plus.pressed.connect(_on_foci_plus)
+    _hold_repeat.connect_button(_foci_minus, _on_foci_minus)
+    _hold_repeat.connect_button(_foci_plus, _on_foci_plus)
     _vol_minus.pressed.connect(_on_vol_minus)
     _vol_plus.pressed.connect(_on_vol_plus)
     _octant_spin.value_changed.connect(_on_octant_changed)
@@ -278,6 +283,7 @@ func _process(_delta: float) -> void:
         _refresh_slots()
         _refresh_allocation_display()
         _refresh_info_panel()
+    _hold_repeat.tick(_delta)
 
 
 # ==================================================
