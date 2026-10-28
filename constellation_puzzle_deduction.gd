@@ -10375,6 +10375,12 @@ func _candidate_stars_for_record(record_idx: int) -> Array:
     # made there. Nothing here reads a name, pitch or count off it.
     var star_ruled_out_by_notes: Dictionary = {}
     if notes_matter:
+        # star -> {note: true}: every note held by ANY row on that star. A
+        # star's notes are often split across rows (a Sort:Name row holding
+        # two, the Staff entry of a third), so one row's count alone never
+        # reaches the star's (reported 2026-10-27: Rostoei, three of three
+        # firings placed, still offered on note 15).
+        var held_at_star: Dictionary = {}
         for b in _match_records.size():
             if b == record_idx:
                 continue
@@ -10386,13 +10392,19 @@ func _candidate_stars_for_record(record_idx: int) -> Array:
             for t in my_held:
                 if their_blocks.has(t):
                     star_ruled_out_by_notes[at_star] = true
+            var at_notes: Dictionary = held_at_star.get_or_add(at_star, {})
             for t2 in their_held:
                 if my_blocks.has(t2):
                     star_ruled_out_by_notes[at_star] = true
-            # That star's notes are all accounted for, and none is this row's.
-            if not my_held.is_empty() and _player_knows_star_pitch(at_star) and at_star < _host._repeat_count.size() \
-                    and int(_host._repeat_count[at_star]) >= 0 and their_held.size() >= int(_host._repeat_count[at_star]) + 1:
-                star_ruled_out_by_notes[at_star] = true
+                at_notes[int(t2)] = true
+        # That star's notes are all accounted for, and none is this row's.
+        if not my_held.is_empty():
+            for at in held_at_star:
+                var st: int = int(at)
+                if _player_knows_star_pitch(st) and st < _host._repeat_count.size() \
+                        and int(_host._repeat_count[st]) >= 0 \
+                        and (held_at_star[at] as Dictionary).size() >= int(_host._repeat_count[st]) + 1:
+                    star_ruled_out_by_notes[st] = true
 
     for s in _host._star_count:
         if _star_elim_state_for_record(record_idx, s) == 2:
@@ -10459,6 +10471,14 @@ func _star_elim_state_for_record(record_idx: int, star_idx: int) -> int:
 ## A record carrying a name still blocks, which is the case the refusal was
 ## actually written for: two records must not derive their way onto one star
 ## with neither noticing.
+##
+## Star -> EVERY record on it, not one. A star is routinely held by several
+## entries at once (a Sort:Name row, a Sort:Pitch slot, a Staff note), and an
+## entry already there only blocks a record that is provably a DIFFERENT star
+## (_occupant_clashes). Reported 2026-10-27: the Staff entry for note 13,
+## located on the D4 star by its pitch, kept Rostoei's row -- down to that one
+## star -- from ever being bound there, so the map never showed the name and
+## the row never saw note 13.
 func _occupied_positions() -> Dictionary:
     var occupied: Dictionary = {}
     for i in _match_records.size():
@@ -10466,8 +10486,18 @@ func _occupied_positions() -> Dictionary:
             continue
         var si: int = _effective_star_idx(i)
         if si >= 0:
-            occupied[si] = i
+            (occupied.get_or_add(si, []) as Array).append(i)
     return occupied
+
+
+## Is any of `held_by` (the records already on a star) provably a different
+## star from this record? Only that is a real conflict. One that is merely
+## also there is the same star seen from another surface.
+func _occupant_clashes(record_idx: int, held_by: Array) -> bool:
+    for j in held_by:
+        if _records_provably_distinct(record_idx, int(j)):
+            return true
+    return false
 
 
 func _settle_star_identity_from_candidates() -> void:
@@ -10486,14 +10516,15 @@ func _settle_star_identity_from_candidates() -> void:
         if cands.size() != 1:
             continue
         var s: int = int(cands[0])
-        # Refuse if any other record already IS that star — effective
-        # identity, not just the own field, so two records cannot both
-        # derive their way onto the same star with neither noticing. A
-        # genuine conflict belongs on an explicit path that can await the
-        # dialog, not here.
-        if occupied.has(s):
+        # Refuse if a record already on that star is provably a different
+        # star — effective identity, not just the own field, so two records
+        # cannot both derive their way onto the same star with neither
+        # noticing. A genuine conflict belongs on an explicit path that can
+        # await the dialog, not here. A record that is merely also there is
+        # no conflict (see _occupied_positions).
+        if _occupant_clashes(i, occupied.get(s, [])):
             continue
-        occupied[s] = i
+        (occupied.get_or_add(s, []) as Array).append(i)
         # PHASE 3: derived, not written into the record. The old
         # r["star_idx"] = s here is the binding that could never be
         # released — clear the colour eliminations that produced it and it
@@ -10664,9 +10695,11 @@ func _settle_identity_from_value_columns() -> void:
         for v in _host._star_count:
             rows.append(_stars_possible_for_descriptor(int(cat), int(v)))
 
+        # No skip for a star some record already sits on. That record need
+        # not be the column's value (an unnamed Staff note on the star says
+        # nothing about its name), and the conclusion below is about the
+        # VALUE, so it holds whoever else is there.
         for s in _host._star_count:
-            if occupied.has(int(s)):
-                continue   # already settled by the row half or by the player
             var owner: int = -1
             var count: int = 0
             for v in _host._star_count:
@@ -10699,8 +10732,12 @@ func _settle_identity_from_value_columns() -> void:
             for i in _records_holding_descriptor(int(cat), owner):
                 if _effective_star_idx(int(i)) >= 0:
                     continue
+                # Same refusal as the row half: only a record provably
+                # another star blocks.
+                if _occupant_clashes(int(i), occupied.get(int(s), [])):
+                    continue
                 _derived[int(i)]["star_idx"] = int(s)
-                occupied[int(s)] = int(i)
+                (occupied.get_or_add(int(s), []) as Array).append(int(i))
                 bound_any = true
                 break
 
