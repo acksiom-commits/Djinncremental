@@ -304,6 +304,7 @@ func _ready() -> void:
     _staff_popup.repeat_undo_selects_pressed.connect(_widgets._on_staff_repeat_undo_selects)
     _staff_popup.repeat_undo_blocks_pressed.connect(_widgets._on_staff_repeat_undo_blocks)
     _staff_popup.repeat_undo_all_pressed.connect(_widgets._on_staff_repeat_undo_all)
+    _staff_popup.entry_mode_pressed.connect(_widgets.toggle_entry_mode)
     _name_checklist_popup = preload("res://NameChecklistPopup.tscn").instantiate()
     add_child(_name_checklist_popup)
     _name_checklist_popup.name_check_pressed.connect(_widgets._on_slot_name_check)
@@ -1193,11 +1194,8 @@ func _build_difficulty_toggle() -> void:
     _seq_mode_btn.focus_mode = Control.FOCUS_NONE
     _seq_mode_btn.add_theme_font_size_override("font_size", 16)
     _seq_mode_btn.tooltip_text = "Switch the Sort tabs' Sequence, Pitch and Repeats entries between the classic controls (typed boxes / checklist popups) and an on/off checker for each value"
-    _seq_mode_btn.pressed.connect(func():
-        _widgets.set_seq_checker_enabled(not _widgets._seq_checker_enabled())
-        _refresh_seq_mode_button()
-        _widgets.request_markers_rebuild()
-        _widgets._build_star_widgets())
+    # The same toggle the Star Map and Staff popups carry (2026-10-28).
+    _seq_mode_btn.pressed.connect(_widgets.toggle_entry_mode)
     bar.add_child(_seq_mode_btn)
     bar.move_child(_seq_mode_btn, _difficulty_btn.get_index())
     _refresh_seq_mode_button()

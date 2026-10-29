@@ -471,8 +471,11 @@ func run() -> void:
 	ok(checklist_order == ["A4", "B4", "C5"], "and so does the Classic 'Select Pitch' list (got %s)" % str(checklist_order))
 	hosth._pitch_checklist_popup.hide()
 	wh._open_staff_popup(5, Vector2.ZERO)
-	ok(pop._identity_row != null and pop._identity_row.get_parent() == pop._title_label.get_parent(),
-		"the 'Same star as note' row spans the full width above both columns")
+	# The title shares a line with the Entry switch (2026-10-28), so the row's
+	# full-width parent is that line's parent.
+	ok(pop._identity_row != null and pop._identity_row.get_parent() == pop._title_label.get_parent().get_parent()
+			and pop._identity_row.get_index() == pop._title_label.get_parent().get_index() + 1,
+		"the 'Same star as note' row spans the full width above both columns, right under the title")
 	pop.hide()
 	hosth.queue_free()
 

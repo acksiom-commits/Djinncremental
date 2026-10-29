@@ -2463,6 +2463,33 @@ func set_seq_checker_enabled(on: bool) -> void:
     cfg.save(STUDY_PREFS_PATH)
 
 
+## Flip the Entry switch from wherever the player is: the Markers bar, a Star
+## Map popup, or a Staff popup (2026-10-28, the author's "reduce menu
+## switching" intent). ONE setting, so every surface shows the same style.
+## Redraws the Sort rows, the star popups and an open Staff popup in place.
+func toggle_entry_mode() -> void:
+    set_seq_checker_enabled(not _seq_checker_enabled())
+    _host._refresh_seq_mode_button()
+    request_markers_rebuild()
+    _build_star_widgets()
+    var sp = _host._staff_popup
+    if sp != null and is_instance_valid(sp) and (sp as Window).visible:
+        _open_staff_popup(_host._staff_popup_tick, sp.position)
+
+
+## The small Classic/Checks button a popup carries, labelled with the style in
+## use, like the Markers bar's "Entry:" button.
+func _make_entry_mode_toggle() -> Button:
+    var btn := Button.new()
+    btn.text = "Checks" if _seq_checker_enabled() else "Classic"
+    btn.focus_mode = Control.FOCUS_NONE
+    btn.custom_minimum_size = Vector2(0, 28)
+    btn.add_theme_font_size_override("font_size", 13)
+    btn.tooltip_text = "Switch Sequence entry between typed boxes (Classic) and a button per note or position (Checks). The same switch as Entry on the Markers bar."
+    btn.pressed.connect(toggle_entry_mode)
+    return btn
+
+
 ## The player's own candidate ranks for a record BEFORE deduction narrows
 ## them: the explicit list, else the lo..hi bounds (whole range when unset).
 func _seq_manual_ranks(record_idx: int) -> Array:
@@ -4641,6 +4668,9 @@ func _open_staff_popup(tick: int, screen_pos: Vector2, rows_per_column: int = ST
     elif not _deduction._tick_is_first_fire(tick):
         id_row = _make_staff_identity_row(tick, record_idx)
     _host._staff_popup.set_identity_row(id_row)
+    # The Entry switch beside the title, only where the note section above
+    # follows it; elsewhere nothing in this popup would change.
+    _host._staff_popup.set_entry_mode(_deduction._notes_hidden(), _seq_checker_enabled())
 
     # Column counts scale with content instead of a fixed 2, so a section
     # spreads wider rather than getting taller and taller (Name in
@@ -5432,13 +5462,24 @@ func _build_star_widgets_impl() -> void:
         # above, which that board has no positions to back. The position row
         # is then disposed of exactly as it is when checks are on.
         var notes_typed: bool = not use_checks and _deduction._notes_hidden()
+        # The Entry switch leads the Sequence line itself (2026-10-28), so the
+        # player can change style without leaving for the Markers bar, and the
+        # popup grows no taller for it.
+        var seq_line := HBoxContainer.new()
+        seq_line.mouse_filter = Control.MOUSE_FILTER_PASS
+        seq_line.add_theme_constant_override("separation", 3)
+        seq_line.add_child(_make_entry_mode_toggle())
+        var seq_entry: Control
         if use_checks:
-            root.add_child(_make_sequence_checker_row_for_record(existing_record, star_color, "w"))
+            seq_entry = _make_sequence_checker_row_for_record(existing_record, star_color, "w")
         elif notes_typed:
-            root.add_child(_make_sequence_notes_typed_row(existing_record, star_color))
+            seq_entry = _make_sequence_notes_typed_row(existing_record, star_color)
             use_checks = true
         else:
-            root.add_child(range_row)
+            seq_entry = range_row
+        seq_entry.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        seq_line.add_child(seq_entry)
+        root.add_child(seq_line)
 
         # ── Pitch label ────────────────────────────────────────────
         # Shows the revealed note once the player has clicked this star

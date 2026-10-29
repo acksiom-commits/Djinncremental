@@ -50,6 +50,10 @@ signal repeat_undo_all_pressed(record_idx: int)
 ## caller owns (see COPYABLE_ROW_STATES).
 signal copy_pressed(record_idx: int, section: String)
 
+## The Classic/Checks switch beside the title (2026-10-28): the same Entry
+## setting as the Markers bar, here so the player need not leave the popup.
+signal entry_mode_pressed
+
 ## Preloaded row scene for instantiation.
 var _row_scene: PackedScene = preload("res://StaffPopupRow.tscn")
 
@@ -131,6 +135,41 @@ func _ready() -> void:
     _add_copy_button(_name_btn_undo_all, "name")
     _add_copy_button(_repeat_btn_undo_all, "repeat")
     _split_sections_into_two_columns()
+    _add_entry_mode_button()
+
+
+## The Entry switch, at the right end of the title's line. The title keeps
+## its centred text by expanding; the button is hidden until
+## set_entry_mode() says this popup has a section the switch changes.
+var _entry_mode_btn: Button = null
+
+func _add_entry_mode_button() -> void:
+    var stack: Node = _title_label.get_parent()
+    if stack == null or _entry_mode_btn != null:
+        return
+    var line := HBoxContainer.new()
+    line.name = "TitleLine"
+    var at: int = _title_label.get_index()
+    stack.remove_child(_title_label)
+    _title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    line.add_child(_title_label)
+    _entry_mode_btn = Button.new()
+    _entry_mode_btn.focus_mode = Control.FOCUS_NONE
+    _entry_mode_btn.add_theme_font_size_override("font_size", 13)
+    _entry_mode_btn.tooltip_text = "Switch the note entry between typed boxes (Classic) and a button per note (Checks). The same switch as Entry on the Markers bar."
+    _entry_mode_btn.visible = false
+    _entry_mode_btn.pressed.connect(func(): entry_mode_pressed.emit())
+    line.add_child(_entry_mode_btn)
+    stack.add_child(line)
+    stack.move_child(line, at)
+
+
+## `shown` false hides the switch (nothing in this popup follows it).
+func set_entry_mode(shown: bool, checks: bool) -> void:
+    if _entry_mode_btn == null:
+        return
+    _entry_mode_btn.visible = shown
+    _entry_mode_btn.text = "Checks" if checks else "Classic"
 
 
 ## TWO COLUMNS OF SECTIONS (author direction 2026-10-12). The popup was one
@@ -207,9 +246,12 @@ func set_identity_row(row: Control) -> void:
     _identity_row = row
     if row == null:
         return
-    var parent: Node = _title_label.get_parent()
+    # The title sits in its own line now (_add_entry_mode_button), so the row
+    # goes under that line, not inside it.
+    var title_line: Node = _title_label.get_parent()
+    var parent: Node = title_line.get_parent()
     parent.add_child(row)
-    parent.move_child(row, _title_label.get_index() + 1)
+    parent.move_child(row, title_line.get_index() + 1)
 
 
 func open(tick: int, record_idx: int, screen_pos: Vector2) -> void:
