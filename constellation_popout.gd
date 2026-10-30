@@ -1021,6 +1021,17 @@ func _refresh_info_panel() -> void:
     _refresh_art_achievement_display(_selected_slot)
 
 
+## An unsolved constellation's "Effects by Tier:" block -- the header and its
+## "??? (puzzle unsolved)" line -- stays hidden until The Archon
+## (constellation 0) has been solved once (author 2026-10-29). The author will
+## introduce the reveal with a dialogue; when that exists, gate on its flag
+## here instead. A SOLVED constellation's real ladder is never hidden by this.
+## (InfoBonusLabel also writes "??? (puzzle unsolved)", but that label is
+## hidden in ConstellationPopout.tscn and never shown, so it needs no gate.)
+func _unsolved_bonus_placeholders_revealed() -> bool:
+    return _gc != null and _gc._assignment_int("constellation_0_solve_count", 0) > 0
+
+
 ## Fibonacci-tier art achievement readout: how many times this constellation
 ## has crossed into "art" tier (game_context.gd's constellation_art_tier_
 ## crossings, edge-triggered there) and the resulting stacking Spark
@@ -1054,7 +1065,8 @@ func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
         bonus_desc: String, current_state: String, solved: bool) -> void:
     if not _info_tier_effects:
         return
-    if not def.has("bonus_levels") or bonus_key == "":
+    if not def.has("bonus_levels") or bonus_key == "" \
+            or (not solved and not _unsolved_bonus_placeholders_revealed()):
         _info_tier_effects.text = ""
         _info_tier_effects.visible = false
         if _info_tier_effects_sep:
