@@ -6,6 +6,10 @@ shader_type canvas_item;
 // transition instead of duplicating the source. Reads the actual screen
 // content, so it works as a full-screen overlay over ANY scene.
 
+// "White" throughout this file means this: Cosmic Latte, #FFF8E7, the
+// currently calculated average colour of starlight.
+const vec4 COSMIC_LATTE = vec4(1.0, 0.97255, 0.90588, 1.0);
+
 uniform float distortion_strength : hint_range(0.0, 3.0) = 0.0;
 uniform float white_amount        : hint_range(0.0, 1.0) = 0.0;
 
@@ -34,5 +38,5 @@ void fragment() {
 
     // edge_white closes in from outside; white_amount takes everything
     // to full white at the peak regardless of remaining distortion.
-    COLOR = mix(screen_col, vec4(1.0), max(white_amount, edge_white));
+    COLOR = mix(screen_col, COSMIC_LATTE, max(white_amount, edge_white));
 }
