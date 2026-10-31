@@ -6334,9 +6334,22 @@ func _mutex_element_covers(e: Dictionary) -> Array:
     return out
 
 
+## The one of Colour/Pitch a Mutual Exclusion clue may NOT use, or -1 when it
+## may use both. Drawn once per clue, evenly (author, 2026-10-30, the profile's
+## "mutex_one_given_axis"): after Listen every star's colour AND pitch are on
+## the map, so "the star that plays A4 is not a red star" tells the player
+## nothing they cannot read off it. Measured on 18 Beginner puzzles before
+## this: 15 of 39 clues carried both. A clue may still use neither.
+func _mutex_barred_given_axis() -> int:
+    if not mutex_one_given_axis_enabled or not bool(_profile().get("mutex_one_given_axis", false)):
+        return -1
+    return Category.COLOR if _rng.randf() < 0.5 else Category.PITCH
+
+
 func _mutex_build_distinct_set() -> Dictionary:
     var cats: Array = [Category.NAME, Category.SEQUENCE, Category.COLOR,
         Category.PITCH, Category.DISTANCE]
+    cats.erase(_mutex_barred_given_axis())
     _shuffle_array(cats)
     # 3, 4 or 5 elements, unless an anchor slot demanded a floor (see
     # _mutex_min_elements) and/or a ceiling (see _mutex_max_elements — an
@@ -6795,10 +6808,12 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
 
     var participants: Array = []   # each: {id_cat, id_val, axis_val, star}
     var id_cat_usage: Dictionary = {}   # id_cat(int) -> times used so far, for the repeat bias
+    var barred_given: int = _mutex_barred_given_axis()
 
     # Chain participant first, same priority every other Form gives it —
     # honours the shared "reuse the previous clue's own node" pacing.
     if not chain.is_empty() and int(chain["cat"]) != Category.DISTANCE and int(chain["cat"]) != axis \
+            and int(chain["cat"]) != barred_given \
             and _category_uniquely_labels(int(chain["cat"]), int(chain["star"])):
         var cs: int = int(chain["star"])
         var cc: int = int(chain["cat"])
@@ -6816,6 +6831,7 @@ func _build_form_mutual_exclusion(chain: Dictionary) -> Dictionary:
         var group: Array = groups.pop_back()
         var s: int = int(group[_rng.randi_range(0, group.size() - 1)])
         var legal: Array = _mutex_legal_id_cats(s, axis)
+        legal.erase(barred_given)
         if legal.is_empty():
             continue   # cannot happen — Name/Sequence are always legal unless one of them IS axis, and axis is only ever one category — guarded anyway
         var weights: Array = []
@@ -8898,6 +8914,10 @@ const DIFFICULTY_PROFILES := {
         # Heavily weighted to Entry Anchors. Tier 3 is not banned outright
         # (a Systemic clue is a nice occasional payoff) but is rare.
         "tier_ratio": {1: 0.55, 2: 0.38, 3: 0.07},
+        # A Mutual Exclusion clue uses Colour or Pitch, never both: see
+        # _mutex_barred_given_axis. Name, Sequence and Hop are unaffected, so
+        # the 4-element opener is Name, Sequence, Hop and one of the two.
+        "mutex_one_given_axis": true,
         # Dual Negation (3): two exclusions at once, nothing positive.
         # Group Order (9) / Group Comparison (14): require holding a whole
         #   group's membership in mind before the clue says anything.
@@ -9533,6 +9553,10 @@ var repair_enabled: bool = true
 ## Off only to MEASURE what Mutual Exclusion's Name-closure content buys
 ## (see _mutex_name_value_facts); generation always runs with it on.
 var mutex_name_facts_enabled: bool = true
+
+## Off only to MEASURE what Easy's one-of-Colour-or-Pitch rule costs (see
+## _mutex_barred_given_axis); generation always runs with it on.
+var mutex_one_given_axis_enabled: bool = true
 
 ## DISAMBIGUATING-CLUE FALLBACK. When the clue set leaves the puzzle with more
 ## than one solution, add the clue that rules the wrong one out, instead of
