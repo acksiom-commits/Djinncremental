@@ -5833,17 +5833,19 @@ func _ordinal_str(raw: String) -> String:
     return ", ".join(parts)
 
 
-## The notes the board has a map star firing on ("3", "3, 9"), or "?". Read off
-## the record that is that star's: the notes it holds, which got there only by
-## the player's own marks.
+## The notes the board has a map star firing on ("3", "3, 9"), or "?". Asked of
+## the STAR, not of one entry (reported 2026-10-31: Eosyos and Mnemaeia read "?"
+## here with every note placed on their popups, and on one save 13 of 45 stars
+## disagreed). A star's notes are often split across entries, a name row holding
+## some and a Staff entry others; the popup's buttons already gather them all
+## (_repeat_note_state_for_record, same reason, 2026-10-18).
 func _held_notes_str_for_star(star_idx: int) -> String:
     var idx: int = _deduction._find_match_record_by_star_idx(star_idx)
     if idx < 0:
         return "?"
-    var held: Array = (_deduction.record_at(idx).get("melody_ticks", []) as Array).duplicate()
+    var held: Array = _deduction._notes_on_star_of(idx)
     if held.is_empty():
         return "?"
-    held.sort()
     var parts := PackedStringArray()
     for t in held:
         parts.append(str(int(t)))

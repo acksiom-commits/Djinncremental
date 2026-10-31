@@ -397,6 +397,7 @@ func answer_check_name_wrong(star: int) -> bool:
 func _detect_contradictions() -> void:
     _contradictions.clear()
     var all_notes: Array = _host._widgets._distinct_note_names()
+    var stars_over_notes: Dictionary = {}
 
     for i in _match_records.size():
         var r: Dictionary = _match_records[i]
@@ -405,12 +406,20 @@ func _detect_contradictions() -> void:
         # MORE NOTES THAN IT FIRES (2026-10-16). A row can reach this by entries
         # being joined to it (naming them, "Same star as note"), which the
         # row's own buttons cannot stop. Reported: Dobraan on five notes at R3.
-        var held_notes: int = (r.get("melody_ticks", []) as Array).size()
+        # Counted on the STAR (2026-10-31): spread across a row and a Staff
+        # entry, no one entry was ever over. Said once per star, by the name the
+        # player gave it if there is one.
+        var held_notes: int = _notes_on_star_of(i).size()
         var fires_n: int = _known_fire_count_for_record(i)
-        if fires_n > 0 and held_notes > fires_n:
+        var over_star: int = _effective_star_idx(i)
+        if fires_n > 0 and held_notes > fires_n and not stars_over_notes.has(over_star):
+            if over_star >= 0:
+                stars_over_notes[over_star] = true
+            var named_rec: int = _named_record_on_star_of(i)
             _contradictions.append({
-                "record": i, "axis": "notes",
-                "text": "%s is entered on %d notes, but fires only %d time%s." % [who, held_notes, fires_n, "" if fires_n == 1 else "s"],
+                "record": named_rec if named_rec >= 0 else i, "axis": "notes",
+                "text": "%s is entered on %d notes, but fires only %d time%s." % [
+                    _record_display_name(named_rec) if named_rec >= 0 else who, held_notes, fires_n, "" if fires_n == 1 else "s"],
             })
 
         # Candidate stars is the strongest single check — it already
@@ -698,9 +707,15 @@ func _record_display_name(record_idx: int) -> String:
     if lo > 0 and lo == hi:
         var phrase: String = _seq_noun(lo)
         return phrase.substr(0, 1).to_upper() + phrase.substr(1)
+    # Never the star's true name: this text goes straight to the player, and
+    # an unnamed entry on a star is exactly a star they have not named (found
+    # 2026-10-31: "Beta is entered on 2 notes" on a board with no names at all).
     var si: int = _effective_star_idx(record_idx)
-    if si >= 0 and si < _host._star_names.size():
-        return str(_host._star_names[si])
+    if si >= 0 and si < _host._star_count:
+        var named: int = _named_record_on_star_of(record_idx)
+        if named >= 0:
+            return str(_match_records[named].get("name", ""))
+        return _anonymous_star_label(si)
     return "An unnamed entry"
 
 
@@ -3595,11 +3610,12 @@ func _effective_name_state(record_idx: int, name_str: String, collapse_soft: boo
         _: return soft
 
 
-## Would joining note entry `record_idx` to `name_str`'s row put that row over
-## the number of times it fires? Only for an entry that holds notes; false
-## when the count is not known or the entry already is that row.
+## Would joining note entry `record_idx` to `name_str`'s row put that name's
+## star over the number of times it fires? Only for an entry that holds notes;
+## false when the count is not known or the entry already is that row. Both
+## sides count their whole STAR: its notes may sit on other entries (2026-10-31).
 func _name_row_too_full_for(record_idx: int, name_str: String) -> bool:
-    var mine: Array = _match_records[record_idx].get("melody_ticks", [])
+    var mine: Array = _notes_on_star_of(record_idx)
     if mine.is_empty():
         return false
     var nr: int = _find_match_record_by_name(name_str)
@@ -3608,7 +3624,7 @@ func _name_row_too_full_for(record_idx: int, name_str: String) -> bool:
     var fires: int = _known_fire_count_for_record(nr)
     if fires <= 0:
         return false
-    var theirs: Array = _match_records[nr].get("melody_ticks", [])
+    var theirs: Array = _notes_on_star_of(nr)
     var together: int = theirs.size()
     for t in mine:
         if not theirs.has(t):
@@ -4602,16 +4618,22 @@ func _settle_repeat_counts_from_notes() -> void:
     if not _seq_repeats():
         return
     if _notes_hidden():
-        # No positions to count by. What a record's own notes say is enough: a
-        # star holding k notes repeats at least k - 1 times.
+        # No positions to count by. What a star's notes say is enough: a star
+        # on k notes repeats at least k - 1 times. The notes may be split across
+        # its entries, and every entry on it learns the bound, including one
+        # holding no note itself (2026-10-31). Walked from the entries that hold
+        # notes, since most entries hold none and this runs inside the fixpoint.
         var all_counts: Array = _repeat_count_domain()
         for i0 in _match_records.size():
-            var held: int = (_match_records[i0].get("melody_ticks", []) as Array).size()
+            if (_match_records[i0].get("melody_ticks", []) as Array).is_empty():
+                continue
+            var held: int = _notes_on_star_of(i0).size()
             if held < 2:
                 continue
-            for v0 in all_counts:
-                if int(v0) < held - 1 and _effective_repeat_state(i0, int(v0)) == 0:
-                    _add_derived_state(i0, "repeat_states", int(v0), 2)
+            for j0 in _records_sharing_star(i0):
+                for v0 in all_counts:
+                    if int(v0) < held - 1 and _effective_repeat_state(int(j0), int(v0)) == 0:
+                        _add_derived_state(int(j0), "repeat_states", int(v0), 2)
         return
     var placed: Dictionary = {}     # position -> notes placed on it
     var possible: Dictionary = {}   # position -> notes placed on it or still open to it
@@ -5711,6 +5733,38 @@ func _records_sharing_star(record_idx: int) -> Array:
     return out
 
 
+## Every note the board has this record's star firing on, sorted: the union
+## across every entry on the star, or this record's own notes when its star is
+## not known. A star's notes are routinely split, a name row holding some and a
+## Staff entry others, so one row's count says nothing about the star's
+## (2026-10-31: the map tag, the full-row check, the Repeats bound and the
+## too-many-notes contradiction all counted one row).
+##
+## Cached: _name_row_too_full_for reaches this from inside _effective_name_state.
+var _notes_on_star_cache: Dictionary = {}
+
+
+func _notes_on_star_of(record_idx: int) -> Array:
+    if _notes_on_star_cache.has(record_idx):
+        return _notes_on_star_cache[record_idx]
+    var seen: Dictionary = {}
+    for j in _records_sharing_star(record_idx):
+        for t in (_match_records[int(j)].get("melody_ticks", []) as Array):
+            seen[int(t)] = true
+    var out: Array = seen.keys()
+    out.sort()
+    _notes_on_star_cache[record_idx] = out
+    return out
+
+
+## A record the player has given a name to on this record's star, or -1.
+func _named_record_on_star_of(record_idx: int) -> int:
+    for j in _records_sharing_star(record_idx):
+        if str(_match_records[int(j)].get("name", "")) != "":
+            return int(j)
+    return -1
+
+
 ## LOCATED tier: records bound to `star` as a map POSITION, whether the
 ## player placed them there or the engine derived it.
 ##
@@ -6348,6 +6402,7 @@ func _clear_deduction_caches(keep_proven_distinct: bool = false) -> void:
 
 func _clear_deduction_caches_all() -> void:
     _coverage_cache.clear()
+    _notes_on_star_cache.clear()
     _star_positions_cache.clear()
     _star_values_cache.clear()
     _confirmer_clique_cache.clear()
