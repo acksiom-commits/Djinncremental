@@ -94,14 +94,14 @@ anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -22.0
-offset_bottom = 354.0
+offset_bottom = 204.0
 grow_horizontal = 0
 script = ExtResource("1_562eu")
 
 [node name="SettingsTabButton" type="Button" parent="." unique_id=1982517284]
 layout_mode = 0
 offset_right = 22.0
-offset_bottom = 354.0
+offset_bottom = 204.0
 tooltip_text = "Menu"
 focus_mode = 0
 theme_override_colors/font_pressed_color = Color(1, 0.88, 0.4, 1)
@@ -123,8 +123,8 @@ S"
 [node name="SettingsPanel" type="PanelContainer" parent="." unique_id=1454182817]
 layout_mode = 0
 offset_left = 22.0
-offset_right = 204.0
-offset_bottom = 354.0
+offset_right = 462.0
+offset_bottom = 204.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
 [node name="SettingsMargin" type="MarginContainer" parent="SettingsPanel" unique_id=1669102196]
@@ -134,29 +134,32 @@ theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 8
 
-[node name="SettingsVBox" type="VBoxContainer" parent="SettingsPanel/SettingsMargin" unique_id=1031167385]
+[node name="SettingsColumns" type="HBoxContainer" parent="SettingsPanel/SettingsMargin" unique_id=1740263520]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="SlotRow" type="HBoxContainer" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1740263511]
+[node name="LeftColumn" type="VBoxContainer" parent="SettingsPanel/SettingsMargin/SettingsColumns" unique_id=1031167385]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="SlotRow" type="HBoxContainer" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn" unique_id=1740263511]
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="SlotLabel" type="Label" parent="SettingsPanel/SettingsMargin/SettingsVBox/SlotRow" unique_id=1740263512]
+[node name="SlotLabel" type="Label" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SlotRow" unique_id=1740263512]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.75, 0.75, 0.9, 1)
-theme_override_font_sizes/font_size = 14
 text = "Slot"
 
-[node name="Slot1Button" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox/SlotRow" unique_id=1740263513]
+[node name="Slot1Button" type="Button" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SlotRow" unique_id=1740263513]
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 focus_mode = 0
 theme_override_colors/font_color = Color(0.82, 0.82, 0.95, 1)
 theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
 theme_override_colors/font_pressed_color = Color(1, 0.88, 0.4, 1)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/normal = SubResource("StyleBoxFlat_item_normal")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_item_pressed")
 theme_override_styles/hover = SubResource("StyleBoxFlat_item_hover")
@@ -166,14 +169,13 @@ button_pressed = true
 button_group = SubResource("ButtonGroup_slots")
 text = "1"
 
-[node name="Slot2Button" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox/SlotRow" unique_id=1740263514]
+[node name="Slot2Button" type="Button" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SlotRow" unique_id=1740263514]
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 focus_mode = 0
 theme_override_colors/font_color = Color(0.82, 0.82, 0.95, 1)
 theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
 theme_override_colors/font_pressed_color = Color(1, 0.88, 0.4, 1)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/normal = SubResource("StyleBoxFlat_item_normal")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_item_pressed")
 theme_override_styles/hover = SubResource("StyleBoxFlat_item_hover")
@@ -182,14 +184,13 @@ toggle_mode = true
 button_group = SubResource("ButtonGroup_slots")
 text = "2"
 
-[node name="Slot3Button" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox/SlotRow" unique_id=1740263515]
+[node name="Slot3Button" type="Button" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SlotRow" unique_id=1740263515]
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 focus_mode = 0
 theme_override_colors/font_color = Color(0.82, 0.82, 0.95, 1)
 theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
 theme_override_colors/font_pressed_color = Color(1, 0.88, 0.4, 1)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/normal = SubResource("StyleBoxFlat_item_normal")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_item_pressed")
 theme_override_styles/hover = SubResource("StyleBoxFlat_item_hover")
@@ -198,47 +199,47 @@ toggle_mode = true
 button_group = SubResource("ButtonGroup_slots")
 text = "3"
 
-[node name="SlotStatusLabel" type="Label" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1740263516]
+[node name="SlotStatusLabel" type="Label" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn" unique_id=1740263516]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.6, 0.6, 0.78, 1)
-theme_override_font_sizes/font_size = 12
 text = "Playing · Empty"
 horizontal_alignment = 1
 
-[node name="SaveButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=792410756]
+[node name="SaveLoadRow" type="HBoxContainer" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn" unique_id=1740263519]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="SaveButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SaveLoadRow" unique_id=792410756]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_colors/font_color = Color(0.82, 0.82, 0.95, 1)
 theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/normal = SubResource("StyleBoxFlat_item_normal")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_item_pressed")
 theme_override_styles/hover = SubResource("StyleBoxFlat_item_hover")
 theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
-text = "Save Game"
+text = "Save"
 
-[node name="LoadButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=599140719]
+[node name="LoadButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SaveLoadRow" unique_id=599140719]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_colors/font_color = Color(0.82, 0.82, 0.95, 1)
 theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/normal = SubResource("StyleBoxFlat_item_normal")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_item_pressed")
 theme_override_styles/hover = SubResource("StyleBoxFlat_item_hover")
 theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
-text = "Load Game"
+text = "Load"
 
-[node name="ResetButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=112233445]
+[node name="ResetButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn" unique_id=112233445]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_colors/font_color = Color(0.9, 0.5, 0.5, 1)
 theme_override_colors/font_hover_color = Color(1, 0.7, 0.7, 1)
 theme_override_colors/font_disabled_color = Color(0.5, 0.4, 0.5, 0.6)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/normal = SubResource("StyleBoxFlat_quit_normal")
 theme_override_styles/pressed = SubResource("StyleBoxFlat_quit_pressed")
 theme_override_styles/hover = SubResource("StyleBoxFlat_quit_hover")
@@ -246,79 +247,78 @@ theme_override_styles/disabled = SubResource("StyleBoxFlat_quit_normal")
 theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
 text = "Reset Save"
 
-[node name="SettingsSep1" type="HSeparator" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=528834736]
+[node name="SettingsSep1" type="HSeparator" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn" unique_id=528834736]
 layout_mode = 2
 
-[node name="AutosaveToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1740263517]
+[node name="QuitButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn" unique_id=945245960]
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+theme_override_colors/font_color = Color(0.9, 0.5, 0.5, 1)
+theme_override_colors/font_hover_color = Color(1, 0.7, 0.7, 1)
+theme_override_styles/normal = SubResource("StyleBoxFlat_quit_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_quit_pressed")
+theme_override_styles/hover = SubResource("StyleBoxFlat_quit_hover")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
+text = "Quit"
+
+[node name="ColumnSep" type="VSeparator" parent="SettingsPanel/SettingsMargin/SettingsColumns" unique_id=1740263522]
+layout_mode = 2
+
+[node name="RightColumn" type="VBoxContainer" parent="SettingsPanel/SettingsMargin/SettingsColumns" unique_id=1740263521]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="AutosaveToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsColumns/RightColumn" unique_id=1740263517]
 layout_mode = 2
 size_flags_horizontal = 3
 tooltip_text = "Save automatically every minute and on quit.
-Off: progress is kept only when you press Save Game."
+Off: progress is kept only when you press Save."
 focus_mode = 0
 theme_override_colors/font_color = Color(0.75, 0.75, 0.9, 1)
 theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
 button_pressed = true
 text = "Autosave"
 
-[node name="TooltipsToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1584456983]
+[node name="TooltipsToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsColumns/RightColumn" unique_id=1584456983]
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_colors/font_color = Color(0.75, 0.75, 0.9, 1)
 theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
 button_pressed = true
 text = "Tooltips"
 
-[node name="BgLockToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1428439225]
+[node name="BgLockToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsColumns/RightColumn" unique_id=1428439225]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_colors/font_color = Color(0.75, 0.75, 0.9, 1)
 theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
 text = "Lock Background"
 
-[node name="ConstellationToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=585899716]
+[node name="ConstellationToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsColumns/RightColumn" unique_id=585899716]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_colors/font_color = Color(0.75, 0.75, 0.9, 1)
 theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
 text = "Constellation"
 
-[node name="UiMinimalToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1058032927]
+[node name="UiMinimalToggle" type="CheckButton" parent="SettingsPanel/SettingsMargin/SettingsColumns/RightColumn" unique_id=1058032927]
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
 theme_override_colors/font_color = Color(0.75, 0.75, 0.9, 1)
 theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 14
 theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
 text = "Hide UI"
-
-[node name="SettingsSep2" type="HSeparator" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=1333982729]
-layout_mode = 2
-
-[node name="QuitButton" type="Button" parent="SettingsPanel/SettingsMargin/SettingsVBox" unique_id=945245960]
-layout_mode = 2
-size_flags_horizontal = 3
-focus_mode = 0
-theme_override_colors/font_color = Color(0.9, 0.5, 0.5, 1)
-theme_override_colors/font_hover_color = Color(1, 0.7, 0.7, 1)
-theme_override_font_sizes/font_size = 14
-theme_override_styles/normal = SubResource("StyleBoxFlat_quit_normal")
-theme_override_styles/pressed = SubResource("StyleBoxFlat_quit_pressed")
-theme_override_styles/hover = SubResource("StyleBoxFlat_quit_hover")
-theme_override_styles/focus = SubResource("StyleBoxEmpty_nofocus")
-text = "Quit"
 
 [node name="ResetConfirmDialog" type="ConfirmationDialog" parent="." unique_id=279580529]
 ok_button_text = "RESET"

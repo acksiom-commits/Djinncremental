@@ -4,9 +4,10 @@ extends Control
 # v1.2.0: Save slots (SlotRow) and the Autosave toggle. Save/Load/Reset act
 #         on the SELECTED slot, which starts each opening on the slot being
 #         played; every signal below carries that slot number.
+# v1.3.0: Two columns: saving and Quit on the left, toggles on the right.
 
 const TAB_WIDTH:   float = 22.0
-const PANEL_WIDTH: float = 160.0
+const PANEL_WIDTH: float = 440.0
 const ANIM_TIME:   float = 0.22
 
 const MONTHS: Array[String] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -39,22 +40,22 @@ var _slot_confirm_action: Callable = Callable()
 # One button per SaveManager.SLOT_COUNT slot; add a SlotNButton to SlotRow
 # alongside raising that constant.
 @onready var _slot_btns         : Array[Button]      = [
-    $SettingsPanel/SettingsMargin/SettingsVBox/SlotRow/Slot1Button,
-    $SettingsPanel/SettingsMargin/SettingsVBox/SlotRow/Slot2Button,
-    $SettingsPanel/SettingsMargin/SettingsVBox/SlotRow/Slot3Button,
+    $SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SlotRow/Slot1Button,
+    $SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SlotRow/Slot2Button,
+    $SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SlotRow/Slot3Button,
 ]
-@onready var _slot_status       : Label              = $SettingsPanel/SettingsMargin/SettingsVBox/SlotStatusLabel
+@onready var _slot_status       : Label              = $SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SlotStatusLabel
 @onready var _slot_confirm      : ConfirmationDialog = $SlotConfirmDialog
-@onready var _save_btn          : Button             = $SettingsPanel/SettingsMargin/SettingsVBox/SaveButton
-@onready var _load_btn          : Button             = $SettingsPanel/SettingsMargin/SettingsVBox/LoadButton
-@onready var _reset_btn         : Button             = $SettingsPanel/SettingsMargin/SettingsVBox/ResetButton
+@onready var _save_btn          : Button             = $SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SaveLoadRow/SaveButton
+@onready var _load_btn          : Button             = $SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/SaveLoadRow/LoadButton
+@onready var _reset_btn         : Button             = $SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/ResetButton
 @onready var _reset_confirm     : ConfirmationDialog = $ResetConfirmDialog
-@onready var _quit_btn          : Button             = $SettingsPanel/SettingsMargin/SettingsVBox/QuitButton
-@onready var _autosave_tog      : CheckButton        = $SettingsPanel/SettingsMargin/SettingsVBox/AutosaveToggle
-@onready var _tooltips_tog      : CheckButton        = $SettingsPanel/SettingsMargin/SettingsVBox/TooltipsToggle
-@onready var _bg_lock_tog       : CheckButton        = $SettingsPanel/SettingsMargin/SettingsVBox/BgLockToggle
-@onready var _constellation_tog : CheckButton        = $SettingsPanel/SettingsMargin/SettingsVBox/ConstellationToggle
-@onready var _ui_minimal_tog    : CheckButton        = $SettingsPanel/SettingsMargin/SettingsVBox/UiMinimalToggle
+@onready var _quit_btn          : Button             = $SettingsPanel/SettingsMargin/SettingsColumns/LeftColumn/QuitButton
+@onready var _autosave_tog      : CheckButton        = $SettingsPanel/SettingsMargin/SettingsColumns/RightColumn/AutosaveToggle
+@onready var _tooltips_tog      : CheckButton        = $SettingsPanel/SettingsMargin/SettingsColumns/RightColumn/TooltipsToggle
+@onready var _bg_lock_tog       : CheckButton        = $SettingsPanel/SettingsMargin/SettingsColumns/RightColumn/BgLockToggle
+@onready var _constellation_tog : CheckButton        = $SettingsPanel/SettingsMargin/SettingsColumns/RightColumn/ConstellationToggle
+@onready var _ui_minimal_tog    : CheckButton        = $SettingsPanel/SettingsMargin/SettingsColumns/RightColumn/UiMinimalToggle
 
 func _ready() -> void:
     _starfield    = get_node_or_null("/root/Node2D/CanvasLayer/ColorRect")
@@ -118,8 +119,8 @@ func _select_slot(slot: int) -> void:
     _refresh_slot_ui()
 
 
-# Save/Load/Reset relabel to say exactly what they'll do to the selected
-# slot, so the three buttons never need a separate "which slot" readout.
+# Save and Load keep short labels so they fit one row; the slot row and status
+# line above them show which slot they act on, and their tooltips spell it out.
 func _refresh_slot_ui() -> void:
     var active: int = _active_slot()
     var has_save: bool = _slot_has_save(_selected_slot)
@@ -143,11 +144,13 @@ func _refresh_slot_ui() -> void:
         status = "Playing · " + status
     _slot_status.text = status
 
-    _save_btn.text = "Save Game" if _selected_slot == active else "Save to Slot %d" % _selected_slot
+    _save_btn.tooltip_text = "Save to Slot %d" % _selected_slot
     if not has_save:
         _load_btn.text = "New Game"
+        _load_btn.tooltip_text = "Start a new game in Slot %d" % _selected_slot
     else:
-        _load_btn.text = "Load Game" if _selected_slot == active else "Load Slot %d" % _selected_slot
+        _load_btn.text = "Load"
+        _load_btn.tooltip_text = "Load Slot %d" % _selected_slot
     _reset_btn.disabled = not has_save
 
 
@@ -259,8 +262,8 @@ func _on_tab_pressed() -> void:
     # (and change timestamps) while the panel is shut.
     _selected_slot = _active_slot()
     _refresh_slot_ui()
-    _tween = SlidePanelToggle.run(_tab_btn, "position:x", -182.0,
-        _panel, "position:x", -160.0, ANIM_TIME, _tween)
+    _tween = SlidePanelToggle.run(_tab_btn, "position:x", -PANEL_WIDTH,
+        _panel, "position:x", TAB_WIDTH - PANEL_WIDTH, ANIM_TIME, _tween)
 
 
 func _close() -> void:
