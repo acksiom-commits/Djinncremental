@@ -28,6 +28,11 @@ const DEFAULT_THEME := {
     "suffixes": ["on", "os", "ion", "ai", "eus", "ara", "is", "eia", "ides"],
 }
 
+## Any two names in one puzzle differ by at least this many letters (edits).
+## See generate_names: names the player can mistake for each other make wrong
+## entries, not harder puzzles.
+const MIN_NAME_DISTANCE := 3
+
 
 ## theme is a raw def field on player/patron constellations (save-derived).
 ## A wrong-typed "prefixes"/"mids"/"suffixes" value — or one of those
@@ -49,10 +54,51 @@ static func _coerce_theme_pool(val, default: Array) -> Array:
     return result
 
 
+## Levenshtein distance, case-insensitive.
+static func _edit_distance(a: String, b: String) -> int:
+    var la: String = a.to_lower()
+    var lb: String = b.to_lower()
+    var prev: Array[int] = []
+    for j in lb.length() + 1:
+        prev.append(j)
+    for i in range(1, la.length() + 1):
+        var cur: Array[int] = [i]
+        for j in range(1, lb.length() + 1):
+            var cost: int = 0 if la[i - 1] == lb[j - 1] else 1
+            cur.append(mini(mini(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost))
+        prev = cur
+    return prev[lb.length()]
+
+
+static func _too_close_to_any(candidate: String, names: Array[String]) -> bool:
+    for n in names:
+        if _edit_distance(candidate, n) < MIN_NAME_DISTANCE:
+            return true
+    return false
+
+
 ## Generates `count` unique names for one constellation. Seeded by
 ## constellation_id only (not player_seed) so names are consistent for
 ## every player who unlocks that constellation — they're lore, not
 ## per-playthrough puzzle state.
+##
+## NO TWO NAMES EASY TO MISTAKE FOR EACH OTHER (author, 2026-10-31). Reported
+## on The Phial: a note was entered as Keraeara where the clue said Keryara,
+## next to each other in the alphabetical popup list, and that was the board's
+## only contradiction. So a candidate is taken only if:
+##   - its prefix is among the least used so far. Every prefix goes round once
+##     before any repeats, which only happens on boards with more stars than
+##     the theme has prefixes (15-18 star Hard layouts, with 14 prefixes);
+##   - it is at least MIN_NAME_DISTANCE edits from every name already taken.
+## Both are needed: the distance alone passes Theraion/Theryis, the prefix
+## alone passes Helios/Selion. Skipping a candidate keeps the same RNG walk, so
+## a smaller board's names stay the first names of the larger board's.
+##
+## A theme too small to satisfy this (a patron's three-prefix pool) loses the
+## rule rather than a name: `loose_left` falls back to plain uniqueness.
+##
+## A puzzle already cached keeps its names until it is reset; deliberately no
+## CACHE_VERSION bump, which would throw away every board in progress.
 static func generate_names(count: int, constellation_id: int, theme: Dictionary = {}) -> Array[String]:
     var active_theme: Dictionary = theme if not theme.is_empty() else DEFAULT_THEME
     var prefixes: Array = _coerce_theme_pool(active_theme.get("prefixes"), DEFAULT_THEME["prefixes"])
@@ -64,18 +110,33 @@ static func generate_names(count: int, constellation_id: int, theme: Dictionary 
 
     var used: Dictionary = {}
     var names: Array[String] = []
-    var attempts: int = 0
-    var max_attempts: int = count * 50  # safety valve against pathologically small theme pools
+    var prefix_uses: Dictionary = {}
+    for p0 in prefixes:
+        prefix_uses[p0] = 0
+    var fewest_uses: int = 0
+    # Late draws are mostly rejected (one free prefix in fourteen), hence the
+    # larger budget. Both are safety valves against pathologically small pools.
+    var strict_left: int = count * 500
+    var loose_left: int = count * 50
 
-    while names.size() < count and attempts < max_attempts:
-        attempts += 1
+    while names.size() < count and (strict_left > 0 or loose_left > 0):
+        var strict: bool = strict_left > 0
+        if strict:
+            strict_left -= 1
+        else:
+            loose_left -= 1
         var p: String = prefixes[rng.randi_range(0, prefixes.size() - 1)]
         var m: String = mids[rng.randi_range(0, mids.size() - 1)]
         var s: String = suffixes[rng.randi_range(0, suffixes.size() - 1)]
         var candidate: String = p + m + s
-        if not used.has(candidate):
-            used[candidate] = true
-            names.append(candidate)
+        if used.has(candidate):
+            continue
+        if strict and (int(prefix_uses[p]) > fewest_uses or _too_close_to_any(candidate, names)):
+            continue
+        used[candidate] = true
+        names.append(candidate)
+        prefix_uses[p] = int(prefix_uses[p]) + 1
+        fewest_uses = int(prefix_uses.values().min())
 
     # Fallback if the theme pool was too small to produce enough unique
     # combinations (shouldn't happen with default theme sizes, but guards

@@ -7,6 +7,7 @@
 **Updated 2026-10-08 (mid-game alchemy):** added the Oscillation/Expansion terminology (§1), Tetrad compositions, Grain contents and the draw/composition mechanics (§2), purity-lock mechanics (§3, §4), corrected the stale mid-game bullets in §7, expanded §7.1, and recorded the rulings in §9.
 **Updated 2026-10-23:** the Vessel's ability changed to preserving material through Oscillations (§5, §7.1, §9); §1 and §7.1 now say the Oscillation rename has started in game text; Grit is now Crystal throughout (see §7.1); Ring and Lamp layouts are authored; the multi-phase lock-rotation idea is withdrawn (§7.1), replaced by hand-shepherding Persistent-grade material up the tiers with Purity Locks until Filters automate it.
 **Updated 2026-10-28:** added the author's core design intention to **reduce menu switching** (§1), and the Classic/Checks Entry switch in the Star Map and Staff popups (§6.4).
+**Updated 2026-10-31:** star names in one puzzle can no longer be near-identical (§6.5).
 **Status of this draft:** second pass (same day). The author ruled on the first draft's summary-vs-code disagreements (§9): the code was right on all of them, and the author's original Summary is superseded wherever it differs. A few smaller questions remain open in §9.
 
 ## How to read the tags
@@ -202,6 +203,7 @@ Pipeline, in order (the file's own header is the authoritative version):
 | `constellation_puzzle_widgets.gd` | All widget construction (tabs, popups, hint UI, star widgets). |
 | `constellation_puzzle_deduction.gd` | Player-side deduction engine (`_match_records`, contradictions, hint step ranking). |
 | `constellation_next_step_finder.gd` | Pure next-step finder used by hint tiers 3–5. |
+| `constellation_star_namer.gd` | Star names: prefix + mid + suffix, seeded by constellation id alone. Within one puzzle every prefix is used once before any repeats (only past 14 stars, on Hard) and any two names are at least 3 letters apart (2026-10-31, after Keraeara/Keryara caused a wrong entry). A cached puzzle keeps its names until reset. `test_star_name_distinctness.gd`. |
 | `constellation_content_certifier.gd` | Content-certification checks (e.g. intentionally isolated stars). |
 | `constellation_overlay.gd`, `click_sequence_puzzle_engine.gd`, `constellation_fork_puzzle.gd` | The playable motif-clicking puzzle. |
 | `staff_popup.gd`, `staff_popup_row.gd`, `*ChecklistPopup.gd` | Staff and per-axis checklist popups. |
