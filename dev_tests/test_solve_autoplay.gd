@@ -53,13 +53,20 @@ func run() -> void:
 	for s in 4:
 		await host._on_pitch_listen_star_clicked(s)
 	ok(not d.staff_sequence_correct(), "an empty board is not the melody")
-	# Every note but the last on its true star, through the star's own note row.
-	for t in range(1, 6):
+	# All but the last two notes on their true stars, through the star's own note
+	# row. Those two belong to different stars, so both stay open: a note counts
+	# as settled once only one star has room for it (2026-10-31), so a single
+	# note left open no longer exists on a Listened board.
+	for t in range(1, 5):
 		await w._on_seq_note_select(d._get_or_create_match_record_for_star_idx(int(truth[t - 1])), t)
 	d._full_propagation_refresh()
-	ok(not d.staff_sequence_correct(), "one note still open: not yet")
-	await w._on_seq_note_select(d._get_or_create_match_record_for_star_idx(0), 6)
+	ok(d._find_match_record_by_melody_tick(5) < 0 and d._find_match_record_by_melody_tick(6) < 0,
+		"precondition: notes 5 and 6 are both still open")
+	ok(not d.staff_sequence_correct(), "two notes still open: not yet")
+	await w._on_seq_note_select(d._get_or_create_match_record_for_star_idx(3), 5)
 	d._full_propagation_refresh()
+	ok(d._candidate_stars_for_record(d._find_match_record_by_melody_tick(6)) == [0],
+		"placing note 5 leaves only Alpha with room, so note 6 is decided")
 	ok(d.staff_sequence_correct(), "every note on the star that fires it: yes")
 	# Swap notes 4 and 5 between Gamma and Delta (each fires once, so each row
 	# is full: take both notes off first, then place them crossed).

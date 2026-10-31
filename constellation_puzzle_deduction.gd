@@ -1430,6 +1430,11 @@ func _record_is_placeholder(r: Dictionary) -> bool:
     var s: Dictionary = _stripped_record(r)
     for k in ["uid", "name", "star_idx", "color_slot_label", "pitch_slot_label", "degree_slot_label", "repeat_slot_label"]:
         s.erase(k)
+    # A bare one-note entry says nothing either: opening a note's popup makes
+    # one, and so does _make_entries_for_decided_notes (2026-10-31).
+    if str(r.get("name", "")) == "" and int(r.get("star_idx", -1)) < 0 \
+            and (r.get("melody_ticks", []) as Array).size() == 1:
+        s.erase("melody_ticks")
     return s.is_empty()
 
 
@@ -10281,6 +10286,10 @@ func _full_propagation_refresh() -> void:
         _clear_deduction_caches(true)
         if _derived_fact_count() == before:
             break
+    # Outside the fixpoint: no pass may resize _match_records under itself.
+    if _make_entries_for_decided_notes():
+        _full_propagation_refresh()
+        return
     _detect_contradictions()
     _check_filled_against_answer()
     _host._refresh_contradiction_banner()
@@ -10289,6 +10298,43 @@ func _full_propagation_refresh() -> void:
     _host._widgets._build_star_tags()
     _host._melody_staff_panel.queue_redraw()
     _host._widgets.request_markers_rebuild()
+
+
+## A note every star but one is ruled out of gets its entry here, so the
+## conclusion has somewhere to live (reported 2026-10-31 on The Phial: with every
+## other star's notes placed, Keraeara's five remaining notes read "?" on the
+## staff and white in their popups). A note has no record until its popup opens,
+## and a fact held only by a record that does not exist is simply lost.
+##
+## The entry carries nothing but its note, exactly what opening the popup makes.
+## Who it is stays derived (_candidate_stars_for_record, then the ordinary
+## binding), so it is released with its cause; what remains is a blank entry,
+## which is no claim. Returns whether any was made, so the caller can run again:
+## one star filling may decide the next note.
+##
+## Asked through _repeat_note_state_for_record, the same reading as the note's
+## button on each star's popup: a star is out of a note when it holds all the
+## notes it is known to fire, or is marked as not firing there. A star whose
+## count is not known stays in, so nothing is decided on it.
+func _make_entries_for_decided_notes() -> bool:
+    if not _notes_hidden():
+        return false
+    var decided: Array = []
+    for t in range(1, _melody_tick_count() + 1):
+        if _find_match_record_by_melody_tick(t) >= 0:
+            continue
+        var open: int = 0
+        for s in _host._star_count:
+            var rec: int = _find_match_record_by_star_idx(int(s))
+            if rec < 0 or _repeat_note_state_for_record(rec, t) == 0:
+                open += 1
+                if open > 1:
+                    break
+        if open == 1:
+            decided.append(t)
+    for t2 in decided:
+        _get_or_create_match_record_for_melody_tick(int(t2))
+    return not decided.is_empty()
 
 
 # ==================================================

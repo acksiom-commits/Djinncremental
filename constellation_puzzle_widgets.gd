@@ -4651,7 +4651,14 @@ func _on_melody_staff_input(event: InputEvent) -> void:
 ## or reaches 2. The last time this was built it is whatever it is.
 func _open_staff_popup(tick: int, screen_pos: Vector2, rows_per_column: int = STAFF_POPUP_MAX_ROWS_PER_COLUMN) -> void:
     _host._staff_popup_tick = tick
+    # A note has no entry until now. Everything below reads what the engine
+    # concluded, so a new entry has to go through it first, or its X marks are
+    # display-only and nothing can show green (2026-10-31).
+    var had_entry: bool = _deduction._find_match_record_by_melody_tick(tick) >= 0
     var record_idx: int = _deduction._get_or_create_match_record_for_melody_tick(tick)
+    if not had_entry:
+        _deduction._full_propagation_refresh()
+        record_idx = _deduction._find_match_record_by_melody_tick(tick)
 
     _host._staff_popup.clear_all_rows()
     # "Same star as note": where the player says which other notes this note's
