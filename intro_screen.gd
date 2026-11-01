@@ -286,6 +286,19 @@ func _play_transition_and_continue() -> void:
     # editor (godot_global_class_name_cache_flaky_use_preload).
     var overlay = preload("res://expansion_overlay.gd").new()
     get_tree().root.add_child(overlay)
-    overlay.setup()
+    overlay.setup(_vessel_focus_uv(_confirmed_vessel))
     await overlay.warp_to_white(1.8)
     get_tree().change_scene_to_file("res://RootUI.tscn")
+
+
+## The middle of the vessel's drawn outline as a share of the screen, which is
+## what the transition's shader measures in. The bounding box, not the slot's
+## centre: the silhouettes don't all sit centred in their slots.
+func _vessel_focus_uv(key: String) -> Vector2:
+    var screen_stars: Array[Vector2] = _screen_stars(key)
+    if screen_stars.is_empty():
+        return Vector2(0.5, 0.5)
+    var box := Rect2(screen_stars[0], Vector2.ZERO)
+    for p in screen_stars:
+        box = box.expand(p)
+    return box.get_center() / get_rect().size

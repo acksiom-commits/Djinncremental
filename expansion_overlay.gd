@@ -25,7 +25,7 @@ extends CanvasLayer
 # Usage:
 #   var overlay := preload("res://expansion_overlay.gd").new()
 #   get_tree().root.add_child(overlay)
-#   overlay.setup()
+#   overlay.setup(focus_uv)               # optional: where it compresses to
 #   await overlay.warp_to_white(1.8)      # Phase 1
 #   get_tree().change_scene_to_file(...)  # overlay survives this
 #   ...
@@ -46,7 +46,8 @@ var _shader_mat: ShaderMaterial = null
 var _rect: ColorRect = null
 
 
-func setup() -> void:
+## focus_uv stays set through Phase 2, so the recede opens from the same point.
+func setup(focus_uv: Vector2 = Vector2(0.5, 0.5)) -> void:
     layer = LAYER
     _rect = ColorRect.new()
     _rect.color        = Color(1.0, 1.0, 1.0, 1.0)
@@ -56,6 +57,7 @@ func setup() -> void:
     _shader_mat.shader = preload("res://expansion_transition.gdshader")
     _shader_mat.set_shader_parameter("distortion_strength", 0.0)
     _shader_mat.set_shader_parameter("white_amount",        0.0)
+    _shader_mat.set_shader_parameter("focus",               focus_uv)
     _rect.material = _shader_mat
     add_child(_rect)
     add_to_group(PENDING_REVEAL_GROUP)

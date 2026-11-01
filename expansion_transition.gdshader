@@ -12,19 +12,25 @@ const vec4 COSMIC_LATTE = vec4(1.0, 0.97255, 0.90588, 1.0);
 
 uniform float distortion_strength : hint_range(0.0, 3.0) = 0.0;
 uniform float white_amount        : hint_range(0.0, 1.0) = 0.0;
+// The point the universe compresses toward, in screen UV. The in-game
+// Oscillation leaves this in the middle; the intro aims it at the chosen Vessel.
+uniform vec2  focus = vec2(0.5, 0.5);
 
 uniform sampler2D SCREEN_TEXTURE : hint_screen_texture, repeat_disable, filter_linear;
 
 void fragment() {
-    vec2  center = vec2(0.5, 0.5);
-    vec2  offset = SCREEN_UV - center;
-    float r      = length(offset);
+    vec2  offset = SCREEN_UV - focus;
+    // Measured against the farthest corner, which is ~0.707 from the middle
+    // but further from any other focus: the thresholds below assume nothing
+    // on screen sits past that, or the far corner would start out white.
+    vec2  farthest = max(focus, vec2(1.0) - focus);
+    float r        = length(offset) * sqrt(0.5) / length(farthest);
 
-    // Barrel distortion: sample UV is pulled toward center.
-    // Output pixels at the edges show content from near-center,
-    // so the center content appears to rush outward — toward the player.
+    // Barrel distortion: sample UV is pulled toward the focus.
+    // Output pixels at the edges show content from near the focus,
+    // so the focus's content appears to rush outward — toward the player.
     float warp_scale = 1.0 / (1.0 + distortion_strength * r * r * 3.0);
-    vec2  sample_uv  = center + offset * warp_scale;
+    vec2  sample_uv  = focus + offset * warp_scale;
 
     // Radial vignette: white blooms inward from the screen boundary
     // as distortion grows, completing the enveloping sensation.
