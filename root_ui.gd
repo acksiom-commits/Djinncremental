@@ -1244,9 +1244,13 @@ func reset_constellation_puzzle(constellation_id: int) -> void:
     # pitch mapping would be actively wrong once the mapping changes, not
     # just stale.
     cd.clear_puzzle_cache(constellation_id)
+    # A reset is another version to enjoy, not a lost solve: solve_count is
+    # what turns the Constellation's effect on, so it stays, and the new
+    # puzzle is marked open so it can still be played (reported 2026-11-01).
     var solve_key: String = "constellation_%d_solve_count" % constellation_id
     var hw_key: String = "constellation_%d_high_water" % constellation_id
-    game_context.assignments.erase(solve_key)
+    if game_context._assignment_int(solve_key, 0) > 0:
+        game_context.constellation_puzzle_reopened[constellation_id] = true
     game_context.assignments.erase(hw_key)
 
     # Resync the LIVE click-sequence puzzle before regenerating clues —

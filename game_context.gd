@@ -400,6 +400,12 @@ var ui_unlocks: Dictionary = {
 # every constellation from here on, not a one-off for the current roster).
 var constellation_identity_revealed: Dictionary = {}
 
+## Constellation id -> true: already solved, then RESET for another version,
+## which has not been solved yet. "_solve_count" stays what it always meant, the
+## effect is earned, and that outlasts a reset; this is only what lets the new
+## version be played while that count says solved.
+var constellation_puzzle_reopened: Dictionary = {}
+
 
 # ===================== TRIGGER COUNTERS =========================
 var sparks_since_first_prestige: float = 0.0
@@ -1723,6 +1729,10 @@ func get_save_data() -> Dictionary:
     for cid in constellation_identity_revealed:
         saved_cir[str(cid)] = bool(constellation_identity_revealed[cid])
     data["constellation_identity_revealed"] = saved_cir
+    var saved_cpr: Dictionary = {}
+    for cid in constellation_puzzle_reopened:
+        saved_cpr[str(cid)] = bool(constellation_puzzle_reopened[cid])
+    data["constellation_puzzle_reopened"] = saved_cpr
     var saved_cd: Dictionary = {}
     for cid in constellation_difficulty:
         saved_cd[str(cid)] = str(constellation_difficulty[cid])
@@ -2012,6 +2022,10 @@ func load_save_data(data: Dictionary) -> void:
     var raw_cir: Dictionary = _coerce_dict(data.get("constellation_identity_revealed"), {})
     for key in raw_cir:
         constellation_identity_revealed[int(key)] = _coerce_bool(raw_cir[key], false)
+    constellation_puzzle_reopened.clear()
+    var raw_cpr: Dictionary = _coerce_dict(data.get("constellation_puzzle_reopened"), {})
+    for key in raw_cpr:
+        constellation_puzzle_reopened[int(key)] = _coerce_bool(raw_cpr[key], false)
     constellation_difficulty.clear()
     var raw_cd: Dictionary = _coerce_dict(data.get("constellation_difficulty"), {})
     for key in raw_cd:

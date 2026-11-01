@@ -137,7 +137,7 @@ func check_availability() -> void:
         return
     var solve_key: String = "constellation_%d_solve_count" % constellation_id
     var solves: int = gc._assignment_int(solve_key, 0)
-    if solves > 0:
+    if solves > 0 and not bool(gc.constellation_puzzle_reopened.get(constellation_id, false)):
         state = State.IDLE
         return
     var visual: String = cd.get_visual_state(constellation_id)
@@ -341,6 +341,7 @@ func _on_puzzle_complete() -> void:
     if gc:
         var solve_key: String = "constellation_%d_solve_count" % constellation_id
         gc.assignments[solve_key] = 1
+        gc.constellation_puzzle_reopened.erase(constellation_id)
 
     # The per-constellation solve sequence is optional — only some
     # constellations ship a constellation_N_solve.tres. Guard the load with
