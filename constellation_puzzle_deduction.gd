@@ -1331,9 +1331,10 @@ func _save_puzzle_notes() -> void:
     if _board_next_save_kept:
         # Listen or a note placement: kept by Backstep, so not a step of its own.
         _board_next_save_kept = false
+        _board_step_open = false
         _board_baseline = _board_state()
     elif not _board_history_paused:
-        _record_board_step()
+        _board_step_open = _record_board_step() or _board_step_open
     if not _host._cd or _host._constellation_id < 0:
         return
     var notes: Dictionary = {}
@@ -1393,6 +1394,9 @@ var _board_history_paused: bool = false
 ## Set by Listen and the note-placing handlers just before they save: what
 ## they change is kept by Backstep, so it is not recorded as a step.
 var _board_next_save_kept: bool = false
+## A save just pushed a step and its refresh has not run: see
+## _fold_refresh_into_last_step.
+var _board_step_open: bool = false
 
 
 func can_backstep() -> bool:
@@ -1464,13 +1468,9 @@ func _board_state() -> Dictionary:
         "slots": _repeat_bucket_slot_counts.duplicate()}}
 
 
-## Pushes one step if the board differs from the baseline, and moves the
-## baseline on. A new step clears Forward.
-func _record_board_step(clear_redo: bool = true) -> void:
-    if _board_baseline.is_empty():
-        _board_baseline = _board_state()
-        return
-    var now: Dictionary = _board_state()
+## The entries that differ between the baseline and `now`, each side keyed by
+## uid as text: {"before": {...}, "after": {...}}.
+func _board_changes_since_baseline(now: Dictionary) -> Dictionary:
     var before: Dictionary = {}
     var after: Dictionary = {}
     var old_recs: Dictionary = _board_baseline["recs"]
@@ -1487,10 +1487,23 @@ func _record_board_step(clear_redo: bool = true) -> void:
         if not old_recs.has(u2) and not _record_is_placeholder(new_recs[u2]):
             before[str(u2)] = null
             after[str(u2)] = _stripped_record(new_recs[u2])
+    return {"before": before, "after": after}
+
+
+## Pushes one step if the board differs from the baseline, and moves the
+## baseline on. A new step clears Forward. Returns whether it pushed one.
+func _record_board_step(clear_redo: bool = true) -> bool:
+    if _board_baseline.is_empty():
+        _board_baseline = _board_state()
+        return false
+    var now: Dictionary = _board_state()
+    var changes: Dictionary = _board_changes_since_baseline(now)
+    var before: Dictionary = changes["before"]
+    var after: Dictionary = changes["after"]
     var buckets_changed: bool = _board_baseline["buckets"] != now["buckets"]
     if before.is_empty() and not buckets_changed:
         _board_baseline = now   # placeholders came or went: not a step
-        return
+        return false
     var step: Dictionary = {
         "before": before, "after": after,
         "order_before": (_board_baseline["order"] as Array).duplicate(),
@@ -1505,6 +1518,39 @@ func _record_board_step(clear_redo: bool = true) -> void:
     if clear_redo:
         _board_redo.clear()
     _board_baseline = now
+    return true
+
+
+## A handler saves and then refreshes, and the refresh can change the board
+## again, above all by merging the entry just named into that name's row. That
+## is the same action, so it goes into the step just taken. Left out, the step
+## held the name but not the merge, and nothing could take either back
+## (reported 2026-10-31, The Hourglass: Thaloides checked on the C#4 entry stayed
+## there through every Backstep). A note placed next moved the baseline past the
+## merge, so it was never recorded at all; a Backstep in between re-merged the
+## rows on its refresh before undoing the name.
+func _fold_refresh_into_last_step() -> void:
+    _board_step_open = false
+    if _board_undo.is_empty() or _board_baseline.is_empty():
+        return
+    var now: Dictionary = _board_state()
+    var changes: Dictionary = _board_changes_since_baseline(now)
+    var buckets_changed: bool = _board_baseline["buckets"] != now["buckets"]
+    var was_before: Dictionary = changes["before"]
+    if was_before.is_empty() and not buckets_changed:
+        return
+    var step: Dictionary = _board_undo.back()
+    for key in was_before:
+        if not (step["before"] as Dictionary).has(key):
+            step["before"][key] = was_before[key]
+        step["after"][key] = changes["after"][key]
+    step["order_after"] = (now["order"] as Array).duplicate()
+    if buckets_changed:
+        if not step.has("buckets_before"):
+            step["buckets_before"] = (_board_baseline["buckets"] as Dictionary).duplicate(true)
+        step["buckets_after"] = (now["buckets"] as Dictionary).duplicate(true)
+    _board_baseline = now
+    _save_puzzle_notes()   # the board and the step on disk stay a matching pair
 
 
 ## What Backstep and Forward never take back, read off the board as it is.
@@ -1660,6 +1706,7 @@ func _apply_board_step_side(step: Dictionary, side: String) -> void:
 func board_step(forward: bool) -> bool:
     # Anything not yet saved (a refresh's merges) is part of the last step,
     # and must not clear Forward.
+    _board_step_open = false
     _record_board_step(false)
     var from: Array = _board_redo if forward else _board_undo
     var to: Array = _board_undo if forward else _board_redo
@@ -10290,6 +10337,8 @@ func _full_propagation_refresh() -> void:
     if _make_entries_for_decided_notes():
         _full_propagation_refresh()
         return
+    if _board_step_open:
+        _fold_refresh_into_last_step()
     _detect_contradictions()
     _check_filled_against_answer()
     _host._refresh_contradiction_banner()
