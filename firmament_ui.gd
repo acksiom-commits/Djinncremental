@@ -53,6 +53,7 @@ var _settings_popout:  Node = null
 
 var _panel_nodes:      Dictionary = {}
 const REVEAL_DURATION: float = 1.5
+const RuneFittingPopout = preload("res://rune_fitting_popout.gd")
 
 
 func _ready() -> void:
@@ -97,6 +98,7 @@ func _ready() -> void:
     _setup_panel_nodes()
     _hide_all_panels()
     _apply_unlock_visibility()
+    _setup_rune_fitting()
 
     if archon_dialogue_manager:
         archon_dialogue_manager.enqueue_dialogue([
@@ -118,6 +120,25 @@ func _setup_panel_nodes() -> void:
         "allocation_zone":   find_child("FirmAllocationVBox",   true, false),
         "mid_band":          find_child("FirmMidBandHBox",       true, false),
     }
+
+
+# The Rune fitting popout sits on the scene's CanvasLayer, over everything.
+# Its button under Fuse Grains is a placeholder (2026-11-02): tools and
+# devices, which will open it for their own inscriptions, don't exist yet.
+func _setup_rune_fitting() -> void:
+    var popout: Control = RuneFittingPopout.new()
+    popout.name = "RuneFittingPopout"
+    get_parent().add_child.call_deferred(popout)
+    var vbox: Node = find_child("ClickSelectVBox", true, false)
+    if vbox == null:
+        return
+    var btn := Button.new()
+    btn.name = "InscribeRunesButton"
+    btn.text = "INSCRIBE\nRUNES"
+    btn.custom_minimum_size = Vector2(140, 64)
+    btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+    btn.pressed.connect(popout.open)
+    vbox.add_child(btn)
 
 
 func _hide_all_panels() -> void:

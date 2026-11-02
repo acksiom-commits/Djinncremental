@@ -8,6 +8,7 @@
 **Updated 2026-10-23:** the Vessel's ability changed to preserving material through Oscillations (§5, §7.1, §9); §1 and §7.1 now say the Oscillation rename has started in game text; Grit is now Crystal throughout (see §7.1); Ring and Lamp layouts are authored; the multi-phase lock-rotation idea is withdrawn (§7.1), replaced by hand-shepherding Persistent-grade material up the tiers with Purity Locks until Filters automate it.
 **Updated 2026-10-28:** added the author's core design intention to **reduce menu switching** (§1), and the Classic/Checks Entry switch in the Star Map and Staff popups (§6.4).
 **Updated 2026-10-31:** star names in one puzzle can no longer be near-identical (§6.5); Easy's Mutual Exclusion clues use Colour or Pitch, never both (§6.2).
+**Updated 2026-11-02:** the Rune fitting board, a Firmament prototype (§7).
 **Status of this draft:** second pass (same day). The author ruled on the first draft's summary-vs-code disagreements (§9): the code was right on all of them, and the author's original Summary is superseded wherever it differs. A few smaller questions remain open in §9.
 
 ## How to read the tags
@@ -217,6 +218,8 @@ Pipeline, in order (the file's own header is the authoritative version):
 ## 7. Planned mid-game and beyond [INTENT / NOT BUILT]
 
 Only stock *definitions* exist in code (`game_data.gd`: phlogiston, clay, stone, iron/copper/silver ore, oil, infusion, elixir, steam, smoke, spirit); there is no production loop for them yet. `FirmamentUI.tscn` is deliberately sparse.
+
+**Rune fitting board** [CODE, prototype, 2026-11-02]: `rune_fitting_popout.gd`, over the geometry and placement rules in `rune_board.gd`. A hex board sits in the middle (the basic board is 7 cells). Every Beginner Rune of the six Sigils that have them is in a column on the right (the Djinn's are the player's Vessel's), greyed when too large for the board in every turn. Runes move by clicks, not dragging: click a Rune to put a copy on the pointer, right-click to turn it a sixth clockwise, click the board to place it, click a placed Rune to pick it back up, and Esc to let go. A Rune uses its stars' cells plus the cells its lines cross, counted exactly as the author's prototype counted them, and Runes never share a cell. A placeholder Inscribe Runes button under Fuse Grains opens it, since tools and devices don't exist yet. Nothing is saved, and no Rune has an effect yet. `test_rune_board.gd`.
 
 Design:
 - Grains become basic mid-game resources: **Earth** (Clay, Stones, Ores), **Water** (Oils, Acids), **Air** (Firedamp, Vapors). **[Superseded in part, 2026-10-06: Clay, Crystal and Vapor are now the three initial Persistent Grain outputs, from Mud, Dust and Cloud; where Stones, Ores, Oils etc. land is open. See §7.1.]**
