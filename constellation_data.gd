@@ -330,6 +330,19 @@ const BUILT_IN = [
                 6,7,  7,8,  8,6,      # right eye
                 5,8,  5,9,  8,9,      # mouth: bridges the eyes' own bottom corners to one chin star
             ],
+            # A Sigil's Runes for later Ages (author, 2026-11-01), each a name and
+            # the star pairs of its lines. Nothing reads these yet. The Archon's
+            # is the one downward triangle; smaller triangles inside a larger one
+            # raise its effect.
+            #
+            # "hex" places each star on the inscription board (author's fits,
+            # 2026-11-01): the centre of a pointy-top hex cell, as [half-cell
+            # column, row], so column and row are both odd or both even. Lines
+            # run straight between stars. Stars a Sigil's Runes share keep the
+            # same cell where the author's fit allows.
+            "runes": [
+                {"name": "Triangle", "lines": [0,1,  1,2,  2,0], "hex": {0: [-1, -1], 1: [1, -1], 2: [0, 0]}},
+            ],
         },
     },
  
@@ -477,6 +490,12 @@ const BUILT_IN = [
             "line_pairs": [
                 0,1,  0,2,  0,3,  0,4,  0,5,  0,6,   # hub spokes, all six
             ],
+            # Two arrows facing opposite ways, tip to tip at the hub: a long
+            # spoke is the shaft, the two short spokes beside it the barbs.
+            "runes": [
+                {"name": "Right Arrow", "lines": [0,1,  0,3,  0,5], "hex": {0: [0, 0], 1: [-4, 0], 3: [-1, -1], 5: [-1, 1]}},
+                {"name": "Left Arrow",  "lines": [0,2,  0,4,  0,6], "hex": {0: [0, 0], 2: [4, 0], 4: [1, -1], 6: [1, 1]}},
+            ],
         },
     },
 
@@ -575,6 +594,13 @@ const BUILT_IN = [
             ],
             "line_pairs": [
                 0,2,  0,1,  1,4,  2,3,  4,5,  3,6,  6,7,  5,7,
+            ],
+            # Two angular question marks on their sides, each the other turned
+            # half way round. Each runs from the far end of one neck line back
+            # along it, around its bulb, and in to the near end of the other.
+            "runes": [
+                {"name": "Sideways Question Mark", "lines": [3,2,  2,0,  0,1,  1,4], "hex": {3: [1, -1], 2: [-3, -1], 0: [-6, -2], 1: [-6, 2], 4: [-3, 1]}},
+                {"name": "Inverted Sideways Question Mark", "lines": [4,5,  5,7,  7,6,  6,3], "hex": {4: [-1, 1], 5: [3, 1], 7: [6, 2], 6: [6, -2], 3: [3, -1]}},
             ],
         },
     },
@@ -908,6 +934,11 @@ const BUILT_IN = [
             "line_pairs": [
                 0,1,  1,2,  1,3,  2,4,  3,5,  4,5,
             ],
+            # A "<" with a spike out of its point, and the angular "C" facing it.
+            "runes": [
+                {"name": "Spiked Less-Than", "lines": [0,1,  1,2,  1,3], "hex": {1: [-4, 0], 0: [-6, 0], 2: [-1, -1], 3: [-1, 1]}},
+                {"name": "Reversed Angular C", "lines": [2,4,  4,5,  5,3], "hex": {2: [-1, -1], 4: [2, -2], 5: [2, 2], 3: [-1, 1]}},
+            ],
         },
     },
 
@@ -1032,6 +1063,11 @@ const BUILT_IN = [
             ],
             "line_pairs": [
                 0,1,  0,2,  1,3,  2,3,  0,4,  4,5,  5,6,  6,1,
+            ],
+            # The box, and the strap on top of it as an elongated M.
+            "runes": [
+                {"name": "Rectangle", "lines": [0,1,  1,3,  3,2,  2,0], "hex": {0: [-3, -1], 1: [3, -1], 2: [-3, 1], 3: [3, 1]}},
+                {"name": "Elongated M", "lines": [0,4,  4,5,  5,6,  6,1], "hex": {0: [-3, -1], 4: [-3, -3], 5: [0, -2], 6: [3, -3], 1: [3, -1]}},
             ],
         },
     },
@@ -1203,6 +1239,12 @@ const BUILT_IN = [
                         2,4,  3,5,                       # bar ends out to the shoulders
                         4,6,  6,7,  7,5,                 # body: left side, bottom bar, right side
                     ],
+                    # The cap and the body, each closed. They share the bar (2-3):
+                    # without it the body would be an open shape.
+                    "runes": [
+                        {"name": "Jar Cap", "lines": [0,1,  1,3,  3,2,  2,0], "hex": {0: [-1, -3], 1: [1, -3], 2: [-3, -1], 3: [3, -1]}},
+                        {"name": "Jar Body", "lines": [2,3,  3,5,  5,7,  7,6,  6,4,  4,2], "hex": {2: [-3, -1], 3: [3, -1], 4: [-4, 0], 5: [4, 0], 6: [-2, 2], 7: [2, 2]}},
+                    ],
                 },
             },
             # Ring outline (2026-09-27): a torus/donut silhouette viewed
@@ -1251,13 +1293,14 @@ const BUILT_IN = [
                 # Beginner-mode outline (2026-10-01, user-drawn): a lens of
                 # four arcs between the far-left (3) and far-right (5)
                 # stars -- an outer upper arc through the top star (0), an
-                # inner upper arc through the two inner stars (1, 2), a
-                # straight arc through the centre star (4), and a lower arc
-                # through the bottom pair (6, 7). The top star is joined to
-                # the far-left/far-right stars, NOT to the inner pair.
+                # inner upper arc through the two inner stars (1, 2), an arc
+                # through the centre star (4), and a lower arc through the
+                # bottom pair (6, 7). The top star is joined to the
+                # far-left/far-right stars, NOT to the inner pair.
                 # Digitized the same way as every other easy_layout: centre
                 # on the shape's own bounding box, scale so the larger axis
-                # spans +/-0.13, no rotation.
+                # spans +/-0.13, no rotation. The centre star was dropped from
+                # y 0.01146 (2026-11-01, author) so its two lines angle down.
                 "easy_layout": {
                     "star_count": 8,
                     "fixed_star_positions": [
@@ -1265,7 +1308,7 @@ const BUILT_IN = [
                         [-0.041901, -0.029366,  0.998690],  # 1: upper-inner-left
                         [ 0.040468, -0.032231,  0.998661],  # 2: upper-inner-right
                         [-0.130000,  0.010744,  0.991456],  # 3: far-left
-                        [ 0.036887,  0.011460,  0.999254],  # 4: centre
+                        [ 0.036887,  0.028000,  0.998927],  # 4: centre
                         [ 0.127851, -0.005730,  0.991777],  # 5: far-right
                         [-0.066253,  0.056584,  0.996197],  # 6: bottom-left
                         [ 0.057658,  0.063030,  0.996345],  # 7: bottom-right
@@ -1275,6 +1318,12 @@ const BUILT_IN = [
                         3,1,  1,2,  2,5,               # inner upper arc
                         3,4,  4,5,                     # centre arc
                         3,6,  6,7,  7,5,               # lower arc
+                    ],
+                    # Split across the middle into two closed polygons, meeting
+                    # at the far-left and far-right stars.
+                    "runes": [
+                        {"name": "Upper Ring", "lines": [3,0,  0,5,  5,2,  2,1,  1,3], "hex": {3: [-4, 0], 0: [0, -2], 1: [-1, -1], 2: [1, -1], 5: [4, 0]}},
+                        {"name": "Lower Ring", "lines": [3,4,  4,5,  5,7,  7,6,  6,3], "hex": {3: [-4, 0], 4: [1, 1], 5: [4, 0], 6: [-2, 2], 7: [2, 2]}},
                     ],
                 },
             },
@@ -1344,6 +1393,13 @@ const BUILT_IN = [
                         0,1,  1,2,  2,3,  3,5,          # spout/hub/handle loop, upper half
                         1,4,  4,5,                       # hub down to the base, shared edge
                         4,6,  6,7,  7,5,                 # base loop, lower half
+                    ],
+                    # The upper loop and the base, each closed around the edge they
+                    # share (4-5). The spout stays with the upper Rune: a loose
+                    # line can't be part of either polygon.
+                    "runes": [
+                        {"name": "Lamp Body", "lines": [1,2,  2,3,  3,5,  5,4,  4,1,  0,1], "hex": {0: [-7, -1], 1: [-3, -1], 2: [1, -3], 3: [5, -1], 4: [-1, 1], 5: [3, 1]}},
+                        {"name": "Lamp Base", "lines": [4,5,  5,7,  7,6,  6,4], "hex": {4: [-1, 1], 5: [3, 1], 6: [-3, 3], 7: [5, 3]}},
                     ],
                 },
             },
