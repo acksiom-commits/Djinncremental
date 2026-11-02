@@ -1797,8 +1797,8 @@ func _authored_roll(positions: Array, def: Dictionary, base_rot: Basis) -> float
 ## A Beginner constellation's slight tilt off its authored pose (author,
 ## 2026-11-01): real constellations are rarely square to the viewer as the sky
 ## turns. Its own per save, so no two players see quite the same sky, and never
-## level. Seeded from sky_tilt_seed, not player_seed, which nothing sets: it is
-## 0 in every save.
+## level. Seeded from sky_tilt_seed, not player_seed, which is 0 in every save
+## from before intro_screen._begin_new_game set it.
 func _beginner_tilt(constellation_id: int) -> float:
     var rng := RandomNumberGenerator.new()
     rng.seed = sky_tilt_seed ^ (constellation_id * 0x2F0B4C87)

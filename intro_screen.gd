@@ -265,11 +265,22 @@ func _confirm_vessel(vessel_key: String) -> void:
     _hovered_vessel = vessel_key
     queue_redraw()
 
-    var gc = get_node_or_null("/root/GameContext")
-    if gc and ("chosen_vessel" in gc):
-        gc.chosen_vessel = vessel_key
+    _begin_new_game(get_node_or_null("/root/GameContext"),
+        get_node_or_null("/root/ConstellationData"), vessel_key)
 
     _play_transition_and_continue()
+
+
+## Every new playthrough passes here: this screen plays only for a slot with no
+## save, and a reset or a new game in a slot both need a restart to reach it. The
+## seed is what makes this player's sky, melodies and first puzzles their own.
+## Nothing called set_player_seed before 2026-11-01, so older saves hold 0; they
+## keep it, since a new seed would reshuffle the puzzles they already have.
+static func _begin_new_game(gc: Node, cd: Node, vessel_key: String) -> void:
+    if gc and ("chosen_vessel" in gc):
+        gc.chosen_vessel = vessel_key
+    if cd:
+        cd.set_player_seed(randi())
 
 
 ## Phase 1 (warp to white) plays here; Phase 2 (recede, revealing the Main
