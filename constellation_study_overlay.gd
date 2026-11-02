@@ -142,6 +142,9 @@ const STAR_RADIUS:        float = 7.0
 const STAR_SELECTED_RADIUS: float = 10.0
 const HIT_RADIUS:         float = 18.0
 const MAP_PADDING:        float = 40.0
+## Beginner maps' side margin: few enough stars that every one shows all its
+## labels, and a star on the edge has no room for a name on the outside.
+const MAP_PADDING_BEGINNER_X: float = 100.0
 
 # ── WIDGET LAYOUT CONSTANTS ──────────────────────────────────────────
 const WIDGET_OFFSET_BELOW: float = 14.0   # px below dot centre when flipping down
@@ -842,7 +845,8 @@ func _compute_star_screen_positions() -> void:
         # Control hasn't been sized yet; defer to first draw
         map_size = Vector2(540.0, 400.0)
 
-    var usable_w: float = map_size.x - MAP_PADDING * 2.0
+    var beginner: bool = bool(_cd.get_constellation_def(_constellation_id).get("authored_upright", false))
+    var usable_w: float = map_size.x - (MAP_PADDING_BEGINNER_X if beginner else MAP_PADDING) * 2.0
     var usable_h: float = map_size.y - MAP_PADDING * 2.0
 
     # ── Fit rotated points to the panel ─────────────────────────────

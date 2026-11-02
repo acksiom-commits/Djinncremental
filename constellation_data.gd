@@ -458,16 +458,21 @@ const BUILT_IN = [
         # than it is tall; y comes in well under |y|<=0.055), z computed as
         # sqrt(1-x^2-y^2). Indices below are their own scheme, unrelated to
         # the hard-mode indices above.
+        #
+        # Reshaped 2026-11-01 so a star's four Star Map labels fit: the long line
+        # cut to +/-0.10, and the four short spokes laid back to about 27
+        # degrees off it (they were 45) so each end's pair sits nearer the line
+        # and the pair above and the pair below open out. Left a little uneven.
         "easy_layout": {
             "star_count": 7,
             "fixed_star_positions": [
                 [-0.0030,  0.0011, 1.0000],  # 0: centre hub (degree 6)
-                [-0.1300,  0.0020, 0.9915],  # 1: far left
-                [ 0.1300, -0.0011, 0.9915],  # 2: far right
-                [-0.0359, -0.0344, 0.9988],  # 3: upper-left
-                [ 0.0354, -0.0363, 0.9987],  # 4: upper-right
-                [-0.0393,  0.0363, 0.9986],  # 5: lower-left
-                [ 0.0297,  0.0341, 0.9990],  # 6: lower-right
+                [-0.1000,  0.0020, 0.9950],  # 1: far left
+                [ 0.1000, -0.0011, 0.9950],  # 2: far right
+                [-0.0551, -0.0243, 0.9982],  # 3: upper-left
+                [ 0.0500, -0.0271, 0.9984],  # 4: upper-right
+                [-0.0533,  0.0279, 0.9982],  # 5: lower-left
+                [ 0.0505,  0.0260, 0.9984],  # 6: lower-right
             ],
             "line_pairs": [
                 0,1,  0,2,  0,3,  0,4,  0,5,  0,6,   # hub spokes, all six
@@ -551,18 +556,22 @@ const BUILT_IN = [
         "easy_layout": {
             "star_count": 8,
             "fixed_star_positions": [
-                [-0.127816, -0.055971,  0.990217],  # 0: top-left
-                [-0.130000,  0.057297,  0.989857],  # 1: bottom-left
+                # The corners opened to 1.3x vertically and the waist drawn in
+                # to 0.68x (2026-11-01, author), for less of a bowtie and more
+                # of an hourglass; it lies on its side, neck between 2-3 and 4-5.
+                [-0.127816, -0.072800,  0.989123],  # 0: top-left
+                [-0.130000,  0.074500,  0.988711],  # 1: bottom-left
                 # The four waist stars were moved a quarter of the way along
                 # their own lines toward their corners (2026-10-16, author):
                 # their info displays overlapped. Were at x -0.0145/+0.0238/
-                # -0.0145/+0.0204, y -0.0135/-0.0138/+0.0142/+0.0142.
-                [-0.042865, -0.024143,  0.998789],  # 2: upper-waist-left
-                [ 0.047468, -0.026015,  0.998534],  # 3: upper-waist-right
-                [-0.043411,  0.025001,  0.998744],  # 4: lower-waist-left
-                [ 0.046376,  0.025703,  0.998593],  # 5: lower-waist-right
-                [ 0.118377, -0.062523,  0.990998],  # 6: top-right
-                [ 0.124305,  0.060105,  0.990422],  # 7: bottom-right
+                # -0.0145/+0.0204, y -0.0135/-0.0138/+0.0142/+0.0142. It is
+                # their width that keeps those displays apart, so leave that.
+                [-0.042865, -0.016400,  0.998946],  # 2: upper-waist-left
+                [ 0.047468, -0.017700,  0.998716],  # 3: upper-waist-right
+                [-0.043411,  0.017000,  0.998913],  # 4: lower-waist-left
+                [ 0.046376,  0.017500,  0.998771],  # 5: lower-waist-right
+                [ 0.118377, -0.081300,  0.989635],  # 6: top-right
+                [ 0.124305,  0.078100,  0.989166],  # 7: bottom-right
             ],
             "line_pairs": [
                 0,2,  0,1,  1,4,  2,3,  4,5,  3,6,  6,7,  5,7,
@@ -1170,17 +1179,24 @@ const BUILT_IN = [
                 # stars. Digitized the same way as every other easy_layout:
                 # centre on the shape's own bounding box, scale so the
                 # larger axis spans +/-0.13, no rotation.
+                #
+                # Cap reworked 2026-11-01 (author): its four stars sat so close
+                # that their Star Map labels piled up. The bar came down toward
+                # the shoulders, and both of its rows widened to fit a name and
+                # pitch beside each star, then the whole shape was re-centred
+                # and rescaled by that same rule. This also redraws the start
+                # screen's Jar, which reads these positions.
                 "easy_layout": {
                     "star_count": 8,
                     "fixed_star_positions": [
-                        [-0.021037, -0.109679,  0.993744],  # 0: top-left
-                        [ 0.015957, -0.113327,  0.993430],  # 1: top-right
-                        [-0.038753, -0.079459,  0.996085],  # 2: bar-left
-                        [ 0.038883, -0.085711,  0.995561],  # 3: bar-right
-                        [-0.120035,  0.061743,  0.990848],  # 4: left-shoulder
-                        [ 0.123292,  0.069559,  0.989930],  # 5: right-shoulder
-                        [-0.062199,  0.130000,  0.989561],  # 6: bottom-left
-                        [ 0.063893,  0.126874,  0.989859],  # 7: bottom-right
+                        [-0.050892, -0.116736,  0.991858],  # 0: top-left
+                        [ 0.043138, -0.120476,  0.991779],  # 1: top-right
+                        [-0.076537, -0.049419,  0.995841],  # 2: bar-left
+                        [ 0.073056, -0.054762,  0.995823],  # 3: bar-right
+                        [-0.130000,  0.047542,  0.990374],  # 4: left-shoulder
+                        [ 0.130000,  0.055893,  0.989937],  # 5: right-shoulder
+                        [-0.068201,  0.120476,  0.990371],  # 6: bottom-left
+                        [ 0.066531,  0.117136,  0.990885],  # 7: bottom-right
                     ],
                     "line_pairs": [
                         0,1,  0,2,  1,3,  2,3,          # cap: top arc, two sides, bar
@@ -1401,6 +1417,8 @@ const PATRON_DATA_PATH = "res://data/patron_constellations.json"
 #   stars:  invested >= SPARKS_TIER_STARS  → stars visible
 #   lines:  invested >= SPARKS_TIER_LINES  → connecting lines
 #   art:    invested >= SPARKS_TIER_ART    → figure art visible
+const BEGINNER_TILT_MIN_DEG: float = 5.0
+const BEGINNER_TILT_MAX_DEG: float = 15.0
 const SPARKS_TIER_STARS: float = 4181.0
 const SPARKS_TIER_LINES: float = 10946.0
 const SPARKS_TIER_ART:   float = 28657.0
@@ -1482,6 +1500,7 @@ const PUZZLE_RESPONSE_FREQS: Array = [
 # RUNTIME STATE
 # ==================================================
 var player_seed:            int        = 0
+var sky_tilt_seed:          int        = randi()   # see _beginner_tilt
 # Per-constellation override for get_note_assignment()'s RNG seed, keyed by
 # str(constellation_id). Empty/missing means "use player_seed" (today's
 # behavior, unchanged) — star POSITIONS/octant placement/roll stay tied to
@@ -1714,6 +1733,10 @@ func get_canonical_display_basis(constellation_id: int) -> Basis:
         base_rot = Basis(base_axis.normalized(), from_dir.angle_to(centroid))
 
     var def: Dictionary = get_constellation_def(constellation_id)
+    if bool(def.get("authored_upright", false)):
+        var view_roll: float = _authored_roll(positions, def, base_rot) + _beginner_tilt(constellation_id)
+        return base_rot * Basis(Vector3(0.0, 0.0, 1.0), view_roll)
+
     var horiz_stars: Array = _coerce_array(def.get("snap_horiz_stars"), [])
     var roll_angle: float = 0.0
     var horiz_a: int = _coerce_int(horiz_stars[0], -1) if horiz_stars.size() == 2 else -1
@@ -1744,6 +1767,43 @@ func get_canonical_display_basis(constellation_id: int) -> Basis:
                 roll_angle += PI
 
     return base_rot * Basis(Vector3(0.0, 0.0, 1.0), roll_angle)
+
+
+## The roll that undoes a star field's seeded placement, leaving a layout the way
+## up it was authored. Read off one star pair, as the angle it makes on the sky
+## less the angle it was drawn at; the farthest pair from star 0 gives the most
+## precision. Unlike leveling a named pair, this can't land upside-down, and any
+## layout works without choosing stars for it.
+func _authored_roll(positions: Array, def: Dictionary, base_rot: Basis) -> float:
+    var authored: Array = _coerce_array(def.get("fixed_star_positions"), [])
+    if authored.size() != positions.size() or positions.size() < 2:
+        return 0.0
+    var inverse: Basis = base_rot.inverse()
+    var first: Vector3 = inverse * (positions[0] as Vector3)
+    var far: int = 1
+    var far_dist: float = -1.0
+    for i in range(1, positions.size()):
+        var d: float = first.distance_to(inverse * (positions[i] as Vector3))
+        if d > far_dist:
+            far_dist = d
+            far = i
+    var last: Vector3 = inverse * (positions[far] as Vector3)
+    var drawn_a: Array = authored[0]
+    var drawn_b: Array = authored[far]
+    return atan2(last.y - first.y, last.x - first.x) \
+        - atan2(float(drawn_b[1]) - float(drawn_a[1]), float(drawn_b[0]) - float(drawn_a[0]))
+
+
+## A Beginner constellation's slight tilt off its authored pose (author,
+## 2026-11-01): real constellations are rarely square to the viewer as the sky
+## turns. Its own per save, so no two players see quite the same sky, and never
+## level. Seeded from sky_tilt_seed, not player_seed, which nothing sets: it is
+## 0 in every save.
+func _beginner_tilt(constellation_id: int) -> float:
+    var rng := RandomNumberGenerator.new()
+    rng.seed = sky_tilt_seed ^ (constellation_id * 0x2F0B4C87)
+    var degrees: float = rng.randf_range(BEGINNER_TILT_MIN_DEG, BEGINNER_TILT_MAX_DEG)
+    return deg_to_rad(degrees if rng.randf() < 0.5 else -degrees)
 
 
 # ==================================================
@@ -1854,6 +1914,9 @@ func _resolve_difficulty_layout(c: Dictionary, id: int) -> Dictionary:
         resolved["star_count"] = layout["star_count"]
     resolved["fixed_star_positions"] = layout.get("fixed_star_positions", [])
     resolved["line_pairs"]           = layout.get("line_pairs", [])
+    # snap_horiz_stars and snap_orient_check number Hard's stars, so they mean
+    # nothing here: see get_canonical_display_basis.
+    resolved["authored_upright"] = true
     return resolved
 
 
@@ -2422,6 +2485,7 @@ func _load_patron_constellations() -> void:
 func get_save_data() -> Dictionary:
     return {
         "player_seed":           player_seed,
+        "sky_tilt_seed":         sky_tilt_seed,
         "note_assignment_seed_overrides": note_assignment_seed_overrides,
         "puzzle_seed_overrides": puzzle_seed_overrides,
         "active_per_octant":    active_per_octant,
@@ -2477,6 +2541,7 @@ func _coerce_array(val, default: Array) -> Array:
 
 func load_save_data(data: Dictionary) -> void:
     player_seed = _coerce_int(data.get("player_seed"), randi())
+    sky_tilt_seed = _coerce_int(data.get("sky_tilt_seed"), randi())
 
     note_assignment_seed_overrides = {}
     var _raw_overrides = data.get("note_assignment_seed_overrides")
