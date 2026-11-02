@@ -74,7 +74,11 @@ func run() -> void:
 	cd.active_per_octant[0] = CID
 	gc.ui_unlocks["constellation"] = true
 	gc.constellation_spark_totals[str(CID)] = cd.SPARKS_TIER_STARS
-	gc.assignments[vol_key] = 1
+	# A real slot, not a value set on `assignments`: the game rebuilds those from
+	# the slots whenever it likes, which switched the effect off now and then.
+	var slots_was: Array = gc.volition_slots.duplicate(true)
+	gc.volition_slots.append({"category": "constellation", "target": CID, "children": []})
+	gc._rebuild_volition_assignments()
 	gc.assignments[solve_key] = 1
 
 	var holder := Node.new()
@@ -99,6 +103,7 @@ func run() -> void:
 	ok(eng.state == eng.State.IDLE, "a solved puzzle is shut")
 	ui.reset_constellation_puzzle(CID)
 	await _stop_builds(ui)
+	gc._rebuild_volition_assignments()   # the game does this on its own
 	ok(gc._assignment_int(solve_key, 0) == 1, "the Constellation still counts as solved")
 	var after: float = cd.get_active_level_bonus(BONUS)
 	ok(is_equal_approx(after, before), "the effect is unchanged after a reset (%.3f)" % after)
@@ -130,6 +135,8 @@ func run() -> void:
 
 	holder.queue_free()
 	await process_frame
+	gc.volition_slots = slots_was
+	gc._rebuild_volition_assignments()
 	gc.assignments.erase(vol_key)
 	gc.assignments.erase(solve_key)
 	gc.constellation_puzzle_reopened.clear()

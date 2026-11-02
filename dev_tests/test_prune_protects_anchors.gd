@@ -42,7 +42,6 @@ func ok(c: bool, s: String) -> void:
 
 
 func run() -> void:
-	var cd = load("res://constellation_data.gd").new()
 	var total_anchors: int = 0
 	var lost: int = 0
 	var lost_examples: Array = []
@@ -52,18 +51,8 @@ func run() -> void:
 	var puzzles: int = 0
 
 	for cid in CONSTELLATIONS:
-		var cdef: Dictionary = cd.get_constellation_def(cid)
-		if cdef.is_empty() or not (cdef.get("line_pairs") is Array) \
-				or (cdef["line_pairs"] as Array).is_empty():
-			continue
-		var scn: int = int(cdef["star_count"])
-		var g = load("res://constellation_logic_puzzle.gd").new()
-		var sq: Array = []
-		for i in range(scn):
-			sq.append(i)
-		g.setup(scn, cdef["line_pairs"], sq, SEED, cid, cdef.get("name_theme", {}),
-			cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
-		g.difficulty = "easy"
+		var g = real_puzzle(cid, SEED)
+		var scn: int = int(g.star_count)
 
 		g._build_record_array()
 		g._build_matrix()

@@ -35,24 +35,11 @@ func ok(c: bool, s: String) -> void:
 
 
 func run() -> void:
-	var cd = load("res://constellation_data.gd").new()
-	var P = load("res://constellation_logic_puzzle.gd")
 	const Category = preload("res://constellation_logic_puzzle.gd").Category
 
 	for cid in CONSTELLATIONS:
-		var cdef: Dictionary = cd.get_constellation_def(cid)
-		if cdef.is_empty() or not (cdef.get("line_pairs") is Array) \
-				or (cdef["line_pairs"] as Array).is_empty():
-			continue
-		var scn: int = int(cdef["star_count"])
 		for seed in SEEDS:
-			var g = P.new()
-			g.difficulty = "easy"
-			var sq: Array = []
-			for i in range(scn):
-				sq.append(i)
-			g.setup(scn, cdef["line_pairs"], sq, seed, cid, cdef.get("name_theme", {}),
-				cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
+			var g = real_puzzle(cid, seed)
 			await g._generate_clues_forms_attempt()
 			var clues: Array = g.chosen_form_clues
 			var tag := "c%d seed %-3d" % [cid, seed]
@@ -99,7 +86,7 @@ func run() -> void:
 			ok(seq_chains == 2, "%s: exactly 2 surviving Sequence-axis chain clues (got %d)" % [tag, seq_chains])
 			# Four stars each from 2026-10-16 (author), sharing one star where two
 			# separate fours don't fit, so any map of 7 or more stars gets them.
-			if scn >= 7:
+			if int(g.star_count) >= 7:
 				ok(seq_sizes == [4, 4], "%s: both chains name four stars (got %s)" % [tag, str(seq_sizes)])
 			# The Pitch pair was dropped from Easy's openers 2026-10-15 (author): with
 			# every star Listened, pitch order is visible, and removing it made

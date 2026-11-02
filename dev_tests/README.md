@@ -30,6 +30,23 @@ for two reasons, both measured on this project:
 To run a subset, append `-- <substring>`. Use sparingly: it changes the
 command string, which is the thing being kept stable.
 
+## Tiers
+
+Time spent on a test the change could not have touched is what makes a run
+slow, whatever the total says. So pick the tier the change needs and say why:
+
+| What changed | Append | Time |
+|---|---|---|
+| Display, layout data, wording, UI | `-- tier:quick` | ~2.5 min |
+| Board entry, deduction, saves | `-- tier:board` | ~5.5 min |
+| Generator or clues, and before a release | nothing | ~27 min |
+
+The full suite is the author's call, not a default: assess, then ask.
+`SLOW_MODULES` in `test_runner.gd` lists every module over 10 seconds, and the
+quick tier is everything else. A new module joins the quick tier automatically;
+if it runs long, the summary says `OUTGROWN THE QUICK TIER`, so add it to the
+list. Every run's summary gives each module's time and the total.
+
 ## Cost, and how not to waste it
 
 **A puzzle generation costs ~18 seconds.** `generate_clues_forms()` runs the
@@ -44,9 +61,14 @@ it there:
 - **Prefer TWO DIFFERENT CONSTELLATIONS over more seeds.** The coverage that
   matters in this codebase is topological — a bug that survives constellation
   0 and 2 has never then appeared only on a third seed of the same map.
-- **Run the affected module while iterating; run the full suite once before
-  committing.** Running everything after every small edit was the larger
-  cost by far, and it is a habit, not a requirement.
+- **Run the affected module while iterating, then the tier the change needs
+  before committing.** Running everything after every small edit was the
+  larger cost by far, and it is a habit, not a requirement.
+- **Test the puzzle a player gets.** Build it with `real_puzzle()` from
+  `test_base.gd`. A bare `constellation_data.gd` has no GameContext, so it
+  resolves the 13-18 star Hard layouts, and setting `difficulty = "easy"` on
+  one gives a puzzle no player ever sees. Run on those, Beginner's guarantees
+  were being checked on the wrong boards (fixed 2026-11-01).
 
 A sweep that needs more than four puzzles should say in a comment what it
 buys, because it is spending a minute of every future run.

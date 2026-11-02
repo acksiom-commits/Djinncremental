@@ -116,7 +116,6 @@ func _partner_of_name(cell: Dictionary, name_star: int, cat_name: int) -> int:
 
 
 func run() -> void:
-	var cd = load("res://constellation_data.gd").new()
 	var P = load("res://constellation_logic_puzzle.gd")
 	var CAT_NAME: int = P.Category.NAME
 
@@ -205,24 +204,14 @@ func run() -> void:
 			profiles_missing_anchor.append(profile_name)
 
 	for cid in CONSTELLATIONS:
-		var cdef: Dictionary = cd.get_constellation_def(cid)
-		if cdef.is_empty() or not (cdef.get("line_pairs") is Array) \
-				or (cdef["line_pairs"] as Array).is_empty():
-			continue
-		var scn: int = int(cdef["star_count"])
 		for seed in SEEDS:
 			# Alternate "hard"/"easy" across (cid, seed) combos rather than a
 			# second nested loop -- covers both profiles' runtime behaviour
 			# without reshaping this whole block's indentation. Deterministic
 			# on CONSTELLATIONS/SEEDS' fixed order, so a failure reproduces.
 			var dfc: String = "easy" if (CONSTELLATIONS.find(cid) + SEEDS.find(seed)) % 2 == 0 else "hard"
-			var g = P.new()
-			g.difficulty = dfc
-			var sq: Array = []
-			for i in range(scn):
-				sq.append(i)
-			g.setup(scn, cdef["line_pairs"], sq, seed, cid, cdef.get("name_theme", {}),
-				cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
+			var g = real_puzzle(cid, seed, dfc)
+			var scn: int = int(g.star_count)
 			await g._generate_clues_forms_attempt()
 			puzzles += 1
 

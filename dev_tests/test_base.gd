@@ -48,6 +48,29 @@ func quit(_exit_code: int = 0) -> void:
 	pass
 
 
+## A puzzle built the way root_ui._generate_puzzle builds one: the layout this
+## difficulty really resolves to, and the real melody, repeats and all. Set up,
+## not generated. A bare constellation_data.gd has no GameContext, so it always
+## resolves the 13-18 star Hard layouts, and a melody of one note per star has no
+## repeats: "easy" on those is a puzzle no player ever gets.
+func real_puzzle(cid: int, seed: int, difficulty: String = "easy"):
+	var gc = load("res://game_context.gd").new()
+	var cd = load("res://constellation_data.gd").new()
+	cd._game_context = gc
+	gc.constellation_difficulty[cid] = difficulty
+	cd.player_seed = seed
+	var def: Dictionary = cd.get_constellation_def(cid)
+	var eng = load("res://click_sequence_puzzle_engine.gd").new()
+	eng.set_constellation(cid, cd, gc)
+	var g = load("res://constellation_logic_puzzle.gd").new()
+	g.setup(int(def["star_count"]), def["line_pairs"], eng.get_correct_star_sequence(cid), seed, cid,
+		def.get("name_theme", {}), cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
+	g.difficulty = difficulty
+	cd.free()
+	gc.free()
+	return g
+
+
 ## Overridden by every test module. Named `run` rather than `_init` because
 ## `_init` fires during `.new()`, before the runner can inject `root`.
 func run() -> void:

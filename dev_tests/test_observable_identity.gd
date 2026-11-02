@@ -49,17 +49,8 @@ func _has_marker(text: String) -> bool:
 	return _marker.search(text) != null
 
 
-func _setup(cd, cid: int, seed: int, difficulty: String = "hard"):
-	var cdef: Dictionary = cd.get_constellation_def(cid)
-	var scn: int = int(cdef["star_count"])
-	var g = PuzzleScript.new()
-	var sq: Array = []
-	for i in range(scn):
-		sq.append(i)
-	g.setup(scn, cdef["line_pairs"], sq, seed, cid, cdef.get("name_theme", {}),
-		cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
-	g.difficulty = difficulty
-	return g
+func _setup(cid: int, seed: int, difficulty: String = "hard"):
+	return real_puzzle(cid, seed, difficulty)
 
 
 ## How many stars share a Colour or Pitch value with another star -- the
@@ -83,7 +74,7 @@ func run() -> void:
 			cids.append(int(d["id"]))
 
 	print("=== positive control: the detectors FIRE on a real violation ===")
-	var pc = _setup(cd, cids[0], 11)
+	var pc = _setup(cids[0], 11)
 	var tied_star: int = -1
 	for s in pc.star_count:
 		if pc._group_size(pc.Category.COLOR, s) > 1:
@@ -114,7 +105,7 @@ func run() -> void:
 	var t0: int = Time.get_ticks_msec()
 	for cid in cids:
 		for seed in SWEEP_SEEDS:
-			var g = _setup(cd, cid, seed)
+			var g = _setup(cid, seed)
 			g._build_record_array()
 			g._build_matrix()
 			g._used_characteristics = {}
@@ -160,7 +151,7 @@ func run() -> void:
 	ok(counter_total == 0, "the marker branch was never even RENDERED, discarded drafts included (counter = %d)" % counter_total)
 
 	print("\n=== 2. the repair fallback's clue builders, every star ===")
-	var rg = _setup(cd, cids[0], 11)
+	var rg = _setup(cids[0], 11)
 	rg._build_record_array()
 	rg._build_matrix()
 	rg._used_characteristics = {}
@@ -193,7 +184,7 @@ func run() -> void:
 	var e2e_counter: int = 0
 	for cid2 in cids:
 		for diff in ["easy", "hard"]:
-			var g2 = _setup(cd, cid2, END_TO_END_SEED, diff)
+			var g2 = _setup(cid2, END_TO_END_SEED, diff)
 			await g2.generate_clues_forms()
 			gens += 1
 			e2e_clues += g2.chosen_form_clues.size()

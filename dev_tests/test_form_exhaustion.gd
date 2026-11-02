@@ -38,27 +38,17 @@ func ok(c: bool, s: String) -> void:
 		fails += 1
 
 
-func _gen(cd, cid: int, seed: int, difficulty: String):
-	var cdef: Dictionary = cd.get_constellation_def(cid)
-	var scn: int = int(cdef["star_count"])
-	var g = PuzzleScript.new()
-	var sq: Array = []
-	for i in range(scn):
-		sq.append(i)
-	g.setup(scn, cdef["line_pairs"], sq, seed, cid, cdef.get("name_theme", {}),
-		cd.get_note_assignment(cid), cd.get_note_freqs(cid), null)
-	g.difficulty = difficulty
-	return g
+func _gen(cid: int, seed: int, difficulty: String):
+	return real_puzzle(cid, seed, difficulty)
 
 
 func run() -> void:
-	var cd = load("res://constellation_data.gd").new()
 
 	print("=== the removed pool clause was never live: pool > 0 whenever the loop stalls out ===")
 	var pool_positive: int = 0
 	var checked: int = 0
 	for pair in [[0, 11, "hard"], [0, 12, "easy"], [2, 11, "hard"]]:
-		var g = _gen(cd, int(pair[0]), int(pair[1]), str(pair[2]))
+		var g = _gen(int(pair[0]), int(pair[1]), str(pair[2]))
 		await g._generate_clues_forms_attempt()
 		checked += 1
 		if g._unused_pool_size() > 0:
@@ -72,9 +62,9 @@ func run() -> void:
 	var cases: int = 0
 	for pair in [[0, 11, "hard"], [0, 12, "easy"]]:
 		cases += 1
-		var without = _gen(cd, int(pair[0]), int(pair[1]), str(pair[2]))
+		var without = _gen(int(pair[0]), int(pair[1]), str(pair[2]))
 		await without._generate_clues_forms_attempt()
-		var with_pool = _gen(cd, int(pair[0]), int(pair[1]), str(pair[2]))
+		var with_pool = _gen(int(pair[0]), int(pair[1]), str(pair[2]))
 		# Simulates the OLD condition without editing source: since pool > 0
 		# held at every moment (just proven above), an attempt that also
 		# stops the instant pool hits 0 is identical to one that never checks
@@ -97,7 +87,7 @@ func run() -> void:
 	ok(mismatches == 0, "the same seed reproduces the identical clue set (%d/%d mismatched) -- confirms determinism the monotonicity argument relies on" % [mismatches, cases])
 
 	print("\n=== form_exhaustion_report(): a real per-Form picture ===")
-	var g2 = _gen(cd, 0, 11, "easy")
+	var g2 = _gen(0, 11, "easy")
 	await g2._generate_clues_forms_attempt()
 	var rep: Dictionary = g2.form_exhaustion_report(g2._form_fail_streak.duplicate())
 	print("    eligible=%d exhausted=%d threshold=%d" % [rep["eligible_count"], rep["exhausted_count"], g2._form_exhaustion_threshold()])
@@ -116,7 +106,7 @@ func run() -> void:
 	ok(excluded_leaked == 0, "an excluded Form is never reported eligible/exhausted (%d leaked)" % excluded_leaked)
 
 	print("\n=== _form_fail_streak resets per attempt ===")
-	var g3 = _gen(cd, 0, 11, "hard")
+	var g3 = _gen(0, 11, "hard")
 	await g3._generate_clues_forms_attempt()
 	ok(not g3._form_fail_streak.is_empty(), "the first attempt leaves streak data behind")
 	# Plant a sentinel no real run could ever produce (MAX_STALL_PASSES caps
@@ -133,7 +123,7 @@ func run() -> void:
 	# least one always-eligible Form), so the "no eligible Form left" branch
 	# cannot be reached end-to-end with real profiles today -- checked here
 	# at the level of _forms_in_tier, which is what would make it empty.
-	var g4 = _gen(cd, 0, 11, "easy")
+	var g4 = _gen(0, 11, "easy")
 	var before_cap: Array = g4._forms_in_tier(2, {})
 	ok(before_cap.has(12) and before_cap.has(15), "Forms 12 and 15 start eligible in tier 2 (easy)")
 	var after_cap: Array = g4._forms_in_tier(2, {12: 4, 15: 4})
