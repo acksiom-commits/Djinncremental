@@ -13,7 +13,8 @@ extends Control
 # then gone); with nothing held, Esc closes the panel.
 #
 # Nothing is saved: the board empties when the panel closes. Tools and devices
-# don't exist yet, so firmament_ui.gd opens this from a placeholder button.
+# don't exist yet, so firmament_ui.gd opens this from a placeholder button,
+# and on Primordial the Constellation slideout's Runes column opens it.
 
 const Board = preload("res://rune_board.gd")
 

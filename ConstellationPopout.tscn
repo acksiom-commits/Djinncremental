@@ -24,6 +24,10 @@ corner_radius_bottom_left = 6
 [sub_resource type="StyleBoxLine" id="StyleBoxLine_6voa3"]
 color = Color(0.2509804, 0.21960784, 0.38039216, 0.5019608)
 
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_runes_sep"]
+color = Color(0.4, 0.28, 0.62, 0.6)
+vertical = true
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_d58y2"]
 bg_color = Color(0.05882353, 0.050980393, 0.101960786, 0.8)
 corner_radius_top_left = 3
@@ -79,7 +83,7 @@ S"
 z_index = 1
 clip_contents = true
 layout_mode = 0
-offset_left = -350.0
+offset_left = -700.0
 offset_bottom = 465.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_constel_panel")
 
@@ -90,19 +94,23 @@ theme_override_constants/margin_top = 6
 theme_override_constants/margin_right = 6
 theme_override_constants/margin_bottom = 6
 
-[node name="SelectorVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin" unique_id=2092798952]
+[node name="SelectorColumns" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin" unique_id=1188400101]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="SelectorVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns" unique_id=2092798952]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="ConstellationTitleLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=1113072290]
+[node name="ConstellationTitleLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox" unique_id=1113072290]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.92156863, 0.8784314, 0.78039217, 1)
 theme_override_font_sizes/font_size = 18
 text = "The Constellation"
 horizontal_alignment = 1
 
-[node name="OctantSpinBox" type="SpinBox" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=964039551]
+[node name="OctantSpinBox" type="SpinBox" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox" unique_id=964039551]
 visible = false
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
@@ -114,24 +122,24 @@ allow_lesser = true
 alignment = 1
 prefix = "Octant "
 
-[node name="ConstellationSlotGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=839711079]
+[node name="ConstellationSlotGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox" unique_id=839711079]
 layout_mode = 2
 size_flags_horizontal = 3
 columns = 4
 
-[node name="ConstellationInfoVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=923674052]
+[node name="ConstellationInfoVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox" unique_id=923674052]
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="InfoNameLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=393684865]
+[node name="InfoNameLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationInfoVBox" unique_id=393684865]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_colors/font_color = Color(0.92156863, 0.88235295, 0.78039217, 1)
 theme_override_font_sizes/font_size = 16
 
-[node name="InfoLoreLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=1051990319]
+[node name="InfoLoreLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationInfoVBox" unique_id=1051990319]
 visible = false
 custom_minimum_size = Vector2(280, 0)
 layout_mode = 2
@@ -140,19 +148,19 @@ theme_override_colors/font_color = Color(0.6, 0.5803922, 0.7019608, 1)
 theme_override_font_sizes/font_size = 16
 autowrap_mode = 3
 
-[node name="InfoSeparator" type="HSeparator" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=2023678069]
+[node name="InfoSeparator" type="HSeparator" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationInfoVBox" unique_id=2023678069]
 visible = false
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_6voa3")
 
-[node name="InfoBonusLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=1650318082]
+[node name="InfoBonusLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationInfoVBox" unique_id=1650318082]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_colors/font_color = Color(0.92156863, 0.88235295, 0.78039217, 1)
 theme_override_font_sizes/font_size = 16
 
-[node name="InfoProgressBar" type="ProgressBar" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=678443787]
+[node name="InfoProgressBar" type="ProgressBar" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationInfoVBox" unique_id=678443787]
 visible = false
 custom_minimum_size = Vector2(0, 14)
 layout_mode = 2
@@ -160,19 +168,19 @@ theme_override_styles/background = SubResource("StyleBoxFlat_d58y2")
 theme_override_styles/fill = SubResource("StyleBoxFlat_xasap")
 show_percentage = false
 
-[node name="InfoTierLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=684991224]
+[node name="InfoTierLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationInfoVBox" unique_id=684991224]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_colors/font_color = Color(0.92156863, 0.88235295, 0.78039217, 1)
 theme_override_font_sizes/font_size = 16
 
-[node name="InfoTierEffectsSeparator" type="HSeparator" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=2023678070]
+[node name="InfoTierEffectsSeparator" type="HSeparator" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationInfoVBox" unique_id=2023678070]
 visible = false
 layout_mode = 2
 theme_override_styles/separator = SubResource("StyleBoxLine_6voa3")
 
-[node name="InfoTierEffectsLabel" type="RichTextLabel" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationInfoVBox" unique_id=2023678071]
+[node name="InfoTierEffectsLabel" type="RichTextLabel" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationInfoVBox" unique_id=2023678071]
 visible = false
 custom_minimum_size = Vector2(280, 0)
 layout_mode = 2
@@ -182,31 +190,31 @@ bbcode_enabled = true
 fit_content = true
 scroll_active = false
 
-[node name="ConstellationAllocationVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox" unique_id=776079631]
+[node name="ConstellationAllocationVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox" unique_id=776079631]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="SparkCounterLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=1593436465]
+[node name="SparkCounterLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox" unique_id=1593436465]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.72156864, 0.6784314, 0.8509804, 1)
 horizontal_alignment = 1
 
-[node name="FociVolHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=124535324]
+[node name="FociVolHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox" unique_id=124535324]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="VolLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=567283045]
+[node name="VolLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=567283045]
 custom_minimum_size = Vector2(36, 0)
 layout_mode = 2
 text = "Vol"
 vertical_alignment = 1
 
-[node name="VolMinusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=658570894]
+[node name="VolMinusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=658570894]
 custom_minimum_size = Vector2(32, 28)
 layout_mode = 2
 text = "-"
 
-[node name="VolValueLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=130815419]
+[node name="VolValueLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=130815419]
 custom_minimum_size = Vector2(32, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -214,23 +222,23 @@ text = "0"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="VolPlusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=57319347]
+[node name="VolPlusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=57319347]
 custom_minimum_size = Vector2(32, 28)
 layout_mode = 2
 text = "+"
 
-[node name="FociLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1107157594]
+[node name="FociLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1107157594]
 custom_minimum_size = Vector2(36, 0)
 layout_mode = 2
 text = "Foci"
 vertical_alignment = 1
 
-[node name="FociMinusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1558482017]
+[node name="FociMinusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1558482017]
 custom_minimum_size = Vector2(32, 28)
 layout_mode = 2
 text = "-"
 
-[node name="FociValueLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1938319047]
+[node name="FociValueLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1938319047]
 custom_minimum_size = Vector2(32, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -238,88 +246,129 @@ text = "0"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="FociPlusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1344612662]
+[node name="FociPlusButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FociVolHBox" unique_id=1344612662]
 custom_minimum_size = Vector2(32, 28)
 layout_mode = 2
 text = "+"
 
-[node name="FeedHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=684217624]
+[node name="FeedHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox" unique_id=684217624]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="FeedNoneButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=1802907835]
+[node name="FeedNoneButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=1802907835]
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "IGNORE"
 
-[node name="FeedAutoButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=406610988]
+[node name="FeedAutoButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=406610988]
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "ENDOW"
 
-[node name="FeedClickButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=142796401]
+[node name="FeedClickButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=142796401]
 visible = false
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Click"
 
-[node name="FeedBothButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=376002486]
+[node name="FeedBothButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/FeedHBox" unique_id=376002486]
 visible = false
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Both"
 
-[node name="MultiRedistributeHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox" unique_id=1600000021]
+[node name="MultiRedistributeHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox" unique_id=1600000021]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="MultiGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox" unique_id=1758693413]
+[node name="MultiGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox" unique_id=1758693413]
 custom_minimum_size = Vector2(0, 75)
 layout_mode = 2
 size_flags_horizontal = 3
 columns = 2
 
-[node name="10XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=967275612]
+[node name="10XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=967275612]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "10X"
 
-[node name="CSTMButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=783236587]
+[node name="CSTMButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=783236587]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "CSTM"
 
-[node name="ALLButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=806143499]
+[node name="ALLButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=806143499]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "ALL"
 
-[node name="CLEARButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=1204857312]
+[node name="CLEARButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=1204857312]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "CLEAR"
 
-[node name="100XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=1920818803]
+[node name="100XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=1920818803]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "100X"
 
-[node name="RedistributeButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox" unique_id=1600000020]
+[node name="RedistributeButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox" unique_id=1600000020]
 custom_minimum_size = Vector2(0, 75)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "REDISTRIBUTE
 SPARKS"
+
+[node name="ColumnSep" type="VSeparator" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns" unique_id=1188400102]
+layout_mode = 2
+theme_override_styles/separator = SubResource("StyleBoxLine_runes_sep")
+
+[node name="RunesVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns" unique_id=1188400103]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="RunesTitleLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/RunesVBox" unique_id=1188400104]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92156863, 0.8784314, 0.78039217, 1)
+theme_override_font_sizes/font_size = 18
+text = "The Runes"
+horizontal_alignment = 1
+
+[node name="RunesSlotGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/RunesVBox" unique_id=1188400105]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 4
+
+[node name="RunesInfoVBox" type="VBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/RunesVBox" unique_id=1188400106]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 2
+
+[node name="RunesInfoLabel" type="Label" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/RunesVBox/RunesInfoVBox" unique_id=1188400107]
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.5803922, 0.7019608, 1)
+theme_override_font_sizes/font_size = 16
+text = "Each Sigil's Runes fit on the inscription board."
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="InscribeRunesButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/RunesVBox" unique_id=1188400108]
+custom_minimum_size = Vector2(0, 75)
+layout_mode = 2
+text = "INSCRIBE
+RUNES"
 
 [node name="NotchCorner" type="Control" parent="." unique_id=947652492]
 visible = false

@@ -308,6 +308,7 @@ const _EXPANSION_TRANSITION_SHADER: Shader = preload("res://expansion_transition
 # For the static cache helper below: a bare class_name reference is flaky in
 # headless runs (known gotcha), a preload is not.
 const _PuzzleScript = preload("res://constellation_logic_puzzle.gd")
+const _RuneFittingPopout = preload("res://rune_fitting_popout.gd")
 
 var _expansion_anim_active: bool           = false
 var _expansion_overlay:     ColorRect      = null
@@ -405,6 +406,14 @@ func _ready() -> void:
             _constellation_popout.constellation_selected.connect(_cp.on_constellation_selected)
             _constellation_popout.constellation_selected.connect(_on_constellation_selected_logic_puzzle)
             _constellation_popout.panel_first_opened.connect(_on_constellation_first_opened)
+        # The Rune fitting board sits on the CanvasLayer over everything,
+        # including the slideout (z 100) whose Runes column opens it.
+        var rune_board: Control = _RuneFittingPopout.new()
+        rune_board.name = "RuneFittingPopout"
+        rune_board.z_as_relative = false
+        rune_board.z_index = 200
+        get_parent().add_child.call_deferred(rune_board)
+        _constellation_popout.set_rune_board(rune_board)
     else:
         push_warning("RootUI: ConstellationPopout not found")
 

@@ -15,7 +15,8 @@ extends Control
 # Emits constellation_selected(id) signal.
 # root_ui.gd connects that to constellation_panel.on_constellation_selected().
 
-const PANEL_WIDTH:  float = 350.0   # ← must match ConstellationSelectorPanel's width (|offset_left|)
+# 350 per column: the Constellation column, then the Runes column (2026-11-02).
+const PANEL_WIDTH:  float = 700.0   # ← must match ConstellationSelectorPanel's width (|offset_left|)
 const PANEL_HEIGHT: float = 465.0   # ← must match ConstellationSelectorPanel's height (offset_bottom)
 # Growth from the panel's original 380px height goes entirely to the TOP —
 # the tab strip's own bottom, and everything anchored to it (Foci/Vol,
@@ -175,7 +176,9 @@ const HoldRepeat = preload("res://hold_repeat.gd")
 # Volition by design (see hold_repeat.gd).
 var _hold_repeat = HoldRepeat.new()
 
-const PANEL_BASE_PATH:      String = "ConstellationSelectorPanel/SelectorMargin/SelectorVBox"
+const COLUMNS_PATH:         String = "ConstellationSelectorPanel/SelectorMargin/SelectorColumns"
+const PANEL_BASE_PATH:      String = COLUMNS_PATH + "/SelectorVBox"
+const RUNES_BASE_PATH:      String = COLUMNS_PATH + "/RunesVBox"
 const ALLOCATION_BASE_PATH: String = PANEL_BASE_PATH + "/ConstellationAllocationVBox"
 const INFO_BASE_PATH:       String = PANEL_BASE_PATH + "/ConstellationInfoVBox"
 
@@ -212,6 +215,14 @@ var _info_art_achievement: RichTextLabel = null
 @onready var _octant_spin     : SpinBox       = get_node(PANEL_BASE_PATH + "/OctantSpinBox")
 
 @onready var _title_label     : Label         = get_node(PANEL_BASE_PATH + "/ConstellationTitleLabel")
+
+# Runes column (2026-11-02): a layout shell to the right of the Constellation
+# column, to be built out like it. Its slot grid and info area are empty for
+# now; the button opens the Rune fitting board, which root_ui.gd hands over
+# with set_rune_board() since the board lives on the CanvasLayer.
+@onready var _runes_slot_grid : GridContainer = get_node(RUNES_BASE_PATH + "/RunesSlotGrid")
+@onready var _inscribe_runes_btn : Button     = get_node(RUNES_BASE_PATH + "/InscribeRunesButton")
+var _rune_board: Control = null
 
 const DEFAULT_TITLE_TEXT: String = "The Constellation"
 
@@ -386,8 +397,18 @@ func set_close_locked(locked: bool) -> void:
     _close_locked = locked
 
 
+## The Rune fitting board the Runes column's button opens. It draws over this
+## panel, which stays open behind it.
+func set_rune_board(board: Control) -> void:
+    _rune_board = board
+    _inscribe_runes_btn.pressed.connect(board.open)
+
+
 func _input(event: InputEvent) -> void:
     if not _is_open:
+        return
+    # Clicks on the board are the board's; they must not close this panel.
+    if _rune_board and _rune_board.visible:
         return
     if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
         if _panel.get_global_rect().has_point(event.global_position):
