@@ -22,6 +22,7 @@ extends "res://dev_tests/test_base.gd"
 # saw the Satchel's boost as a no-op. Restores every touched field before
 # finishing so later modules in the same run are unaffected.
 
+const PopoutScene = preload("res://ConstellationPopout.tscn")
 const PHIAL_ID: int = 4
 const PHIAL_OCTANT: int = 4
 const SATCHEL_ID: int = 5
@@ -118,6 +119,33 @@ func run() -> void:
 	ok(boosted_banked.is_greater_than(base_banked),
 		"Phial actually banks more while the Satchel's boost is active (%s -> %s)"
 			% [base_banked.to_display_string(), boosted_banked.to_display_string()])
+
+	print("\n=== under the cap, the bank is Uonites x rate (1/5/25) ===")
+	gc.uonite = BigNum.from_int(33)
+	for pair in [[4181.0, 33], [10946.0, 165], [28657.0, 825]]:
+		_activate_phial(cd, gc, pair[0])
+		var got_rate: BigNum = cd.get_phial_spark_bank_amount()
+		ok(got_rate.equals(BigNum.from_int(pair[1])),
+			"33 Uonites at tier %s bank %d (got %s)"
+				% [cd.get_visual_state(PHIAL_ID), pair[1], got_rate.to_display_string()])
+
+	print("\n=== the panel shows each tier's rate and cap, and what it banks now ===")
+	# 2026-11-02: the ladder showed only the cap (+2961 at art), which read
+	# like the payout; the real payout here is 825.
+	var p = PopoutScene.instantiate()
+	root.add_child(p)
+	await process_frame
+	gc.assignments["constellation_%d_solve_count" % PHIAL_ID] = 1
+	p._selected_slot = PHIAL_ID
+	p._refresh_info_panel()
+	var ladder: String = p._info_tier_effects.get_parsed_text()
+	var art_cap: String = gc.get_effective_storage_cap().to_display_string()
+	ok(ladder.contains("Stars  1 per Uonite") and ladder.contains("Lines  5 per Uonite"),
+		"ladder shows the Stars and Lines rates")
+	ok(ladder.contains("Art  25 per Uonite, max %s" % art_cap), "ladder shows Art's rate and cap (%s)" % art_cap)
+	ok(ladder.contains("Banks +825 at the next Expansion (33 Uonites)"),
+		"ladder shows what the bank pays now, not the cap")
+	p.queue_free()
 
 	# Restore live state.
 	gc.storage_cap = saved_storage_cap

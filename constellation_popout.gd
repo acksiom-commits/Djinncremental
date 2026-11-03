@@ -61,6 +61,7 @@ const BONUS_DESCRIPTIONS: Dictionary = {
     "monad_compress_bonus": "Monad Compress Bonus",
     "archon_foci_bonus":    "Archon Foci Bonus",
     "purity_lock_slots":    "Purity Lock Slots",
+    "spark_bank_capacity":  "Spark Bank",
 }
 
 ## Every genuinely multiplicative bonus_key in constellation_data.gd's
@@ -103,6 +104,22 @@ func _phial_tier_cap_bignum(tier: String) -> BigNum:
     if frac <= 0.0:
         return BigNum.zero()
     return _gc.get_effective_storage_cap().mul_float(frac)
+
+
+## The Phial's Sparks per Uonite AT A GIVEN TIER (bonus_rate_levels, 1/5/25).
+## The bank pays this times the Uonite count, up to _phial_tier_cap_bignum(),
+## so the panel shows both: the cap alone read like the payout (2026-11-02).
+func _phial_tier_rate(def: Dictionary, tier: String) -> String:
+    var rates: Dictionary = _coerce_dict(def.get("bonus_rate_levels"), {})
+    return _fmt_bonus_val(_coerce_float(rates.get(tier), 0.0))
+
+
+## One tier's ladder text for the Phial: "25 per Uonite, max 3108".
+func _phial_tier_text(def: Dictionary, tier: String) -> String:
+    if _phial_tier_cap_bignum(tier).is_zero():
+        return "+0"
+    return "%s per Uonite, max %s" % [_phial_tier_rate(def, tier),
+        _phial_tier_cap_bignum(tier).to_display_string()]
 
 const FEED_COLORS: Array = [
     Color(0.35, 0.35, 0.35, 1.0),   # off — grey
@@ -964,9 +981,11 @@ func _refresh_info_panel() -> void:
         if solved:
             var val_fmt: String
             if bonus_key == "spark_bank_capacity":
-                # The Phial: no longer a static per-tier number — see
-                # _phial_tier_cap_bignum()'s doc comment.
-                val_fmt = "+%s" % _phial_tier_cap_bignum(state).to_display_string()
+                # The Phial: what it would actually bank if an Expansion
+                # happened now (Uonites x rate, capped) -- the same function
+                # the Expansion pays from, so the two can't disagree. The
+                # rate and cap behind it are on the tier ladder below.
+                val_fmt = "+%s next Expansion" % _cd.get_phial_spark_bank_amount().to_display_string()
             else:
                 # def["bonus_levels"] is a save-derived field too — a wrong
                 # type there would crash calling .get() on it the same way
@@ -1098,9 +1117,9 @@ func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
         var tier_name: String = TIER_DISPLAY_NAMES.get(tier, tier)
         var row_text:  String
         if is_phial_cap:
-            # The Phial: no longer static bonus_levels numbers — see
-            # _phial_tier_cap_bignum()'s doc comment.
-            row_text = "%s  +%s" % [tier_name, _phial_tier_cap_bignum(tier).to_display_string()]
+            # The Phial: rate and cap, not static bonus_levels numbers --
+            # see _phial_tier_text().
+            row_text = "%s  %s" % [tier_name, _phial_tier_text(def, tier)]
         else:
             var val: float = _coerce_float(bonus_levels.get(tier), default_bonus) \
                 if bonus_levels.has(tier) else default_bonus
@@ -1112,8 +1131,15 @@ func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
         else:
             var dim_color: Color = TIER_COLORS.get(tier, Color.WHITE).darkened(0.35)
             row_parts.append("[color=#%s]%s[/color]" % [dim_color.to_html(false), row_text])
+    # The Phial's rate-and-cap rows are too long to share a line, and what
+    # they add up to right now goes under the current tier (InfoBonusLabel,
+    # which says the same, is hidden in the scene).
+    var row_sep: String = "\n" if is_phial_cap else "    "
+    if is_phial_cap and _cd and _gc:
+        current_line += "\n[font_size=13]Banks +%s at the next Expansion (%s Uonites)[/font_size]" \
+            % [_cd.get_phial_spark_bank_amount().to_display_string(), _gc.uonite.to_display_string()]
     _info_tier_effects.text = "[font_size=13]%s — Effects by Tier:[/font_size]\n%s\n%s" \
-        % [bonus_desc, "    ".join(row_parts), current_line]
+        % [bonus_desc, row_sep.join(row_parts), current_line]
 
 
 func _coerce_int(val, default: int) -> int:

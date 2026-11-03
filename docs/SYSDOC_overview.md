@@ -118,7 +118,7 @@ Code order (id = unlock order; unlock key is `achievement:<n>th_prestige`):
 | 1 | The Spark (ALZIRO) | 16 | 2nd | `sparks_multiplier` | ×1.5 / ×2 / ×3 Spark summon, click and tick | yes (`production_manager.get_sparks_multiplier`) |
 | 2 | The Hourglass (DRASIN) | 13 | 3rd | `cooldown_multiplier` | ×0.5 / ×0.25 / ×0.1 cooldown on one op | yes (`production_manager` ~2097) |
 | 3 | The Bellows (DAJALA) | 18 | 4th | `click_volition_multiplier` | ×1.5 / ×2 / ×3 on the Volumitions click multiplier | yes (`game_context.get_click_multiplier`) |
-| 4 | The Phial | 14 | 5th | `spark_bank_capacity` | banks Sparks across Expansions: per-Uonite rate 1 / 5 / 25, capped at ×0.25 / ×0.5 / ×1.0 of the live Stoctagon cap | yes (`get_phial_spark_bank_amount`) |
+| 4 | The Phial | 14 | 5th | `spark_bank_capacity` | banks Sparks across Expansions: per-Uonite rate 1 / 5 / 25, capped at ×0.25 / ×0.5 / ×1.0 of the live Stoctagon cap. Its panel ladder shows each tier's rate and cap, plus what it would bank now (2026-11-02; it used to show only the cap) | yes (`get_phial_spark_bank_amount`) |
 | 5 | The Satchel (HANLEE) | 17 | 6th | `storage_multiplier` | live ×2 / ×3 / ×3 Stoctagon cap while Volition-assigned; **tier 3 also gives a permanent +5% to base cap on Expansion** | yes (`get_effective_storage_cap`, `do_prestige_reset`) |
 | 6 | The Vessel (ENIGMA); **code string is still `"The Djinn"`** | 17 | 7th | `endowment_multiplier` in code, **but the intended ability is now preserving material through Oscillations (author, 2026-10-21; not built, no bonus key, no tier values yet)** | ×1.5 / ×2 / ×3 declared for the OLD Endowment ability | **NO reader anywhere; inert** |
 
