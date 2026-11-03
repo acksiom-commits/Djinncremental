@@ -16,6 +16,12 @@ extends VBoxContainer
 #             (existing RESOURCES entry) as a byproduct. Quintessence is Phlogiston's
 #             processed/refined form -- fuel source for Runes, and an ingredient in
 #             Enchanted materials. Phlogiston's own further uses are TBD.
+# Oscillation Reduction (author, 2026-11-02; also called "Mana Essence"): the
+#             Phlogiston of destroyed Monads, Particles and Motes reduces into
+#             Quintessence typed by colour -- Monad Red, Particle Yellow, Mote
+#             Blue -- to charge Runes by their stars' colours. Quintessence not
+#             in a Persistent container is consumed by the next Oscillation.
+#             See rune_fitting_popout.gd and SysDoc section 7.
 # See memory: planned_archai_purity_tier_taxonomy
 # ================= FIRMAMENT UI v1.3.0 =================
 # v1.3.0: Wired save_manager's game_loaded/save_load_failed signals, which

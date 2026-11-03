@@ -49,6 +49,9 @@ var gas_stocks: Dictionary = {
 
 # ===================== TRANSMUTATION ==========================
 var phlogiston:   BigNum = BigNum.zero()
+# Untyped for now; the design (author, 2026-11-02) types it Red/Yellow/Blue
+# by source material for Rune charging -- see rune_fitting_popout.gd. Any
+# split of this saved key needs a save migration.
 var quintessence: BigNum = BigNum.zero()
 
 

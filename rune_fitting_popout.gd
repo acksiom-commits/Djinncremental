@@ -15,6 +15,20 @@ extends Control
 # Nothing is saved: the board empties when the panel closes. Tools and devices
 # don't exist yet, so firmament_ui.gd opens this from a placeholder button,
 # and on Primordial the Constellation slideout's Runes column opens it.
+#
+# Charging (design, not built; author 2026-11-02): Runes are charged with
+# Quintessence typed Red, Yellow or Blue (reduced at an Oscillation from the
+# Phlogiston of Monads, Particles and Motes). Each star of a Rune takes the
+# colour the player's star-colour generation gave that star in the Rune's
+# constellation (ConstellationData.get_puzzle_star_colors(); a Rune's "lines"
+# name its constellation's star indices) and charges from Quintessence of
+# that colour. Runes change shape with the highest level of their
+# constellation's puzzle solved, starting at Beginner, so the stars and
+# colours are those of that level's layout. A White star charges from every Quintessence, Tetrad, Iota and
+# Grain Quintessence included. Those three charge either of their composite
+# colours at 1/4 effectiveness: Tetrads Red or Yellow, Iotas Yellow or Blue,
+# Grains Blue or Red. Colour-match efficiency and off-colour charging are
+# both improvable. See SysDoc section 7.
 
 const Board = preload("res://rune_board.gd")
 
