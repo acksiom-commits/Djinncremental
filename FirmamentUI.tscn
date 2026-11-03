@@ -676,8 +676,8 @@ layout_mode = 2
 [node name="SettingsPopout" parent="FirmRootUI" unique_id=353190247 instance=ExtResource("20_rt0g0")]
 unique_name_in_owner = true
 top_level = true
-offset_top = 419.0
-offset_bottom = 623.0
+offset_top = 441.0
+offset_bottom = 645.0
 
 [editable path="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowSparksLabelInstance"]
 [editable path="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowSparksValueInstance"]
