@@ -23,6 +23,7 @@
 [ext_resource type="PackedScene" uid="uid://cnj4rti3wfnae" path="res://SettingsPopout.tscn" id="20_rt0g0"]
 [ext_resource type="PackedScene" path="res://ArchaiLatticeViewer.tscn" id="21_lattice"]
 [ext_resource type="PackedScene" path="res://LatticePanel.tscn" id="22_latticepanel"]
+[ext_resource type="PackedScene" uid="uid://blyfmxqnpq42f" path="res://ConstellationPopout.tscn" id="23_constpop"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_q6d5h"]
 shader = ExtResource("1_qk86b")
@@ -121,6 +122,15 @@ size_flags_horizontal = 0
 
 [node name="AgesPopout" parent="FirmRootUI/FirmTopBandHBox/LeftEdgePopoutsVBox" unique_id=660411531 instance=ExtResource("19_rt0g0")]
 unique_name_in_owner = true
+layout_mode = 2
+
+[node name="LeftPlaceholder1" type="Control" parent="FirmRootUI/FirmTopBandHBox/LeftEdgePopoutsVBox" unique_id=260488235]
+custom_minimum_size = Vector2(22, 100)
+layout_mode = 2
+
+[node name="ConstellationPopout" parent="FirmRootUI/FirmTopBandHBox/LeftEdgePopoutsVBox" unique_id=645500053 instance=ExtResource("23_constpop")]
+unique_name_in_owner = true
+z_index = 1
 layout_mode = 2
 
 [node name="PanelShover" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=856507435]

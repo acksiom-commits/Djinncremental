@@ -56,6 +56,8 @@ var archon_dialogue_manager: Node = null
 var _ages_popout:      Node = null
 var _journal_popout: Node = null
 var _settings_popout:  Node = null
+var _constellation_popout: Node = null
+var _rune_fitting_popout:  Control = null
 
 var _panel_nodes:      Dictionary = {}
 const REVEAL_DURATION: float = 1.5
@@ -105,6 +107,7 @@ func _ready() -> void:
     _hide_all_panels()
     _apply_unlock_visibility()
     _setup_rune_fitting()
+    _setup_constellation_popout()
 
     if archon_dialogue_manager:
         archon_dialogue_manager.enqueue_dialogue([
@@ -134,7 +137,11 @@ func _setup_panel_nodes() -> void:
 func _setup_rune_fitting() -> void:
     var popout: Control = RuneFittingPopout.new()
     popout.name = "RuneFittingPopout"
+    # Over the Constellation slideout (z 100), whose Runes column opens it too.
+    popout.z_as_relative = false
+    popout.z_index = 200
     get_parent().add_child.call_deferred(popout)
+    _rune_fitting_popout = popout
     var vbox: Node = find_child("ClickSelectVBox", true, false)
     if vbox == null:
         return
@@ -145,6 +152,33 @@ func _setup_rune_fitting() -> void:
     btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
     btn.pressed.connect(popout.open)
     vbox.add_child(btn)
+
+
+# The Constellation slideout, at the same spot on the left edge as on
+# Primordial (2026-11-03). Its tab and slot grid show by the same dialogue
+# flags root_ui.gd reads. Primordial's ConstellationPanel and Study puzzle
+# aren't on this page, so picking a constellation here selects it in the
+# slideout (info, Foci, Volitions) and nothing more.
+func _setup_constellation_popout() -> void:
+    _constellation_popout = find_child("ConstellationPopout", true, false)
+    if not _constellation_popout:
+        push_warning("FirmamentUI: ConstellationPopout not found")
+        return
+    if _rune_fitting_popout:
+        _constellation_popout.set_rune_board(_rune_fitting_popout)
+    _sync_constellation_popout()
+
+
+func _sync_constellation_popout() -> void:
+    if not _constellation_popout or not archon_dialogue_manager:
+        return
+    var adm: Node = archon_dialogue_manager
+    if adm.constellation_panel_creation_done:
+        _constellation_popout.show_tab()
+    if adm.open_constellation_panel_done:
+        _constellation_popout._has_been_opened_once = true
+    if adm.archon_volition_constellation_done or adm.no_archon_volition_constellation_done:
+        _constellation_popout.show_slot_grid()
 
 
 func _hide_all_panels() -> void:
@@ -246,8 +280,10 @@ func _on_game_loaded(offline_seconds: float) -> void:
     # longer match the state the player just loaded. Firmament has no
     # dialogue-trigger flags or puzzle cache of its own (those live in
     # root_ui.gd, gated on Primordial-only nodes like ConstellationOverlay
-    # and the Archon poke minigame), so this is the whole resync it needs.
+    # and the Archon poke minigame), so this is the whole resync it needs,
+    # plus the Constellation slideout's tab and grid.
     _apply_unlock_visibility()
+    _sync_constellation_popout()
     if offline_seconds < 30.0 or not production_manager:
         return
     var results: Dictionary = production_manager.apply_offline_progress(offline_seconds)

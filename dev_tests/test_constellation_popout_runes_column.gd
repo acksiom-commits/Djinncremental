@@ -61,5 +61,29 @@ func run() -> void:
 
 	p.queue_free()
 	board.queue_free()
+
+	print("\n=== Firmament has the slideout where Primordial has it ===")
+	# 2026-11-03: same left-edge column, under the Ages tab and a 100 px gap,
+	# with the Runes column wired to Firmament's own Rune board.
+	var firm = load("res://FirmamentUI.tscn").instantiate()
+	root.add_child(firm)
+	for i in 5:
+		await process_frame
+	var fp: Control = firm.find_child("ConstellationPopout", true, false)
+	ok(fp != null, "FirmamentUI has a ConstellationPopout")
+	if fp:
+		var names: Array = []
+		for c in fp.get_parent().get_children():
+			names.append(str(c.name))
+		ok(str(fp.get_parent().name) == "LeftEdgePopoutsVBox"
+			and names == ["AgesPopout", "LeftPlaceholder1", "ConstellationPopout"],
+			"it sits in the left edge column after Ages and the gap, as on Primordial (%s)" % str(names))
+		ok(fp._rune_board != null and str(fp._rune_board.name) == "RuneFittingPopout",
+			"its Runes column opens Firmament's Rune board")
+		ok(is_equal_approx(fp._tab_btn.get_global_rect().position.x, 0.0),
+			"its tab is on the window's left edge (x %.0f)" % fp._tab_btn.get_global_rect().position.x)
+	firm.queue_free()
+	await process_frame
+
 	print("\nALL PASS (%d failures)" % fails if fails == 0 else "\nFAILURES (%d failures)" % fails)
 	finish()
