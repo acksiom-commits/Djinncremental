@@ -12,6 +12,11 @@ extends Control
 # up, still turned. Esc lets go of the held Rune (one lifted off the board is
 # then gone); with nothing held, Esc closes the panel.
 #
+# Stars are drawn in their constellation stars' colours (author, 2026-11-02),
+# read from the constellation's Beginner puzzle; with no Beginner puzzle yet
+# they are grey. Stars of the same colour may share a board cell, linking
+# their Runes (rune_board.gd); the footer counts the linked Runes.
+#
 # Nothing is saved: the board empties when the panel closes. Tools and devices
 # don't exist yet, so firmament_ui.gd opens this from a placeholder button,
 # and on Primordial the Constellation slideout's Runes column opens it.
@@ -24,13 +29,15 @@ extends Control
 # name its constellation's star indices) and charges from Quintessence of
 # that colour. Runes change shape with the highest level of their
 # constellation's puzzle solved, starting at Beginner, so the stars and
-# colours are those of that level's layout. A White star charges from every Quintessence, Tetrad, Iota and
-# Grain Quintessence included. Those three charge either of their composite
+# colours are those of that level's layout. A White star charges from every
+# Quintessence, Tetrad, Iota and Grain Quintessence included. Those three charge either of their composite
 # colours at 1/4 effectiveness: Tetrads Red or Yellow, Iotas Yellow or Blue,
 # Grains Blue or Red. Colour-match efficiency and off-colour charging are
 # both improvable. See SysDoc section 7.
 
 const Board = preload("res://rune_board.gd")
+## The constellation stars' own colours, by star colour index.
+const STAR_COLORS_BY_IDX: Array = preload("res://star_color_palette.tres").by_idx
 
 const PANEL_SIZE := Vector2(1000, 620)
 const LIST_WIDTH: float = 330.0
@@ -48,7 +55,9 @@ const CELL_FILL  := Color(0.15, 0.15, 0.25)
 const CELL_EDGE  := Color(0.36, 0.36, 0.54)
 const FITS_TINT  := Color(0.35, 0.9, 0.5)
 const BLOCK_TINT := Color(0.95, 0.35, 0.35)
-const STAR_COLOR := Color(1.0, 0.97, 0.88)
+## A star whose colour isn't known yet (no Beginner puzzle for its constellation).
+const UNKNOWN_STAR := Color(0.5, 0.5, 0.58)
+const STAR_EDGE  := Color(0.05, 0.05, 0.1, 0.85)
 const TEXT_COLOR := Color(0.9, 0.9, 0.95)
 const DIM_COLOR  := Color(0.6, 0.6, 0.7)
 const HOVER_BG   := Color(1.0, 1.0, 1.0, 0.06)
@@ -70,10 +79,12 @@ const HINT := "Left-click a Rune to pick it up.  Right-click turns it a sixth cl
 @export var board_radius: int = 1
 
 var board = null
-## The Rune on the pointer: {"rune", "color", "anchor", "sixths"}; {} when none.
+## The Rune on the pointer: {"rune", "color", "star_colors", "anchor", "sixths"};
+## {} when none. "color" is its Sigil's, "star_colors" maps each star to its
+## star_color_palette index (Board.NO_COLOUR when unknown).
 var held: Dictionary = {}
 
-## One per Rune in the column: {"rune", "color", "fits", "node"}.
+## One per Rune in the column: {"rune", "cid", "color", "star_colors", "fits", "node"}.
 var _entries: Array = []
 var _hover_entry: int = -1
 ## Where the pointer is, in viewport coordinates, from the last mouse event.
@@ -175,6 +186,10 @@ func _ready() -> void:
 func open() -> void:
     board.clear()
     held = {}
+    # Puzzles are generated and replaced while the game runs, so the colours
+    # are read again each time the board opens.
+    for e in _entries:
+        e["star_colors"] = rune_star_colors(int(e["cid"]), e["rune"])
     visible = true
     _pointer = get_viewport().get_mouse_position()
     _refresh()
@@ -230,7 +245,8 @@ func _build_list(list: VBoxContainer) -> void:
             node.mouse_filter = Control.MOUSE_FILTER_STOP
             var i: int = _entries.size()
             var fits: bool = board.fits_empty(rune)
-            _entries.append({"rune": rune, "color": color, "fits": fits, "node": node})
+            _entries.append({"rune": rune, "cid": cid, "color": color,
+                "star_colors": rune_star_colors(cid, rune), "fits": fits, "node": node})
             node.draw.connect(_draw_entry.bind(i))
             node.gui_input.connect(_on_entry_input.bind(i))
             node.mouse_entered.connect(_on_entry_hover.bind(i, true))
@@ -245,7 +261,12 @@ func _build_list(list: VBoxContainer) -> void:
 
 func _refresh() -> void:
     if _used_label:
+        var linked: int = 0
+        for g in board.link_groups():
+            linked += (g as Array).size()
         _used_label.text = "Cells used: %d / %d" % [board.used_count(), board.cells.size()]
+        if linked > 0:
+            _used_label.text += "    Linked Runes: %d" % linked
     if _board_view:
         _board_view.queue_redraw()
     if _held_view:
@@ -295,9 +316,11 @@ func _on_board_input(event: InputEvent) -> void:
         var lifted: Dictionary = board.take(at)
         if not lifted.is_empty():
             held = {"rune": lifted["rune"], "color": lifted["color"],
+                "star_colors": lifted["star_colors"],
                 "anchor": lifted["anchor"], "sixths": lifted["sixths"]}
     else:
-        var idx: int = board.place(held["rune"], held["anchor"], int(held["sixths"]), at)
+        var idx: int = board.place(held["rune"], held["anchor"], int(held["sixths"]), at,
+            held["star_colors"])
         if idx >= 0:
             board.placed[idx]["color"] = held["color"]
             held = {}
@@ -315,7 +338,8 @@ func _draw_board() -> void:
         _board_view.draw_polyline(outline, CELL_EDGE, 1.5, true)
     for p in board.placed:
         _draw_rune(_board_view, p["rune"], p["anchor"], int(p["sixths"]),
-            origin + Board.cell_point(p["at"], size), size, p["color"], p["color"])
+            origin + Board.cell_point(p["at"], size), size, p["color"], p["color"],
+            p["star_colors"])
 
 
 ## The held Rune: snapped to the cell under the pointer on the board, green
@@ -327,20 +351,43 @@ func _draw_held() -> void:
     var at = _cell_under_pointer()
     if at == null:
         _draw_rune(_held_view, held["rune"], held["anchor"], int(held["sixths"]),
-            _pointer_in(_held_view), size, held["color"], held["color"], 0.22)
+            _pointer_in(_held_view), size, held["color"], held["color"], held["star_colors"], 0.22)
         return
-    var tint: Color = FITS_TINT if board.can_place(held["rune"], held["anchor"], int(held["sixths"]), at) \
-        else BLOCK_TINT
+    var tint: Color = FITS_TINT if board.can_place(held["rune"], held["anchor"], int(held["sixths"]),
+        at, held["star_colors"]) else BLOCK_TINT
     var origin: Vector2 = _board_view.global_position - _held_view.global_position \
         + _board_origin() + Board.cell_point(at, size)
     _draw_rune(_held_view, held["rune"], held["anchor"], int(held["sixths"]), origin, size,
-        tint, held["color"], 0.4)
+        tint, held["color"], held["star_colors"], 0.4)
+
+
+## Each of the Rune's stars -> the colour index its constellation's Beginner
+## puzzle gave that star, or Board.NO_COLOUR. A Rune's stars are its Beginner
+## layout's, so a cached puzzle counts only when its star count is the
+## Beginner layout's (every Hard layout has more stars).
+func rune_star_colors(cid: int, rune: Dictionary) -> Dictionary:
+    var out: Dictionary = {}
+    var colours: Array = []
+    var cd: Node = get_node_or_null("/root/ConstellationData")
+    if cd:
+        var layout = cd.get_constellation_def(cid).get("easy_layout")
+        var colors: Array = cd.get_puzzle_star_colors(cid)
+        if layout is Dictionary and colors.size() == int(layout.get("star_count", -1)):
+            colours = colors
+    for s in Board.star_cells(rune):
+        var raw = colours[s] if s < colours.size() else null
+        # The cache round-trips through saves; int() on a non-number can hang.
+        out[s] = clampi(int(raw), 0, STAR_COLORS_BY_IDX.size() - 1) \
+            if typeof(raw) in [TYPE_INT, TYPE_FLOAT] else Board.NO_COLOUR
+    return out
 
 
 ## Draws a Rune on `canvas` with its `anchor` cell centred on `origin`, turned
-## `sixths` clockwise: its cells filled in `fill`, its lines and stars over them.
+## `sixths` clockwise: its cells filled in `fill`, its lines over them, and its
+## stars in their constellation stars' colours.
 func _draw_rune(canvas: Control, rune: Dictionary, anchor: Vector2i, sixths: int, origin: Vector2,
-        size: float, fill: Color, line: Color, fill_alpha: float = 0.3) -> void:
+        size: float, fill: Color, line: Color, star_colors: Dictionary,
+        fill_alpha: float = 0.3) -> void:
     for c in Board.held_cells(rune, anchor, sixths):
         canvas.draw_colored_polygon(Board.cell_outline(c, size, origin, CELL_SHRINK),
             Color(fill, fill_alpha))
@@ -350,8 +397,13 @@ func _draw_rune(canvas: Control, rune: Dictionary, anchor: Vector2i, sixths: int
     for i in range(0, flat.size() - 1, 2):
         canvas.draw_line(origin + Board.cell_point(stars[int(flat[i])], size),
             origin + Board.cell_point(stars[int(flat[i + 1])], size), line, width, true)
+    var radius: float = maxf(2.5, size * 0.17)
     for s in stars:
-        canvas.draw_circle(origin + Board.cell_point(stars[s], size), maxf(2.0, size * 0.16), STAR_COLOR)
+        var ci: int = int(star_colors.get(s, Board.NO_COLOUR))
+        var colour: Color = UNKNOWN_STAR if ci == Board.NO_COLOUR else STAR_COLORS_BY_IDX[ci]
+        var at: Vector2 = origin + Board.cell_point(stars[s], size)
+        canvas.draw_circle(at, radius + 1.5, STAR_EDGE)
+        canvas.draw_circle(at, radius, colour)
 
 
 # ---------------------------------------------------------------- the column
@@ -362,7 +414,7 @@ func _on_entry_input(event: InputEvent, i: int) -> void:
         return
     var e: Dictionary = _entries[i]
     if bool(e["fits"]):
-        held = {"rune": e["rune"], "color": e["color"],
+        held = {"rune": e["rune"], "color": e["color"], "star_colors": e["star_colors"],
             "anchor": Board.middle_cell(e["rune"]), "sixths": 0}
         _refresh()
     (e["node"] as Control).accept_event()
@@ -401,7 +453,7 @@ func _draw_entry(i: int) -> void:
     var size: float = minf(ENTRY_SHAPE.x / (hi.x - lo.x), ENTRY_SHAPE.y / (hi.y - lo.y))
     var box_centre := Vector2(6.0 + ENTRY_SHAPE.x * 0.5, node.size.y * 0.5)
     var origin: Vector2 = box_centre - (lo + hi) * 0.5 * size
-    _draw_rune(node, rune, Vector2i.ZERO, 0, origin, size, color, color, 0.3)
+    _draw_rune(node, rune, Vector2i.ZERO, 0, origin, size, color, color, e["star_colors"], 0.3)
 
     var font: Font = get_theme_default_font()
     var fsize: int = get_theme_default_font_size()

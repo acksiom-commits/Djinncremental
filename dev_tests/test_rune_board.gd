@@ -5,7 +5,11 @@ extends "res://dev_tests/test_base.gd"
 #    (stars plus the cells their lines cross), and keeps it in every turn.
 #  - Six sixth-turns come back to the start, and a click lands in the cell drawn.
 #  - The 7-cell board takes the Triangle and both Arrows and nothing larger.
-#  - Runes never share a cell, and lifting one keeps the cell under the pointer.
+#  - Runes share a cell only where each has a star of the same colour there,
+#    never share a line, and lifting one keeps the cell under the pointer.
+#  - Runes sharing stars are reported as linked (link_groups()).
+#  - The popout colours each Rune star as its constellation's Beginner puzzle
+#    coloured that star, and greys it with no Beginner puzzle.
 
 const Board = preload("res://rune_board.gd")
 
@@ -92,8 +96,88 @@ func _check_popout() -> void:
 	ok(int(pop.held["sixths"]) == 2, "two right-clicks turn it two sixths")
 	pop.close()
 	ok(pop.held.is_empty() and not pop.visible, "closing lets go and hides the panel")
+
+	# Star colours come from the constellation's Beginner puzzle (the Archon's
+	# has 10 stars; Hard has 15). The live cache is put back afterwards.
+	var cd: Node = root.get_node("/root/ConstellationData")
+	var saved: Dictionary = cd.get_puzzle_cache(0)
+	var tri: Dictionary = pop._entries[0]["rune"]
+	cd.set_puzzle_cache(0, {"star_colors": [3, 2, 0, 1, 1, 1, 1, 1, 1, 1]})
+	pop.open()
+	ok(pop._entries[0]["star_colors"] == {0: 3, 1: 2, 2: 0},
+		"%s's stars take the Beginner puzzle's colours on open (%s)" % [tri["name"], str(pop._entries[0]["star_colors"])])
+	cd.set_puzzle_cache(0, {"star_colors": [3, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]})
+	ok(pop.rune_star_colors(0, tri).values().all(func(v): return v == Board.NO_COLOUR),
+		"a Hard puzzle's colours are not used: its stars aren't the Rune's")
+	cd.clear_puzzle_cache(0)
+	ok(pop.rune_star_colors(0, tri).values().all(func(v): return v == Board.NO_COLOUR),
+		"with no puzzle the stars have no colour")
+	if not saved.is_empty():
+		cd.set_puzzle_cache(0, saved)
+	pop.close()
 	pop.queue_free()
 	await process_frame
+
+
+## Two Triangles on the 7-cell board can meet at one star of the same colour,
+## and only then. A Triangle's three cells are all stars, so this exercises the
+## colour rule and the shared-line rule on their own.
+func _check_shared_stars(tri: Dictionary) -> void:
+	var blue: Dictionary = {0: 0, 1: 0, 2: 0}
+	var board = Board.new(1)
+	var mid: Vector2i = Board.middle_cell(tri)
+	board.place(tri, mid, 0, Vector2i.ZERO, blue)
+	ok(board.placed.size() == 1, "test setup: a blue Triangle on the 7-cell board")
+	ok(not board.can_place(tri, mid, 0, Vector2i.ZERO, blue),
+		"a second Triangle can't sit on the first: they would share lines")
+
+	# Every way a second blue Triangle can drop, by how many cells it shares.
+	var by_shared: Dictionary = {}
+	var one_star: Array = []
+	for sixths in 6:
+		for at in board.cells:
+			if not board.can_place(tri, mid, sixths, at, blue):
+				continue
+			var shared: int = 0
+			for c in Board.held_cells(tri, mid, sixths):
+				if (board.placed[0]["cells"] as Array).has(at + c):
+					shared += 1
+			by_shared[shared] = int(by_shared.get(shared, 0)) + 1
+			if shared == 1 and one_star.is_empty():
+				one_star = [sixths, at]
+	ok(by_shared.has(1) and by_shared.keys() == [1],
+		"a second blue Triangle drops only sharing one star (%s, shared cells -> drops)" % str(by_shared))
+	ok(not one_star.is_empty(), "test setup: found a one-star drop")
+	if one_star.is_empty():
+		return
+	var sixths: int = one_star[0]
+	var at: Vector2i = one_star[1]
+
+	# Which of the second Triangle's stars lands on the shared cell.
+	var on_shared: int = -1
+	var rel: Dictionary = Board.held_stars(tri, mid, sixths)
+	for s in rel:
+		if (board.placed[0]["cells"] as Array).has(at + (rel[s] as Vector2i)):
+			on_shared = s
+	var red_there: Dictionary = blue.duplicate()
+	red_there[on_shared] = 3
+	ok(not board.can_place(tri, mid, sixths, at, red_there), "a red star can't share a blue star's cell")
+	var unknown_there: Dictionary = blue.duplicate()
+	unknown_there.erase(on_shared)
+	ok(not board.can_place(tri, mid, sixths, at, unknown_there), "a star with no colour shares no cell")
+	var red_elsewhere: Dictionary = {0: 3, 1: 3, 2: 3}
+	red_elsewhere[on_shared] = 0
+	ok(board.can_place(tri, mid, sixths, at, red_elsewhere),
+		"only the shared star's colour matters (the other two are red)")
+
+	ok(board.place(tri, mid, sixths, at, blue) == 1, "the second Triangle drops, sharing one blue star")
+	ok(board.used_count() == 5, "the shared cell counts once: 5 of 7 cells used (%d)" % board.used_count())
+	ok(board.link_groups() == [[0, 1]], "the two Triangles are linked (%s)" % str(board.link_groups()))
+	var shared_cell: Vector2i = at + (rel[on_shared] as Vector2i)
+	var lifted: Dictionary = board.take(shared_cell)
+	ok(board.placed.size() == 1 and lifted["at"] == at,
+		"clicking the shared star lifts the Triangle placed last")
+	ok(board.link_groups().is_empty(), "with one Triangle left nothing is linked")
 
 
 func run() -> void:
@@ -178,7 +262,10 @@ func run() -> void:
 			if seven.place(tri, Board.middle_cell(tri), sixths, at) >= 0:
 				two += 1
 	# Three cells that all touch, on a 7-cell board, always include the centre.
-	ok(two == 1 and seven.used_count() == 3, "one Triangle at a time on the 7-cell board (%d placed)" % two)
+	ok(two == 1 and seven.used_count() == 3,
+		"with no star colours, one Triangle at a time on the 7-cell board (%d placed)" % two)
+
+	_check_shared_stars(tri)
 
 	await _check_popout()
 

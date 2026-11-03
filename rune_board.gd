@@ -5,9 +5,18 @@ extends RefCounted
 # a Rune in constellation_data.gd, so column and row are both odd or both even.
 # A Rune uses the cells its stars sit in plus every cell one of its lines passes
 # through (the prototype's rule, author's pick 2026-11-02; see _cells_crossed).
-# Runes on one board never share a cell.
+# Runes on one board share a cell only where each has a star there and the
+# stars are all the same colour (author, 2026-11-02): those Runes are linked,
+# and link_groups() reports them for effects that grow with how many Runes
+# are connected. Every other cell, line cells included, holds one Rune, and
+# linked Runes never share a line (both ends shared, with a line between them
+# in each), so no Rune stacks on a copy of itself.
 #
 # Pure data and geometry, no nodes: rune_fitting_popout.gd draws it.
+
+## A star whose colour isn't known (its constellation has no Beginner puzzle
+## yet). It never shares a cell.
+const NO_COLOUR: int = -1
 
 const SQRT3: float = 1.7320508
 ## Points sampled along each line to find the cells it crosses (the prototype's).
@@ -15,11 +24,13 @@ const SAMPLES: int = 60
 
 ## Every cell of the board -> true.
 var cells: Dictionary = {}
-## Each Rune on the board: {"rune", "sixths", "anchor", "at", "cells", "stars"}.
-## "anchor" is the Rune's own cell held under the pointer, "at" the board cell
-## it was dropped on, and "stars" maps each star to its board cell.
+## Each Rune on the board: {"rune", "sixths", "anchor", "at", "cells", "stars",
+## "star_colors"}. "anchor" is the Rune's own cell held under the pointer, "at"
+## the board cell it was dropped on, "stars" maps each star to its board cell
+## and "star_colors" each star to its colour (a star_color_palette index).
 var placed: Array = []
-## Board cell -> index into `placed`.
+## Board cell -> the indices into `placed` of the Runes using it, in the order
+## they were placed. More than one only on a shared star cell.
 var _owner: Dictionary = {}
 
 
@@ -183,18 +194,57 @@ static func middle_cell(rune: Dictionary) -> Vector2i:
 
 
 ## Whether the Rune, held at `anchor` and turned `sixths`, can drop with the
-## anchor on board cell `at`.
-func can_place(rune: Dictionary, anchor: Vector2i, sixths: int, at: Vector2i) -> bool:
+## anchor on board cell `at`. `star_colors` maps its stars to their colours;
+## a star missing from it has NO_COLOUR.
+func can_place(rune: Dictionary, anchor: Vector2i, sixths: int, at: Vector2i,
+        star_colors: Dictionary = {}) -> bool:
+    # The colour of the held Rune's star on each board cell it would cover.
+    var star_on: Dictionary = {}
+    var rel: Dictionary = held_stars(rune, anchor, sixths)
+    for s in rel:
+        star_on[at + (rel[s] as Vector2i)] = int(star_colors.get(s, NO_COLOUR))
     for c in held_cells(rune, anchor, sixths):
         var on: Vector2i = at + c
-        if not cells.has(on) or _owner.has(on):
+        if not cells.has(on):
             return false
+        if not _owner.has(on):
+            continue
+        var colour: int = int(star_on.get(on, NO_COLOUR))
+        if colour == NO_COLOUR:
+            return false
+        for i in _owner[on]:
+            if star_colour_at(i, on) != colour:
+                return false
+    # Linked Runes meet at stars but never share a line, or a Rune could be
+    # stacked on a copy of itself any number of times.
+    var flat: Array = rune.get("lines", [])
+    for k in range(0, flat.size() - 1, 2):
+        var a: Vector2i = at + (rel[int(flat[k])] as Vector2i)
+        var b: Vector2i = at + (rel[int(flat[k + 1])] as Vector2i)
+        if not (_owner.has(a) and _owner.has(b)):
+            continue
+        for i in _owner[a]:
+            if (_owner[b] as Array).has(i) and _has_line(i, a, b):
+                return false
     return true
 
 
+## Whether placed Rune `i` has a line between its stars on cells `a` and `b`.
+func _has_line(i: int, a: Vector2i, b: Vector2i) -> bool:
+    var p: Dictionary = placed[i]
+    var flat: Array = p["rune"].get("lines", [])
+    for k in range(0, flat.size() - 1, 2):
+        var ca: Vector2i = p["stars"][int(flat[k])]
+        var cb: Vector2i = p["stars"][int(flat[k + 1])]
+        if (ca == a and cb == b) or (ca == b and cb == a):
+            return true
+    return false
+
+
 ## Drops the Rune; returns its index in `placed`, or -1 where it doesn't fit.
-func place(rune: Dictionary, anchor: Vector2i, sixths: int, at: Vector2i) -> int:
-    if not can_place(rune, anchor, sixths, at):
+func place(rune: Dictionary, anchor: Vector2i, sixths: int, at: Vector2i,
+        star_colors: Dictionary = {}) -> int:
+    if not can_place(rune, anchor, sixths, at, star_colors):
         return -1
     var used: Array[Vector2i] = []
     for c in held_cells(rune, anchor, sixths):
@@ -204,19 +254,30 @@ func place(rune: Dictionary, anchor: Vector2i, sixths: int, at: Vector2i) -> int
     for s in rel:
         stars[s] = at + (rel[s] as Vector2i)
     placed.append({"rune": rune, "sixths": posmod(sixths, 6), "anchor": anchor,
-        "at": at, "cells": used, "stars": stars})
+        "at": at, "cells": used, "stars": stars, "star_colors": star_colors})
     _reindex()
     return placed.size() - 1
 
 
+## The colour of placed Rune `i`'s star on board cell `cell`, or NO_COLOUR
+## where it has no star there or the star's colour isn't known.
+func star_colour_at(i: int, cell: Vector2i) -> int:
+    var p: Dictionary = placed[i]
+    for s in p["stars"]:
+        if p["stars"][s] == cell:
+            return int((p["star_colors"] as Dictionary).get(s, NO_COLOUR))
+    return NO_COLOUR
+
+
 ## Lifts the Rune covering `cell` off the board and returns its placement, with
 ## "anchor" moved to the lifted cell so it stays under the pointer; {} if the
-## cell is empty.
+## cell is empty. On a shared star cell the Rune placed last comes off first.
 func take(cell: Vector2i) -> Dictionary:
     if not _owner.has(cell):
         return {}
-    var p: Dictionary = placed[int(_owner[cell])]
-    placed.remove_at(int(_owner[cell]))
+    var top: int = int((_owner[cell] as Array).back())
+    var p: Dictionary = placed[top]
+    placed.remove_at(top)
     _reindex()
     # Undo the turn on the lifted cell's offset to find which of the Rune's own
     # cells it is.
@@ -250,12 +311,47 @@ func fits_empty(rune: Dictionary) -> bool:
     return ok
 
 
+## Board cells in use; a shared star cell counts once.
 func used_count() -> int:
     return _owner.size()
+
+
+## The Runes linked through shared star cells: each group lists indices into
+## `placed`, linked directly or through others. Runes sharing no star with
+## any other are left out.
+func link_groups() -> Array:
+    var root: Array[int] = []
+    for i in placed.size():
+        root.append(i)
+    for c in _owner:
+        var on: Array = _owner[c]
+        for k in range(1, on.size()):
+            var a: int = _root_of(root, int(on[0]))
+            var b: int = _root_of(root, int(on[k]))
+            root[maxi(a, b)] = mini(a, b)
+    var groups: Dictionary = {}
+    for i in placed.size():
+        var r: int = _root_of(root, i)
+        if not groups.has(r):
+            groups[r] = []
+        groups[r].append(i)
+    var out: Array = []
+    for r in groups:
+        if (groups[r] as Array).size() > 1:
+            out.append(groups[r])
+    return out
+
+
+func _root_of(root: Array[int], i: int) -> int:
+    while root[i] != i:
+        i = root[i]
+    return i
 
 
 func _reindex() -> void:
     _owner.clear()
     for i in placed.size():
         for c in placed[i]["cells"]:
-            _owner[c] = i
+            if not _owner.has(c):
+                _owner[c] = []
+            _owner[c].append(i)
