@@ -114,8 +114,17 @@ custom_minimum_size = Vector2(0, 400)
 layout_mode = 2
 size_flags_vertical = 3
 
+[node name="LeftEdgePopoutsVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=1930060011]
+custom_minimum_size = Vector2(22, 310)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="AgesPopout" parent="FirmRootUI/FirmTopBandHBox/LeftEdgePopoutsVBox" unique_id=660411531 instance=ExtResource("19_rt0g0")]
+unique_name_in_owner = true
+layout_mode = 2
+
 [node name="PanelShover" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=856507435]
-custom_minimum_size = Vector2(400, 0)
+custom_minimum_size = Vector2(368, 0)
 layout_mode = 2
 
 [node name="ManifoldDial" type="Control" parent="FirmRootUI/FirmTopBandHBox/PanelShover" unique_id=1229345321]
@@ -632,10 +641,6 @@ layout_mode = 2
 size_flags_horizontal = 0
 
 [node name="JournalPopout" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox" unique_id=634488649 instance=ExtResource("18_rt0g0")]
-unique_name_in_owner = true
-layout_mode = 2
-
-[node name="AgesPopout" parent="FirmRootUI/FirmTopBandHBox/RightEdgePopoutsVBox" unique_id=660411531 instance=ExtResource("19_rt0g0")]
 unique_name_in_owner = true
 layout_mode = 2
 
