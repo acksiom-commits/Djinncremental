@@ -69,6 +69,7 @@ var _panel_nodes:      Dictionary = {}
 const REVEAL_DURATION: float = 1.5
 const RuneFittingPopout = preload("res://rune_fitting_popout.gd")
 const _PuzzlePipeline = preload("res://constellation_puzzle_pipeline.gd")
+const AgeSwitchTurn = preload("res://age_switch_turn.gd")
 
 
 func _ready() -> void:
@@ -79,7 +80,9 @@ func _ready() -> void:
     archon_dialogue_manager = get_node_or_null("/root/ArchonDialogueManager")
 
     _ages_popout      = find_child("AgesPopout",            true, false)
-    _journal_popout = find_child("DialogueJournalPopout", true, false)
+    # The scene's node is "JournalPopout"; this looked for "DialogueJournalPopout"
+    # until 2026-11-04, so Firmament's Journal recorded no History or Notices.
+    _journal_popout = find_child("JournalPopout", true, false)
 
     if _ages_popout:
         _ages_popout.unlock_age("primordial")
@@ -115,6 +118,9 @@ func _ready() -> void:
     _apply_unlock_visibility()
     _setup_rune_fitting()
     _setup_constellation_popout()
+    # Loads Primordial's page now, inside this page's own load, so switching
+    # ages later doesn't pause to load it.
+    AgeSwitchTurn.warm_neighbours("res://FirmamentUI.tscn")
 
     if archon_dialogue_manager:
         archon_dialogue_manager.enqueue_dialogue([
@@ -286,18 +292,10 @@ func _on_age_selected(key: String) -> void:
 
 
 func _transition_to_age(scene_path: String) -> void:
-    if save_manager:
-        save_manager.save_game()
-    # This page's root is a CanvasLayer, which has no modulate to fade, so
-    # its drawn children fade together instead.
-    var scene: Node = get_tree().current_scene
-    var fading: Array = [scene] if scene is CanvasItem \
-        else scene.get_children().filter(func(n): return n is CanvasItem)
-    var tween := create_tween().set_parallel(true) \
-        .set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-    for node in fading:
-        tween.tween_property(node, "modulate:a", 0.0, 0.6)
-    tween.chain().tween_callback(func(): get_tree().change_scene_to_file(scene_path))
+    # The view turns across the sky to the next age's page (age_switch_turn.gd).
+    # No save here: the Ages panel saves when it opens (2026-11-04), and the
+    # next page carries on from the live game rather than re-reading the file.
+    AgeSwitchTurn.run(get_tree(), scene_path)
 
 
 func _on_save_load_failed() -> void:

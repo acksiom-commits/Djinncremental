@@ -85,6 +85,7 @@ const AUTO_ROT_SPEED:    float = 0.003
 
 #   var _auto_rot_angle:     float = 0.0
 var _rotation_locked:    bool  = false
+var _turning:            bool  = false   # see set_turning()
 var _user_locked:        bool  = false
 
 func _ready() -> void:
@@ -160,8 +161,11 @@ func _process(delta: float) -> void:
     mat.set_shader_parameter("time_offset",   _time)
     mat.set_shader_parameter("viewport_size", vp_size)
 
+    # ── AGE-SWITCH TURN: age_switch_turn.gd sets the view itself ──
+    if _turning:
+        pass
     # ── SNAP-TO-CONSTELLATION (single-phase full-basis) ──
-    if _snap_active:
+    elif _snap_active:
         var diff := _snap_target_basis * _current_combined_rot.inverse()
         var q := Quaternion(diff)
         var axis: Vector3 = q.get_axis()
@@ -232,6 +236,24 @@ func get_effective_view_matrix() -> Basis:
 
 func get_snap_draw_offset() -> Vector2:
     return _snap_draw_offset_px
+
+
+## Sets the view directly: age_switch_turn.gd turns it between ages and hands
+## the result to the next page's starfield so the sky doesn't jump.
+func set_view_matrix(view: Basis) -> void:
+    _current_combined_rot = view.orthonormalized()
+    var mat = material as ShaderMaterial
+    if mat:
+        mat.set_shader_parameter("view_matrix", _current_combined_rot)
+
+
+## While true, the mouse, the slow drift and constellation snaps leave the
+## view alone, so an age-switch turn isn't fought frame by frame.
+func set_turning(turning: bool) -> void:
+    _turning = turning
+    _snap_active = false
+    _vel_yaw = 0.0
+    _vel_pitch = 0.0
 
 
 func set_rotation_locked(locked: bool) -> void:

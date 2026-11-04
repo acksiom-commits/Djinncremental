@@ -101,9 +101,10 @@ func _ready() -> void:
 
 ## Every save the game makes on its own (60s timer, quitting, one-shot
 ## checkpoints) goes through here so the Settings panel's Autosave toggle
-## covers all of them. The age-transition saves in root_ui.gd/firmament_ui.gd
-## deliberately call save_game() instead: RootUI reloads from disk on entry
-## (_load_on_start), so skipping that save would roll the player back.
+## covers all of them, the Ages panel's save on opening included. Switching
+## ages no longer saves (2026-11-04): it used to call save_game() because
+## RootUI re-read the file on entry, which it now skips when reached by a
+## switch (age_switch_turn.gd's `arriving`).
 func autosave() -> void:
     if autosave_enabled:
         save_game()

@@ -309,6 +309,7 @@ const _EXPANSION_TRANSITION_SHADER: Shader = preload("res://expansion_transition
 # headless runs (known gotcha), a preload is not.
 const _PuzzleScript = preload("res://constellation_logic_puzzle.gd")
 const _PuzzlePipeline = preload("res://constellation_puzzle_pipeline.gd")
+const _AgeSwitchTurn = preload("res://age_switch_turn.gd")
 const _RuneFittingPopout = preload("res://rune_fitting_popout.gd")
 
 var _expansion_anim_active: bool           = false
@@ -371,6 +372,9 @@ func _ready() -> void:
     _connect_tetrad_signals()
     call_deferred("_setup_dialogue")
     call_deferred("_load_on_start")
+    # Loads Firmament's page now, inside this page's own load, so switching
+    # ages later doesn't pause to load it.
+    _AgeSwitchTurn.warm_neighbours("res://RootUI.tscn")
     _connect_action_buttons()
     _cache_tooltip_buttons()
     
@@ -1439,11 +1443,10 @@ func _sync_trigger_flags_from_loaded_state() -> void:
 
 
 func _transition_to_age(scene_path: String) -> void:
-    if save_manager:
-        save_manager.save_game()
-    var tween := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-    tween.tween_property(get_tree().current_scene, "modulate:a", 0.0, 0.6)
-    tween.tween_callback(func(): get_tree().change_scene_to_file(scene_path))
+    # The view turns across the sky to the next age's page (age_switch_turn.gd).
+    # No save here: the Ages panel saves when it opens (2026-11-04), and the
+    # next page carries on from the live game rather than re-reading the file.
+    _AgeSwitchTurn.run(get_tree(), scene_path)
 
 
 func _get_completing_category() -> String:
@@ -3389,7 +3392,12 @@ func _res_to_op(res: String) -> String:
 # SAVE / LOAD
 # ==================================================
 func _load_on_start() -> void:
-    if save_manager:
+    if save_manager and _AgeSwitchTurn.arriving:
+        # Reached by switching ages: the game's state is already live, so
+        # announce it as loaded (this page and the Hourglass sync on it)
+        # instead of re-reading the file. The switch hands the Journal over.
+        save_manager.game_loaded.emit(0.0)
+    elif save_manager:
         save_manager.load_game()
     if archon_dialogue_manager:
         archon_dialogue_manager.start_intro()

@@ -10,6 +10,8 @@ const COLOR_UNLOCKED: Color = Color("#aaddff")
 const COLOR_ACTIVE:   Color = Color("#ffdd55")
 
 const AGE_KEYS: Array[String] = ["primordial", "firmament", "world", "civilization"]
+## Its AGE_SCENES are in the same order as AGE_KEYS.
+const AgeSwitchTurn = preload("res://age_switch_turn.gd")
 
 signal age_selected(key: String)
 
@@ -41,6 +43,7 @@ var _unlocked: Dictionary = {
 
 func _ready() -> void:
     _tab_btn.pressed.connect(_on_tab_pressed)
+    _tab_btn.mouse_entered.connect(_prepare_other_ages)
     _prim_btn.pressed.connect(func(): _on_age_pressed("primordial"))
     _firm_btn.pressed.connect(func(): _on_age_pressed("firmament"))
     _world_btn.pressed.connect(func(): _on_age_pressed("world"))
@@ -100,6 +103,33 @@ func _on_tab_pressed() -> void:
     var tab_x: float = _tab_btn.global_position.x
     _tween = SlidePanelToggle.run(_tab_btn, "position:x", PANEL_WIDTH,
         _panel, "global_position:x", tab_x, ANIM_TIME, _tween)
+    _tween.tween_callback(_on_opened)
+
+
+## Once the panel is fully open: save, so switching ages from here doesn't
+## pause to save (author's idea, 2026-11-04; after the slide, not before, so
+## the pause doesn't stall it). A checkpoint, so it follows the Autosave
+## setting. Also makes the other pages if hovering didn't (a touch screen).
+func _on_opened() -> void:
+    if not _is_open:
+        return
+    var sm: Node = get_node_or_null("/root/SaveManager")
+    if sm and sm.has_method("autosave"):
+        sm.autosave()
+    _prepare_other_ages()
+
+
+## Creates the other unlocked ages' pages ahead of a switch (2026-11-04), on
+## hovering the tab, so clicking an age only has to add one.
+func _prepare_other_ages() -> void:
+    for i in AGE_KEYS.size():
+        var key: String = AGE_KEYS[i]
+        if _unlocked.get(key, false) and key != _active_age and i < AgeSwitchTurn.AGE_SCENES.size():
+            AgeSwitchTurn.prepare(AgeSwitchTurn.AGE_SCENES[i], self)
+
+
+func _exit_tree() -> void:
+    AgeSwitchTurn.release_prebuilt(self)
 
 
 func _close() -> void:
