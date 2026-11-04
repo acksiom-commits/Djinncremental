@@ -105,6 +105,12 @@ func run() -> void:
 		var study: Node = firm.get_node_or_null("ConstellationStudyOverlay")
 		ok(study != null and study.reset_requested.get_connections().size() == 1,
 			"the Study overlay is on the page and its RESET is connected")
+		# 2026-11-03: the tab runs down beside the middle band (from y 440 with
+		# a save loaded), which took the mouse there first, so the tab's lower
+		# half ignored hover and clicks. The band is layout only.
+		var mid: Control = firm.find_child("MidBandHBox", true, false)
+		ok(mid != null and mid.mouse_filter == Control.MOUSE_FILTER_IGNORE,
+			"the middle band leaves the mouse to the tab beside it")
 		var sky: Node = firm.get_node_or_null("ConstellationOverlay")
 		ok(sky != null and sky._synth != null and study != null and study._synth != null,
 			"the sky overlay and Study overlay find the page's synth")

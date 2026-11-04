@@ -675,6 +675,7 @@ layout_mode = 2
 [node name="MidBandHBox" type="HBoxContainer" parent="FirmRootUI" unique_id=1141493760]
 custom_minimum_size = Vector2(0, 210)
 layout_mode = 2
+mouse_filter = 2
 size_flags_vertical = 3
 
 [node name="ConstellationLeftMargin" type="MarginContainer" parent="FirmRootUI/MidBandHBox" unique_id=1141335201]
