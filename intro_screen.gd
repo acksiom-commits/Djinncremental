@@ -111,7 +111,11 @@ func _ready() -> void:
     # the fresh-start moment specifically, not to ordinary continued play.
     var save_manager = get_node_or_null("/root/SaveManager")
     if save_manager and save_manager.has_existing_save():
-        get_tree().change_scene_to_file("res://RootUI.tscn")
+        # Deferred: this runs while the tree is still adding this scene, and
+        # changing scene now has to remove it, which Godot refuses mid-add
+        # ("Parent node is busy adding/removing children", seen on editor
+        # runs at launch, 2026-11-04).
+        get_tree().change_scene_to_file.call_deferred("res://RootUI.tscn")
         return
 
     set_anchors_preset(Control.PRESET_FULL_RECT)
