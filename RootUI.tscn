@@ -37,6 +37,7 @@
 [ext_resource type="PackedScene" path="res://WillFormMiniIcon.tscn" id="35_wfminiicon"]
 [ext_resource type="PackedScene" path="res://GrainTetrahedron.tscn" id="36_graintetra"]
 [ext_resource type="PackedScene" path="res://GrainCycleProgressBar.tscn" id="37_grainstrip"]
+[ext_resource type="Script" path="res://readouts_panel.gd" id="38_readouts"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_hloqn"]
 shader = ExtResource("1_6fk1d")
@@ -285,6 +286,7 @@ custom_minimum_size = Vector2(142, 0)
 layout_mode = 2
 size_flags_vertical = 0
 theme_override_styles/panel = SubResource("StyleBoxEmpty_g5yj0")
+script = ExtResource("38_readouts")
 
 [node name="DirectReadoutsMargin" type="MarginContainer" parent="CanvasLayer/RootUI/TopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer" unique_id=1069241351]
 custom_minimum_size = Vector2(96, 0)

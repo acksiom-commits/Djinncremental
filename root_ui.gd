@@ -2776,15 +2776,11 @@ func _on_row_clicked(resource_key: String) -> void:
 func _setup_resource_rows() -> void:
     var rows = get_tree().get_nodes_in_group("resource_rows")
     for row in rows:
+        # The Sparks/Uonites/Foci/Volitions readouts run themselves
+        # (readouts_panel.gd, shared with Firmament since 2026-11-04).
+        if row.get_meta("readout", false):
+            continue
         match row.name:
-            "RowSparksLabelInstance":    row.set_resource_key("sparks_label")
-            "RowUonitesLabelInstance":   row.set_resource_key("uonites_label")
-            "RowFociLabelInstance":      row.set_resource_key("foci_label")
-            "RowVolitionsLabelInstance": row.set_resource_key("volitions_label")
-            "RowSparksValueInstance":    row.set_resource_key("sparks_value")
-            "RowUonitesValueInstance":   row.set_resource_key("uonites_value")
-            "RowFociValueInstance":      row.set_resource_key("foci_value")
-            "RowVolitionsValueInstance": row.set_resource_key("volitions_value")
             "RowSolidMonadInstance":     row.set_resource_key("monad_solid")
             "RowLiquidMonadInstance":    row.set_resource_key("monad_liquid")
             "RowGasMonadInstance":       row.set_resource_key("monad_gas")
@@ -2913,47 +2909,6 @@ func _update_counters() -> void:
     var rows = get_tree().get_nodes_in_group("resource_rows")
     for row in rows:
         match row.resource_key:
-            "sparks_label":    row.set_label("[b]Sparks[/b]")
-            "uonites_label":   row.set_label("[b]Uonites[/b]")
-            "foci_label":      row.set_label("[b]Foci[/b]")
-            "volitions_label": row.set_label("[b]Volitions[/b]")
-            "sparks_value": (func():
-                row.set_label(_fmt(game_context.sparks))
-                var summoned: BigNum = game_context.totals_created.get("sparks_summoned", BigNum.zero())
-                if not summoned.is_zero():
-                    row.set_tooltip("Total summoned: " + summoned.to_display_string())
-                else:
-                    row.set_tooltip("")
-            ).call()
-            "uonites_value":
-                var u_assigned  = game_context.get_total_uonites_assigned()
-                var u_available = game_context.uonite.sub(u_assigned)
-                row.set_label(_fmt(u_available) + "/" + _fmt(game_context.uonite))
-            "foci_value":
-                var f_assigned  = game_context.get_total_foci_assigned()
-                var f_available = max(0, game_context.archon_foci - f_assigned)
-                row.set_label(str(f_available) + "/" + str(game_context.archon_foci))
-            "volitions_value":
-                var bvps: int = game_context.get_bonus_volitions_per_slot()
-                if bvps <= 0 or game_context.volition_slots.is_empty():
-                    var v_assigned  = game_context.get_total_volitions_assigned()
-                    var v_available = max(0, game_context.volitions - v_assigned)
-                    row.set_label(str(v_available) + "/" + str(game_context.volitions))
-                else:
-                    var parts: Array[String] = []
-                    var slot_count: int = game_context.volition_slots.size()
-                    var display_cap: int = mini(slot_count, 2)
-                    for si in display_cap:
-                        var slot = game_context.volition_slots[si]
-                        var p_free: int = 1 if slot["category"] == "" else 0
-                        var c_free: int = game_context.get_free_children_in_slot(si)
-                        var pair: String = str(p_free) + "/" + str(c_free)
-                        if slot["category"] != "":
-                            pair = "[color=#FFD730]" + pair + "[/color]"
-                        parts.append(pair)
-                    if slot_count > display_cap:
-                        parts.append("+%d" % (slot_count - display_cap))
-                    row.set_label(" | ".join(parts))
             "sparks":
                 var locked = game_context.is_locked("sparks")
                 row.set_label("[color=%s]Sparks: %s%s[/color]" % [

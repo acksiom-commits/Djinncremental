@@ -28,6 +28,7 @@
 [ext_resource type="Script" uid="uid://djvx7uirw5be7" path="res://constellation_overlay.gd" id="25_constoverlay"]
 [ext_resource type="Script" uid="uid://dx4ev85nqryup" path="res://puzzle_synths.gd" id="26_synths"]
 [ext_resource type="PackedScene" uid="uid://cgoxi50xo3g1" path="res://ConstellationStudyOverlay.tscn" id="27_study"]
+[ext_resource type="Script" path="res://readouts_panel.gd" id="28_readouts"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_q6d5h"]
 shader = ExtResource("1_qk86b")
@@ -170,6 +171,7 @@ custom_minimum_size = Vector2(142, 0)
 layout_mode = 2
 size_flags_vertical = 0
 theme_override_styles/panel = SubResource("StyleBoxEmpty_yrqlh")
+script = ExtResource("28_readouts")
 
 [node name="DirectReadoutsMargin" type="MarginContainer" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer" unique_id=5601570]
 custom_minimum_size = Vector2(96, 0)
