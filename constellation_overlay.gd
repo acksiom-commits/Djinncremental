@@ -53,7 +53,8 @@ const STAR_COLORS_BY_IDX: Array = preload("res://star_color_palette.tres").by_id
 var _puzzle_target_id: int = 0
 var _engine: ClickSequencePuzzleEngine = ClickSequencePuzzleEngine.new()
 
-@onready var _synth: Node = get_node_or_null("../RootUI/PuzzleSynths")
+# Under the page's UI root: RootUI on Primordial, FirmRootUI on Firmament.
+@onready var _synth: Node = get_parent().find_child("PuzzleSynths", true, false)
 @onready var _study_overlay: Node = get_node_or_null("../ConstellationStudyOverlay")
 
 # ===================== PUZZLE TESTING ==============

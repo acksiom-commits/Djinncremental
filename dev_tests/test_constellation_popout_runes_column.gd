@@ -38,7 +38,7 @@ func run() -> void:
 	ok(left.size.x >= 330.0, "the Constellation column kept its width (%.0f)" % left.size.x)
 	ok(p._slot_grid.get_parent() == left and p._title_label.get_parent() == left,
 		"the Constellation slot grid and title are still found")
-	ok(p._runes_slot_grid.get_parent() == right, "the Runes column has its own slot grid")
+	ok(right.get_node_or_null("RunesSlotGrid") is GridContainer, "the Runes column has its own slot grid")
 
 	print("\n=== the Runes button opens the board over the open slideout ===")
 	p._on_tab_pressed()
@@ -82,6 +82,32 @@ func run() -> void:
 			"its Runes column opens Firmament's Rune board")
 		ok(is_equal_approx(fp._tab_btn.get_global_rect().position.x, 0.0),
 			"its tab is on the window's left edge (x %.0f)" % fp._tab_btn.get_global_rect().position.x)
+		# 2026-11-03: with its scene minimum (195) the column needed 478 px and
+		# grew the top band past its 400, pushing the card row down 78 px. The
+		# band only shows its real height with a save loaded, so compare minimums.
+		var band: Control = firm.find_child("FirmTopBandHBox", true, false)
+		var column_min: float = fp.get_parent().get_combined_minimum_size().y
+		ok(column_min <= band.custom_minimum_size.y,
+			"the left-edge column (min %.0f) doesn't make the top band taller than its %.0f"
+				% [column_min, band.custom_minimum_size.y])
+
+		# 2026-11-03: the Constellation box under the dial works as on
+		# Primordial: picking shows the constellation there and loads its
+		# puzzle through the shared pipeline; Study opens it; RESET resets it.
+		var box: Node = firm.find_child("ConstellationPanel", true, false)
+		ok(box != null and str(box.get_parent().get_parent().name) == "MidBandHBox",
+			"Firmament has the Constellation box, left of the card row")
+		var picks: Array = []
+		for c in fp.constellation_selected.get_connections():
+			picks.append(c["callable"].get_method())
+		ok(picks.has("on_constellation_selected") and picks.has("select"),
+			"picking a constellation goes to the box and the puzzle pipeline (%s)" % str(picks))
+		var study: Node = firm.get_node_or_null("ConstellationStudyOverlay")
+		ok(study != null and study.reset_requested.get_connections().size() == 1,
+			"the Study overlay is on the page and its RESET is connected")
+		var sky: Node = firm.get_node_or_null("ConstellationOverlay")
+		ok(sky != null and sky._synth != null and study != null and study._synth != null,
+			"the sky overlay and Study overlay find the page's synth")
 	firm.queue_free()
 	await process_frame
 

@@ -302,7 +302,9 @@ func _cell_under_pointer():
     if not Rect2(Vector2.ZERO, _board_view.size).has_point(local):
         return null
     var c: Vector2i = Board.point_cell(local - _board_origin(), _cell_size())
-    return c if board.cells.has(c) else null
+    if board.cells.has(c):
+        return c
+    return null
 
 
 func _on_board_input(event: InputEvent) -> void:
@@ -329,16 +331,16 @@ func _on_board_input(event: InputEvent) -> void:
 
 
 func _draw_board() -> void:
-    var size: float = _cell_size()
+    var cell_size: float = _cell_size()
     var origin: Vector2 = _board_origin()
     for c in board.cells:
-        var outline: PackedVector2Array = Board.cell_outline(c, size, origin, CELL_SHRINK)
+        var outline: PackedVector2Array = Board.cell_outline(c, cell_size, origin, CELL_SHRINK)
         _board_view.draw_colored_polygon(outline, CELL_FILL)
         outline.append(outline[0])
         _board_view.draw_polyline(outline, CELL_EDGE, 1.5, true)
     for p in board.placed:
         _draw_rune(_board_view, p["rune"], p["anchor"], int(p["sixths"]),
-            origin + Board.cell_point(p["at"], size), size, p["color"], p["color"],
+            origin + Board.cell_point(p["at"], cell_size), cell_size, p["color"], p["color"],
             p["star_colors"])
 
 
@@ -347,17 +349,17 @@ func _draw_board() -> void:
 func _draw_held() -> void:
     if held.is_empty():
         return
-    var size: float = _cell_size()
+    var cell_size: float = _cell_size()
     var at = _cell_under_pointer()
     if at == null:
         _draw_rune(_held_view, held["rune"], held["anchor"], int(held["sixths"]),
-            _pointer_in(_held_view), size, held["color"], held["color"], held["star_colors"], 0.22)
+            _pointer_in(_held_view), cell_size, held["color"], held["color"], held["star_colors"], 0.22)
         return
     var tint: Color = FITS_TINT if board.can_place(held["rune"], held["anchor"], int(held["sixths"]),
         at, held["star_colors"]) else BLOCK_TINT
     var origin: Vector2 = _board_view.global_position - _held_view.global_position \
-        + _board_origin() + Board.cell_point(at, size)
-    _draw_rune(_held_view, held["rune"], held["anchor"], int(held["sixths"]), origin, size,
+        + _board_origin() + Board.cell_point(at, cell_size)
+    _draw_rune(_held_view, held["rune"], held["anchor"], int(held["sixths"]), origin, cell_size,
         tint, held["color"], held["star_colors"], 0.4)
 
 
@@ -386,22 +388,22 @@ func rune_star_colors(cid: int, rune: Dictionary) -> Dictionary:
 ## `sixths` clockwise: its cells filled in `fill`, its lines over them, and its
 ## stars in their constellation stars' colours.
 func _draw_rune(canvas: Control, rune: Dictionary, anchor: Vector2i, sixths: int, origin: Vector2,
-        size: float, fill: Color, line: Color, star_colors: Dictionary,
+        cell_size: float, fill: Color, line: Color, star_colors: Dictionary,
         fill_alpha: float = 0.3) -> void:
     for c in Board.held_cells(rune, anchor, sixths):
-        canvas.draw_colored_polygon(Board.cell_outline(c, size, origin, CELL_SHRINK),
+        canvas.draw_colored_polygon(Board.cell_outline(c, cell_size, origin, CELL_SHRINK),
             Color(fill, fill_alpha))
     var stars: Dictionary = Board.held_stars(rune, anchor, sixths)
     var flat: Array = rune.get("lines", [])
-    var width: float = maxf(1.5, size * 0.09)
+    var width: float = maxf(1.5, cell_size * 0.09)
     for i in range(0, flat.size() - 1, 2):
-        canvas.draw_line(origin + Board.cell_point(stars[int(flat[i])], size),
-            origin + Board.cell_point(stars[int(flat[i + 1])], size), line, width, true)
-    var radius: float = maxf(2.5, size * 0.17)
+        canvas.draw_line(origin + Board.cell_point(stars[int(flat[i])], cell_size),
+            origin + Board.cell_point(stars[int(flat[i + 1])], cell_size), line, width, true)
+    var radius: float = maxf(2.5, cell_size * 0.17)
     for s in stars:
         var ci: int = int(star_colors.get(s, Board.NO_COLOUR))
         var colour: Color = UNKNOWN_STAR if ci == Board.NO_COLOUR else STAR_COLORS_BY_IDX[ci]
-        var at: Vector2 = origin + Board.cell_point(stars[s], size)
+        var at: Vector2 = origin + Board.cell_point(stars[s], cell_size)
         canvas.draw_circle(at, radius + 1.5, STAR_EDGE)
         canvas.draw_circle(at, radius, colour)
 
@@ -450,10 +452,10 @@ func _draw_entry(i: int) -> void:
         hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.y))
     lo -= Vector2(Board.SQRT3 * 0.5, 1.0)
     hi += Vector2(Board.SQRT3 * 0.5, 1.0)
-    var size: float = minf(ENTRY_SHAPE.x / (hi.x - lo.x), ENTRY_SHAPE.y / (hi.y - lo.y))
+    var cell_size: float = minf(ENTRY_SHAPE.x / (hi.x - lo.x), ENTRY_SHAPE.y / (hi.y - lo.y))
     var box_centre := Vector2(6.0 + ENTRY_SHAPE.x * 0.5, node.size.y * 0.5)
-    var origin: Vector2 = box_centre - (lo + hi) * 0.5 * size
-    _draw_rune(node, rune, Vector2i.ZERO, 0, origin, size, color, color, e["star_colors"], 0.3)
+    var origin: Vector2 = box_centre - (lo + hi) * 0.5 * cell_size
+    _draw_rune(node, rune, Vector2i.ZERO, 0, origin, cell_size, color, color, e["star_colors"], 0.3)
 
     var font: Font = get_theme_default_font()
     var fsize: int = get_theme_default_font_size()

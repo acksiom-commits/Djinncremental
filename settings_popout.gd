@@ -58,8 +58,14 @@ var _slot_confirm_action: Callable = Callable()
 @onready var _ui_minimal_tog    : CheckButton        = $SettingsPanel/SettingsMargin/SettingsColumns/RightColumn/UiMinimalToggle
 
 func _ready() -> void:
-    _starfield    = get_node_or_null("/root/Node2D/CanvasLayer/ColorRect")
-    _overlay      = get_node_or_null("/root/Node2D/CanvasLayer/ConstellationOverlay")
+    # The starfield and sky overlay sit on this page's CanvasLayer, on
+    # Primordial and Firmament alike (2026-11-03).
+    var layer: Node = get_parent()
+    while layer and not (layer is CanvasLayer):
+        layer = layer.get_parent()
+    if layer:
+        _starfield = layer.get_node_or_null("ColorRect")
+        _overlay   = layer.get_node_or_null("ConstellationOverlay")
     _save_manager = get_node_or_null("/root/SaveManager")
 
     _tab_btn.pressed.connect(_on_tab_pressed)

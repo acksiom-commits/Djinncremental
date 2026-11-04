@@ -58,10 +58,17 @@ var _journal_popout: Node = null
 var _settings_popout:  Node = null
 var _constellation_popout: Node = null
 var _rune_fitting_popout:  Control = null
+## The Constellation box under the dial (constellation_panel.gd) and the Study
+## puzzle it opens; the pipeline reads _study_overlay by name.
+var _constellation_panel:  Node = null
+var _study_overlay:        Node = null
+var _puzzle_builds:        Dictionary = {}
+var _puzzle_pipeline = null
 
 var _panel_nodes:      Dictionary = {}
 const REVEAL_DURATION: float = 1.5
 const RuneFittingPopout = preload("res://rune_fitting_popout.gd")
+const _PuzzlePipeline = preload("res://constellation_puzzle_pipeline.gd")
 
 
 func _ready() -> void:
@@ -154,11 +161,15 @@ func _setup_rune_fitting() -> void:
     vbox.add_child(btn)
 
 
-# The Constellation slideout, at the same spot on the left edge as on
-# Primordial (2026-11-03). Its tab and slot grid show by the same dialogue
-# flags root_ui.gd reads. Primordial's ConstellationPanel and Study puzzle
-# aren't on this page, so picking a constellation here selects it in the
-# slideout (info, Foci, Volitions) and nothing more.
+# The Constellation slideout and box, as on Primordial (2026-11-03): the
+# slideout on the left edge, the box under the dial at Primordial's spot.
+# Picking a constellation snaps the sky so it sits in the box, where the sky
+# overlay (ConstellationOverlay) draws it, and builds or loads its puzzle
+# through the same pipeline root_ui.gd uses; Study Constellation opens it.
+# Tab, slot grid, box and Study button show by the flags root_ui.gd reads.
+# The slideout has no minimum height in the scene: its 195 made the
+# left-edge column taller than the top band, pushing the card row down
+# 78 px. Its tab and panel are placed from its top, so they don't move.
 func _setup_constellation_popout() -> void:
     _constellation_popout = find_child("ConstellationPopout", true, false)
     if not _constellation_popout:
@@ -166,6 +177,19 @@ func _setup_constellation_popout() -> void:
         return
     if _rune_fitting_popout:
         _constellation_popout.set_rune_board(_rune_fitting_popout)
+    _puzzle_pipeline = _PuzzlePipeline.new(self, _puzzle_builds)
+    _constellation_panel = find_child("ConstellationPanel", true, false)
+    if _constellation_panel:
+        _constellation_popout.constellation_selected.connect(_constellation_panel.on_constellation_selected)
+    _constellation_popout.constellation_selected.connect(_puzzle_pipeline.select)
+    _study_overlay = get_parent().get_node_or_null("ConstellationStudyOverlay")
+    if _study_overlay and _study_overlay.has_signal("reset_requested"):
+        _study_overlay.reset_requested.connect(_puzzle_pipeline.reset)
+    var overlay: Node = get_parent().get_node_or_null("ConstellationOverlay")
+    if overlay:
+        overlay.puzzle_star_clicked.connect(_on_puzzle_star_clicked)
+    if archon_dialogue_manager:
+        archon_dialogue_manager.study_panel_reveal_sequence_complete.connect(_on_study_panel_reveal_complete)
     _sync_constellation_popout()
 
 
@@ -179,6 +203,25 @@ func _sync_constellation_popout() -> void:
         _constellation_popout._has_been_opened_once = true
     if adm.archon_volition_constellation_done or adm.no_archon_volition_constellation_done:
         _constellation_popout.show_slot_grid()
+    # The box draws nothing itself; its outlined display shows once the
+    # Constellation panel is unlocked (root_ui.gd _apply_unlock_visibility).
+    var display: Node = find_child("ConstellationDisplay", true, false)
+    if display and game_context:
+        display.modulate.a = 1.0 if game_context.ui_unlocks.get("constellation", false) else 0.0
+    if adm.study_panel_reveal_done:
+        _on_study_panel_reveal_complete()
+
+
+## The first star clicked starts the dialogue that reveals Study Constellation
+## (root_ui.gd's _on_puzzle_star_clicked); after that, nothing.
+func _on_puzzle_star_clicked(_star_index: int) -> void:
+    if archon_dialogue_manager and not archon_dialogue_manager.study_panel_reveal_done:
+        archon_dialogue_manager.enqueue_study_panel_reveal()
+
+
+func _on_study_panel_reveal_complete() -> void:
+    if _constellation_panel and _constellation_panel.has_method("reveal_study_button"):
+        _constellation_panel.reveal_study_button()
 
 
 func _hide_all_panels() -> void:
@@ -245,9 +288,16 @@ func _on_age_selected(key: String) -> void:
 func _transition_to_age(scene_path: String) -> void:
     if save_manager:
         save_manager.save_game()
-    var tween := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
-    tween.tween_property(get_tree().current_scene, "modulate:a", 0.0, 0.6)
-    tween.tween_callback(func(): get_tree().change_scene_to_file(scene_path))
+    # This page's root is a CanvasLayer, which has no modulate to fade, so
+    # its drawn children fade together instead.
+    var scene: Node = get_tree().current_scene
+    var fading: Array = [scene] if scene is CanvasItem \
+        else scene.get_children().filter(func(n): return n is CanvasItem)
+    var tween := create_tween().set_parallel(true) \
+        .set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+    for node in fading:
+        tween.tween_property(node, "modulate:a", 0.0, 0.6)
+    tween.chain().tween_callback(func(): get_tree().change_scene_to_file(scene_path))
 
 
 func _on_save_load_failed() -> void:

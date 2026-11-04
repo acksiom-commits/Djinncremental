@@ -24,6 +24,10 @@
 [ext_resource type="PackedScene" path="res://ArchaiLatticeViewer.tscn" id="21_lattice"]
 [ext_resource type="PackedScene" path="res://LatticePanel.tscn" id="22_latticepanel"]
 [ext_resource type="PackedScene" uid="uid://blyfmxqnpq42f" path="res://ConstellationPopout.tscn" id="23_constpop"]
+[ext_resource type="Script" uid="uid://d0skh0gieda4y" path="res://constellation_panel.gd" id="24_constpanel"]
+[ext_resource type="Script" uid="uid://djvx7uirw5be7" path="res://constellation_overlay.gd" id="25_constoverlay"]
+[ext_resource type="Script" uid="uid://dx4ev85nqryup" path="res://puzzle_synths.gd" id="26_synths"]
+[ext_resource type="PackedScene" uid="uid://cgoxi50xo3g1" path="res://ConstellationStudyOverlay.tscn" id="27_study"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_q6d5h"]
 shader = ExtResource("1_qk86b")
@@ -131,6 +135,7 @@ layout_mode = 2
 [node name="ConstellationPopout" parent="FirmRootUI/FirmTopBandHBox/LeftEdgePopoutsVBox" unique_id=645500053 instance=ExtResource("23_constpop")]
 unique_name_in_owner = true
 z_index = 1
+custom_minimum_size = Vector2(22, 0)
 layout_mode = 2
 
 [node name="PanelShover" type="PanelContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=856507435]
@@ -643,6 +648,19 @@ bbcode_enabled = true
 layout_mode = 2
 visible = false
 
+[node name="ConstellationOverlay" type="Control" parent="." unique_id=437989955]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("25_constoverlay")
+
+[node name="ConstellationStudyOverlay" parent="." unique_id=675615739 instance=ExtResource("27_study")]
+
 [node name="LatticePanel" parent="." instance=ExtResource("22_latticepanel")]
 
 [node name="RightEdgePopoutsVBox" type="VBoxContainer" parent="FirmRootUI/FirmTopBandHBox" unique_id=22592688]
@@ -659,19 +677,63 @@ custom_minimum_size = Vector2(0, 210)
 layout_mode = 2
 size_flags_vertical = 3
 
+[node name="ConstellationLeftMargin" type="MarginContainer" parent="FirmRootUI/MidBandHBox" unique_id=1141335201]
+custom_minimum_size = Vector2(396, 0)
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/margin_left = 38
+theme_override_constants/margin_top = 72
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 0
+
+[node name="ConstellationPanel" type="VBoxContainer" parent="FirmRootUI/MidBandHBox/ConstellationLeftMargin" unique_id=1832956487]
+custom_minimum_size = Vector2(0, 175)
+layout_mode = 2
+size_flags_vertical = 0
+mouse_filter = 2
+script = ExtResource("24_constpanel")
+
+[node name="ConstellationDisplay" type="Control" parent="FirmRootUI/MidBandHBox/ConstellationLeftMargin/ConstellationPanel" unique_id=662104733]
+modulate = Color(1, 1, 1, 0)
+custom_minimum_size = Vector2(0, 175)
+layout_mode = 2
+size_flags_vertical = 0
+mouse_filter = 2
+
+[node name="ConstellationArtTextureRect" type="TextureRect" parent="FirmRootUI/MidBandHBox/ConstellationLeftMargin/ConstellationPanel/ConstellationDisplay" unique_id=1925897276]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="StudyButton" type="Button" parent="FirmRootUI/MidBandHBox/ConstellationLeftMargin/ConstellationPanel" unique_id=623479079]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 2
+mouse_filter = 2
+disabled = true
+text = "Study Constellation"
+
 [node name="CarouselContainer" type="Control" parent="FirmRootUI/MidBandHBox" unique_id=1057523559]
 layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="CarouselPanel" type="PanelContainer" parent="FirmRootUI/MidBandHBox/CarouselContainer" unique_id=1542912506]
-custom_minimum_size = Vector2(1200, 200)
+custom_minimum_size = Vector2(850, 200)
 layout_mode = 0
-offset_right = 40.0
-offset_bottom = 40.0
+offset_right = 850.0
+offset_bottom = 200.0
 
 [node name="Carousel" type="Control" parent="FirmRootUI/MidBandHBox/CarouselContainer/CarouselPanel" unique_id=897916240]
 layout_mode = 2
 script = ExtResource("18_mhxl1")
+
+[node name="PuzzleSynths" type="Node" parent="FirmRootUI" unique_id=197495557]
+script = ExtResource("26_synths")
+amplitude = 0.1
 
 [node name="BottomBandHBox" type="HBoxContainer" parent="FirmRootUI" unique_id=868414808]
 visible = false

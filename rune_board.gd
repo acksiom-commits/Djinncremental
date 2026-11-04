@@ -53,6 +53,7 @@ static func hexagon(radius: int) -> Array[Vector2i]:
 static func distance(a: Vector2i, b: Vector2i) -> int:
     var dq: int = absi(a.x - b.x)
     var dr: int = absi(a.y - b.y)
+    @warning_ignore("integer_division")  # exact: dq and dr are both odd or both even
     return dr + maxi(0, (dq - dr) / 2)
 
 
@@ -71,6 +72,7 @@ static func point_cell(p: Vector2, size: float) -> Vector2i:
 static func rotated(cell: Vector2i, sixths: int) -> Vector2i:
     var c: Vector2i = cell
     for _i in posmod(sixths, 6):
+        @warning_ignore("integer_division")  # exact: column and row share parity
         c = Vector2i((c.x - 3 * c.y) / 2, (c.x + c.y) / 2)
     return c
 
@@ -127,6 +129,7 @@ static func _cells_crossed(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 ## A cell's centre in the prototype's own axial arithmetic, so its rounding on
 ## cell edges comes out the same.
 static func _prototype_centre(cell: Vector2i) -> Vector2:
+    @warning_ignore("integer_division")  # exact: column and row share parity
     var q: int = (cell.x - cell.y) / 2
     return Vector2(sqrt(3.0) * (float(q) + float(cell.y) * 0.5), 1.5 * float(cell.y))
 

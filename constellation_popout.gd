@@ -217,10 +217,9 @@ var _info_art_achievement: RichTextLabel = null
 @onready var _title_label     : Label         = get_node(PANEL_BASE_PATH + "/ConstellationTitleLabel")
 
 # Runes column (2026-11-02): a layout shell to the right of the Constellation
-# column, to be built out like it. Its slot grid and info area are empty for
-# now; the button opens the Rune fitting board, which root_ui.gd hands over
-# with set_rune_board() since the board lives on the CanvasLayer.
-@onready var _runes_slot_grid : GridContainer = get_node(RUNES_BASE_PATH + "/RunesSlotGrid")
+# column, to be built out like it. Its slot grid (RunesSlotGrid) and info area
+# are empty for now; the button opens the Rune fitting board, which root_ui.gd
+# hands over with set_rune_board() since the board lives on the CanvasLayer.
 @onready var _inscribe_runes_btn : Button     = get_node(RUNES_BASE_PATH + "/InscribeRunesButton")
 var _rune_board: Control = null
 

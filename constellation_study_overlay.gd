@@ -71,7 +71,8 @@ var _regenerating: Dictionary = {}
 var _regen_cover: Control = null
 const _RESET_DIALOG_TEXT := "Generate a brand new arrangement for this constellation?\nStar names, colors, and which star plays which note will all reshuffle. Your clues, deduction notes, and current progress on this constellation will be lost.\nThis cannot be undone."
 @onready var _selected_clue_display: RichTextLabel = get_node(HEADER_BASE_PATH + "/SelectedClueDisplay")
-@onready var _synth:    Node   = get_node_or_null("../RootUI/PuzzleSynths")
+# Under the page's UI root: RootUI on Primordial, FirmRootUI on Firmament.
+@onready var _synth:    Node   = get_parent().find_child("PuzzleSynths", true, false)
 @onready var _star_map_control:    Control = get_node(STAR_MAP_COLUMN_PATH + "/StarMapControl")
 
 # Read only via _host.<name> from constellation_puzzle_widgets.gd's/

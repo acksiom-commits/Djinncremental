@@ -23,8 +23,12 @@ var is_snapping: bool = false
 func _ready() -> void:
     size_flags_horizontal = Control.SIZE_EXPAND_FILL
     size_flags_vertical = Control.SIZE_EXPAND_FILL
-    custom_minimum_size = Vector2(1200, 200)
-    
+    # Width comes from the panel holding it (FirmamentUI's CarouselPanel, 850
+    # since 2026-11-03, right of the dial column). Cards wrap round just past
+    # both edges, so clip them to the carousel.
+    custom_minimum_size = Vector2(0, 200)
+    clip_contents = true
+
     create_panels()
     current_offset = -280
 
@@ -47,6 +51,7 @@ func create_panels() -> void:
         style.corner_radius_bottom_left = 10
         style.corner_radius_bottom_right = 10
         
+        @warning_ignore("integer_division")  # six cards per colour
         var cat = int(i / 6)
         var base_col: Color = Color(0.95, 0.22, 0.22) if cat == 0 else \
                              Color(0.25, 0.6, 1.0) if cat == 1 else Color(1.0, 0.9, 0.2)
