@@ -1323,10 +1323,21 @@ func player_marked_terms() -> Dictionary:
     return out
 
 
+## True while a caller applies a whole batch of marks and will refresh once
+## itself: each mark would otherwise save and run the engine (one hint run spent
+## 87% of its time doing so, measured 2026-10-31).
+var hold_refresh: bool = false
+## True on a board nobody is looking at (ConstellationClueWalk's): a refresh
+## concludes everything as usual and skips the panel redraws it ends with.
+var board_only: bool = false
+
+
 func _save_puzzle_notes() -> void:
     # Every mutation path calls this, so it's the reliable choke point for
     # invalidating the derived caches — see _clear_deduction_caches().
     _clear_deduction_caches()
+    if hold_refresh:
+        return
     # The history is the board's own, whether or not there is a save to write.
     if _board_next_save_kept:
         # Listen or a note placement: kept by Backstep, so not a step of its own.
@@ -6718,16 +6729,30 @@ func _category_word(cat: int) -> String:
 func clue_indices_with_something_to_give(clues: Array) -> Array[int]:
     var out: Array[int] = []
     for i in clues.size():
-        var c = clues[i]
-        if not (c is Dictionary):
-            continue
-        var cells: Array = c["cells"] if (c as Dictionary).get("cells") is Array else []
-        var terms: Array = c["search_terms"] if (c as Dictionary).get("search_terms") is Array else []
-        var discs: Array = c["disclosures"] if (c as Dictionary).get("disclosures") is Array else []
-        var frac: float = _clue_coverage_fraction(cells, terms, discs)
-        if frac != COVERAGE_UNMEASURABLE and frac < 1.0:
+        if _clue_has_something_to_give(clues[i]):
             out.append(i)
     return out
+
+
+## clue_indices_with_something_to_give with a frame handed back between clues,
+## for the walk: over every clue at once it ran to ~200 ms on Constellation 3.
+func clue_indices_with_something_to_give_pausing(clues: Array) -> Array[int]:
+    var out: Array[int] = []
+    for i in clues.size():
+        if _clue_has_something_to_give(clues[i]):
+            out.append(i)
+        await pause_if_due()
+    return out
+
+
+func _clue_has_something_to_give(c) -> bool:
+    if not (c is Dictionary):
+        return false
+    var cells: Array = c["cells"] if (c as Dictionary).get("cells") is Array else []
+    var terms: Array = c["search_terms"] if (c as Dictionary).get("search_terms") is Array else []
+    var discs: Array = c["disclosures"] if (c as Dictionary).get("disclosures") is Array else []
+    var frac: float = _clue_coverage_fraction(cells, terms, discs)
+    return frac != COVERAGE_UNMEASURABLE and frac < 1.0
 
 
 const _NextStepFinder = preload("res://constellation_next_step_finder.gd")
@@ -6864,6 +6889,41 @@ func hints_unavailable() -> bool:
 ##
 ## Ranked: a step that pins something to one position first, then the one that
 ## rules out the most, then clue order, then axis.
+func _sort_hidden_steps(steps: Array[Dictionary]) -> void:
+    steps.sort_custom(func(a, b):
+        if bool(a["resolved"]) != bool(b["resolved"]):
+            return bool(a["resolved"])
+        if int(a["gain"]) != int(b["gain"]):
+            return int(a["gain"]) > int(b["gain"])
+        if int(a["clue_index"]) != int(b["clue_index"]):
+            return int(a["clue_index"]) < int(b["clue_index"])
+        return str(a["axis"]) < str(b["axis"]))
+
+
+## hint_next_steps on a hidden-notes board, with frames handed back for the walk.
+## A coroutine, so it cannot replace the plain one, which the Hint tab calls
+## without waiting. The walk only ever needs this branch.
+##
+## `board_steps` false leaves out the steps that read only the board: they are
+## the same for every clue, so the walk asks for them once per change.
+func hint_next_steps_pausing(clues: Array, board_steps: bool = true) -> Array[Dictionary]:
+    var solver = _hint_solver_for(_host._star_count)
+    var out: Array[Dictionary] = []
+    out.append_array(await _hint_owner_steps_pausing(clues, solver))
+    await pause_if_due()
+    if board_steps:
+        out.append_array(await _hint_owner_board_steps_pausing())
+        await pause_if_due()
+    out.append_array(_hint_name_steps(clues, solver, _player_name_grid()))
+    if out.is_empty():
+        await pause_if_due()
+        out.append_array(_hint_owner_multi_steps(clues, solver))
+    if out.is_empty() and owner_global_hints_enabled:
+        out.append_array(_hint_owner_global_steps(clues, solver))
+    _sort_hidden_steps(out)
+    return out
+
+
 func hint_next_steps(clues: Array, boards: Dictionary = {}) -> Array[Dictionary]:
     var solver = _hint_solver_for(_host._star_count)
     # FIRST NOTES HIDDEN (2026-10-12): the Sequence, position and joint steps
@@ -6886,14 +6946,7 @@ func hint_next_steps(clues: Array, boards: Dictionary = {}) -> Array[Dictionary]
         # hint press can afford, so in the game it would only add a pause.
         if hidden_out.is_empty() and owner_global_hints_enabled:
             hidden_out.append_array(_hint_owner_global_steps(clues, solver))
-        hidden_out.sort_custom(func(a, b):
-            if bool(a["resolved"]) != bool(b["resolved"]):
-                return bool(a["resolved"])
-            if int(a["gain"]) != int(b["gain"]):
-                return int(a["gain"]) > int(b["gain"])
-            if int(a["clue_index"]) != int(b["clue_index"]):
-                return int(a["clue_index"]) < int(b["clue_index"])
-            return str(a["axis"]) < str(b["axis"]))
+        _sort_hidden_steps(hidden_out)
         return hidden_out
     var seq_grid: Array = boards["seq"] if boards.has("seq") else _player_sequence_grid()
     var name_grid: Array = boards["name"] if boards.has("name") else _player_name_grid()
@@ -7731,157 +7784,257 @@ func _owner_rel_combos(solver, binary: Array, stars: Array, listed: Dictionary, 
     var s: int = int(stars[i])
     var sets: Array = listed[s]
     for idx in sets.size():
-        var one: Array = sets[idx]
-        var clash: bool = false
-        for other in chosen:
-            for t in one:
-                if (chosen[other] as Array).has(t):
-                    clash = true   # one note is one star
-                    break
-            if clash:
-                break
-        if clash:
-            continue
-        chosen[s] = one
-        var good: bool = true
-        for bf in binary:
-            if chosen.has(int(bf["a"])) and chosen.has(int(bf["b"])) \
-                    and (int(bf["a"]) == s or int(bf["b"]) == s) \
-                    and not _owner_pair_holds(solver, bf, chosen):
-                good = false
-                break
-        if good:
+        if _owner_rel_try(solver, binary, s, sets[idx], chosen):
             chosen_idx.append(idx)
             _owner_rel_combos(solver, binary, stars, listed, i + 1, chosen, chosen_idx, keep)
             chosen_idx.pop_back()
         chosen.erase(s)
 
 
+## _owner_rel_combos with frames handed back, for the walk.
+func _owner_rel_combos_pausing(solver, binary: Array, stars: Array, listed: Dictionary, i: int,
+        chosen: Dictionary, chosen_idx: Array, keep: Array) -> void:
+    if i == stars.size():
+        for k in chosen_idx.size():
+            (keep[k] as Dictionary)[int(chosen_idx[k])] = true
+        return
+    var s: int = int(stars[i])
+    var sets: Array = listed[s]
+    for idx in sets.size():
+        if _owner_rel_try(solver, binary, s, sets[idx], chosen):
+            chosen_idx.append(idx)
+            await _owner_rel_combos_pausing(solver, binary, stars, listed, i + 1, chosen, chosen_idx, keep)
+            chosen_idx.pop_back()
+        chosen.erase(s)
+        await pause_if_due()
+
+
+## Puts `one` in as star `s`'s set and says whether it still fits: no note
+## shared with a star already chosen, and every relation between chosen stars
+## holding. `s` is left in `chosen` for the caller to take back out.
+func _owner_rel_try(solver, binary: Array, s: int, one: Array, chosen: Dictionary) -> bool:
+    for other in chosen:
+        for t in one:
+            if (chosen[other] as Array).has(t):
+                return false   # one note is one star
+    chosen[s] = one
+    for bf in binary:
+        if chosen.has(int(bf["a"])) and chosen.has(int(bf["b"])) \
+                and (int(bf["a"]) == s or int(bf["b"]) == s) \
+                and not _owner_pair_holds(solver, bf, chosen):
+            return false
+    return true
+
+
 func _hint_owner_steps(clues: Array, solver) -> Array[Dictionary]:
     var out: Array[Dictionary] = []
     for ci in clue_indices_with_something_to_give(clues):
-        var clue: Dictionary = clues[ci]
-        var sorted_facts: Dictionary = _owner_facts_of(clue)
-        var unary: Dictionary = sorted_facts["unary"]
-        var binary: Array = sorted_facts["binary"]
-        if (sorted_facts["stars"] as Dictionary).is_empty():
+        var st: Dictionary = _owner_clue_begin(clues[ci])
+        if st.is_empty():
             continue
-        var frames: Dictionary = {}
-        var listed: Dictionary = {}   # star -> the sets its own facts allow, where they can be listed
-        for s in sorted_facts["stars"]:
-            var fr: Dictionary = _owner_frame(int(s), clue)
-            if fr.is_empty():
-                continue
-            frames[int(s)] = fr
-            var all_sets: Dictionary = _owner_sets(fr)
-            if bool(all_sets["ok"]):
-                var kept: Array = []
-                for one in all_sets["sets"]:
-                    if _owner_unary_holds(solver, int(s), one, unary.get(int(s), [])):
-                        kept.append(one)
-                listed[int(s)] = kept
-        var contradiction: bool = false
-        for s0 in listed:
-            if (listed[s0] as Array).is_empty():
-                contradiction = true   # the board already contradicts the clue: not a hint
-        if contradiction:
+        for s in st["stars"]:
+            _owner_clue_list_star(st, int(s), solver)
+        if _owner_clue_contradicts(st):
             continue
-        # The stars the clue relates (two, or three for a chain or a
-        # Betweenness), all listable: keep only the combinations of sets that
-        # share no note and satisfy every relation between them. Three-star
-        # clues were left to their weakest outright reading until 2026-10-14
-        # ("Helios fires after Keriion, which fires after the star that plays
-        # C#5" gave nothing even with every count known).
-        var rel_stars: Array = []
-        for bf in binary:
-            for key in ["a", "b"]:
-                if not rel_stars.has(int(bf[key])):
-                    rel_stars.append(int(bf[key]))
-        var rel_ok: bool = rel_stars.size() >= 2 and rel_stars.size() <= 5   # Easy chains name up to five (2026-10-16)
-        var combos: int = 1
-        for rs in rel_stars:
-            if not listed.has(rs):
-                rel_ok = false
-                break
-            combos *= maxi(1, (listed[rs] as Array).size())
-        if rel_stars.size() >= 2:
-            var why_key: String = "%d stars: " % rel_stars.size()
-            if not rel_ok:
-                why_key += "a star not listable"
-            elif combos > owner_rel_budget:
-                why_key += "over budget"
-            else:
-                why_key += "combined"
-            owner_rel_outcomes[why_key] = int(owner_rel_outcomes.get(why_key, 0)) + 1
-        if rel_ok and combos <= owner_rel_budget:
-            var keep: Array = []
-            for _k in rel_stars.size():
-                keep.append({})
-            _owner_rel_combos(solver, binary, rel_stars, listed, 0, {}, [], keep)
-            if (keep[0] as Dictionary).is_empty():
+        var keep: Array = _owner_clue_keep_slots(st)
+        if not keep.is_empty():
+            _owner_rel_combos(solver, st["binary"], st["rel_stars"], st["listed"], 0, {}, [], keep)
+            if not _owner_clue_take_keep(st, keep):
                 continue   # contradiction
-            for ki in rel_stars.size():
-                var sk: int = int(rel_stars[ki])
-                var kept_sets: Array = []
-                for idx in (listed[sk] as Array).size():
-                    if (keep[ki] as Dictionary).has(idx):
-                        kept_sets.append(listed[sk][idx])
-                listed[sk] = kept_sets
-        for s2 in frames:
-            var frame: Dictionary = frames[s2]
-            var verdict: Dictionary
-            if listed.has(s2):
-                verdict = _owner_verdict_from_sets(frame, listed[s2])
-            else:
-                verdict = _owner_direct_verdict(frame, unary.get(s2, []))
-            # Stated outright by an order fact whatever the counts: a star that
-            # first fires AFTER another fires on no note up to the earliest the
-            # other could begin (note 1, if nothing is known about it).
-            var cannot: Array = verdict["cannot"]
-            for bf3 in binary:
-                if str(bf3["kind"]) != "ordinal_cmp":
-                    continue
-                var later: int = int(bf3["a"]) if bool(bf3["a_gt_b"]) else int(bf3["b"])
-                var earlier: int = int(bf3["b"]) if bool(bf3["a_gt_b"]) else int(bf3["a"])
-                if later != int(s2):
-                    continue
-                var earliest: int = 1
-                if frames.has(earlier):
-                    var poss: Array = (frames[earlier]["held"] as Array) + (frames[earlier]["open"] as Array)
-                    if not poss.is_empty():
-                        earliest = int(poss.min())
-                for o in frame["open"]:
-                    if int(o) <= earliest and not cannot.has(int(o)):
-                        cannot.append(int(o))
-            cannot.sort()
-            var must: Array = verdict["must"]
-            if must.is_empty() and cannot.is_empty():
-                continue
-            out.append({
-                "axis": "note",
-                "plain_notes": true,
-                "clue_index": int(ci),
-                "star": int(s2),
-                "rank": 0,
-                "descriptor": str(frame["label"]),
-                "row_kind": str(frame["row_kind"]),
-                "row_key": frame["row_key"],
-                "must_ticks": must,
-                "cannot_ticks": cannot,
-                "resolved": not must.is_empty(),
-                "gain": must.size() + cannot.size(),
-            })
-        # What the clue says about HOW OFTEN a star fires, for a row whose count
-        # the board does not have yet. Marking it is what lets the row's notes
-        # be worked out, so it is offered as a step in its own right.
-        for s4 in frames:
-            var rep_step: Dictionary = _owner_repeat_step(frames[s4], unary.get(s4, []))
-            if not rep_step.is_empty():
-                rep_step["clue_index"] = int(ci)
-                rep_step["star"] = int(s4)
-                out.append(rep_step)
+        _owner_clue_finish(st, int(ci), out)
     out.append_array(_hint_owner_board_steps())
     return out
+
+
+## _hint_owner_steps with frames handed back, for the walk: the same phases.
+func _hint_owner_steps_pausing(clues: Array, solver) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
+    var givers: Array[int] = await clue_indices_with_something_to_give_pausing(clues)
+    await pause_if_due()
+    for ci in givers:
+        var st: Dictionary = _owner_clue_begin(clues[ci])
+        if st.is_empty():
+            continue
+        for s in st["stars"]:
+            var fr: Dictionary = _owner_frame(int(s), st["clue"])
+            await pause_if_due()
+            if fr.is_empty():
+                continue
+            st["frames"][int(s)] = fr
+            var all_sets: Dictionary = _owner_sets(fr)
+            await pause_if_due()
+            if not bool(all_sets["ok"]):
+                continue
+            var kept: Array = []
+            var since_pause: int = 0
+            for one in all_sets["sets"]:
+                if _owner_unary_holds(solver, int(s), one, st["unary"].get(int(s), [])):
+                    kept.append(one)
+                since_pause += 1
+                if since_pause >= 32:
+                    since_pause = 0
+                    await pause_if_due()
+            st["listed"][int(s)] = kept
+            await pause_if_due()
+        if _owner_clue_contradicts(st):
+            continue
+        var keep: Array = _owner_clue_keep_slots(st)
+        if not keep.is_empty():
+            await _owner_rel_combos_pausing(solver, st["binary"], st["rel_stars"], st["listed"], 0, {}, [], keep)
+            if not _owner_clue_take_keep(st, keep):
+                continue   # contradiction
+        _owner_clue_finish(st, int(ci), out)
+        await pause_if_due()
+    return out
+
+
+## The working state for one clue, {} when it names no star the finder reads.
+func _owner_clue_begin(clue: Dictionary) -> Dictionary:
+    var sorted_facts: Dictionary = _owner_facts_of(clue)
+    if (sorted_facts["stars"] as Dictionary).is_empty():
+        return {}
+    return {"clue": clue, "unary": sorted_facts["unary"], "binary": sorted_facts["binary"], "stars": sorted_facts["stars"],
+        "frames": {},
+        "listed": {},   # star -> the sets its own facts allow, where they can be listed
+        "rel_stars": []}
+
+
+func _owner_clue_list_star(st: Dictionary, s: int, solver) -> void:
+    var fr: Dictionary = _owner_frame(s, st["clue"])
+    if fr.is_empty():
+        return
+    st["frames"][s] = fr
+    var all_sets: Dictionary = _owner_sets(fr)
+    if bool(all_sets["ok"]):
+        var kept: Array = []
+        for one in all_sets["sets"]:
+            if _owner_unary_holds(solver, s, one, st["unary"].get(s, [])):
+                kept.append(one)
+        st["listed"][s] = kept
+
+
+func _owner_clue_contradicts(st: Dictionary) -> bool:
+    var listed: Dictionary = st["listed"]
+    for s0 in listed:
+        if (listed[s0] as Array).is_empty():
+            return true   # the board already contradicts the clue: not a hint
+    return false
+
+
+## The stars the clue relates (two, or three for a chain or a Betweenness), all
+## listable: keep only the combinations of sets that share no note and satisfy
+## every relation between them. Three-star clues were left to their weakest
+## outright reading until 2026-10-14 ("Helios fires after Keriion, which fires
+## after the star that plays C#5" gave nothing even with every count known).
+##
+## One empty slot per related star when those combinations should be searched;
+## [] when not.
+func _owner_clue_keep_slots(st: Dictionary) -> Array:
+    var listed: Dictionary = st["listed"]
+    var rel_stars: Array = []
+    for bf in st["binary"]:
+        for key in ["a", "b"]:
+            if not rel_stars.has(int(bf[key])):
+                rel_stars.append(int(bf[key]))
+    st["rel_stars"] = rel_stars
+    var rel_ok: bool = rel_stars.size() >= 2 and rel_stars.size() <= 5   # Easy chains name up to five (2026-10-16)
+    var combos: int = 1
+    for rs in rel_stars:
+        if not listed.has(rs):
+            rel_ok = false
+            break
+        combos *= maxi(1, (listed[rs] as Array).size())
+    if rel_stars.size() >= 2:
+        var why_key: String = "%d stars: " % rel_stars.size()
+        if not rel_ok:
+            why_key += "a star not listable"
+        elif combos > owner_rel_budget:
+            why_key += "over budget"
+        else:
+            why_key += "combined"
+        owner_rel_outcomes[why_key] = int(owner_rel_outcomes.get(why_key, 0)) + 1
+    var keep: Array = []
+    if rel_ok and combos <= owner_rel_budget:
+        for _k in rel_stars.size():
+            keep.append({})
+    return keep
+
+
+## Narrows each related star's sets to those in a surviving combination. False
+## when none survived: the board contradicts the clue.
+func _owner_clue_take_keep(st: Dictionary, keep: Array) -> bool:
+    if (keep[0] as Dictionary).is_empty():
+        return false
+    var rel_stars: Array = st["rel_stars"]
+    var listed: Dictionary = st["listed"]
+    for ki in rel_stars.size():
+        var sk: int = int(rel_stars[ki])
+        var kept_sets: Array = []
+        for idx in (listed[sk] as Array).size():
+            if (keep[ki] as Dictionary).has(idx):
+                kept_sets.append(listed[sk][idx])
+        listed[sk] = kept_sets
+    return true
+
+
+func _owner_clue_finish(st: Dictionary, ci: int, out: Array[Dictionary]) -> void:
+    var frames: Dictionary = st["frames"]
+    var listed: Dictionary = st["listed"]
+    var unary: Dictionary = st["unary"]
+    var binary: Array = st["binary"]
+    for s2 in frames:
+        var frame: Dictionary = frames[s2]
+        var verdict: Dictionary
+        if listed.has(s2):
+            verdict = _owner_verdict_from_sets(frame, listed[s2])
+        else:
+            verdict = _owner_direct_verdict(frame, unary.get(s2, []))
+        # Stated outright by an order fact whatever the counts: a star that
+        # first fires AFTER another fires on no note up to the earliest the
+        # other could begin (note 1, if nothing is known about it).
+        var cannot: Array = verdict["cannot"]
+        for bf3 in binary:
+            if str(bf3["kind"]) != "ordinal_cmp":
+                continue
+            var later: int = int(bf3["a"]) if bool(bf3["a_gt_b"]) else int(bf3["b"])
+            var earlier: int = int(bf3["b"]) if bool(bf3["a_gt_b"]) else int(bf3["a"])
+            if later != int(s2):
+                continue
+            var earliest: int = 1
+            if frames.has(earlier):
+                var poss: Array = (frames[earlier]["held"] as Array) + (frames[earlier]["open"] as Array)
+                if not poss.is_empty():
+                    earliest = int(poss.min())
+            for o in frame["open"]:
+                if int(o) <= earliest and not cannot.has(int(o)):
+                    cannot.append(int(o))
+        cannot.sort()
+        var must: Array = verdict["must"]
+        if must.is_empty() and cannot.is_empty():
+            continue
+        out.append({
+            "axis": "note",
+            "plain_notes": true,
+            "clue_index": ci,
+            "star": int(s2),
+            "rank": 0,
+            "descriptor": str(frame["label"]),
+            "row_kind": str(frame["row_kind"]),
+            "row_key": frame["row_key"],
+            "must_ticks": must,
+            "cannot_ticks": cannot,
+            "resolved": not must.is_empty(),
+            "gain": must.size() + cannot.size(),
+        })
+    # What the clue says about HOW OFTEN a star fires, for a row whose count
+    # the board does not have yet. Marking it is what lets the row's notes
+    # be worked out, so it is offered as a step in its own right.
+    for s4 in frames:
+        var rep_step: Dictionary = _owner_repeat_step(frames[s4], unary.get(s4, []))
+        if not rep_step.is_empty():
+            rep_step["clue_index"] = ci
+            rep_step["star"] = int(s4)
+            out.append(rep_step)
 
 
 # ── SEVERAL CLUES TOGETHER (2026-10-12) ──────────────────────────────────
@@ -8556,12 +8709,31 @@ func _hint_owner_global_steps(clues: Array, solver) -> Array[Dictionary]:
 ## The Name rows are read as a clue naming the star would read them
 ## (_owner_frame), a row nobody has opened counting as fully open.
 func _hint_owner_board_steps() -> Array[Dictionary]:
-    var out: Array[Dictionary] = []
     var frames: Array = []
     for n in _host._star_count:
         if n >= _host._star_names.size():
-            return out
-        frames.append(_owner_frame(n, {"search_terms": ["N:" + str(_host._star_names[n])]}))
+            return []
+        frames.append(_owner_board_frame(n))
+    return _owner_board_steps_from(frames)
+
+
+## _hint_owner_board_steps with frames handed back, for the walk.
+func _hint_owner_board_steps_pausing() -> Array[Dictionary]:
+    var frames: Array = []
+    for n in _host._star_count:
+        if n >= _host._star_names.size():
+            return []
+        frames.append(_owner_board_frame(n))
+        await pause_if_due()
+    return _owner_board_steps_from(frames)
+
+
+func _owner_board_frame(n: int) -> Dictionary:
+    return _owner_frame(n, {"search_terms": ["N:" + str(_host._star_names[n])]})
+
+
+func _owner_board_steps_from(frames: Array) -> Array[Dictionary]:
+    var out: Array[Dictionary] = []
     var must_by_name: Dictionary = {}   # name star -> {note: why}
     for n2 in frames.size():
         var fr: Dictionary = frames[n2]
@@ -10242,6 +10414,52 @@ const DERIVATION_MAX_ROUNDS: int = 8
 
 
 func _full_propagation_refresh() -> void:
+    if hold_refresh:
+        return
+    _refresh_begin()
+    for _round in DERIVATION_MAX_ROUNDS:
+        if _refresh_round():
+            break
+    # Outside the fixpoint: no pass may resize _match_records under itself.
+    if _make_entries_for_decided_notes():
+        _full_propagation_refresh()
+        return
+    _refresh_end()
+
+
+## _full_propagation_refresh with a frame handed back between its rounds, for
+## the clue walk, which runs during play while a puzzle pre-generates. The same
+## phases, so the two cannot come to disagree. A coroutine, so it cannot replace
+## the plain one: every UI path calls that without waiting.
+func refresh_pausing() -> void:
+    _refresh_begin()
+    await pause_if_due()
+    for _round in DERIVATION_MAX_ROUNDS:
+        if await _refresh_round_pausing():
+            break
+    await pause_if_due()
+    if _make_entries_for_decided_notes():
+        await refresh_pausing()
+        return
+    _refresh_end()
+    await pause_if_due()
+
+
+## Where a pausing walk hands frames back; null anywhere else, and then
+## pause_if_due does nothing. The walk sets it on its own hidden board only.
+var pause_tree: SceneTree = null
+var _pause_from_msec: int = 0
+const PAUSE_AFTER_MSEC: int = 8
+
+
+func pause_if_due() -> void:
+    if pause_tree == null or Time.get_ticks_msec() - _pause_from_msec < PAUSE_AFTER_MSEC:
+        return
+    await pause_tree.process_frame
+    _pause_from_msec = Time.get_ticks_msec()
+
+
+func _refresh_begin() -> void:
     _clear_deduction_caches()
     # Everything the engine concluded last time is thrown away here, before
     # anything reads it. That single line is what makes derived facts
@@ -10273,8 +10491,12 @@ func _full_propagation_refresh() -> void:
     # the old single-pass order had a documented "resolves on the next
     # refresh instead" caveat in _settle_singleton_sequences for exactly
     # that reason.
-    for _round in DERIVATION_MAX_ROUNDS:
-        var before: int = _derived_fact_count()
+
+
+## The passes of one fixpoint round, in order. One list, walked by both
+## _refresh_round and _refresh_round_pausing, so the two cannot disagree.
+func _refresh_round_passes() -> Array[Callable]:
+    var passes: Array[Callable] = [
         # Inside the loop as of Phase 3, where it used to run once before
         # it. Identity is now derived, so it both feeds and is fed by the
         # other passes: eliminations narrow a candidate set to one star,
@@ -10287,60 +10509,83 @@ func _full_propagation_refresh() -> void:
         # consequences of it. Running them here means the colour/pitch
         # narrowing they imply lands on the same frame instead of waiting
         # for the next round.
-        _settle_distance_constraints()
-        _settle_melody_tick_positions()
-        _settle_star_identity_from_candidates()
+        _settle_distance_constraints,
+        _settle_melody_tick_positions,
+        _settle_star_identity_from_candidates,
         # The column half, immediately after the row half — the same pair a
         # grid player scans after every mark, and neither implies the other.
-        _settle_identity_from_value_columns()
+        _settle_identity_from_value_columns,
         # After both identity halves, so a position bound THIS round is
         # already claimed and can rule itself out for every other name.
-        _settle_alldiff_position_exclusions()
-        _settle_derived_eliminations()
+        _settle_alldiff_position_exclusions,
+        _settle_derived_eliminations,
         # AFTER the eliminations above, so it sees the narrowest candidate
         # sets. Runs for EVERY record rather than only the one whose colour
         # button was just clicked: _recompute_color_star_elim used to be
         # reachable only from the direct colour-toggle handlers, so a
         # candidate set narrowed by any other route never reached the
         # star-map name checklists.
-        _settle_star_elim_from_candidates()
-        _settle_group_sequence_bounds()
-        _settle_singleton_sequences()
-        _settle_repeat_counts_from_notes()
+        _settle_star_elim_from_candidates,
+        _settle_group_sequence_bounds,
+        _settle_singleton_sequences,
+        _settle_repeat_counts_from_notes,
         # AFTER the sequence narrowing above, so a record that only just
         # resolved to a single position is already visible as occupying it.
-        _settle_same_position_identity()
+        _settle_same_position_identity,
         # The same rule keyed on STAR rather than position. After the
         # position version, so a record that only just resolved is already
         # visible as occupying its star.
-        _settle_same_star_identity()
+        _settle_same_star_identity,
         # AFTER the sharing, and BEFORE _settle_singleton_names, which is
         # the pass that could not see these exclusions at all.
         # Name is alldiff, so its exclusion is the single-confirmer kind and
         # keeps its own pass; only the singleton rule is shared.
-        _settle_derived_name_exclusions()
-        _settle_singleton_for_axis(Axis.NAME)
-        # Pitch, Colour and Degree in that order — unchanged from when each
-        # had its own hand-written pair. Exclusion before singleton on every
-        # axis: the singleton rule counts remaining values, so it has to run
-        # after the pass that rules values out, or it counts values the
-        # display has already struck through.
-        for axis in CLIQUE_AXES:
-            _settle_derived_exclusions_for_axis(int(axis))
-            _settle_singleton_for_axis(int(axis))
-        # Monotone: inside the fixpoint a proven-distinct pair stays proven,
-        # so only the unproven verdicts are worth re-deriving next round.
-        _clear_deduction_caches(true)
-        if _derived_fact_count() == before:
-            break
-    # Outside the fixpoint: no pass may resize _match_records under itself.
-    if _make_entries_for_decided_notes():
-        _full_propagation_refresh()
-        return
+        _settle_derived_name_exclusions,
+        _settle_singleton_for_axis.bind(Axis.NAME),
+    ]
+    # Pitch, Colour and Degree in that order — unchanged from when each
+    # had its own hand-written pair. Exclusion before singleton on every
+    # axis: the singleton rule counts remaining values, so it has to run
+    # after the pass that rules values out, or it counts values the
+    # display has already struck through.
+    for axis in CLIQUE_AXES:
+        passes.append(_settle_derived_exclusions_for_axis.bind(int(axis)))
+        passes.append(_settle_singleton_for_axis.bind(int(axis)))
+    return passes
+
+
+## One round of the fixpoint. True when it concluded nothing new.
+func _refresh_round() -> bool:
+    var before: int = _derived_fact_count()
+    for p in _refresh_round_passes():
+        p.call()
+    return _refresh_round_close(before)
+
+
+## _refresh_round with a frame handed back between its passes, for the walk:
+## one round alone ran to ~100 ms on Constellation 3.
+func _refresh_round_pausing() -> bool:
+    var before: int = _derived_fact_count()
+    for p in _refresh_round_passes():
+        p.call()
+        await pause_if_due()
+    return _refresh_round_close(before)
+
+
+func _refresh_round_close(before: int) -> bool:
+    # Monotone: inside the fixpoint a proven-distinct pair stays proven,
+    # so only the unproven verdicts are worth re-deriving next round.
+    _clear_deduction_caches(true)
+    return _derived_fact_count() == before
+
+
+func _refresh_end() -> void:
     if _board_step_open:
         _fold_refresh_into_last_step()
     _detect_contradictions()
     _check_filled_against_answer()
+    if board_only:
+        return
     _host._refresh_contradiction_banner()
     _host._refresh_history_buttons()
     _host._widgets._build_star_widgets()

@@ -8918,6 +8918,8 @@ const DIFFICULTY_PROFILES := {
         # _mutex_barred_given_axis. Name, Sequence and Hop are unaffected, so
         # the 4-element opener is Name, Sequence, Hop and one of the two.
         "mutex_one_given_axis": true,
+        # One walk through the finished puzzle: see _final_clue_walk.
+        "final_clue_walk": true,
         # Dual Negation (3): two exclusions at once, nothing positive.
         # Group Order (9) / Group Comparison (14): require holding a whole
         #   group's membership in mind before the clue says anything.
@@ -10502,6 +10504,83 @@ func _final_redundancy_safety_net(name_revealed: Array) -> void:
         if _host and since_yield >= PRUNE_YIELD_INTERVAL:
             since_yield = 0
             await _host.get_tree().process_frame
+    _recompute_name_revealed(name_revealed)
+
+
+## TEST SEAM. The walk needs a scene tree and ~7 s a puzzle, so it runs with a
+## host (the game) and not under the dozens of generations the suite makes;
+## test_clue_walk.gd turns it on.
+var clue_walk_force: bool = false
+
+
+func _clue_walk_wanted() -> bool:
+    if not bool(_profile().get("final_clue_walk", false)) or not _repeats_hidden():
+        return false
+    return _host != null or clue_walk_force
+
+
+## Which clue the walk reaches first decides which of two overlapping clues
+## survives. The kept Forms go first, since they stay anyway and anything they
+## say need not be said again; then the direct clues, the note pins, then a
+## name or first note tied to something visible; then the rest. Measured, 19.3
+## clues against 19.6 in shipped order.
+func _clue_walk_order() -> Array:
+    var ranked: Array = []
+    for i in chosen_form_clues.size():
+        var c: Dictionary = chosen_form_clues[i]
+        var t: String = str(c.get("text", ""))
+        var rank: int = 3
+        if _is_redundancy_exempt_form(int(c.get("form_id", -1))):
+            rank = 0
+        elif t.contains("firing of") and t.contains(" is on note "):
+            rank = 1
+        elif t.contains("is the star that first fires on note") or int(c.get("form_id", -1)) == 1:
+            rank = 2
+        ranked.append([rank, i])
+    ranked.sort()
+    var out: Array = []
+    for r in ranked:
+        out.append(int(r[1]))
+    return out
+
+
+## The author's final pass: see constellation_clue_walk.gd for what the walk
+## is. A clue it flags still has to pass _try_prune_clue_at, and the finished
+## set has to take the hints exactly as far, or nothing is cut. Opening Mutual
+## Exclusions and Betweenness chains stay (_is_redundancy_exempt_form).
+##
+## The "needed" memo is emptied first. It is sound only for removals from the
+## set it was built on, and the spares went in after that.
+func _final_clue_walk(name_revealed: Array) -> void:
+    var seq_sols: Array = await _unique_note_order(_seq_facts_from_clues())
+    if seq_sols.size() != 1:
+        return
+    var baseline: int = _solve_name_closure(seq_sols, PRUNE_CLOSURE_CAP).size()
+    if baseline < 1 or baseline >= PRUNE_CLOSURE_CAP or _last_solve_inconclusive:
+        return
+    var before: Array[Dictionary] = chosen_form_clues.duplicate()
+    var walker = load("res://constellation_clue_walk.gd").new()
+    await walker.open(self, _host.get_tree() if _host else (Engine.get_main_loop() as SceneTree))
+    var walked: Dictionary = await walker.walk(_clue_walk_order())
+    var used: Dictionary = walked["used"]
+    _prune_needed_by_notes = {}
+    var cur_revealed: Array = []
+    for _n in name_revealed.size():
+        cur_revealed.append(false)
+    _recompute_name_revealed(cur_revealed)
+    var cut: int = 0
+    var i: int = before.size() - 1
+    while i >= 0 and not abort_requested:
+        if not used.has(i) and not _is_redundancy_exempt_form(int(before[i].get("form_id", -1))):
+            var at: int = chosen_form_clues.find(before[i])
+            if at >= 0 and await _try_prune_clue_at(at, baseline, cur_revealed):
+                cut += 1
+        i -= 1
+    if cut > 0:
+        var check: Dictionary = await walker.reach()
+        if abort_requested or int(check["placed"]) < int(walked["placed"]) or int(check["tied"]) < int(walked["tied"]):
+            chosen_form_clues.assign(before)
+    walker.close()
     _recompute_name_revealed(name_revealed)
 
 
@@ -12601,6 +12680,11 @@ func _generate_clues_forms_attempt() -> Dictionary:
                     keep[str(cl.get("text", ""))] = true
             if any_candidate:
                 sequence_solver_facts = await _prune_redundant_clues(name_revealed, 0, keep)
+        sequence_solver_facts = _seq_facts_from_clues()
+    # Before the gate on purpose: the full proof below reads what this leaves,
+    # so a bad cut can only cost a retry, never ship.
+    if _clue_walk_wanted():
+        await _final_clue_walk(name_revealed)
         sequence_solver_facts = _seq_facts_from_clues()
     var _t_prune_end: int = Time.get_ticks_msec()
     if DEBUG_GEN_TIMING:

@@ -18,6 +18,9 @@ extends "res://dev_tests/test_base.gd"
 # NOT checked here: the running game, and a web build's slower script speed.
 
 const PuzzleScript = preload("res://constellation_logic_puzzle.gd")
+## Held as RootUI.tscn holds it in the game, so the walk's hidden board does not
+## pay for a first load that a player never would.
+const OverlayScene = preload("res://ConstellationStudyOverlay.tscn")
 
 ## The longest gap between two frames this test tolerates. A 60 fps frame is
 ## 16.7 ms; the per-frame budgets are 2-5 ms plus whatever one un-sliced step
@@ -79,6 +82,9 @@ func run() -> void:
 	for cid in [1, 3]:
 		print("=== constellation %d ===" % cid)
 		var plain = _beginner_puzzle(cid, 11, null)
+		# The final clue walk runs in the game, so it runs here too: without a
+		# host it needs the seam, and the frames below must include it.
+		plain.clue_walk_force = true
 		var t0: int = Time.get_ticks_msec()
 		await plain.generate_clues_forms()
 		var plain_ms: int = Time.get_ticks_msec() - t0
