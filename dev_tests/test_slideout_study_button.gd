@@ -46,7 +46,7 @@ func _check_page(scene: String) -> void:
 	ok(btn.get_parent().name == "SelectorVBox" and btn.get_index() == btn.get_parent().get_child_count() - 1,
 		"it is the last thing in the Constellation column")
 
-	cp._study_btn.disabled = true
+	cp._study_revealed = false   # Study not yet revealed (its own flag since the Kaleb switch)
 	await process_frame
 	ok(not btn.visible, "hidden while the box's Study button is unrevealed")
 	cp.reveal_study_button()

@@ -179,9 +179,12 @@ func active_constellation() -> int:
 
 
 ## Whether Study Constellation has been revealed (reveal_study_button()).
-## The slideout's Study button reads this, so both show together.
+## The slideout's Study button reads this, so both show together. Kept as a
+## flag rather than read off this panel's button state.
 func is_study_revealed() -> bool:
-    return not _study_btn.disabled
+    return _study_revealed
+
+var _study_revealed: bool = false
 
 
 func is_study_open() -> bool:
@@ -215,6 +218,7 @@ func reveal_study_button() -> void:
     # as nodes enter the tree) always picks up the reload path's direct
     # assignment correctly. Set modulate.a directly instead, trading the
     # 1.5s fade-in for a reveal that's actually guaranteed to render.
+    _study_revealed = true
     _study_btn.disabled = false
     _study_btn.mouse_filter = Control.MOUSE_FILTER_STOP
     _study_btn.modulate.a = 1.0

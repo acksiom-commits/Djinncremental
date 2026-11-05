@@ -283,7 +283,15 @@ The author's skill list, in order. The list lives in `game_data.gd` `SKILLS`, th
 
 The dial positions are placement only, chosen next to the output each skill seems to make; that is not yet a design link between skill and output. Open: what each skill does and how it levels (§7 says Uonites learn Skills from automation experience; that bullet's names, Forging, Quenching, Calcination, Distillation and Vaporization, came first and Forge/Distill overlap them); what the yellow cards hold; whether clicking a skill card should also choose it on the dial.
 
-### 7.3 Kaleb's command stack and Persistent Grain production (designed 2026-11-05) [Phase 1 CODE: engine and stocks; NO UI yet]
+### 7.3 Kaleb's command stack and Persistent Grain production (designed 2026-11-05) [CODE: Phase 1 engine and stocks, Phase 2 UI]
+
+**Built (Phase 2, 2026-11-05): the stack in the Journal's Commands tab** (`kaleb_stack_view.gd`, made by `root_ui.gd` `_setup_kaleb()` and handed to `journal_popout.gd` `set_commands_view()`):
+- **Where:** the Journal slideout's sixth tab, until now Placeholder ("Coming soon."), reads **Commands** on Primordial and shows the stack; Firmament's Journal keeps its Placeholder tab (author, 2026-11-05). The tab's internal key stays `placeholder`. It is shown at once (dev-unlocked). The stack first went into the Constellation box, with the button under the box switching between it and the constellation; the author found the box a poor fit and moved it here the same day, and that button is Study Constellation again. "Is Study revealed" stays its own flag (`constellation_panel.gd` `_study_revealed`, set by `reveal_study_button()`), which the slideout's Study button reads.
+- **Header:** Run/Pause (`kaleb_running`), the title, and **+ Command**, the palette menu. A bar that can't be added (no free Focus, or Uonite) says so in the footer for 3 s.
+- **Rows**, one per bar: its number (▶ while Kaleb runs it), On/Off, its name (an Off bar's dimmed), its settings, and ×. Press bars: a typed ×N field (reads k/N while Kaleb is on it); Lock/Unlock: a lock menu; If: a count menu, `<`/`>=`, a value field and a go-to field (shown 1-based). Typed fields, not SpinBoxes, and a compact style on the stack's controls (rows ~24 px; about 10 show in the 500×396 Journal panel), and it scrolls beyond that without widening the panel. Rows rebuild only when bars are added, removed, moved or loaded (compared by identity), so editing a field isn't interrupted.
+- **Drag and drop:** drag a bar by its number or name onto another row; it takes that row's slot (`kaleb_move_bar`), and Kaleb stays on the bar he was on.
+- **Footer:** Persistent Particle, Iota, Mote and Grain counts.
+- `test_kaleb_stack_view.gd`: the view is in Primordial's Journal (Commands tab shows it, other tabs hide it), not Firmament's, and the box button is Study again; the palette adds bars, each holding a Focus, and refuses with none free; ×N sets and clamps; On/Off; the go-to is 1-based shown, 0-based stored; drop moves a bar and the rows follow; × returns the Focus; Run/Pause; with 13 bars the view stays inside the Journal panel.
 
 **Built (Phase 1, 2026-11-05):**
 - **Persistent stocks** in `game_context.gd`: `persistent_particle/iota/mote/grain` (`PERSISTENT_KEYS`), saved through `CHAIN_SAVE_KEYS` (which replaced the same 7-key literal in three save/load loops), counted in `get_storage_total()`. `do_prestige_reset()` keeps Persistent Grains and zeroes the rest. Recipes `persistent_*_assemble` in `game_data.gd`; names in `RESOURCES`.
@@ -293,7 +301,7 @@ The dial positions are placement only, chosen next to the output each skill seem
 - **Kaleb** is `kaleb_executor.gd`, created by `root_ui.gd` (`_setup_kaleb()`), so he works while Primordial is up. Press bars wait on their button's cooldown bar and call the real handler through `root_ui.kaleb_press()`, at most one press a frame; Lock/Unlock (via `toggle_lock`/`toggle_category_lock`, so Volitions are assigned as for a click) and If are instant, at most 64 a frame. While `kaleb_running`, the Summon, Monad, Tetrad, Particle, Iota and Mote buttons ignore the player (`_kaleb_has_the_buttons()`). The Persistent presses share the Particle, Iota and Mote cooldowns (Grain has none) and have no buttons yet.
 - `test_kaleb_persistent_chain.gd`: a 15-bar stack takes Sparks alone to a Persistent Iota (in one run: 7 Adaemants, 4 Persistent Particles); bars hold Foci/Uonites; the player is locked out; 189/189 Fundament-first draws had a Fundament, none a locked one; the stack survives a JSON save round trip; the Oscillation keeps only Persistent Grains.
 
-**Next (Phase 2):** the stack in the Constellation box with the constellation/stack switch, the palette, bar controls (×N, On/Off, remove, drag and drop onto the slot grid), Run/Pause, and rows for the Persistent stocks.
+**Next (Phase 3):** run a full Adaemant stack to a Persistent Grain with the Hourglass at Tier 3 and see how fast it really is; then decide the unlock.
 
 Persistent Grains are made by **Kaleb**, running a stack of command bars, Idle Loops style: the player lays out commands, Kaleb carries them out in sequence, and at the end the stack recycles to the top. (It is the Kaleb automation planned since 2026-08-12, which takes over the Constellation box.)
 
@@ -306,7 +314,7 @@ Persistent Grains are made by **Kaleb**, running a stack of command bars, Idle L
 - **Repeat counts and If-then bars:** each bar has a ×N repeat count; If-then bars handle the conditions counts can't (e.g. go back while Persistent Particles < 4).
 - **Kaleb presses the real buttons**, sharing their cooldowns, so the Hourglass (Archon Tier 3 Child Volitions on the Monad, Tetrad and Particle ops) makes him fast. While the stack is active only Kaleb presses them; the player turns it off to work by hand. Helping him while it runs may be tried later, once the automation works.
 - **Kaleb switches Purity Locks with command bars** (e.g. lock Liquid and Gas Monads so a Tetrad can only be Adaemant), which is how he makes a chosen Fundament from random Monads.
-- **UI:** the bars stack vertically in the Constellation box on the **Primordial** page only. The Study Constellation button under the box (Study is also in the slideout, §7) becomes a switch between the chosen constellation and the command stack.
+- **UI:** the bars stack vertically in the Journal slideout's **Commands** tab (the former Placeholder), on the **Primordial** page only (author, 2026-11-05; first planned for the Constellation box, which turned out a poor match).
 - **Unlock:** available at once while it is built and tuned; the real unlock is decided later.
 
 **Proposed, not objected to (2026-11-05):** If-then bars hold a Focus but no Uonite; a stack-level Run/Pause, with the player's production buttons disabled while it runs; a press that can't happen (not enough material) counts as done and Kaleb moves on, so If-then bars guard what matters.

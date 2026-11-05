@@ -2559,6 +2559,14 @@ func _setup_kaleb() -> void:
     _kaleb.name = "KalebExecutor"
     _kaleb.setup(self, game_context)
     add_child(_kaleb)
+    # The stack shows in the Journal slideout's Commands tab (Primordial only;
+    # author, 2026-11-05: moved from the Constellation box).
+    var journal: Node = find_child("JournalPopout", true, false)
+    if journal and journal.has_method("set_commands_view"):
+        var view: Control = preload("res://kaleb_stack_view.gd").new()
+        view.name = "KalebStackView"
+        view.setup(game_context)
+        journal.set_commands_view(view)
 
 
 ## The Persistent chain's presses. They share the Particle, Iota and Mote

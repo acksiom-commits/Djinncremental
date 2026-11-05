@@ -283,6 +283,24 @@ func _rebuild_placeholder() -> void:
     _placeholder_label.text = "[color=%s]Coming soon.[/color]" % BODY_COLOR
 
 
+## On Primordial this tab is **Commands**: Kaleb's command stack
+## (kaleb_stack_view.gd, handed over by root_ui.gd _setup_kaleb(); SysDoc
+## §7.3, moved here from the Constellation box 2026-11-05). Firmament's
+## Journal never gets one and keeps "Placeholder". The tab's key stays
+## "placeholder"; only what it shows changes.
+var _commands_view: Control = null
+
+func set_commands_view(view: Control) -> void:
+    _commands_view = view
+    var vbox: Node = _placeholder_scroll.get_parent()
+    vbox.add_child(view)
+    vbox.move_child(view, _placeholder_scroll.get_index() + 1)
+    view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _placeholder_tab.text = "Commands"
+    _switch_tab(_active_tab)
+
+
 # ==================================================
 # TAB SWITCHING
 # ==================================================
@@ -293,7 +311,9 @@ func _switch_tab(tab: String) -> void:
     _notices_scroll.visible     = (tab == "notices")
     _bonuses_scroll.visible     = (tab == "bonuses")
     _achieve_scroll.visible     = (tab == "achievements")
-    _placeholder_scroll.visible = (tab == "placeholder")
+    _placeholder_scroll.visible = (tab == "placeholder") and _commands_view == null
+    if _commands_view:
+        _commands_view.visible = (tab == "placeholder")
 
     var all_tabs: Array = [_ref_tab, _hist_tab, _notices_tab, _bonuses_tab, _achieve_tab, _placeholder_tab]
     var tab_keys: Array = ["reference", "history", "notices", "bonuses", "achievements", "placeholder"]
