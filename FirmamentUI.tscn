@@ -191,6 +191,7 @@ theme_override_constants/separation = 2
 layout_mode = 2
 size_flags_horizontal = 1
 size_flags_vertical = 0
+alignment = 1
 
 [node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowSparksLabelInstance" index="0" unique_id=1655298137]
 theme_override_font_sizes/normal_font_size = 18
@@ -199,6 +200,9 @@ theme_override_font_sizes/normal_font_size = 18
 layout_mode = 2
 size_flags_horizontal = 1
 size_flags_vertical = 0
+
+[node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowSparksValueInstance" index="0" unique_id=1655298137]
+horizontal_alignment = 1
 
 [node name="RowUonitesLabelInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=1636432255 instance=ExtResource("8_pn7y4")]
 layout_mode = 2
@@ -215,6 +219,7 @@ size_flags_vertical = 0
 
 [node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowUonitesValueInstance" index="0" unique_id=1655298137]
 theme_override_font_sizes/normal_font_size = 18
+horizontal_alignment = 1
 
 [node name="RowFociLabelInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=895952450 instance=ExtResource("8_pn7y4")]
 layout_mode = 2
@@ -231,6 +236,7 @@ size_flags_vertical = 0
 
 [node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowFociValueInstance" index="0" unique_id=1655298137]
 theme_override_font_sizes/normal_font_size = 18
+horizontal_alignment = 1
 
 [node name="RowVolitionsLabelInstance" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox" unique_id=563932774 instance=ExtResource("8_pn7y4")]
 layout_mode = 2
@@ -247,6 +253,7 @@ size_flags_vertical = 0
 
 [node name="ResourceLabel" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox/DirectReadoutsPanelContainer/DirectReadoutsMargin/DirectReadoutsVBox/RowVolitionsValueInstance" index="0" unique_id=1655298137]
 theme_override_font_sizes/normal_font_size = 18
+horizontal_alignment = 1
 
 [node name="ReadoutClickVolSeparator" type="HSeparator" parent="FirmRootUI/FirmTopBandHBox/BarsPanelContainer/BarsMargin/BarsVBox" unique_id=617134576]
 layout_mode = 2
@@ -725,14 +732,37 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="CarouselPanel" type="PanelContainer" parent="FirmRootUI/MidBandHBox/CarouselContainer" unique_id=1542912506]
-custom_minimum_size = Vector2(850, 200)
+custom_minimum_size = Vector2(0, 200)
 layout_mode = 0
-offset_right = 850.0
+offset_right = 434.0
 offset_bottom = 200.0
 
 [node name="Carousel" type="Control" parent="FirmRootUI/MidBandHBox/CarouselContainer/CarouselPanel" unique_id=897916240]
 layout_mode = 2
 script = ExtResource("18_mhxl1")
+
+[node name="CarouselArrows" type="HBoxContainer" parent="FirmRootUI/MidBandHBox/CarouselContainer" unique_id=1188400110]
+layout_mode = 0
+offset_top = 208.0
+offset_right = 434.0
+offset_bottom = 240.0
+
+[node name="LeftArrowButton" type="Button" parent="FirmRootUI/MidBandHBox/CarouselContainer/CarouselArrows" unique_id=1188400111]
+custom_minimum_size = Vector2(120, 32)
+layout_mode = 2
+focus_mode = 0
+tooltip_text = "Previous card"
+
+[node name="ArrowsSpacer" type="Control" parent="FirmRootUI/MidBandHBox/CarouselContainer/CarouselArrows" unique_id=1188400112]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+
+[node name="RightArrowButton" type="Button" parent="FirmRootUI/MidBandHBox/CarouselContainer/CarouselArrows" unique_id=1188400113]
+custom_minimum_size = Vector2(120, 32)
+layout_mode = 2
+focus_mode = 0
+tooltip_text = "Next card"
 
 [node name="PuzzleSynths" type="Node" parent="FirmRootUI" unique_id=197495557]
 script = ExtResource("26_synths")
