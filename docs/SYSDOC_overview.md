@@ -9,6 +9,7 @@
 **Updated 2026-10-28:** added the author's core design intention to **reduce menu switching** (§1), and the Classic/Checks Entry switch in the Star Map and Staff popups (§6.4).
 **Updated 2026-10-31:** star names in one puzzle can no longer be near-identical (§6.5); Easy's Mutual Exclusion clues use Colour or Pitch, never both (§6.2).
 **Updated 2026-11-02:** the Rune fitting board, a Firmament prototype (§7).
+**Updated 2026-11-04:** the size above Grain is the **Dram**: Fuse turns 60 Grains into 1 Dram; Scruple is skipped for now (§7, §7.1). A skill list is begun in the new §7.2 (Mold, Carve, Forge, Distill), on Firmament's skill cards and the Manifold dial.
 **Status of this draft:** second pass (same day). The author ruled on the first draft's summary-vs-code disagreements (§9): the code was right on all of them, and the author's original Summary is superseded wherever it differs. A few smaller questions remain open in §9.
 
 ## How to read the tags
@@ -226,9 +227,9 @@ Only stock *definitions* exist in code (`game_data.gd`: phlogiston, clay, stone,
 
 Design:
 - Grains become basic mid-game resources: **Earth** (Clay, Stones, Ores), **Water** (Oils, Acids), **Air** (Firedamp, Vapors). **[Superseded in part, 2026-10-06: Clay, Crystal and Vapor are now the three initial Persistent Grain outputs, from Mud, Dust and Cloud; where Stones, Ores, Oils etc. land is open. See §7.1.]**
-- **Fuse** (the mid-game click, analogous to Summon Spark) makes creation resources: Solid (Bricks, Ingots, Gems…), Liquid (Baths, Infusions, Elixirs…), Gas (Steams, Smokes, Spirits…).
+- **Fuse** (the mid-game click, analogous to Summon Spark) makes creation resources: Solid (Bricks, Ingots, Gems…), Liquid (Baths, Infusions, Elixirs…), Gas (Steams, Smokes, Spirits…). **[Author, 2026-11-04: Fuse turns 60 Grains into 1 Dram, the next size up from Grain. How Drams lead to these products is open. See §7.1.]**
 - Those make **Tools** (Hammers, Vats, Alembics…) and **Devices** (Forges, Crucibles, Distilleries…). They speed early-game compression and assembly, enable Forging and Calcination, and boost their own resources.
-- Leveling **Skills** (Forging, Quenching, Calcination, Distillation, Vaporization…) that Uonites learn from automation experience.
+- Leveling **Skills** (Forging, Quenching, Calcination, Distillation, Vaporization…) that Uonites learn from automation experience. **[The skill list itself, begun 2026-11-04 with Mold, Carve, Forge and Distill, is in §7.2.]**
 - Archon **allocates Uonites** to tasks against player-set goals.
 - **Purity locks**: hold chosen resources in storage so higher-tier items are built from the rest (mechanics in §3: a locked variety is excluded from draws and still counts against storage). This protects Fundament percentages, needed for high-purity Ingots/Gems and for achievements that raise Foci/Volitions. A minimum Fundament percentage per Grain is the survival condition for material across resets: **every Particle needs at least 1 Fundament Tetrad** (§7.1).
 - **Endgame**: sufficiently pure, Fundament-rich Grains build **World Layers** (Earth, Water, Air), then ecologies, villages, towns, and finally Material-themed **Cities** (the City of Brass is the first).
@@ -247,6 +248,7 @@ Design:
 - **Vessel constellation preserves material through Oscillations (author, 2026-10-21; scope open).** This changes the otherwise blanket "only Persistent Grains survive" rule: the Vessel's tiers will let some material cross the reset. (The earlier hope that it would let a multi-phase lock rotation span Oscillations no longer applies; that rotation was withdrawn, see above.) It may overlap with what Persistence is for (the Vessel might preserve Disposable Grains, which Persistence otherwise gates). The Vessel is also the first container blueprint (below), so the constellation and the Fused container may be two faces of one mechanism; undecided. See §5. [INTENT, undecided]
 - **Vocabulary.** *Disposable* = non-Persistent Grain/resource. *Aligned* = of Mud/Dust/Cloud composition with balanced Medials. *Mats* = material resources. *Fuse* turns stockpiled Persistent Grains into Persistent building materials. [author's usage]
 - **Persistent Grains are the first persistent building material.** Once stockpiled, the player Fuses them (mid-game UI) into Persistent building materials for **storage containers** for early-game Disposable/Aligned resources. **DEV NOTE: the first container blueprint is the player's own Vessel (Lamp, Ring or Jar, chosen at the Start Screen, `GameContext.chosen_vessel`).**
+- **Dram: the size above Grain (author, 2026-11-04).** Fuse turns **60 Grains into 1 Dram**. The name and count come from apothecaries' weight, where the grain is the smallest unit (historically 20 grains = 1 scruple, 3 scruples = 1 dram). **Scruple is skipped for now**: there is no 20-Grain tier between Grain and Dram. Dram is a plain 60:1 count; it has no geometry of its own yet (a proposed 2-Grain space-filling block was not taken up). Sediment names (granule, pebble) were avoided because the sediment-size scale runs clay < silt < sand < granule < pebble, and Clay, Silt and Sand are already in use. [INTENT / NOT BUILT]
 
 **Measured / derived facts to design against** [CODE-derived; the weld model reproduced the one measured value, 14.05% vs 14.2%; the restricted-pool figures are model-only, not measured in game]:
 - Tetrad weld rule: a Particle is 4 Tetrads welded K4 (one shared Monad per pair), so a Particle holds at most one Fundament *variety*. Of 1,206 reachable Particle compositions, 333 contain a Fundament.
@@ -258,12 +260,26 @@ Design:
 - Existing prototype: `_sample_grain_purity` / `_manifold_output_key` (EMA of Tetrad-pool category fractions) still uses "clay" as the lowest tier; likely superseded.
 
 **Open, not decided** (author is still working these out):
+- **Dram:** whether a Dram is typed by family (a Dram of Clay, Crystal or Vapor) or generic; whether only Persistent Grains can be Fused and whether a Dram is itself Persistent; how Drams lead to the Fuse products in §7 (Bricks, Ingots, Gems; Baths, Infusions, Elixirs; Steams, Smokes, Spirits); whether anything sits above Dram (historically 8 drams = 1 ounce).
 - **Vessel preservation:** scope (Grains only? Persistent, Disposable or both? Particles, Iotas, Motes, Tetrads, Monads, locked hoards?), amount per tier (fraction, flag or count), how it interacts with Persistence, and whether the constellation tier, the Fused container, or both deliver it.
 - How composition is tracked (typed stocks vs per-stock fraction vector vs derived); whether Fundament Particles become a typed stock.
 - Whether hoarded Fundament Particles are drawn as plain stock or placed explicitly into a Grain build. The author is considering a new Constellation (a "Pipe" or "Lens") that Kaleb can use to partition the Stoctagon so correct stock is drawn for Aligned/Persistent Grains.
 - How locks distinguish Persistent-grade from plain stock at the Particle, Iota and Mote tiers (locks key on Tetrad varieties, categories and Monad types today; Particles and above are plain counts), and what the Filters / Tools / Devices that later automate shepherding look like.
 - Persistence scope (all 112 Particles vs 16 loose), the "sufficiently equal" Medial tolerance, tie-break when two families qualify, expected-value vs random sampling for passive Persistent yield, and whether the proportional path should respect the weld rule.
 - The 13 blank cells of the imbalanced table (the original 12, plus Sand + Dust), and where the products fall among Earth/Water/Air Grains (§7 above lists Earth: Clay, Stones, Ores etc., which this redesign changes).
+
+### 7.2 Skills (list begun 2026-11-04) [CODE for names and placement; effects NOT BUILT]
+
+The author's skill list, in order. The list lives in `game_data.gd` `SKILLS`, the one source for both places a skill shows, so they stay in step: its **skill card** in Firmament's card row (`carousel.gd`; cards 0-5 red, 6-11 blue, 12-17 yellow, colours in `GameData.CARD_COLORS`), and a clickable name inside the ring of the **Manifold dial** (`manifold_dial.gd`, Firmament's production wheel). Clicking a skill's name turns the dial's spout (the channel) to point at it. Choosing a skill and choosing an output icon are one selection: picking either clears the other. No skill has an effect yet. The dial's twelve outputs show their names, in their station's colour, because none of their icon files exist (`game_data.gd` `RESOURCES` names `res://icons/clay.svg` and so on); until 2026-11-04 the dial drew empty, invisible buttons there. An output with an icon file shows the icon instead. `test_firmament_skills.gd`.
+
+| Skill | Card | Dial position |
+|---|---|---|
+| Mold | red, card 0 | 5 o'clock (by Clay) |
+| Carve | red, card 1 | 4 o'clock (by Stone) |
+| Forge | red, card 2 | 2 o'clock (by the Ores) |
+| Distill | blue, card 6 | 8 o'clock (by Elixir) |
+
+The dial positions are placement only, chosen next to the output each skill seems to make; that is not yet a design link between skill and output. Open: what each skill does and how it levels (§7 says Uonites learn Skills from automation experience; that bullet's names, Forging, Quenching, Calcination, Distillation and Vaporization, came first and Forge/Distill overlap them); what the yellow cards hold; whether clicking a skill card should also choose it on the dial.
 
 Other designed-not-built items live in the project memory index (Archai/Particle lattice geometry, Uonite neurology, Sigils and Runes, Repeat Count clue axis, Kaleb-voiced hints). Check there before proposing anything in these areas, and treat each as a prototype unless its note says shipped.
 

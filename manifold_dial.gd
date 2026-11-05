@@ -11,13 +11,24 @@ extends Control
 # same vocabulary as AllocationWheelControl (Stoctagon).
 # Channel: narrow rectangle extending from the selected face outward.
 # Grain particles burst from center toward channel on each manifold tick.
+# Skills (2026-11-04): each skill in GameData.SKILLS has a clickable name
+# inside the ring at its dial_hour, tinted like its skill card; clicking it
+# turns the channel (the spout) to point there. Choosing a skill and choosing
+# an output icon are one selection: picking either clears the other.
 
 # === LAYOUT ===
 const DIAL_RADIUS:    float = 115.0
-const ICON_ORBIT:     float = 170.0
+## Space between the ring and the nearest edge of each output's icon or name
+## (clear of the station arcs, drawn at DIAL_RADIUS + 7).
+const OUTPUT_GAP:     float = 12.0
 const CHANNEL_LENGTH: float = 36.0
 const CHANNEL_HALF_W: float = 6.0
 const ICON_SIZE:      float = 28.0
+## Radius of the ring of skill names, inside the dodecagon.
+const SKILL_ORBIT:    float = 76.0
+const SKILL_FONT_SIZE: int  = 13
+## Output names, shown where an output has no icon file.
+const OUTPUT_FONT_SIZE: int = 12
 
 # === COLORS ===
 const COLOR_RING         := Color(UIAccentColors.CREAM, 0.10)
@@ -80,11 +91,16 @@ var game_data: Node = null
 
 # === STATE ===
 var _selected_index:    int   = 0
+## Index into GameData.SKILLS of the chosen skill, or -1 when an output is chosen.
+var _selected_skill:    int   = -1
+## Where the channel is turning to, in degrees (-90 is 12 o'clock).
+var _spout_target_deg:  float = -90.0
 var _channel_angle_deg: float = -90.0
 var _purity:            float = 0.0
 var _is_starved:        bool  = false
 
 var _icon_buttons:  Array              = []
+var _skill_buttons: Array              = []
 var _icon_textures: Dictionary         = {}
 var _particles:     Array[Dictionary]  = []
 
@@ -98,6 +114,7 @@ func _ready() -> void:
     _build_output_colors()
     _preload_textures()
     _build_icon_buttons()
+    _build_skill_buttons()
     var pm: Node = get_node_or_null("/root/ProductionManager")
     if pm and pm.has_signal("manifold_ticked"):
         pm.manifold_ticked.connect(_on_manifold_ticked)
@@ -138,16 +155,32 @@ func _preload_textures() -> void:
             _icon_textures[key] = load(path)
 
 
+## One button per output. It shows the output's icon when that file exists,
+## and otherwise its name (2026-11-04: none of the twelve Firmament icons
+## exist yet, which left the outputs invisible and unclickable).
 func _build_icon_buttons() -> void:
     for i in 12:
         var key: String = OUTPUT_KEYS[i]
-        var btn := TextureButton.new()
-        btn.name           = "DialIcon_" + key
-        btn.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
-        btn.stretch_mode   = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
-        btn.ignore_texture_size = true
+        var btn: BaseButton
         if _icon_textures.has(key):
-            btn.texture_normal = _icon_textures[key]
+            var tb := TextureButton.new()
+            tb.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
+            tb.stretch_mode   = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+            tb.ignore_texture_size = true
+            tb.texture_normal = _icon_textures[key]
+            btn = tb
+        else:
+            var b := Button.new()
+            b.text = game_data.get_resource_name(key) if game_data else key
+            b.flat = true
+            b.add_theme_font_size_override("font_size", OUTPUT_FONT_SIZE)
+            # White text, so the station tint in modulate is the colour shown.
+            for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+                b.add_theme_color_override(state, Color.WHITE)
+            btn = b
+        btn.name = "DialIcon_" + key
+        btn.focus_mode = Control.FOCUS_NONE
+        btn.tooltip_text = game_data.get_resource_name(key) if game_data else key
         btn.modulate = _output_color.get(key, Color.WHITE).darkened(0.40)
         _icon_buttons.append(btn)
         var captured := i
@@ -159,12 +192,63 @@ func _reposition_icons() -> void:
     var c := _center()
     for i in _icon_buttons.size():
         var r := deg_to_rad(-90.0 + i * 30.0)
-        var pos: Vector2 = c + Vector2(cos(r), sin(r)) * ICON_ORBIT
-        (_icon_buttons[i] as TextureButton).position = pos - Vector2(ICON_SIZE * 0.5, ICON_SIZE * 0.5)
+        var dir := Vector2(cos(r), sin(r))
+        var btn: Control = _icon_buttons[i]
+        btn.size = btn.get_combined_minimum_size()
+        # The edge of the button nearest the ring sits OUTPUT_GAP outside it,
+        # so wide names sit closer in at 3 and 9 o'clock and stay in the panel.
+        var reach: float = absf(dir.x) * btn.size.x * 0.5 + absf(dir.y) * btn.size.y * 0.5
+        btn.position = c + dir * (DIAL_RADIUS + OUTPUT_GAP + reach) - btn.size * 0.5
+    for k in _skill_buttons.size():
+        var btn: Button = _skill_buttons[k]
+        var r := deg_to_rad(_skill_angle_deg(k))
+        btn.size = btn.get_combined_minimum_size()
+        btn.position = c + Vector2(cos(r), sin(r)) * SKILL_ORBIT - btn.size * 0.5
+
+
+# ==================================================
+# SKILLS
+# ==================================================
+func _build_skill_buttons() -> void:
+    if not game_data: return
+    for k in game_data.SKILLS.size():
+        var skill: Dictionary = game_data.SKILLS[k]
+        var btn := Button.new()
+        btn.name = "DialSkill_" + String(skill["key"])
+        btn.text = String(skill["name"])
+        btn.flat = true
+        btn.focus_mode = Control.FOCUS_NONE
+        btn.tooltip_text = "Turn the spout to %s" % skill["name"]
+        btn.add_theme_font_size_override("font_size", SKILL_FONT_SIZE)
+        var col: Color = game_data.card_color(int(skill["card"])).lightened(0.35)
+        btn.add_theme_color_override("font_color", col)
+        btn.add_theme_color_override("font_hover_color", col.lightened(0.3))
+        btn.add_theme_color_override("font_pressed_color", col)
+        btn.add_theme_color_override("font_focus_color", col)
+        _skill_buttons.append(btn)
+        btn.pressed.connect(select_skill.bind(k))
+        add_child(btn)
+    _refresh_icon_tints()
+
+
+## Clock position of skill k as an angle, the same way faces are numbered.
+func _skill_angle_deg(k: int) -> float:
+    return -90.0 + float(game_data.SKILLS[k]["dial_hour"]) * 30.0
+
+
+## Chooses skill k (an index into GameData.SKILLS) and turns the spout to it.
+func select_skill(k: int) -> void:
+    _selected_skill = k
+    _selected_index = -1
+    _spout_target_deg = _skill_angle_deg(k)
+    _refresh_icon_tints()
+    queue_redraw()
 
 
 func _select_face(index: int) -> void:
     _selected_index = index
+    _selected_skill = -1
+    _spout_target_deg = -90.0 + index * 30.0
     _refresh_icon_tints()
     queue_redraw()
 
@@ -172,8 +256,11 @@ func _select_face(index: int) -> void:
 func _refresh_icon_tints() -> void:
     for i in _icon_buttons.size():
         var base: Color = _output_color.get(OUTPUT_KEYS[i], Color.WHITE)
-        (_icon_buttons[i] as TextureButton).modulate = \
+        (_icon_buttons[i] as Control).modulate = \
             base if i == _selected_index else base.darkened(0.45)
+    for k in _skill_buttons.size():
+        (_skill_buttons[k] as Button).modulate = \
+            Color.WHITE if k == _selected_skill else Color(1, 1, 1, 0.55)
 
 
 # ==================================================
@@ -186,8 +273,7 @@ func _process(delta: float) -> void:
         _is_starved = (mf != null and (mf as int) > 0 and gc.grain.is_zero())
 
     # Smooth channel rotation
-    var target_deg: float = -90.0 + _selected_index * 30.0
-    var diff := fposmod(target_deg - _channel_angle_deg + 180.0, 360.0) - 180.0
+    var diff := fposmod(_spout_target_deg - _channel_angle_deg + 180.0, 360.0) - 180.0
     _channel_angle_deg += diff * minf(delta * 5.0, 1.0)
 
     # Age particles

@@ -4,8 +4,12 @@ extends Control
 # step the row one card left or right, gliding there. Click-and-drag scrolling
 # was replaced: it stayed too finicky through several attempts. The loop is
 # seamless both ways.
+# Cards that hold a skill (GameData.SKILLS: Mold, Carve and Forge on red cards
+# 0-2, Distill on blue card 6) show its name across the top (2026-11-04).
 
 var panels: Array[Panel] = []
+## GameData autoload: card colours and which skill each card holds.
+var game_data: Node = null
 var current_offset: float = 0.0
 ## Where the row is gliding to; each arrow click moves it one card.
 var target_offset: float = 0.0
@@ -36,6 +40,7 @@ func _ready() -> void:
     clip_contents = true
     mouse_filter = Control.MOUSE_FILTER_IGNORE
 
+    game_data = get_node_or_null("/root/GameData")
     create_panels()
     # The arrows sit below the panel holding this, in CarouselArrows.
     var arrows: Node = get_parent().get_parent().get_node_or_null("CarouselArrows")
@@ -66,15 +71,34 @@ func create_panels() -> void:
         style.corner_radius_bottom_left = 10
         style.corner_radius_bottom_right = 10
 
-        @warning_ignore("integer_division")  # six cards per colour
-        var cat = int(i / 6)
-        var base_col: Color = Color(0.95, 0.22, 0.22) if cat == 0 else \
-                             Color(0.25, 0.6, 1.0) if cat == 1 else Color(1.0, 0.9, 0.2)
+        # Six cards per colour, red then blue then yellow (GameData.CARD_COLORS).
+        var base_col: Color = game_data.card_color(i) if game_data else Color.WHITE
 
         style.border_color = base_col
         panel.add_theme_stylebox_override("panel", style)
+        _add_skill_label(panel, i, base_col)
         add_child(panel)
         panels.append(panel)
+
+
+## Names the skill this card holds (GameData.SKILLS), if any, across its top.
+func _add_skill_label(panel: Panel, card: int, col: Color) -> void:
+    if game_data == null:
+        return
+    var skill: Dictionary = game_data.skill_on_card(card)
+    if skill.is_empty():
+        return
+    var lbl := Label.new()
+    lbl.name = "SkillLabel"
+    lbl.text = String(skill["name"])
+    lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    lbl.add_theme_color_override("font_color", col.lightened(0.35))
+    lbl.add_theme_font_size_override("font_size", 16)
+    lbl.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+    lbl.offset_top = 14.0
+    lbl.offset_bottom = 38.0
+    panel.add_child(lbl)
 
 
 ## Moves the row one card: dir 1 brings in the next card from the right, -1

@@ -141,8 +141,51 @@ const RECIPES = {
 
 
 # ==================================================
+# SKILL DEFINITIONS
+# ==================================================
+# Firmament skills, in list order (author, 2026-11-04; SysDoc §7.2). One list
+# feeds both places a skill shows, so they stay in step:
+#   card     -- the skill card naming it in Firmament's card row (carousel.gd);
+#               cards 0-5 are red, 6-11 blue, 12-17 yellow (CARD_COLORS).
+#   dial_hour -- where its label sits on the Manifold dial (manifold_dial.gd),
+#               as a clock position; clicking the label turns the spout there.
+#               Placement only: it sits by the output it seems to make (Clay,
+#               Stone, Ores, Elixir), which is not yet a design link.
+# No skill has an effect yet.
+const SKILLS = [
+    {"key": "mold",    "name": "Mold",    "card": 0, "dial_hour": 5},
+    {"key": "carve",   "name": "Carve",   "card": 1, "dial_hour": 4},
+    {"key": "forge",   "name": "Forge",   "card": 2, "dial_hour": 2},
+    {"key": "distill", "name": "Distill", "card": 6, "dial_hour": 8},
+]
+
+## Skill-card border colours, six cards of each in this order.
+const CARD_COLORS = [
+    Color(0.95, 0.22, 0.22),  # red
+    Color(0.25, 0.6, 1.0),    # blue
+    Color(1.0, 0.9, 0.2),     # yellow
+]
+const CARDS_PER_COLOR: int = 6
+
+
+# ==================================================
 # HELPER FUNCTIONS
 # ==================================================
+## The border colour of skill card `card` in Firmament's card row.
+func card_color(card: int) -> Color:
+    @warning_ignore("integer_division")
+    var group: int = clampi(card / CARDS_PER_COLOR, 0, CARD_COLORS.size() - 1)
+    return CARD_COLORS[group]
+
+
+## The skill shown on card `card`, or an empty Dictionary if it has none.
+func skill_on_card(card: int) -> Dictionary:
+    for s in SKILLS:
+        if int(s["card"]) == card:
+            return s
+    return {}
+
+
 func get_resource_color(resource_key: String) -> String:
     return RESOURCES.get(resource_key, {}).get("color", "#ffffff")
 
