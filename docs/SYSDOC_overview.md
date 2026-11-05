@@ -302,14 +302,29 @@ The dial positions are placement only, chosen next to the output each skill seem
 - **Kaleb** is `kaleb_executor.gd`, created by `root_ui.gd` (`_setup_kaleb()`), so he works while Primordial is up. Press bars wait on their button's cooldown bar and call the real handler through `root_ui.kaleb_press()`, at most one press a frame; Lock/Unlock (via `toggle_lock`/`toggle_category_lock`, so Volitions are assigned as for a click) and If are instant, at most 64 a frame. While `kaleb_running`, the Summon, Monad, Tetrad, Particle, Iota and Mote buttons ignore the player (`_kaleb_has_the_buttons()`). The Persistent presses share the Particle, Iota and Mote cooldowns (Grain has none) and have no buttons yet.
 - `test_kaleb_persistent_chain.gd`: a 15-bar stack takes Sparks alone to a Persistent Iota (in one run: 7 Adaemants, 4 Persistent Particles); bars hold Foci/Uonites; the player is locked out; 189/189 Fundament-first draws had a Fundament, none a locked one; the stack survives a JSON save round trip; the Oscillation keeps only Persistent Grains.
 
-**Next (Phase 3):** run a full Adaemant stack to a Persistent Grain with the Hourglass at Tier 3 and see how fast it really is; then decide the unlock.
+**Built and measured (Phase 3, 2026-11-05):**
+- **A bar's workers multiply each press** (author: "my original design intent"). A working bar's workers are Uonites or, when no Uonite is free, spare Foci standing in (author, 2026-11-05: Uonites serve only the Allocation wheel's purposes, of which the stack is a new part; Foci serve everything except Volition-limited automation and activation). Saved per bar as `uonites` and `foci_workers` (at least 1 worker; If bars none). A press bar's **− nU+mF +** (hold-repeat, like the wheel's Uonite buttons): + takes a free Uonite, else a free Focus, else is refused; − gives back a Focus worker first, then a Uonite, never below 1. A new working bar takes its On/Off Focus plus a Uonite worker, or two Foci if no Uonite is free. `kaleb_executor.gd` passes the worker count to `root_ui.kaleb_press()`, and while Kaleb presses, `_get_click_multiplier()` returns the click multiplier × that count, so every handler (Compress, Tetrad, Persistent Particle…) makes that many times as much per press. The player's own clicks are unchanged. `kaleb_change_bar_workers()`, `kaleb_bar_workers()`; `test_kaleb_persistent_chain.gd` (4U+1F → 5 Monads a press; Focus fallback and return order; adding on two Foci).
+- **If bars can read all unlocked Monads or Tetrads** ("Monads (unlocked)", "Tetrads (unlocked)"), needed to wait for a Mote's 48 cavity Tetrads and a Grain's 64 Monads.
+- **Timing** (a scratch simulation on a virtual clock, not a repo test: the player's save, production automation stopped, a 28-bar Adaemant-first stack from Sparks alone, real cooldowns, the Hourglass at Art ×0.1 on Monad, Tetrad and Particle, click multiplier 1, storage cap 1,087):
+  | Workers per Compress/Tetrad bar | Workers held (17 working bars; Uonites, or Foci standing in) | Time per Persistent Grain |
+  | Uonites per Compress/Tetrad bar | Uonites held (17 working bars) | Time per Persistent Grain |
+  |---|---|---|
+  | 1 | 17 | 7.4 min |
+  | 2 | 25 | 3.4 min |
+  | 3 | 33 | 2.4 min |
+  | 4 | 41 | 1.9 min |
+  | 8 | 73 | 1.5 min |
+
+  Without the Hourglass, 1 Uonite: 75 min. Per Grain: ~18,500 Sparks, ~120 Adaemants (112 needed), ~3,100 Monads at minimum (1,792 for the Persistent Particles, 1,280 for cavity Tetrads, 64 loose); storage peaked near 500, so it never clogged. With few Uonites, Monad Compress presses set the pace; past ~4, the 112 Persistent Particle presses, the one-at-a-time Adaemant Tetrad and the Iota/Mote cooldowns (5 s, 8 s) do, so returns fall off. Persistent Grains share the Grain storage cap (storage cap² ÷ 16,825; ~70 at a 1,087 cap). The click multiplier was not measured (the simulation's lock bars rebuild Volition assignments, resetting it to 1); a ×N count is in presses, so a stack must lower its counts to gain from it.
+
+**Open:** the unlock; Aquae and Aethyr chains and the Clay/Crystal/Vapor families.
 
 Persistent Grains are made by **Kaleb**, running a stack of command bars, Idle Loops style: the player lays out commands, Kaleb carries them out in sequence, and at the end the stack recycles to the top. (It is the Kaleb automation planned since 2026-08-12, which takes over the Constellation box.)
 
 **Settled by the author:**
 - **The production chain, Adaemant first** (the other Fundaments later): make one Fundament (Adaemant), then enough Tetrads to build a Persistent Particle around it; again, until there are four Persistent Solid Particles; turn those into a Persistent Iota; and so on up the chain to a Persistent Grain, one at a time.
 - **Separate Persistent stocks per tier:** Persistent Particle, Iota, Mote and Grain are their own counts, built only from Persistent inputs; Persistent Grains survive the Oscillation. Plain stock is unaffected. Assemble Persistent Particle uses a Fundament-first draw: the Fundament is always one of the four corners, the other three drawn to fit it under the weld rule (§7.1's "constructive Fundament-first draw").
-- **Each command bar holds 1 Uonite and 1 Focus while it is in the stack**, returned when it is removed. The Uonite does the work; the Focus switches the Uonite On and Off, and stays assigned whether the bar is On or Off (author, 2026-11-05). If-then bars take Foci too.
+- **Each command bar holds 1 Focus, and each working bar at least 1 worker, while it is in the stack**, returned when it is removed. Workers do the work: Uonites, or spare Foci standing in when no Uonite is free (see Phase 3 below). The Focus switches the workers On and Off, and stays assigned whether the bar is On or Off (author, 2026-11-05). If-then bars hold just their Focus.
 - **Reordering is drag and drop onto a hidden grid of bar slots** (author, 2026-11-05): a dragged bar drops into the slot under it. (The card row's drag-to-scroll, by velocity, was what proved too finicky, not drag and drop.)
 - **The player builds the stack from a palette** of command bars, and orders it.
 - **Repeat counts and If-then bars:** each bar has a ×N repeat count; If-then bars handle the conditions counts can't (e.g. go back while Persistent Particles < 4).

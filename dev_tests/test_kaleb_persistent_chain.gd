@@ -172,6 +172,56 @@ func run() -> void:
 	ok(judged > 100 and with_f == judged, "%d of %d draws were 4 Tetrads with a Fundament" % [with_f, judged])
 	ok(used_locked == 0, "none used a locked Fundament (%d did)" % used_locked)
 
+	print("\n=== a bar's workers multiply each press; Foci stand in for missing Uonites ===")
+	# One Compress bar, alone; the multiplier a click gets, times its workers.
+	var saved_stack: Array = gc.kaleb_stack
+	gc.kaleb_stack = []
+	gc.kaleb_index = 0
+	gc.kaleb_repeat_done = 0
+	gc.uonite = gc.get_total_uonites_assigned().add(BigNum.from_int(4))
+	gc.archon_foci = gc.get_total_foci_assigned() + 3
+	var cb: Dictionary = _bar("monad_compress", 1)
+	ok(gc.kaleb_add_bar(cb) and gc.kaleb_bar_uonites(cb) == 1 and gc.kaleb_bar_focus_workers(cb) == 0,
+		"a Compress bar goes in with a Uonite worker while one is free")
+	var u_held0: int = gc.kaleb_uonites_held()
+	var f_held0: int = gc.kaleb_foci_held()
+	for n in 3:
+		gc.kaleb_change_bar_workers(cb, 1)
+	ok(gc.kaleb_bar_uonites(cb) == 4 and gc.kaleb_bar_focus_workers(cb) == 0 and gc.kaleb_uonites_held() == u_held0 + 3,
+		"+ takes free Uonites first (4 Uonites)")
+	ok(gc.kaleb_change_bar_workers(cb, 1) and gc.kaleb_bar_focus_workers(cb) == 1 and gc.kaleb_foci_held() == f_held0 + 1,
+		"with no Uonite free, + takes a spare Focus instead (4U+1F)")
+	gc.archon_foci = gc.get_total_foci_assigned()
+	ok(not gc.kaleb_change_bar_workers(cb, 1), "with neither free, + is refused")
+	var click_m: int = gc.get_click_multiplier()
+	var m0: int = gc.get_monad_total().to_int()
+	gc.kaleb_running = true
+	ui._get_cooldown_bar("MonadCooldownBar")._is_ready = true
+	kaleb.step()
+	gc.kaleb_running = false
+	var made: int = gc.get_monad_total().to_int() - m0
+	ok(made == 5 * click_m, "one press with 5 workers made %d Monads (5 x click multiplier %d)" % [made, click_m])
+	ok(ui._get_click_multiplier() == click_m, "and the player's own clicks are not multiplied (%d)" % ui._get_click_multiplier())
+	gc.kaleb_change_bar_workers(cb, -1)
+	ok(gc.kaleb_bar_focus_workers(cb) == 0 and gc.kaleb_bar_uonites(cb) == 4, "− gives the Focus back first")
+	for n in 6:
+		gc.kaleb_change_bar_workers(cb, -1)
+	ok(gc.kaleb_bar_workers(cb) == 1 and gc.kaleb_uonites_held() == u_held0, "then the Uonites, never below 1 worker")
+	# A new bar with no Uonite free goes in on two Foci (its On/Off and a worker).
+	gc.uonite = gc.get_total_uonites_assigned()
+	gc.archon_foci = gc.get_total_foci_assigned() + 1
+	ok(not gc.kaleb_add_bar(_bar("tetrad_assemble")), "no Uonite and one Focus free: a working bar can't go in")
+	gc.archon_foci += 1
+	var fb: Dictionary = _bar("tetrad_assemble")
+	ok(gc.kaleb_add_bar(fb) and gc.kaleb_bar_uonites(fb) == 0 and gc.kaleb_bar_focus_workers(fb) == 1,
+		"with two Foci free it goes in on a Focus worker")
+	gc.archon_foci = gc.get_total_foci_assigned() + 1
+	var ib: Dictionary = _bar("if")
+	ok(gc.kaleb_add_bar(ib) and gc.kaleb_bar_workers(ib) == 0, "an If bar needs just its one Focus")
+	gc.kaleb_stack = saved_stack
+	gc.kaleb_stack.append(cb)
+	gc.kaleb_stack.append(fb)   # so the save round trip below carries a Focus-worker bar
+
 	print("\n=== the stack saves and loads ===")
 	var data: Dictionary = gc.get_save_data()
 	var json_round = JSON.parse_string(JSON.stringify(data))
@@ -181,7 +231,7 @@ func run() -> void:
 	var same: bool = gc.kaleb_stack.size() == before.size()
 	if same:
 		for i in before.size():
-			for key in ["cmd", "repeat", "on", "target", "res", "cmp", "value", "goto"]:
+			for key in ["cmd", "repeat", "on", "target", "res", "cmp", "value", "goto", "uonites", "foci_workers"]:
 				if gc.kaleb_stack[i][key] != before[i][key] or typeof(gc.kaleb_stack[i][key]) != typeof(before[i][key]):
 					same = false
 	ok(same, "after a JSON round trip the stack is the same, with ints still ints")

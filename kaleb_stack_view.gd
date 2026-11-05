@@ -6,9 +6,10 @@ extends PanelContainer
 ##   header   Run/Pause (GameContext.kaleb_running) and "+ Command", the
 ##            palette (kaleb_commands.gd)
 ##   list     one row per bar, top to bottom: its number (drag handle), On/Off
-##            (its Focus switching its Uonite), its name (drag handle), its
-##            own settings, and × to remove it (returning its Uonite and
-##            Focus). The bar Kaleb is on is lit, with its count so far.
+##            (its Focus switching its workers), its name (drag handle), its
+##            own settings, and × to remove it (returning its workers and
+##            Focus). A press bar's − nU+mF + sets its workers, Uonites or,
+##            when none is free, Foci: each press makes n+m times as much.
 ##   footer   the Persistent stocks, or why a bar couldn't be added
 ##
 ## Reordering is drag and drop: drag a bar by its number or name onto another
@@ -29,6 +30,9 @@ const ROW_OFF := Color(0.08, 0.07, 0.12, 0.85)
 const TEXT := Color(0.92, 0.88, 0.78)
 const TEXT_DIM := Color(0.55, 0.52, 0.62)
 const GOLD := Color(1.0, 0.85, 0.2)
+const UONITE := Color(1.0, 0.87, 0.33)   # game_data's Uonite colour
+## The Uonite − and + repeat while held, like the wheel's Uonite buttons.
+var _hold = preload("res://hold_repeat.gd").new()
 ## The palette's order.
 const PALETTE: Array[String] = ["summon_spark", "monad_compress", "tetrad_assemble",
     "persistent_particle", "persistent_iota", "persistent_mote", "persistent_grain",
@@ -108,12 +112,13 @@ func _ready() -> void:
     col.add_child(_footer)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
     if gc == null or not is_visible_in_tree():
         return
     if _stack_changed():
         _rebuild()
     _refresh()
+    _hold.tick(delta)
 
 
 ## Whether the bars, in order, are no longer the ones the rows were built
@@ -181,9 +186,27 @@ func _build_row(i: int) -> Dictionary:
     row.add_child(name_lbl)
 
     var progress := _label("", GOLD)
+    var u_lbl: Label = null
     match String(def.get("kind", "")):
         "press":
             name_lbl.text = String(def.get("name", bar["cmd"]))
+            # Its Uonites: each one more multiplies what a press makes.
+            var minus := _small_button("−")
+            minus.custom_minimum_size = Vector2(20, 0)
+            minus.tooltip_text = "Take a worker back (a Focus first, then a Uonite)"
+            _hold.connect_button(minus, func() -> void: gc.kaleb_change_bar_workers(bar, -1))
+            row.add_child(minus)
+            u_lbl = _label("", UONITE)
+            u_lbl.custom_minimum_size = Vector2(52, 0)
+            u_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+            row.add_child(u_lbl)
+            var plus := _small_button("+")
+            plus.custom_minimum_size = Vector2(20, 0)
+            plus.tooltip_text = "Give it another worker: a Uonite, or a Focus when none is free"
+            _hold.connect_button(plus, func() -> void:
+                if not gc.kaleb_change_bar_workers(bar, 1):
+                    _say("No free Uonite or Focus"))
+            row.add_child(plus)
             progress.text = "×"
             row.add_child(progress)
             row.add_child(_num_edit(bar, "repeat", 1, 999, 0, 48))
@@ -204,7 +227,7 @@ func _build_row(i: int) -> Dictionary:
     del.pressed.connect(func() -> void:
         gc.kaleb_remove_bar(_index_of(bar)))
     row.add_child(del)
-    return {"panel": panel, "num": num, "progress": progress, "bar": bar, "name": name_lbl}
+    return {"panel": panel, "num": num, "progress": progress, "bar": bar, "name": name_lbl, "uonites": u_lbl}
 
 
 var _row_styles: Dictionary = {}
@@ -232,6 +255,13 @@ func _refresh() -> void:
         (r["panel"] as PanelContainer).add_theme_stylebox_override("panel", style)
         (r["num"] as Label).text = ("▶" if current and gc.kaleb_running else "%d" % (i + 1))
         (r["name"] as Label).add_theme_color_override("font_color", TEXT if bool(bar["on"]) else TEXT_DIM)
+        if r["uonites"]:
+            var u: int = gc.kaleb_bar_uonites(bar)
+            var f: int = gc.kaleb_bar_focus_workers(bar)
+            var wl: Label = r["uonites"]
+            wl.text = ("%dU" % u) if f == 0 else (("%dF" % f) if u == 0 else "%dU+%dF" % [u, f])
+            wl.tooltip_text = "%d Uonite%s and %d Focus worker%s: each press makes %d times as much" % [
+                u, "" if u == 1 else "s", f, "" if f == 1 else "s", u + f]
         # A press bar's "×N" reads "k/N" while Kaleb is on it.
         var prog: Label = r["progress"]
         if KC.COMMANDS.get(String(bar["cmd"]), {}).get("kind", "") == "press":

@@ -44,7 +44,7 @@ func step() -> void:
                 var cd: Node = ui._get_cooldown_bar(def["cooldown"]) if def["cooldown"] != "" else null
                 if cd and not cd.is_ready():
                     return   # wait for the button
-                ui.kaleb_press(def["handler"])
+                ui.kaleb_press(def["handler"], gc.kaleb_bar_workers(bar))
                 gc.kaleb_repeat_done += 1
                 if gc.kaleb_repeat_done >= int(bar.get("repeat", 1)):
                     _advance()

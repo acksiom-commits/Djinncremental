@@ -2325,7 +2325,9 @@ func _refresh_click_vol_buttons() -> void:
 ## nothing.
 func _get_click_multiplier() -> int:
     if not game_context: return 1
-    return game_context.get_click_multiplier()
+    # While Kaleb presses, the bar's Uonites multiply each press (SysDoc §7.3).
+    var kaleb: int = _kaleb_press_uonites if _kaleb_pressing else 1
+    return game_context.get_click_multiplier() * kaleb
 
 
 func _update_click_vol_label() -> void:
@@ -2547,11 +2549,17 @@ func _kaleb_has_the_buttons() -> bool:
 
 
 ## Kaleb presses a button: runs the same handler a click runs
-## (kaleb_executor.gd checks the cooldown first).
-func kaleb_press(handler: String) -> void:
+## (kaleb_executor.gd checks the cooldown first). `uonites` is the bar's
+## Uonite count: each press makes that many times what a click makes
+## (_get_click_multiplier()).
+var _kaleb_press_uonites: int = 1
+
+func kaleb_press(handler: String, uonites: int = 1) -> void:
     _kaleb_pressing = true
+    _kaleb_press_uonites = maxi(1, uonites)
     call(handler)
     _kaleb_pressing = false
+    _kaleb_press_uonites = 1
 
 
 func _setup_kaleb() -> void:

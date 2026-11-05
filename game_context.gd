@@ -52,8 +52,12 @@ const CHAIN_SAVE_KEYS: Array[String] = [
 #   on      bool    its Focus has its Uonite switched On
 #   target  String  lock/unlock: the lock key
 #   res, cmp, value, goto   if-then: "if res cmp value, go to bar goto"
-# Every bar holds 1 Focus and every working bar 1 Uonite for as long as it
-# is in the stack, On or Off (get_total_*_assigned() count them). Saved;
+#   uonites, foci_workers   working bars: its workers, Uonites and the Foci
+#                   standing in for them (at least 1 in all); each press
+#                   makes that many times what a click makes
+# Every bar holds its On/Off Focus, and every working bar its workers, for
+# as long as it is in the stack, On or Off (get_total_*_assigned() count
+# them). Saved;
 # survives the Oscillation, like the Uonites it holds.
 var kaleb_stack: Array = []
 var kaleb_running: bool = false
@@ -1029,29 +1033,97 @@ func get_total_foci_assigned() -> int:
 
 
 # ===================== KALEB'S COMMAND STACK =======================
-## Every bar holds a Focus (it switches the bar's Uonite On and Off).
+# A working bar's WORKERS do its work, and each press makes as many times
+# what a click makes. A worker is a Uonite or, when no Uonite is free, a
+# spare Focus (author, 2026-11-05: Uonites serve only the Allocation wheel's
+# purposes, of which the stack is a new part; Foci serve everything except
+# Volition-limited automation). Every bar also holds one Focus of its own,
+# its On/Off switch. If bars have no workers.
+
+## Foci held: each bar's On/Off Focus, plus its Focus workers.
 func kaleb_foci_held() -> int:
-    return kaleb_stack.size()
-
-
-## Every working bar holds a Uonite; If-then bars only check, so hold none.
-func kaleb_uonites_held() -> int:
     var n := 0
     for bar in kaleb_stack:
-        if String(bar.get("cmd", "")) != "if":
-            n += 1
+        n += 1 + kaleb_bar_focus_workers(bar)
     return n
 
 
-## Adds `bar` at `at` (or the end), if a Focus, and a Uonite when the bar
-## needs one, are free. Returns whether it was added.
+func kaleb_uonites_held() -> int:
+    var n := 0
+    for bar in kaleb_stack:
+        n += kaleb_bar_uonites(bar)
+    return n
+
+
+## The Uonite workers a bar holds (none for an If bar).
+static func kaleb_bar_uonites(bar: Dictionary) -> int:
+    if String(bar.get("cmd", "")) == "if":
+        return 0
+    return maxi(0, int(bar.get("uonites", 1)))
+
+
+## The Focus workers a bar holds, standing in for Uonites (none for an If bar).
+static func kaleb_bar_focus_workers(bar: Dictionary) -> int:
+    if String(bar.get("cmd", "")) == "if":
+        return 0
+    return maxi(0, int(bar.get("foci_workers", 0)))
+
+
+## A working bar's workers, Uonites and Foci together (at least 1); what each
+## of its presses is multiplied by. 0 for an If bar.
+static func kaleb_bar_workers(bar: Dictionary) -> int:
+    if String(bar.get("cmd", "")) == "if":
+        return 0
+    return maxi(1, kaleb_bar_uonites(bar) + kaleb_bar_focus_workers(bar))
+
+
+func _free_uonites() -> int:
+    var assigned: BigNum = get_total_uonites_assigned()
+    return uonite.sub(assigned).to_int() if uonite.is_greater_or_equal(assigned) else 0
+
+
+func _free_foci() -> int:
+    return maxi(0, archon_foci - get_total_foci_assigned())
+
+
+## Gives bar `bar` one more worker (delta 1: a free Uonite, else a free Focus)
+## or takes one back (-1: a Focus worker first, Foci being the more widely
+## useful, then a Uonite; never below 1 worker). Returns whether it changed.
+func kaleb_change_bar_workers(bar: Dictionary, delta: int) -> bool:
+    if String(bar.get("cmd", "")) == "if":
+        return false
+    if delta < 0:
+        if kaleb_bar_workers(bar) <= 1:
+            return false
+        if kaleb_bar_focus_workers(bar) > 0:
+            bar["foci_workers"] = kaleb_bar_focus_workers(bar) - 1
+        else:
+            bar["uonites"] = kaleb_bar_uonites(bar) - 1
+        return true
+    if _free_uonites() >= 1:
+        bar["uonites"] = kaleb_bar_uonites(bar) + 1
+        return true
+    if _free_foci() >= 1:
+        bar["foci_workers"] = kaleb_bar_focus_workers(bar) + 1
+        return true
+    return false
+
+
+## Adds `bar` at `at` (or the end), if its On/Off Focus is free and, for a
+## working bar, a worker: a free Uonite, else a second free Focus. Returns
+## whether it was added.
 func kaleb_add_bar(bar: Dictionary, at: int = -1) -> bool:
-    if archon_foci - get_total_foci_assigned() < 1:
+    var free_f: int = _free_foci()
+    if free_f < 1:
         return false
     if String(bar.get("cmd", "")) != "if":
-        var free_u: BigNum = uonite.sub(get_total_uonites_assigned()) \
-            if uonite.is_greater_or_equal(get_total_uonites_assigned()) else BigNum.zero()
-        if free_u.is_less_than(BigNum.one()):
+        bar["uonites"] = 0
+        bar["foci_workers"] = 0
+        if _free_uonites() >= 1:
+            bar["uonites"] = 1
+        elif free_f >= 2:
+            bar["foci_workers"] = 1
+        else:
             return false
     if at < 0 or at > kaleb_stack.size():
         kaleb_stack.append(bar)
@@ -1110,7 +1182,14 @@ func _load_kaleb_stack(data: Dictionary) -> void:
                 "cmp":    String(b.get("cmp", "<")),
                 "value":  _coerce_int(b.get("value"), 0),
                 "goto":   _coerce_int(b.get("goto"), 0),
+                "uonites": maxi(0, _coerce_int(b.get("uonites"), 1)),
+                "foci_workers": maxi(0, _coerce_int(b.get("foci_workers"), 0)),
             })
+    # A working bar always holds at least one worker (a save from before
+    # Focus workers, or a hand-edited one, may say neither).
+    for bar in kaleb_stack:
+        if bar["cmd"] != "if" and bar["uonites"] + bar["foci_workers"] < 1:
+            bar["uonites"] = 1
     kaleb_running = _coerce_bool(data.get("kaleb_running"), false)
     kaleb_index = clampi(_coerce_int(data.get("kaleb_index"), 0), 0, maxi(0, kaleb_stack.size() - 1))
     kaleb_repeat_done = maxi(0, _coerce_int(data.get("kaleb_repeat_done"), 0))
