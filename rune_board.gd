@@ -12,6 +12,11 @@ extends RefCounted
 # linked Runes never share a line (both ends shared, with a line between them
 # in each), so no Rune stacks on a copy of itself.
 #
+# The player builds the board (author, 2026-11-04): it starts empty and they
+# place cells one by one, each touching one already placed, and can lift a cell
+# with no Rune on it if the rest stays in one piece. Board.new(radius) still
+# makes a ready hexagon, as the tests use.
+#
 # Pure data and geometry, no nodes: rune_fitting_popout.gd draws it.
 
 ## A star whose colour isn't known (its constellation has no Beginner puzzle
@@ -34,9 +39,74 @@ var placed: Array = []
 var _owner: Dictionary = {}
 
 
-func _init(radius: int = 1) -> void:
-    for c in hexagon(radius):
-        cells[c] = true
+## A ready-made hexagon `radius` rings out, or, with `filled` false, an empty
+## board the player builds cell by cell (add_cell / remove_cell, 2026-11-04).
+func _init(radius: int = 1, filled: bool = true) -> void:
+    if filled:
+        for c in hexagon(radius):
+            cells[c] = true
+
+
+## The six cells sharing an edge with `cell`.
+static func neighbours(cell: Vector2i) -> Array[Vector2i]:
+    var out: Array[Vector2i] = []
+    for d in [Vector2i(2, 0), Vector2i(-2, 0), Vector2i(1, 1), Vector2i(-1, 1),
+            Vector2i(1, -1), Vector2i(-1, -1)]:
+        out.append(cell + d)
+    return out
+
+
+## Whether `cell` can join the board: not on it already, inside `area` when
+## one is given, and sharing an edge with a placed cell (the first goes
+## anywhere), so the board stays in one piece.
+func can_add_cell(cell: Vector2i, area: Dictionary = {}) -> bool:
+    if cells.has(cell) or (not area.is_empty() and not area.has(cell)):
+        return false
+    if cells.is_empty():
+        return true
+    for n in neighbours(cell):
+        if cells.has(n):
+            return true
+    return false
+
+
+func add_cell(cell: Vector2i, area: Dictionary = {}) -> bool:
+    if not can_add_cell(cell, area):
+        return false
+    cells[cell] = true
+    return true
+
+
+## Whether `cell` can be lifted off the board: no Rune on it, and the cells
+## left stay in one piece.
+func can_remove_cell(cell: Vector2i) -> bool:
+    if not cells.has(cell) or _owner.has(cell):
+        return false
+    var rest: Dictionary = cells.duplicate()
+    rest.erase(cell)
+    return _in_one_piece(rest)
+
+
+func remove_cell(cell: Vector2i) -> bool:
+    if not can_remove_cell(cell):
+        return false
+    cells.erase(cell)
+    return true
+
+
+static func _in_one_piece(group: Dictionary) -> bool:
+    if group.size() <= 1:
+        return true
+    var start: Vector2i = group.keys()[0]
+    var seen: Dictionary = {start: true}
+    var todo: Array[Vector2i] = [start]
+    while not todo.is_empty():
+        var c: Vector2i = todo.pop_back()
+        for n in neighbours(c):
+            if group.has(n) and not seen.has(n):
+                seen[n] = true
+                todo.append(n)
+    return seen.size() == group.size()
 
 
 ## A hexagon of cells `radius` rings out from [0,0]: 1 -> 7 cells, 2 -> 19, 3 -> 37.

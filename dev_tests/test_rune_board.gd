@@ -23,6 +23,8 @@ const CELLS := {
 	"Lamp Body": 14, "Lamp Base": 10,
 }
 const FITS_SEVEN := ["Triangle", "Right Arrow", "Left Arrow"]
+## Runes the popout lets the player pick: no more cells than the board's 7.
+const USABLE := ["Triangle", "Right Arrow", "Left Arrow", "Spiked Less-Than"]
 
 var fails: int = 0
 
@@ -56,8 +58,10 @@ func _by_name(runes: Array, nm: String) -> Dictionary:
 
 
 ## The popout lists every Beginner Rune of the six Sigils that have them (the
-## Djinn's two being the player's Vessel's), greys all but the three that fit,
-## and a click picks one up that a right-click then turns.
+## Djinn's two being the player's Vessel's), greys those needing more than the
+## board's 7 cells, and a click picks one up that a right-click then turns.
+## The board starts empty with its 7 cells in the left column (2026-11-04),
+## and the two columns take turns.
 func _check_popout() -> void:
 	await process_frame
 	var pop = load("res://rune_fitting_popout.gd").new()
@@ -69,14 +73,32 @@ func _check_popout() -> void:
 		if bool(e["fits"]):
 			open_names.append(str(e["rune"]["name"]))
 	open_names.sort()
-	var want: Array = FITS_SEVEN.duplicate()
+	var want: Array = USABLE.duplicate()
 	want.sort()
-	ok(open_names == want, "only %s can be picked up (got %s)" % [str(want), str(open_names)])
+	ok(open_names == want, "only Runes of 7 cells or fewer can be picked up: %s (got %s)" % [str(want), str(open_names)])
 
 	pop.open()
 	var click := InputEventMouseButton.new()
 	click.button_index = MOUSE_BUTTON_LEFT
 	click.pressed = true
+
+	ok(pop.board.cells.is_empty() and pop.cells_left() == 7, "the board opens empty, 7 cells in the column")
+	pop._on_stock_input(click)
+	ok(pop.held_cell and pop.cells_left() == 6, "clicking the column takes a cell")
+	var first_fit: int = -1
+	for i in pop._entries.size():
+		if bool(pop._entries[i]["fits"]):
+			first_fit = i
+			break
+	pop._on_entry_input(click, first_fit)
+	ok(pop.held.is_empty(), "while a cell is held, Runes can't be picked")
+	pop._on_stock_input(click)
+	ok(not pop.held_cell and pop.cells_left() == 7, "clicking the column again puts the cell back")
+	pop._on_entry_input(click, first_fit)
+	pop._on_stock_input(click)
+	ok(not pop.held.is_empty() and not pop.held_cell, "while a Rune is held, cells can't be taken")
+	pop.held = {}
+	pop._refresh()
 	var big: int = -1
 	var arrow: int = -1
 	for i in pop._entries.size():
@@ -117,6 +139,43 @@ func _check_popout() -> void:
 	pop.close()
 	pop.queue_free()
 	await process_frame
+
+
+## The player builds the board (2026-11-04): each cell touches one placed, stays
+## inside the grid, and a cell lifts only with no Rune on it and without
+## splitting the board. A 7-cell Rune fits a board shaped for it.
+func _check_building(runes: Array) -> void:
+	var area: Dictionary = {}
+	for c in Board.hexagon(3):
+		area[c] = true
+	var b = Board.new(0, false)
+	ok(b.cells.is_empty(), "an unfilled board starts with no cells")
+	ok(not b.add_cell(Vector2i(8, 0), area), "a cell can't go off the grid")
+	ok(b.add_cell(Vector2i(0, 0), area), "the first cell goes anywhere on the grid")
+	ok(not b.add_cell(Vector2i(4, 0), area), "a cell that touches none is refused")
+	ok(b.add_cell(Vector2i(2, 0), area) and b.add_cell(Vector2i(4, 0), area),
+		"cells touching the board are set (a row of three)")
+	ok(not b.can_remove_cell(Vector2i(2, 0)), "the middle of the row can't lift: it would split the board")
+	ok(b.remove_cell(Vector2i(4, 0)) and b.cells.size() == 2, "an end of the row lifts")
+
+	# A board shaped for the 7-cell Spiked Less-Than takes it; the hexagon doesn't.
+	var spiked: Dictionary = _by_name(runes, "Spiked Less-Than")
+	var shaped = Board.new(0, false)
+	var own: Array[Vector2i] = Board.rune_cells(spiked)
+	var order: Array = [own[0]]
+	var left: Array = own.slice(1)
+	while not left.is_empty():
+		for c in left:
+			if Board.neighbours(c).any(func(n): return order.has(n)):
+				order.append(c)
+				left.erase(c)
+				break
+	for c in order:
+		shaped.add_cell(c)
+	ok(shaped.cells.size() == 7, "the Spiked Less-Than's own 7 cells can be laid one touching the next")
+	ok(shaped.place(spiked, own[0], 0, own[0]) == 0, "and the Rune fits the board shaped for it")
+	ok(not Board.new(1).fits_empty(spiked), "while the old fixed hexagon could never take it")
+	ok(not shaped.can_remove_cell(own[0]), "a cell under a Rune can't lift")
 
 
 ## Two Triangles on the 7-cell board can meet at one star of the same colour,
@@ -266,6 +325,7 @@ func run() -> void:
 		"with no star colours, one Triangle at a time on the 7-cell board (%d placed)" % two)
 
 	_check_shared_stars(tri)
+	_check_building(runes)
 
 	await _check_popout()
 

@@ -2,8 +2,8 @@ extends Control
 # ================= RUNE FITTING POPOUT v1.0.0 =================
 # Firmament (2026-11-02): fits Runes onto a tool's or device's inscription
 # board. The board (rune_board.gd) sits in the middle and every Beginner Rune
-# in a column on the right, grouped by Sigil. A Rune too large for the board
-# in any turn is greyed and can't be picked up.
+# in a column on the right, grouped by Sigil. A Rune needing more cells than
+# the board has (7) is greyed and can't be picked up.
 #
 # Click and drag has misbehaved in this project, so Runes move by clicks
 # (author, 2026-11-02): a left click on a Rune in the column puts a copy of it
@@ -11,6 +11,15 @@ extends Control
 # left click on the board drops it there. Clicking a placed Rune picks it back
 # up, still turned. Esc lets go of the held Rune (one lifted off the board is
 # then gone); with nothing held, Esc closes the panel.
+#
+# The player builds the board (author, 2026-11-04): it opens empty, with its 7
+# cells (the standard start, once a fixed hexagon) waiting in a column on the
+# left. Cells move by the same clicks as Runes: click the column to take one,
+# click the board's faint grid to set it (touching a placed cell), click a
+# bare placed cell to take it back up (not under a Rune, and not if that
+# would split the board). A Rune needs at most 7 cells to be usable. The two
+# columns take turns: while a cell is held the Runes can't be picked, and
+# while a Rune is held the cells can't.
 #
 # Stars are drawn in their constellation stars' colours (author, 2026-11-02),
 # read from the constellation's Beginner puzzle; with no Beginner puzzle yet
@@ -30,8 +39,8 @@ extends Control
 # that colour. Runes change shape with the highest level of their
 # constellation's puzzle solved, starting at Beginner, so the stars and
 # colours are those of that level's layout. A White star charges from every
-# Quintessence, Tetrad, Iota and Grain Quintessence included. Those three charge either of their composite
-# colours at 1/4 effectiveness: Tetrads Red or Yellow, Iotas Yellow or Blue,
+# Quintessence, Tetrad, Iota and Grain Quintessence included. Those three
+# charge either of their composite colours at 1/4 effectiveness: Tetrads Red or Yellow, Iotas Yellow or Blue,
 # Grains Blue or Red. Colour-match efficiency and off-colour charging are
 # both improvable. See SysDoc section 7.
 
@@ -41,6 +50,10 @@ const STAR_COLORS_BY_IDX: Array = preload("res://star_color_palette.tres").by_id
 
 const PANEL_SIZE := Vector2(1000, 620)
 const LIST_WIDTH: float = 330.0
+## The cell column on the left.
+const STOCK_WIDTH: float = 84.0
+## Cells a board is built from: the old fixed hexagon's count.
+const STANDARD_CELLS: int = 7
 ## Largest board cell, centre to corner.
 const MAX_CELL: float = 80.0
 const ENTRY_HEIGHT: float = 64.0
@@ -53,6 +66,8 @@ const PANEL_BG   := Color(0.07, 0.07, 0.13, 0.97)
 const PANEL_EDGE := Color(0.45, 0.42, 0.7)
 const CELL_FILL  := Color(0.15, 0.15, 0.25)
 const CELL_EDGE  := Color(0.36, 0.36, 0.54)
+## The faint grid of places a cell can be set on.
+const GRID_EDGE  := Color(0.36, 0.36, 0.54, 0.25)
 const FITS_TINT  := Color(0.35, 0.9, 0.5)
 const BLOCK_TINT := Color(0.95, 0.35, 0.35)
 ## A star whose colour isn't known yet (no Beginner puzzle for its constellation).
@@ -72,17 +87,23 @@ const SIGIL_COLORS := {
     6: Color(0.95, 0.5, 0.7),    # The Djinn, as the player's Vessel
 }
 const CONSTELLATION_IDS := [0, 1, 2, 3, 4, 5, 6]
-const HINT := "Left-click a Rune to pick it up.  Right-click turns it a sixth clockwise.  " \
-    + "Left-click the board to place it, or a placed Rune to pick it back up.  Esc lets go."
+const HINT := "Click a cell on the left, then the grid, to build the board.  " \
+    + "Click a Rune to pick it up; right-click turns it.  Click the board to place.  Esc lets go."
 
-## Rings of cells around the centre: 1 is the basic 7-cell board.
-@export var board_radius: int = 1
+## Rings of grid around the centre where cells can be set: 3 gives 37 places.
+@export var area_radius: int = 3
 
 var board = null
 ## The Rune on the pointer: {"rune", "color", "star_colors", "anchor", "sixths"};
 ## {} when none. "color" is its Sigil's, "star_colors" maps each star to its
 ## star_color_palette index (Board.NO_COLOUR when unknown).
 var held: Dictionary = {}
+## Whether a board cell is on the pointer. Never at the same time as a Rune.
+var held_cell: bool = false
+## Grid places a cell can be set on -> true.
+var _area: Dictionary = {}
+var _stock_view: Control = null
+var _stock_hover: bool = false
 
 ## One per Rune in the column: {"rune", "cid", "color", "star_colors", "fits", "node"}.
 var _entries: Array = []
@@ -98,7 +119,9 @@ func _ready() -> void:
     set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     mouse_filter = Control.MOUSE_FILTER_STOP
     visible = false
-    board = Board.new(board_radius)
+    board = Board.new(0, false)
+    for c in Board.hexagon(area_radius):
+        _area[c] = true
 
     var backdrop := ColorRect.new()
     backdrop.color = BACKDROP
@@ -140,6 +163,18 @@ func _ready() -> void:
     body.size_flags_vertical = Control.SIZE_EXPAND_FILL
     body.add_theme_constant_override("separation", 12)
     vbox.add_child(body)
+
+    _stock_view = Control.new()
+    _stock_view.custom_minimum_size = Vector2(STOCK_WIDTH, 0)
+    _stock_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    _stock_view.mouse_filter = Control.MOUSE_FILTER_STOP
+    _stock_view.tooltip_text = "Board cells: click one, then the grid"
+    _stock_view.draw.connect(_draw_stock)
+    _stock_view.gui_input.connect(_on_stock_input)
+    _stock_view.mouse_entered.connect(_set_stock_hover.bind(true))
+    _stock_view.mouse_exited.connect(_set_stock_hover.bind(false))
+    body.add_child(_stock_view)
+    body.add_child(VSeparator.new())
 
     _board_view = Control.new()
     _board_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -185,7 +220,9 @@ func _ready() -> void:
 
 func open() -> void:
     board.clear()
+    board.cells.clear()
     held = {}
+    held_cell = false
     # Puzzles are generated and replaced while the game runs, so the colours
     # are read again each time the board opens.
     for e in _entries:
@@ -197,8 +234,15 @@ func open() -> void:
 
 func close() -> void:
     board.clear()
+    board.cells.clear()
     held = {}
+    held_cell = false
     visible = false
+
+
+## Cells still in the column: the standard count less those placed or held.
+func cells_left() -> int:
+    return STANDARD_CELLS - board.cells.size() - (1 if held_cell else 0)
 
 
 func _input(event: InputEvent) -> void:
@@ -213,10 +257,13 @@ func _input(event: InputEvent) -> void:
             _held_view.queue_redraw()
         get_viewport().set_input_as_handled()
     elif event is InputEventMouseMotion:
-        if not held.is_empty():
+        if not held.is_empty() or held_cell:
             _held_view.queue_redraw()
     elif event.is_action_pressed("ui_cancel"):
-        if held.is_empty():
+        if held_cell:
+            held_cell = false   # back to the column
+            _refresh()
+        elif held.is_empty():
             close()
         else:
             held = {}
@@ -244,7 +291,9 @@ func _build_list(list: VBoxContainer) -> void:
             node.custom_minimum_size = Vector2(0, ENTRY_HEIGHT)
             node.mouse_filter = Control.MOUSE_FILTER_STOP
             var i: int = _entries.size()
-            var fits: bool = board.fits_empty(rune)
+            # The player shapes the board, so a Rune is usable if its cells
+            # don't outnumber the board's.
+            var fits: bool = Board.rune_cells(rune).size() <= STANDARD_CELLS
             _entries.append({"rune": rune, "cid": cid, "color": color,
                 "star_colors": rune_star_colors(cid, rune), "fits": fits, "node": node})
             node.draw.connect(_draw_entry.bind(i))
@@ -255,7 +304,7 @@ func _build_list(list: VBoxContainer) -> void:
                 node.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
             else:
                 node.modulate.a = 0.4
-                node.tooltip_text = "Too large for this board"
+                node.tooltip_text = "Needs more than the board's %d cells" % STANDARD_CELLS
             list.add_child(node)
 
 
@@ -264,9 +313,17 @@ func _refresh() -> void:
         var linked: int = 0
         for g in board.link_groups():
             linked += (g as Array).size()
-        _used_label.text = "Cells used: %d / %d" % [board.used_count(), board.cells.size()]
+        _used_label.text = "Cells placed: %d / %d    Used: %d" \
+            % [board.cells.size(), STANDARD_CELLS, board.used_count()]
         if linked > 0:
             _used_label.text += "    Linked Runes: %d" % linked
+    if _stock_view:
+        # The columns take turns: holding a Rune shuts the cells, and back.
+        _stock_view.modulate.a = 0.4 if not held.is_empty() else 1.0
+        _stock_view.queue_redraw()
+    for e in _entries:
+        var usable: bool = bool(e["fits"]) and not held_cell
+        (e["node"] as Control).modulate.a = 1.0 if usable else 0.4
     if _board_view:
         _board_view.queue_redraw()
     if _held_view:
@@ -277,10 +334,10 @@ func _refresh() -> void:
 
 # ---------------------------------------------------------------- the board
 
-## Board cell size that fits the whole board in its view.
+## Cell size that fits the whole grid of places in the board view.
 func _cell_size() -> float:
     var reach := Vector2.ZERO
-    for c in board.cells:
+    for c in _area:
         var p: Vector2 = Board.cell_point(c, 1.0)
         reach = Vector2(maxf(reach.x, absf(p.x)), maxf(reach.y, absf(p.y)))
     reach += Vector2(Board.SQRT3 * 0.5, 1.0)
@@ -296,13 +353,13 @@ func _pointer_in(node: Control) -> Vector2:
     return node.get_global_transform_with_canvas().affine_inverse() * _pointer
 
 
-## The board cell under the pointer, or null off the board.
+## The grid place under the pointer (placed cell or not), or null off the grid.
 func _cell_under_pointer():
     var local: Vector2 = _pointer_in(_board_view)
     if not Rect2(Vector2.ZERO, _board_view.size).has_point(local):
         return null
     var c: Vector2i = Board.point_cell(local - _board_origin(), _cell_size())
-    if board.cells.has(c):
+    if _area.has(c):
         return c
     return null
 
@@ -314,12 +371,17 @@ func _on_board_input(event: InputEvent) -> void:
     var at = _cell_under_pointer()
     if at == null:
         return
-    if held.is_empty():
+    if held_cell:
+        if board.add_cell(at, _area):
+            held_cell = false
+    elif held.is_empty():
         var lifted: Dictionary = board.take(at)
         if not lifted.is_empty():
             held = {"rune": lifted["rune"], "color": lifted["color"],
                 "star_colors": lifted["star_colors"],
                 "anchor": lifted["anchor"], "sixths": lifted["sixths"]}
+        elif board.remove_cell(at):
+            held_cell = true   # a bare cell, taken back up
     else:
         var idx: int = board.place(held["rune"], held["anchor"], int(held["sixths"]), at,
             held["star_colors"])
@@ -333,6 +395,12 @@ func _on_board_input(event: InputEvent) -> void:
 func _draw_board() -> void:
     var cell_size: float = _cell_size()
     var origin: Vector2 = _board_origin()
+    # The grid of places, faint, under the cells placed on it.
+    for c in _area:
+        if not board.cells.has(c):
+            var place: PackedVector2Array = Board.cell_outline(c, cell_size, origin, CELL_SHRINK)
+            place.append(place[0])
+            _board_view.draw_polyline(place, GRID_EDGE, 1.0, true)
     for c in board.cells:
         var outline: PackedVector2Array = Board.cell_outline(c, cell_size, origin, CELL_SHRINK)
         _board_view.draw_colored_polygon(outline, CELL_FILL)
@@ -347,6 +415,9 @@ func _draw_board() -> void:
 ## The held Rune: snapped to the cell under the pointer on the board, green
 ## where it fits and red where it doesn't; following the pointer elsewhere.
 func _draw_held() -> void:
+    if held_cell:
+        _draw_held_cell()
+        return
     if held.is_empty():
         return
     var cell_size: float = _cell_size()
@@ -361,6 +432,61 @@ func _draw_held() -> void:
         + _board_origin() + Board.cell_point(at, cell_size)
     _draw_rune(_held_view, held["rune"], held["anchor"], int(held["sixths"]), origin, cell_size,
         tint, held["color"], held["star_colors"], 0.4)
+
+
+## The held board cell: snapped to the grid place under the pointer, green
+## where it can go and red where it can't; following the pointer elsewhere.
+func _draw_held_cell() -> void:
+    var cell_size: float = _cell_size()
+    var at = _cell_under_pointer()
+    var centre: Vector2 = _pointer_in(_held_view)
+    var tint: Color = CELL_EDGE
+    if at != null:
+        centre = _board_view.global_position - _held_view.global_position \
+            + _board_origin() + Board.cell_point(at, cell_size)
+        tint = FITS_TINT if board.can_add_cell(at, _area) else BLOCK_TINT
+    var outline: PackedVector2Array = Board.cell_outline(Vector2i.ZERO, cell_size, centre, CELL_SHRINK)
+    _held_view.draw_colored_polygon(outline, Color(CELL_FILL, 0.85))
+    outline.append(outline[0])
+    _held_view.draw_polyline(outline, tint, 2.0, true)
+
+
+# ---------------------------------------------------------------- the cells
+
+func _set_stock_hover(inside: bool) -> void:
+    _stock_hover = inside
+    _stock_view.queue_redraw()
+
+
+## A click on the cell column takes a cell (when any are left and no Rune is
+## held), or puts a held cell back.
+func _on_stock_input(event: InputEvent) -> void:
+    if not (event is InputEventMouseButton and event.pressed
+            and event.button_index == MOUSE_BUTTON_LEFT):
+        return
+    if held_cell:
+        held_cell = false
+    elif held.is_empty() and cells_left() > 0:
+        held_cell = true
+    _stock_view.accept_event()
+    _refresh()
+
+
+## The cells still in the column, one above another from the top.
+func _draw_stock() -> void:
+    var font: Font = get_theme_default_font()
+    var w: float = _stock_view.size.x
+    _stock_view.draw_string(font, Vector2(0, 18), "Cells %d" % cells_left(),
+        HORIZONTAL_ALIGNMENT_CENTER, w, 14, DIM_COLOR)
+    if _stock_hover and held.is_empty() and (cells_left() > 0 or held_cell):
+        _stock_view.draw_rect(Rect2(Vector2.ZERO, _stock_view.size), HOVER_BG)
+    var size_px: float = minf(w * 0.32, (_stock_view.size.y - 30.0) / (STANDARD_CELLS * 1.75 + 0.25))
+    for k in cells_left():
+        var centre := Vector2(w * 0.5, 30.0 + size_px * (1.0 + 1.75 * k))
+        var outline: PackedVector2Array = Board.cell_outline(Vector2i.ZERO, size_px, centre, CELL_SHRINK)
+        _stock_view.draw_colored_polygon(outline, CELL_FILL)
+        outline.append(outline[0])
+        _stock_view.draw_polyline(outline, CELL_EDGE, 1.5, true)
 
 
 ## Each of the Rune's stars -> the colour index its constellation's Beginner
@@ -415,7 +541,8 @@ func _on_entry_input(event: InputEvent, i: int) -> void:
             and event.button_index == MOUSE_BUTTON_LEFT):
         return
     var e: Dictionary = _entries[i]
-    if bool(e["fits"]):
+    # The columns take turns: no Rune is picked while a cell is held.
+    if bool(e["fits"]) and not held_cell:
         held = {"rune": e["rune"], "color": e["color"], "star_colors": e["star_colors"],
             "anchor": Board.middle_cell(e["rune"]), "sixths": 0}
         _refresh()
@@ -439,7 +566,7 @@ func _draw_entry(i: int) -> void:
     if is_held:
         node.draw_rect(Rect2(Vector2.ZERO, node.size), Color(color, 0.14))
         node.draw_rect(Rect2(Vector2.ONE, node.size - Vector2(2, 2)), Color(color, 0.8), false, 1.5)
-    elif _hover_entry == i and bool(e["fits"]):
+    elif _hover_entry == i and bool(e["fits"]) and not held_cell:
         node.draw_rect(Rect2(Vector2.ZERO, node.size), HOVER_BG)
 
     # The shape, scaled into a box at the left.
