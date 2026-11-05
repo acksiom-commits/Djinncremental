@@ -159,6 +159,7 @@ var _tetrad_variety_triggered: Dictionary = {
 
 # === SUMMON SPARK EFFECT ===
 const SPARK_EFFECT = preload("res://effects/spark_effect.tscn")
+const _LockSweepEffect = preload("res://lock_sweep_effect.gd")
 
 
 # === FIRST UONITE NAME LIST ===
@@ -2191,6 +2192,8 @@ func _connect_tetrad_signals() -> void:
 
     for label in [_left_tetrad_label, _middle_label, _medials2_label]:
         if label and label is RichTextLabel:
+            # The Parent-lock sweep (_lock_sweep_if_parent()).
+            label.install_effect(_LockSweepEffect.new())
             label.mouse_filter = Control.MOUSE_FILTER_STOP
             var line_map = LEFT_LINE_MAP if label == _left_tetrad_label else \
                            MIDDLE_LINE_MAP if label == _middle_label else \
@@ -2901,6 +2904,27 @@ func _process(delta: float) -> void:
 # COUNTERS
 # ==================================================
 
+## A resource row's label, with the Parent-lock sweep when its purity lock is
+## held by a Parent Volition (see _lock_sweep_if_parent()).
+func _set_row_label(row: Node, text: String) -> void:
+    row.set_label(_lock_sweep_if_parent(text, String(row.resource_key)))
+
+
+## Purity locks all draw gold; the one holding a PARENT Volition also gets a
+## light sweeping left to right across it, looping ([sweep], lock_sweep_effect.gd),
+## so it can be told on sight from the locks held by Child Volitions
+## (author, 2026-11-04). `bb` is that lock's BBCode; returned unchanged
+## otherwise. Every RichTextLabel these go into has the effect installed
+## (_connect_tetrad_signals(), resource_row.gd).
+func _lock_sweep_if_parent(bb: String, key: String) -> String:
+    if not game_context or not game_context.is_parent_locked(key):
+        return bb
+    return "[sweep len=%d]%s[/sweep]" % [_BB_TAG.sub(bb, "", true).length(), bb]
+
+
+static var _BB_TAG: RegEx = RegEx.create_from_string("\\[[^\\]]*\\]")
+
+
 func _ever_created(key: String) -> bool:
     if not game_context:
         return false
@@ -2913,56 +2937,56 @@ func _update_counters() -> void:
         match row.resource_key:
             "sparks":
                 var locked = game_context.is_locked("sparks")
-                row.set_label("[color=%s]Sparks: %s%s[/color]" % [
+                _set_row_label(row, "[color=%s]Sparks: %s%s[/color]" % [
                     "#ffdd77" if locked else "#ffffff",
                     _fmt(game_context.sparks),
                     " 🔒" if locked else ""])
             "monad_solid":
                 var locked   = game_context.is_locked("monad_solid")
                 var created  = _ever_created("monad_solid")
-                row.set_label("[color=%s]Solid: %s%s[/color]" % [
+                _set_row_label(row, "[color=%s]Solid: %s%s[/color]" % [
                     "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
                     _fmt(game_context.monad["solid"]),
                     " 🔒" if locked else ""])
             "monad_liquid":
                 var locked   = game_context.is_locked("monad_liquid")
                 var created  = _ever_created("monad_liquid")
-                row.set_label("[color=%s]Liquid: %s%s[/color]" % [
+                _set_row_label(row, "[color=%s]Liquid: %s%s[/color]" % [
                     "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
                     _fmt(game_context.monad["liquid"]),
                     " 🔒" if locked else ""])
             "monad_gas":
                 var locked   = game_context.is_locked("monad_gas")
                 var created  = _ever_created("monad_gas")
-                row.set_label("[color=%s]Gas: %s%s[/color]" % [
+                _set_row_label(row, "[color=%s]Gas: %s%s[/color]" % [
                     "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
                     _fmt(game_context.monad["gas"]),
                     " 🔒" if locked else ""])
             "particle":
                 var locked   = game_context.is_locked("particle")
                 var created  = _ever_created("particle")
-                row.set_label("[color=%s]Particle: %s%s[/color]" % [
+                _set_row_label(row, "[color=%s]Particle: %s%s[/color]" % [
                     "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
                     _fmt(game_context.particle),
                     " 🔒" if locked else ""])
             "iota_uonite":
                 var locked   = game_context.is_locked("iota_uonite")
                 var created  = _ever_created("iota_uonite")
-                row.set_label("[color=%s]Iota: %s%s[/color]" % [
+                _set_row_label(row, "[color=%s]Iota: %s%s[/color]" % [
                     "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
                     _fmt(game_context.iota_uonite),
                     " 🔒" if locked else ""])
             "mote_uonite":
                 var locked   = game_context.is_locked("mote_uonite")
                 var created  = _ever_created("mote_uonite")
-                row.set_label("[color=%s]Mote: %s%s[/color]" % [
+                _set_row_label(row, "[color=%s]Mote: %s%s[/color]" % [
                     "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
                     _fmt(game_context.mote_uonite),
                     " 🔒" if locked else ""])
             "grain":
                 var locked   = game_context.is_locked("grain")
                 var created  = _ever_created("grain")
-                row.set_label("[color=%s]Grain: %s%s[/color]" % [
+                _set_row_label(row, "[color=%s]Grain: %s%s[/color]" % [
                     "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
                     _fmt(game_context.grain),
                     " 🔒" if locked else ""])
@@ -3107,7 +3131,7 @@ func _build_category_header(category_name: String, category_key: String) -> Stri
         color = "#aaaaaa"
     else:
         color = "#444444"
-    return "[color=%s][i]%s[/i][/color]" % [color, category_name]
+    return _lock_sweep_if_parent("[color=%s][i]%s[/i][/color]" % [color, category_name], category_key)
 
 
 func _build_tetrad_line(keys: Array) -> String:
@@ -3123,9 +3147,12 @@ func _build_tetrad_line(keys: Array) -> String:
         else:
             color = "#444444"
         var icon = " 🔒" if locked else ""
-        parts.append("[color=%s]%s:[/color]\n[color=%s]%s%s[/color]" % [
-            color, TETRAD_NAMES[key],
-            color, _fmt(game_context.tetrad.get(key, BigNum.zero())), icon])
+        # Name and count are on two lines; each gets its own sweep, so the
+        # band crosses both together.
+        parts.append("%s\n%s" % [
+            _lock_sweep_if_parent("[color=%s]%s:[/color]" % [color, TETRAD_NAMES[key]], key),
+            _lock_sweep_if_parent("[color=%s]%s%s[/color]" % [
+                color, _fmt(game_context.tetrad.get(key, BigNum.zero())), icon], key)])
     return "\n".join(parts)
 
 

@@ -26,6 +26,8 @@ func _ready() -> void:
         label_node.autowrap_mode = TextServer.AUTOWRAP_OFF
         label_node.fit_content = true
         label_node.scroll_active = false
+        # [sweep]: root_ui.gd marks a Parent-held purity lock with it.
+        label_node.install_effect(preload("res://lock_sweep_effect.gd").new())
         # Allow this node to receive mouse input for click detection
         label_node.mouse_filter = Control.MOUSE_FILTER_STOP
         label_node.gui_input.connect(_on_label_gui_input)

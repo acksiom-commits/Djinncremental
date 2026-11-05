@@ -565,6 +565,13 @@ func is_locked(key: String) -> bool:
     return false
 
 
+## Whether the purity lock on `key` (a resource, Tetrad variety or category)
+## is held by a PARENT Volition rather than a Child one. root_ui.gd shows that
+## lock with a moving light sweep (2026-11-04).
+func is_parent_locked(key: String) -> bool:
+    return locks.get(key, false) and get_first_parent_index_with_target("purity_lock", key) >= 0
+
+
 func toggle_lock(key: String) -> void:
     if not purity_locks_unlocked:
         return
