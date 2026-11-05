@@ -1635,6 +1635,140 @@ func manual_grain_assemble() -> bool:
     return _try_assemble_grain()
 
 
+# ==================================================
+# PERSISTENT CHAIN (SysDoc §7.3) -- made by Kaleb's command stack
+# ==================================================
+const _FUNDAMENT_TYPE := {"adaemant": "s", "aquae": "l", "aethyr": "g"}
+
+## One Persistent Particle: a Particle whose four Tetrads always include a
+## Fundament (the "Fundament-first draw" of SysDoc §7.1). Draws respect Purity
+## Locks like every other draw; Kaleb switches locks with his own bars.
+func manual_persistent_particle_assemble() -> bool:
+    var tetrad_cost: int = _recipe_cost("persistent_particle_assemble", "tetrad")
+    var sparks_cost: int = _recipe_cost("persistent_particle_assemble", "sparks")
+    if gc.is_locked("sparks"): return false
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
+    var drawn: Dictionary = _draw_fundament_first_tetrads()
+    if drawn.is_empty(): return false
+    var used := 0
+    for key in drawn:
+        used += int(drawn[key])
+    if used != tetrad_cost: return false
+    for key in drawn:
+        gc.tetrad[key] = gc.tetrad[key].sub(BigNum.from_int(drawn[key]))
+    gc.spend_sparks(sparks_cost)
+    gc.persistent_particle = gc.persistent_particle.add(BigNum.one())
+    gc.add_to_total("persistent_particle", BigNum.one())
+    return true
+
+
+## The 4 corner Tetrads of a Persistent Particle: corner 0 is a Fundament
+## from unlocked stock, so its 3 welds are all its own Monad type; the other
+## 3 welds (among corners 1-3) are rolled as in _draw_compatible_tetrads(),
+## and corners 1-3 drawn to cover their needs. Falls back to 4 of the same
+## Fundament. Returns variety -> count, or {} if no such Particle can be made.
+func _draw_fundament_first_tetrads() -> Dictionary:
+    var fundaments: Array = []
+    for f in _FUNDAMENT_TYPE:
+        if not gc.is_locked(f) and gc.tetrad[f].is_greater_or_equal(BigNum.one()):
+            fundaments.append(f)
+    if fundaments.is_empty():
+        return {}
+    var type_weights: Dictionary = _monad_type_supply()
+    for _attempt in _COMPATIBLE_DRAW_ATTEMPTS:
+        var f: String = fundaments[gc.rng.randi_range(0, fundaments.size() - 1)]
+        var ft: String = _FUNDAMENT_TYPE[f]
+        var corner_needs: Array = [{}, {ft: 1}, {ft: 1}, {ft: 1}]
+        for e in [Vector2i(1, 2), Vector2i(1, 3), Vector2i(2, 3)]:
+            var t: String = _weighted_type_pick(type_weights)
+            corner_needs[e.x][t] = int(corner_needs[e.x].get(t, 0)) + 1
+            corner_needs[e.y][t] = int(corner_needs[e.y].get(t, 0)) + 1
+        var drawn := {f: 1}
+        var ok := true
+        for ci in [1, 2, 3]:
+            var pool := []
+            for t in gc.tetrad:
+                if gc.is_locked(t):
+                    continue
+                if not gc.tetrad[t].is_greater_than(BigNum.from_int(int(drawn.get(t, 0)))):
+                    continue
+                if _tetrad_covers_needs(t, corner_needs[ci]):
+                    pool.append(t)
+            if pool.is_empty():
+                ok = false
+                break
+            var key = pool[gc.rng.randi_range(0, pool.size() - 1)]
+            drawn[key] = int(drawn.get(key, 0)) + 1
+        if ok:
+            return drawn
+    for f in fundaments:
+        if gc.tetrad[f].is_greater_or_equal(BigNum.from_int(4)):
+            return {f: 4}
+    return {}
+
+
+## Persistent Iota: 4 Persistent Particles + one weld-compatible cavity group
+## of 8 plain Tetrads + 6 Sparks.
+func manual_persistent_iota_assemble() -> bool:
+    var pp_cost:     int = _recipe_cost("persistent_iota_assemble", "persistent_particle")
+    var tetrad_cost: int = _recipe_cost("persistent_iota_assemble", "tetrad")
+    var sparks_cost: int = _recipe_cost("persistent_iota_assemble", "sparks")
+    if gc.is_locked("sparks"): return false
+    if gc.persistent_particle.is_less_than(BigNum.from_int(pp_cost)): return false
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
+    @warning_ignore("integer_division") # tetrad_cost is always an exact multiple of 8
+    if _draw_compatible_cavity_groups(tetrad_cost / 8).is_empty(): return false
+    gc.persistent_particle = gc.persistent_particle.sub(BigNum.from_int(pp_cost))
+    gc.spend_sparks(sparks_cost)
+    gc.persistent_iota = gc.persistent_iota.add(BigNum.one())
+    gc.add_to_total("persistent_iota", BigNum.one())
+    return true
+
+
+## Persistent Mote: 4 Persistent Iotas + 8 Persistent Particles + 6 cavity
+## groups of 8 plain Tetrads + 36 Sparks.
+func manual_persistent_mote_assemble() -> bool:
+    var pi_cost:     int = _recipe_cost("persistent_mote_assemble", "persistent_iota")
+    var pp_cost:     int = _recipe_cost("persistent_mote_assemble", "persistent_particle")
+    var tetrad_cost: int = _recipe_cost("persistent_mote_assemble", "tetrad")
+    var sparks_cost: int = _recipe_cost("persistent_mote_assemble", "sparks")
+    if gc.is_locked("sparks"): return false
+    if gc.persistent_iota.is_less_than(BigNum.from_int(pi_cost)): return false
+    if gc.persistent_particle.is_less_than(BigNum.from_int(pp_cost)): return false
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
+    @warning_ignore("integer_division") # tetrad_cost is always an exact multiple of 8
+    if _draw_compatible_cavity_groups(tetrad_cost / 8).is_empty(): return false
+    gc.persistent_iota = gc.persistent_iota.sub(BigNum.from_int(pi_cost))
+    gc.persistent_particle = gc.persistent_particle.sub(BigNum.from_int(pp_cost))
+    gc.spend_sparks(sparks_cost)
+    gc.persistent_mote = gc.persistent_mote.add(BigNum.one())
+    gc.add_to_total("persistent_mote", BigNum.one())
+    return true
+
+
+## Persistent Grain: 4 Persistent Motes + 16 Persistent Particles + 64 plain
+## Monads + 25 Sparks, within the Grain storage cap (plain and Persistent
+## Grains share it). Survives the Oscillation.
+func manual_persistent_grain_assemble() -> bool:
+    var pm_cost:     int = _recipe_cost("persistent_grain_assemble", "persistent_mote")
+    var pp_cost:     int = _recipe_cost("persistent_grain_assemble", "persistent_particle")
+    var monad_cost:  int = _recipe_cost("persistent_grain_assemble", "monad")
+    var sparks_cost: int = _recipe_cost("persistent_grain_assemble", "sparks")
+    if gc.is_locked("sparks"): return false
+    if gc.persistent_mote.is_less_than(BigNum.from_int(pm_cost)): return false
+    if gc.persistent_particle.is_less_than(BigNum.from_int(pp_cost)): return false
+    if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
+    if gc.get_monad_unlocked_total().is_less_than(BigNum.from_int(monad_cost)): return false
+    if gc.grain.add(gc.persistent_grain).to_int() >= gc.get_grain_storage_cap(): return false
+    if not _draw_monads(monad_cost): return false
+    gc.persistent_mote = gc.persistent_mote.sub(BigNum.from_int(pm_cost))
+    gc.persistent_particle = gc.persistent_particle.sub(BigNum.from_int(pp_cost))
+    gc.spend_sparks(sparks_cost)
+    gc.persistent_grain = gc.persistent_grain.add(BigNum.one())
+    gc.add_to_total("persistent_grain", BigNum.one())
+    return true
+
+
 ## Batch Create-Grain action (2026-10-01), the Grain-branch counterpart of
 ## manual_create_uonite() below -- but deliberately NOT a copy of its
 ## Expansion-triggering, Fibonacci-cycle-capped shape. Per the user's own

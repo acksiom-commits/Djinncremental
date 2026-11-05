@@ -25,6 +25,12 @@ const RESOURCES = {
     "mote_grains": {"name": "Mote",   "icon": "res://icons/mote.svg",     "color": "#55aaff"},
     "grain":    {"name": "Grain",     "icon": "res://icons/grain.svg",    "color": "#9944ee"},
     "uonite":   {"name": "Uonite",    "icon": "res://icons/uonite.svg",   "color": "#ffdd55"},
+    # Persistent-grade chain stock (SysDoc §7.3), made by Kaleb's command
+    # stack. Same icons as the plain tiers for now.
+    "persistent_particle": {"name": "Persistent Particle", "icon": "res://icons/particle.svg", "color": "#eecc00"},
+    "persistent_iota":     {"name": "Persistent Iota",     "icon": "res://icons/iota.svg",     "color": "#55ff88"},
+    "persistent_mote":     {"name": "Persistent Mote",     "icon": "res://icons/mote.svg",     "color": "#55aaff"},
+    "persistent_grain":    {"name": "Persistent Grain",    "icon": "res://icons/grain.svg",    "color": "#9944ee"},
 # ---- Firmament Stocks ----
     "phlogiston": {"name": "Phlogiston", "icon": "res://icons/phlogiston.svg", "color": "#ff8440"},
     "clay":       {"name": "Clay",       "icon": "res://icons/clay.svg",       "color": "#cc9966"},
@@ -137,6 +143,19 @@ const RECIPES = {
     # borrowed while mote_grains didn't exist yet.
     "grain_assemble":    {"inputs": {"sparks": 25, "monad": 64, "particle": 16, "mote_grains": 4}, "outputs": {"grain": 1}},
     "uonite_assemble":   {"inputs": {"mote_uonite": 20, "sparks": 1},                 "outputs": {"uonite": 1}},
+
+    # ---- Persistent chain (SysDoc §7.3): the Grain branch's recipes, with
+    # every Particle, Iota and Mote input Persistent. A Persistent Particle
+    # is a Particle whose draw always has a Fundament corner. Cavity Tetrads
+    # and loose Monads stay plain: the Persistence rule covers Particles.
+    "persistent_particle_assemble": {"inputs": {"tetrad": 4, "sparks": 1},
+        "outputs": {"persistent_particle": 1}},
+    "persistent_iota_assemble":     {"inputs": {"persistent_particle": 4, "tetrad": 8, "sparks": 6},
+        "outputs": {"persistent_iota": 1}},
+    "persistent_mote_assemble":     {"inputs": {"persistent_iota": 4, "persistent_particle": 8, "tetrad": 48, "sparks": 36},
+        "outputs": {"persistent_mote": 1}},
+    "persistent_grain_assemble":    {"inputs": {"persistent_mote": 4, "persistent_particle": 16, "monad": 64, "sparks": 25},
+        "outputs": {"persistent_grain": 1}},
 }
 
 

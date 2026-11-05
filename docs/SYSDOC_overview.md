@@ -283,6 +283,36 @@ The author's skill list, in order. The list lives in `game_data.gd` `SKILLS`, th
 
 The dial positions are placement only, chosen next to the output each skill seems to make; that is not yet a design link between skill and output. Open: what each skill does and how it levels (§7 says Uonites learn Skills from automation experience; that bullet's names, Forging, Quenching, Calcination, Distillation and Vaporization, came first and Forge/Distill overlap them); what the yellow cards hold; whether clicking a skill card should also choose it on the dial.
 
+### 7.3 Kaleb's command stack and Persistent Grain production (designed 2026-11-05) [Phase 1 CODE: engine and stocks; NO UI yet]
+
+**Built (Phase 1, 2026-11-05):**
+- **Persistent stocks** in `game_context.gd`: `persistent_particle/iota/mote/grain` (`PERSISTENT_KEYS`), saved through `CHAIN_SAVE_KEYS` (which replaced the same 7-key literal in three save/load loops), counted in `get_storage_total()`. `do_prestige_reset()` keeps Persistent Grains and zeroes the rest. Recipes `persistent_*_assemble` in `game_data.gd`; names in `RESOURCES`.
+- **Persistent assembly** in `production_manager.gd`: `manual_persistent_particle_assemble()` with `_draw_fundament_first_tetrads()` (a Fundament from unlocked stock at corner 0, so its 3 welds are its type; corners 1-3 drawn under the weld rule; fallback 4 of one Fundament; respects locks); Iota, Mote and Grain take Persistent Particle/Iota/Mote inputs and plain cavity Tetrads/Monads; Persistent Grains share the Grain storage cap.
+- **The stack** is `GameContext.kaleb_stack` (saved, with `kaleb_running/index/repeat_done`), changed only through `kaleb_add_bar()` (refused with no Focus, or no Uonite for a working bar, free), `kaleb_remove_bar()`, `kaleb_move_bar()`. `kaleb_foci_held()`/`kaleb_uonites_held()` are added into `get_total_foci/uonites_assigned()`, so every free-Focus and free-Uonite count already sees them. (Not stored in `assignments`: the Oscillation zeroes every `_uonites` key there.)
+- **The palette** is `kaleb_commands.gd`: Summon Spark, Compress Monad, Assemble Tetrad, Assemble Persistent Particle/Iota/Mote/Grain (press bars), Lock, Unlock, If (`res` `<`/`>=` `value`, go to `goto`; `res` is Sparks, a Monad type, a Tetrad variety or a chain stock).
+- **Kaleb** is `kaleb_executor.gd`, created by `root_ui.gd` (`_setup_kaleb()`), so he works while Primordial is up. Press bars wait on their button's cooldown bar and call the real handler through `root_ui.kaleb_press()`, at most one press a frame; Lock/Unlock (via `toggle_lock`/`toggle_category_lock`, so Volitions are assigned as for a click) and If are instant, at most 64 a frame. While `kaleb_running`, the Summon, Monad, Tetrad, Particle, Iota and Mote buttons ignore the player (`_kaleb_has_the_buttons()`). The Persistent presses share the Particle, Iota and Mote cooldowns (Grain has none) and have no buttons yet.
+- `test_kaleb_persistent_chain.gd`: a 15-bar stack takes Sparks alone to a Persistent Iota (in one run: 7 Adaemants, 4 Persistent Particles); bars hold Foci/Uonites; the player is locked out; 189/189 Fundament-first draws had a Fundament, none a locked one; the stack survives a JSON save round trip; the Oscillation keeps only Persistent Grains.
+
+**Next (Phase 2):** the stack in the Constellation box with the constellation/stack switch, the palette, bar controls (×N, On/Off, remove, drag and drop onto the slot grid), Run/Pause, and rows for the Persistent stocks.
+
+Persistent Grains are made by **Kaleb**, running a stack of command bars, Idle Loops style: the player lays out commands, Kaleb carries them out in sequence, and at the end the stack recycles to the top. (It is the Kaleb automation planned since 2026-08-12, which takes over the Constellation box.)
+
+**Settled by the author:**
+- **The production chain, Adaemant first** (the other Fundaments later): make one Fundament (Adaemant), then enough Tetrads to build a Persistent Particle around it; again, until there are four Persistent Solid Particles; turn those into a Persistent Iota; and so on up the chain to a Persistent Grain, one at a time.
+- **Separate Persistent stocks per tier:** Persistent Particle, Iota, Mote and Grain are their own counts, built only from Persistent inputs; Persistent Grains survive the Oscillation. Plain stock is unaffected. Assemble Persistent Particle uses a Fundament-first draw: the Fundament is always one of the four corners, the other three drawn to fit it under the weld rule (§7.1's "constructive Fundament-first draw").
+- **Each command bar holds 1 Uonite and 1 Focus while it is in the stack**, returned when it is removed. The Uonite does the work; the Focus switches the Uonite On and Off, and stays assigned whether the bar is On or Off (author, 2026-11-05). If-then bars take Foci too.
+- **Reordering is drag and drop onto a hidden grid of bar slots** (author, 2026-11-05): a dragged bar drops into the slot under it. (The card row's drag-to-scroll, by velocity, was what proved too finicky, not drag and drop.)
+- **The player builds the stack from a palette** of command bars, and orders it.
+- **Repeat counts and If-then bars:** each bar has a ×N repeat count; If-then bars handle the conditions counts can't (e.g. go back while Persistent Particles < 4).
+- **Kaleb presses the real buttons**, sharing their cooldowns, so the Hourglass (Archon Tier 3 Child Volitions on the Monad, Tetrad and Particle ops) makes him fast. While the stack is active only Kaleb presses them; the player turns it off to work by hand. Helping him while it runs may be tried later, once the automation works.
+- **Kaleb switches Purity Locks with command bars** (e.g. lock Liquid and Gas Monads so a Tetrad can only be Adaemant), which is how he makes a chosen Fundament from random Monads.
+- **UI:** the bars stack vertically in the Constellation box on the **Primordial** page only. The Study Constellation button under the box (Study is also in the slideout, §7) becomes a switch between the chosen constellation and the command stack.
+- **Unlock:** available at once while it is built and tuned; the real unlock is decided later.
+
+**Proposed, not objected to (2026-11-05):** If-then bars hold a Focus but no Uonite; a stack-level Run/Pause, with the player's production buttons disabled while it runs; a press that can't happen (not enough material) counts as done and Kaleb moves on, so If-then bars guard what matters.
+
+**Open:** the full command palette (beyond Compress Monad, Assemble Tetrad, Assemble Persistent Particle/Iota/Mote/Grain, Lock/Unlock, If-then); the If-then conditions (stock comparisons; a "Persistent Particle can be built" check); how the existing Foci/Uonite op automation coexists with a running stack; Aquae and Aethyr chains and the Clay/Crystal/Vapor families; where Persistent stocks are shown.
+
 Other designed-not-built items live in the project memory index (Archai/Particle lattice geometry, Uonite neurology, Sigils and Runes, Repeat Count clue axis, Kaleb-voiced hints). Check there before proposing anything in these areas, and treat each as a prototype unless its note says shipped.
 
 ## 8. Presentation, community, structure

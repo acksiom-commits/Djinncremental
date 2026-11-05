@@ -371,6 +371,7 @@ func _ready() -> void:
     _setup_resource_rows()
     _setup_bars()
     _connect_tetrad_signals()
+    _setup_kaleb()
     call_deferred("_setup_dialogue")
     call_deferred("_load_on_start")
     # Loads Firmament's page now, inside this page's own load, so switching
@@ -2405,6 +2406,7 @@ func _fmt_recipe(op_key: String) -> String:
 # ==================================================
 func _on_summon_spark_pressed() -> void:
     if _is_tutorial_blocking(): return
+    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar("SparksCooldownBar")
     if bar and not bar.is_ready():
@@ -2425,6 +2427,7 @@ func _on_summon_spark_pressed() -> void:
 
 func _on_monad_compress_pressed() -> void:
     if _is_tutorial_blocking(): return
+    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar("MonadCooldownBar")
     if bar and not bar.is_ready():
@@ -2443,6 +2446,7 @@ func _on_monad_compress_pressed() -> void:
 
 func _on_tetrad_assemble_pressed() -> void:
     if _is_tutorial_blocking(): return
+    if _kaleb_has_the_buttons(): return
     if not _tetrad_assembly_ready: return
     if not production_manager: return
     var bar = _get_cooldown_bar("TetradCooldownBar")
@@ -2477,6 +2481,7 @@ func _on_tetrad_assemble_pressed() -> void:
 
 func _on_iota_assemble_pressed() -> void:
     if _is_tutorial_blocking(): return
+    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar("IotaCooldownBar")
     if bar and not bar.is_ready():
@@ -2494,6 +2499,7 @@ func _on_iota_assemble_pressed() -> void:
 
 func _on_mote_compress_pressed() -> void:
     if _is_tutorial_blocking(): return
+    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar("MoteCooldownBar")
     if bar and not bar.is_ready():
@@ -2511,6 +2517,7 @@ func _on_mote_compress_pressed() -> void:
 
 func _on_particle_compress_pressed() -> void:
     if _is_tutorial_blocking(): return
+    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar("ParticleCooldownBar")
     if bar and not bar.is_ready():
@@ -2524,6 +2531,69 @@ func _on_particle_compress_pressed() -> void:
         if bar: bar.notify_clicked()
     else:
         if bar: bar.flash_not_ready()
+
+
+# ==================================================
+# KALEB'S COMMAND STACK (SysDoc §7.3)
+# ==================================================
+## True while Kaleb's stack runs and the press isn't his: then only Kaleb
+## presses the production buttons (author, 2026-11-05); the player stops the
+## stack to work by hand.
+var _kaleb_pressing: bool = false
+var _kaleb: Node = null
+
+func _kaleb_has_the_buttons() -> bool:
+    return game_context != null and game_context.kaleb_running and not _kaleb_pressing
+
+
+## Kaleb presses a button: runs the same handler a click runs
+## (kaleb_executor.gd checks the cooldown first).
+func kaleb_press(handler: String) -> void:
+    _kaleb_pressing = true
+    call(handler)
+    _kaleb_pressing = false
+
+
+func _setup_kaleb() -> void:
+    _kaleb = preload("res://kaleb_executor.gd").new()
+    _kaleb.name = "KalebExecutor"
+    _kaleb.setup(self, game_context)
+    add_child(_kaleb)
+
+
+## The Persistent chain's presses. They share the Particle, Iota and Mote
+## buttons' cooldowns (Persistent Grain has none, like Create Grain); for now
+## only Kaleb presses them, as they have no buttons of their own yet.
+func _on_persistent_particle_pressed() -> void:
+    _press_persistent("manual_persistent_particle_assemble", "ParticleCooldownBar")
+
+func _on_persistent_iota_pressed() -> void:
+    _press_persistent("manual_persistent_iota_assemble", "IotaCooldownBar")
+
+func _on_persistent_mote_pressed() -> void:
+    _press_persistent("manual_persistent_mote_assemble", "MoteCooldownBar")
+
+func _on_persistent_grain_pressed() -> void:
+    _press_persistent("manual_persistent_grain_assemble", "")
+
+
+func _press_persistent(fn: String, bar_name: String) -> void:
+    if _is_tutorial_blocking(): return
+    if _kaleb_has_the_buttons(): return
+    if not production_manager: return
+    var bar = _get_cooldown_bar(bar_name) if bar_name != "" else null
+    if bar and not bar.is_ready():
+        bar.flash_not_ready()
+        return
+    var any_success := false
+    for i in _get_click_multiplier():
+        if production_manager.call(fn):
+            any_success = true
+    if bar:
+        if any_success:
+            bar.notify_clicked()
+        else:
+            bar.flash_not_ready()
 
 
 func _on_create_uonite_pressed() -> void:

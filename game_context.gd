@@ -26,6 +26,40 @@ var mote_grains: BigNum = BigNum.zero()
 var grain:       BigNum = BigNum.zero()
 var uonite:      BigNum = BigNum.zero()
 
+# ===================== PERSISTENT STOCKS (SysDoc §7.3) ==================
+# Persistent-grade material, kept apart from the plain stocks above and
+# built only from Persistent inputs: a Persistent Particle always has a
+# Fundament corner (production_manager.manual_persistent_particle_assemble).
+# Made by Kaleb's command stack (kaleb_executor.gd). Persistent Grains
+# survive the Oscillation; the tiers below them reset like plain stock.
+var persistent_particle: BigNum = BigNum.zero()
+var persistent_iota:     BigNum = BigNum.zero()
+var persistent_mote:     BigNum = BigNum.zero()
+var persistent_grain:    BigNum = BigNum.zero()
+const PERSISTENT_KEYS: Array[String] = [
+    "persistent_particle", "persistent_iota", "persistent_mote", "persistent_grain"]
+## The single-count chain stocks save and load writes, scrubs and reads (was
+## the same 7-key literal in three places; the Persistent ones joined it).
+const CHAIN_SAVE_KEYS: Array[String] = [
+    "particle", "iota_uonite", "mote_uonite", "iota_grains", "mote_grains", "grain", "uonite",
+    "persistent_particle", "persistent_iota", "persistent_mote", "persistent_grain"]
+
+# ===================== KALEB'S COMMAND STACK (SysDoc §7.3) ==============
+# The bars Kaleb runs in order, recycling to the top (kaleb_executor.gd runs
+# them; kaleb_commands.gd defines them). Each bar is a Dictionary:
+#   cmd     String  a key of KalebCommands.COMMANDS
+#   repeat  int     times to run it per visit (press commands)
+#   on      bool    its Focus has its Uonite switched On
+#   target  String  lock/unlock: the lock key
+#   res, cmp, value, goto   if-then: "if res cmp value, go to bar goto"
+# Every bar holds 1 Focus and every working bar 1 Uonite for as long as it
+# is in the stack, On or Off (get_total_*_assigned() count them). Saved;
+# survives the Oscillation, like the Uonites it holds.
+var kaleb_stack: Array = []
+var kaleb_running: bool = false
+var kaleb_index: int = 0
+var kaleb_repeat_done: int = 0
+
 var uonite_name: String = ""
 
 # ===================== FIRMAMENT STOCKS =======================
@@ -196,6 +230,8 @@ var totals_created: Dictionary = {
     "iota_grains": BigNum.zero(), "mote_grains": BigNum.zero(),
     "grain":    BigNum.zero(), "uonite":   BigNum.zero(),
     "sparks_summoned": BigNum.zero(),
+    "persistent_particle": BigNum.zero(), "persistent_iota": BigNum.zero(),
+    "persistent_mote": BigNum.zero(), "persistent_grain": BigNum.zero(),
 }
 
 # Next power-of-1000 exponent index to check per key (1 = 1K, 2 = 1M, 3 = 1B...)
@@ -697,6 +733,8 @@ func get_storage_total() -> BigNum:
     total = total.add(mote_grains)
     total = total.add(grain)
     total = total.add(uonite)
+    for key in PERSISTENT_KEYS:
+        total = total.add(get_resource(key))
     return total
 
 
@@ -759,6 +797,10 @@ func get_resource(key: String) -> BigNum:
         "mote_grains":  return mote_grains
         "grain":        return grain
         "uonite":       return uonite
+        "persistent_particle": return persistent_particle
+        "persistent_iota":     return persistent_iota
+        "persistent_mote":     return persistent_mote
+        "persistent_grain":    return persistent_grain
         "phlogiston":   return phlogiston
         "quintessence": return quintessence
         "monad":        return get_monad_unlocked_total()
@@ -788,6 +830,10 @@ func set_resource(key: String, value: BigNum) -> void:
         "mote_grains":  mote_grains = value
         "grain":        grain = value
         "uonite":       uonite = value
+        "persistent_particle": persistent_particle = value
+        "persistent_iota":     persistent_iota = value
+        "persistent_mote":     persistent_mote = value
+        "persistent_grain":    persistent_grain = value
         "phlogiston":   phlogiston = value
         "quintessence": quintessence = value
         _:
@@ -857,7 +903,7 @@ func _assignment_int(key: String, default: int = 0) -> int:
 
 
 func get_total_uonites_assigned() -> BigNum:
-    var total := BigNum.zero()
+    var total := BigNum.from_int(kaleb_uonites_held())
     for key in assignments:
         if key.ends_with("_uonites"):
             var val = assignments[key]
@@ -975,11 +1021,99 @@ func get_uonite_cycle_progress() -> Vector2i:
 
 
 func get_total_foci_assigned() -> int:
-    var total := 0
+    var total := kaleb_foci_held()
     for key in assignments:
         if key.ends_with("_foci"):
             total += _assignment_int(key, 0)
     return total
+
+
+# ===================== KALEB'S COMMAND STACK =======================
+## Every bar holds a Focus (it switches the bar's Uonite On and Off).
+func kaleb_foci_held() -> int:
+    return kaleb_stack.size()
+
+
+## Every working bar holds a Uonite; If-then bars only check, so hold none.
+func kaleb_uonites_held() -> int:
+    var n := 0
+    for bar in kaleb_stack:
+        if String(bar.get("cmd", "")) != "if":
+            n += 1
+    return n
+
+
+## Adds `bar` at `at` (or the end), if a Focus, and a Uonite when the bar
+## needs one, are free. Returns whether it was added.
+func kaleb_add_bar(bar: Dictionary, at: int = -1) -> bool:
+    if archon_foci - get_total_foci_assigned() < 1:
+        return false
+    if String(bar.get("cmd", "")) != "if":
+        var free_u: BigNum = uonite.sub(get_total_uonites_assigned()) \
+            if uonite.is_greater_or_equal(get_total_uonites_assigned()) else BigNum.zero()
+        if free_u.is_less_than(BigNum.one()):
+            return false
+    if at < 0 or at > kaleb_stack.size():
+        kaleb_stack.append(bar)
+    else:
+        kaleb_stack.insert(at, bar)
+        if at <= kaleb_index and kaleb_stack.size() > 1:
+            kaleb_index += 1
+    return true
+
+
+## Removes bar `i`, returning its Focus and Uonite.
+func kaleb_remove_bar(i: int) -> void:
+    if i < 0 or i >= kaleb_stack.size():
+        return
+    kaleb_stack.remove_at(i)
+    if kaleb_stack.is_empty():
+        kaleb_index = 0
+        kaleb_repeat_done = 0
+    elif i < kaleb_index:
+        kaleb_index -= 1
+    elif i == kaleb_index:
+        kaleb_repeat_done = 0
+        kaleb_index = kaleb_index % kaleb_stack.size()
+
+
+## Moves bar `from` to slot `to` (drag and drop onto the stack's slot grid).
+## The bar Kaleb is on stays the one he is on.
+func kaleb_move_bar(from: int, to: int) -> void:
+    if from < 0 or from >= kaleb_stack.size():
+        return
+    to = clampi(to, 0, kaleb_stack.size() - 1)
+    if from == to:
+        return
+    var current = kaleb_stack[kaleb_index] if kaleb_index < kaleb_stack.size() else null
+    var bar = kaleb_stack[from]
+    kaleb_stack.remove_at(from)
+    kaleb_stack.insert(to, bar)
+    if current != null:
+        kaleb_index = kaleb_stack.find(current)
+
+
+func _load_kaleb_stack(data: Dictionary) -> void:
+    kaleb_stack.clear()
+    var raw = data.get("kaleb_stack", [])
+    if raw is Array:
+        for b in raw:
+            if not (b is Dictionary) or not b.has("cmd"):
+                continue
+            # JSON numbers come back as floats; the executor wants ints.
+            kaleb_stack.append({
+                "cmd":    String(b.get("cmd", "")),
+                "repeat": maxi(1, _coerce_int(b.get("repeat"), 1)),
+                "on":     _coerce_bool(b.get("on"), true),
+                "target": String(b.get("target", "")),
+                "res":    String(b.get("res", "")),
+                "cmp":    String(b.get("cmp", "<")),
+                "value":  _coerce_int(b.get("value"), 0),
+                "goto":   _coerce_int(b.get("goto"), 0),
+            })
+    kaleb_running = _coerce_bool(data.get("kaleb_running"), false)
+    kaleb_index = clampi(_coerce_int(data.get("kaleb_index"), 0), 0, maxi(0, kaleb_stack.size() - 1))
+    kaleb_repeat_done = maxi(0, _coerce_int(data.get("kaleb_repeat_done"), 0))
 
 
 func get_total_volitions_assigned() -> int:
@@ -1699,7 +1833,7 @@ func get_save_data() -> Dictionary:
     data["creation_order"]   = creation_order.duplicate()
     for k in tetrad:
         data["tetrad_" + k] = tetrad[k].to_save_string()
-    for key in ["particle", "iota_uonite", "mote_uonite", "iota_grains", "mote_grains", "grain", "uonite"]:
+    for key in CHAIN_SAVE_KEYS:
         data[key] = get_resource(key).to_save_string()
     data["archon_foci"]           = archon_foci
     data["volitions"]             = volitions
@@ -1710,6 +1844,10 @@ func get_save_data() -> Dictionary:
     data["next_expansion_foci_exp"] = next_expansion_foci_exp
     data["purity_locks_unlocked"] = purity_locks_unlocked
     data["will_form_switch_is_will"] = will_form_switch_is_will
+    data["kaleb_stack"]       = kaleb_stack.duplicate(true)
+    data["kaleb_running"]     = kaleb_running
+    data["kaleb_index"]       = kaleb_index
+    data["kaleb_repeat_done"] = kaleb_repeat_done
     data["grains_this_cycle"]     = grains_this_cycle
     data["motes_this_cycle"]      = motes_this_cycle
     data["uonites_this_cycle"]    = uonites_this_cycle
@@ -1959,7 +2097,7 @@ func load_save_data(data: Dictionary) -> void:
             tetrad[k] = BigNum.from_string(data.get("tetrad_silt", data.get("tetrad_dirt", "0:0")))
         else:
             tetrad[k] = BigNum.from_string(data.get("tetrad_" + k, "0:0"))
-    for key in ["particle", "iota_uonite", "mote_uonite", "iota_grains", "mote_grains", "grain", "uonite"]:
+    for key in CHAIN_SAVE_KEYS:
         set_resource(key, BigNum.from_string(data.get(key, "0:0")))
 
     # Scrub fractional remnants from all stored resource types
@@ -1967,7 +2105,7 @@ func load_save_data(data: Dictionary) -> void:
         monad[k] = monad[k].floor_to_whole()
     for k in tetrad:
         tetrad[k] = tetrad[k].floor_to_whole()
-    for key in ["particle", "iota_uonite", "mote_uonite", "iota_grains", "mote_grains", "grain", "uonite"]:
+    for key in CHAIN_SAVE_KEYS:
         set_resource(key, get_resource(key).floor_to_whole())
 
     archon_foci             = _coerce_int(data.get("archon_foci"), 1)
@@ -1978,6 +2116,7 @@ func load_save_data(data: Dictionary) -> void:
     expansions               =_coerce_int(data.get("expansions"), 0)
     next_expansion_foci_exp = _coerce_int(data.get("next_expansion_foci_exp"), 0)
     purity_locks_unlocked   = _coerce_bool(data.get("purity_locks_unlocked"), false)
+    _load_kaleb_stack(data)
     will_form_switch_is_will = _coerce_bool(data.get("will_form_switch_is_will"), true)
     grains_this_cycle       = _coerce_int(data.get("grains_this_cycle"), 0)
     motes_this_cycle        = _coerce_int(data.get("motes_this_cycle"), 0)
@@ -2183,6 +2322,14 @@ func do_prestige_reset() -> BigNum:
     iota_grains = BigNum.zero()
     mote_grains = BigNum.zero()
     grain       = BigNum.zero()
+    # Persistent Grains survive the Oscillation; the Persistent material
+    # below them resets like plain stock (SysDoc §7.3). Kaleb's stack and the
+    # Uonites and Foci its bars hold stay; he starts again from the top.
+    persistent_particle = BigNum.zero()
+    persistent_iota     = BigNum.zero()
+    persistent_mote     = BigNum.zero()
+    kaleb_index = 0
+    kaleb_repeat_done = 0
     grains_this_cycle = 0
     motes_this_cycle = 0
     uonites_this_cycle = 0
