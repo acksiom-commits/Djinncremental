@@ -129,7 +129,7 @@ func run() -> void:
 			"33 Uonites at tier %s bank %d (got %s)"
 				% [cd.get_visual_state(PHIAL_ID), pair[1], got_rate.to_display_string()])
 
-	print("\n=== the panel shows each tier's rate and cap, and what it banks now ===")
+	print("\n=== the panel shows each tier's rate and cap ===")
 	# 2026-11-02: the ladder showed only the cap (+2961 at art), which read
 	# like the payout; the real payout here is 825.
 	var p = PopoutScene.instantiate()
@@ -146,10 +146,13 @@ func run() -> void:
 	ok(ladder.contains("Stars  1/Uonite") and ladder.contains("Lines  5/Uonite"),
 		"the tooltip ladder shows the Stars and Lines rates")
 	ok(ladder.contains("Art  25/Uonite, max %s" % art_cap), "the tooltip ladder shows Art's rate and cap (%s)" % art_cap)
-	ok(line.contains("Spark Bank ▶ Art 25/Uonite, max %s" % art_cap) and not line.contains("Stars"),
-		"the panel line shows Art's rate and cap alone")
-	ok(line.contains("Banks +825 at the next Expansion (33 Uonites)"),
-		"the panel line shows what the bank pays now, not the cap")
+	# The line gives what the next Oscillation will actually carry (825 here,
+	# under the 2961 cap), not the cap (author, 2026-11-04).
+	ok(line.contains("Spark Bank ▶ Art 25/Uonite, +825") and not line.contains("max") and not line.contains("Stars"),
+		"the panel line shows Art's rate and the amount it will transfer (%s)" % line)
+	# The "Banks +X at the next Expansion" line was taken out (author, 2026-11-04).
+	ok(not line.contains("Banks") and not line.contains("\n"),
+		"the panel shows the one tier line, with no Banks line (%s)" % line)
 	p.queue_free()
 
 	# Restore live state.

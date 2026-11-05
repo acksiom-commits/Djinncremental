@@ -1169,15 +1169,17 @@ func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
             # One space after the tier name here; the tooltip's ladder keeps
             # two, which lines its rows up.
             current_row = String(row[1]).replace("  ", " ")
+    # The Phial's line gives what it will actually carry into the next
+    # Oscillation, not its cap (author, 2026-11-04): "Art 25/Uonite, +825".
+    # The tooltip's ladder keeps "max N" for every tier.
+    if bonus_key == "spark_bank_capacity" and _cd and not _phial_tier_cap_bignum(current_state).is_zero():
+        current_row = "%s %s/Uonite, +%s" % [TIER_DISPLAY_NAMES.get(current_state, current_state),
+            _phial_tier_rate(def, current_state), _cd.get_phial_spark_bank_amount().to_display_string()]
     var hi_color: Color = TIER_COLORS.get(current_state, Color.WHITE)
-    var text: String = "[color=#%s][b]%s ▶ %s[/b][/color]" \
+    # The Phial once added a second line, "Banks +X at the next Expansion
+    # (N Uonites)"; the author took it out (2026-11-04).
+    _info_tier_effects.text = "[color=#%s][b]%s ▶ %s[/b][/color]" \
         % [hi_color.to_html(false), bonus_desc, current_row]
-    # The Phial: what its rate and cap add up to right now goes under the
-    # current tier (InfoBonusLabel, which says the same, is hidden in the scene).
-    if bonus_key == "spark_bank_capacity" and _cd and _gc:
-        text += "\n[font_size=13]Banks +%s at the next Expansion (%s Uonites)[/font_size]" \
-            % [_cd.get_phial_spark_bank_amount().to_display_string(), _gc.uonite.to_display_string()]
-    _info_tier_effects.text = text
 
 
 const UNSOLVED_EFFECT_TEXT: String = "??? (puzzle unsolved)"
