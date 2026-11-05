@@ -593,6 +593,9 @@ render_target_update_mode = 4
 mesh = SubResource("ArrayMesh_rigbo")
 surface_material_override/0 = SubResource("StandardMaterial3D_y4s2b")
 script = ExtResource("18_qxxaa")
+line_thickness = 0.012
+line_segments = 32
+eye_spacing = 0.5
 
 [node name="ArchonCamera" type="Camera3D" parent="FirmRootUI/FirmTopBandHBox/LeftStackVBox/ClickSelectPanelContainer/ClickSelectMargin/ClickSelectVBox/ArchonGraphicPanel/ArchonTetrahedronContainer/ArchonTetrahedronViewport" unique_id=17640620]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 5)
