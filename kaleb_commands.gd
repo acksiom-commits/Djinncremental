@@ -47,6 +47,13 @@ static func make_bar(cmd: String, repeat: int = 1) -> Dictionary:
 ## ("monad_solid"), a Tetrad variety ("adaemant"), or a chain stock
 ## ("particle", "persistent_particle", ...). Unknown keys read 0.
 static func read_count(gc: Node, key: String) -> int:
+    # All unlocked Monads or Tetrads together: what a Grain's 64 Monads and
+    # a Mote's 48 cavity Tetrads draw from (added 2026-11-05 for the full
+    # Persistent Grain stack).
+    if key == "monad":
+        return gc.get_monad_unlocked_total().to_int()
+    if key == "tetrad":
+        return gc.get_tetrad_unlocked_total().to_int()
     if key.begins_with("monad_"):
         var t: String = key.trim_prefix("monad_")
         return gc.monad[t].to_int() if gc.monad.has(t) else 0

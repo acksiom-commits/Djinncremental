@@ -34,7 +34,7 @@ const PALETTE: Array[String] = ["summon_spark", "monad_compress", "tetrad_assemb
     "persistent_particle", "persistent_iota", "persistent_mote", "persistent_grain",
     "lock", "unlock", "if"]
 ## What an If bar can count, in its menu's order.
-const IF_KEYS: Array[String] = ["sparks", "monad_solid", "monad_liquid", "monad_gas",
+const IF_KEYS: Array[String] = ["sparks", "monad", "tetrad", "monad_solid", "monad_liquid", "monad_gas",
     "adaemant", "aquae", "aethyr", "earth", "water", "air", "mud", "dust", "cloud",
     "silt", "sand", "haze", "mist", "ooze", "foam", "particle",
     "persistent_particle", "persistent_iota", "persistent_mote", "persistent_grain"]
@@ -398,6 +398,8 @@ func _display_name(key: String) -> String:
     match key:
         "<", ">=": return key
         "sparks": return "Sparks"
+        "monad": return "Monads (unlocked)"
+        "tetrad": return "Tetrads (unlocked)"
         "monad_solid": return "Solid Monads"
         "monad_liquid": return "Liquid Monads"
         "monad_gas": return "Gas Monads"

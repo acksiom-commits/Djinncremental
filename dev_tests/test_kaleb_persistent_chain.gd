@@ -71,6 +71,25 @@ func run() -> void:
 	gc.uonite = gc.get_total_uonites_assigned().add(BigNum.from_int(20))
 	gc.archon_foci = gc.get_total_foci_assigned() + 20
 
+	print("=== an If bar can count all unlocked Monads or Tetrads ===")
+	gc.monad["solid"] = BigNum.from_int(3)
+	gc.monad["liquid"] = BigNum.from_int(2)
+	gc.monad["gas"] = BigNum.from_int(5)
+	gc.tetrad["adaemant"] = BigNum.from_int(4)
+	gc.tetrad["earth"] = BigNum.from_int(1)
+	gc.tetrad["mud"] = BigNum.from_int(6)
+	ok(KC.read_count(gc, "monad") == 10 and KC.read_count(gc, "tetrad") == 11,
+		"with nothing locked: every Monad (10) and every Tetrad (11)")
+	gc.locks["monad_gas"] = true
+	gc.locks["earth"] = true
+	gc.locks["cat_symmetric"] = true
+	ok(KC.read_count(gc, "monad") == 5 and KC.read_count(gc, "tetrad") == 4,
+		"locked kinds left out, a category lock too (5 Monads, 4 Tetrads; got %d, %d)" % [
+			KC.read_count(gc, "monad"), KC.read_count(gc, "tetrad")])
+	for k in gc.monad: gc.monad[k] = BigNum.zero()
+	for k in gc.tetrad: gc.tetrad[k] = BigNum.zero()
+	for k in gc.locks: gc.locks[k] = false
+
 	print("=== the stack holds Uonites and Foci ===")
 	var u0: int = gc.get_total_uonites_assigned().to_int()
 	var f0: int = gc.get_total_foci_assigned()
