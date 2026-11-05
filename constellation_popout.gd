@@ -224,12 +224,12 @@ var _info_art_achievement: RichTextLabel = null
 # hands over with set_rune_board() since the board lives on the CanvasLayer.
 @onready var _inscribe_runes_btn : Button     = get_node(RUNES_BASE_PATH + "/InscribeRunesButton")
 var _rune_board: Control = null
-# Study Constellation, above Inscribe Runes (2026-11-04), so the puzzle opens
-# from here instead of closing this panel for the button under the
-# Constellation box. It is that button's twin: the box's panel
+# Study Constellation, at the bottom of the Constellation column (2026-11-04;
+# first placed above Inscribe Runes), so the puzzle opens from here instead
+# of closing this panel for the button under the Constellation box. It is that button's twin: the box's panel
 # (constellation_panel.gd, handed over with set_study_panel()) owns whether
 # Study is revealed and opens it, for the constellation chosen here.
-@onready var _study_btn : Button = get_node(RUNES_BASE_PATH + "/StudyConstellationButton")
+@onready var _study_btn : Button = get_node(PANEL_BASE_PATH + "/StudyConstellationButton")
 var _study_panel: Node = null
 
 const DEFAULT_TITLE_TEXT: String = "The Constellation"

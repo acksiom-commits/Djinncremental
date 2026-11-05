@@ -43,8 +43,8 @@ func _check_page(scene: String) -> void:
 	pop.show_slot_grid()
 	pop._on_tab_pressed()
 	await process_frame
-	ok(btn.get_parent().get_child(btn.get_index() + 1).name == "InscribeRunesButton",
-		"it sits directly above Inscribe Runes")
+	ok(btn.get_parent().name == "SelectorVBox" and btn.get_index() == btn.get_parent().get_child_count() - 1,
+		"it is the last thing in the Constellation column")
 
 	cp._study_btn.disabled = true
 	await process_frame
@@ -52,6 +52,18 @@ func _check_page(scene: String) -> void:
 	cp.reveal_study_button()
 	await process_frame
 	ok(btn.visible, "shown once it is revealed")
+	# With it shown, the panel keeps its height: the column must not outgrow it
+	# and push the panel's bottom edge down (it did by 5 px at 75 px tall).
+	pop._selected_slot = 2
+	pop._refresh_info_panel()
+	await process_frame
+	await process_frame
+	ok(is_equal_approx(pop._panel.size.y, pop.PANEL_HEIGHT),
+		"the panel stays %.0f px tall with the button shown (%.0f)" % [pop.PANEL_HEIGHT, pop._panel.size.y])
+	var inscribe: Button = pop.find_child("InscribeRunesButton", true, false)
+	ok(absf(btn.get_global_rect().position.y - inscribe.get_global_rect().position.y) < 0.5 \
+			and absf(btn.get_global_rect().end.y - inscribe.get_global_rect().end.y) < 0.5,
+		"it lines up with Inscribe Runes, top and bottom")
 
 	var pick: int = -1
 	for id in [2, 1, 0]:
