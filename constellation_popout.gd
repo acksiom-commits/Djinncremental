@@ -47,9 +47,10 @@ const TIER_COLORS: Dictionary = {
     "art":   Color(0.85, 0.70, 0.95),
 }
 
-# Full per-tier breakdown display (InfoTierEffectsLabel) — always lists all
-# four tiers regardless of the constellation's current progress, so the
-# player can see the whole ladder at a glance, not just what's next.
+# Full per-tier breakdown — all four tiers regardless of the constellation's
+# current progress, so the player can see the whole ladder at a glance. Since
+# 2026-11-04 it is the slot buttons' tooltip (_tier_effects_tooltip()); the
+# panel's InfoTierEffectsLabel shows only the current tier.
 const TIER_ORDER: Array = ["dark", "stars", "lines", "art"]
 const TIER_DISPLAY_NAMES: Dictionary = {
     "dark": "Dark", "stars": "Stars", "lines": "Lines", "art": "Art",
@@ -115,11 +116,12 @@ func _phial_tier_rate(def: Dictionary, tier: String) -> String:
     return _fmt_bonus_val(_coerce_float(rates.get(tier), 0.0))
 
 
-## One tier's ladder text for the Phial: "25 per Uonite, max 3108".
+## One tier's ladder text for the Phial: "25/Uonite, max 3108" (author,
+## 2026-11-04: "/Uonite", not "per Uonite").
 func _phial_tier_text(def: Dictionary, tier: String) -> String:
     if _phial_tier_cap_bignum(tier).is_zero():
         return "+0"
-    return "%s per Uonite, max %s" % [_phial_tier_rate(def, tier),
+    return "%s/Uonite, max %s" % [_phial_tier_rate(def, tier),
         _phial_tier_cap_bignum(tier).to_display_string()]
 
 const FEED_COLORS: Array = [
@@ -222,6 +224,13 @@ var _info_art_achievement: RichTextLabel = null
 # hands over with set_rune_board() since the board lives on the CanvasLayer.
 @onready var _inscribe_runes_btn : Button     = get_node(RUNES_BASE_PATH + "/InscribeRunesButton")
 var _rune_board: Control = null
+# Study Constellation, above Inscribe Runes (2026-11-04), so the puzzle opens
+# from here instead of closing this panel for the button under the
+# Constellation box. It is that button's twin: the box's panel
+# (constellation_panel.gd, handed over with set_study_panel()) owns whether
+# Study is revealed and opens it, for the constellation chosen here.
+@onready var _study_btn : Button = get_node(RUNES_BASE_PATH + "/StudyConstellationButton")
+var _study_panel: Node = null
 
 const DEFAULT_TITLE_TEXT: String = "The Constellation"
 
@@ -310,6 +319,7 @@ func _process(_delta: float) -> void:
         _refresh_slots()
         _refresh_allocation_display()
         _refresh_info_panel()
+        _refresh_study_button()
     _hold_repeat.tick(_delta)
 
 
@@ -403,6 +413,31 @@ func set_rune_board(board: Control) -> void:
     _inscribe_runes_btn.pressed.connect(board.open)
 
 
+## The Constellation box's panel (constellation_panel.gd). The Study button
+## here shows once that panel's Study button is revealed and opens the Study
+## puzzle through it. The puzzle draws over this panel, which stays open.
+func set_study_panel(panel: Node) -> void:
+    _study_panel = panel
+    _study_btn.pressed.connect(_on_study_pressed)
+    _refresh_study_button()
+
+
+## Opens Study for the constellation chosen here. If the box doesn't show it
+## yet (opening the panel can choose constellation 0 without telling the
+## box), it is sent first, the same way a slot click sends it.
+func _on_study_pressed() -> void:
+    if _selected_slot < 0 or _study_panel == null:
+        return
+    if _study_panel.active_constellation() != _selected_slot:
+        constellation_selected.emit(_selected_slot)
+    _study_panel.open_study()
+
+
+func _refresh_study_button() -> void:
+    _study_btn.visible = _study_panel != null and _study_panel.is_study_revealed()
+    _study_btn.disabled = _selected_slot < 0
+
+
 func _input(event: InputEvent) -> void:
     if not _is_open:
         return
@@ -410,6 +445,9 @@ func _input(event: InputEvent) -> void:
     if _rune_board and _rune_board.visible:
         return
     if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+        # Likewise the Study puzzle's, opened from here over this panel.
+        if _study_panel and _study_panel.is_study_open():
+            return
         if _panel.get_global_rect().has_point(event.global_position):
             return
         if _tab_btn.get_global_rect().has_point(event.global_position):
@@ -534,6 +572,7 @@ func _refresh_slots() -> void:
                 "art":   tint = SLOT_ART
                 _:       tint = SLOT_DARK
         slot.add_theme_stylebox_override("normal", _make_slot_style(tint))
+        slot.tooltip_text = _tier_effects_tooltip(id)
         var fx = slot.get_node_or_null("BorderFx")
         if fx and _gc:
             fx.set_effects(
@@ -1089,17 +1128,19 @@ func _refresh_art_achievement_display(constellation_id: int) -> void:
     var bonus_mult: float = _gc.get_constellation_art_tier_bonus(constellation_id)
     var pct: float = (bonus_mult - 1.0) * 100.0
     _info_art_achievement.visible = true
-    _info_art_achievement.text = "[font_size=13]Art-Tier Achievements:[/font_size]\n[color=#ffd27f]%d full-tier crossing%s — Spark Endowment +%.1f%%[/color]" \
+    # No "Art-Tier Achievements:" heading (author, 2026-11-04): the line alone.
+    _info_art_achievement.text = "[color=#ffd27f]%d full-tier crossing%s — Spark Endowment +%.1f%%[/color]" \
         % [crossings, "" if crossings == 1 else "s", pct]
 
 
-## Always-visible ladder of this constellation's bonus at all four tiers
-## (Dark/Stars/Lines/Art), with the current tier picked out — separate from
-## InfoBonusLabel above, which only ever shows the CURRENT tier's value.
-## Only meaningful for constellations with a tiered bonus_levels Dictionary
-## (every BUILT_IN one has it); player/patron-authored constellations that
-## fall back to a flat bonus_value have no per-tier ladder to show, so the
-## label is hidden for those, same as it is before any slot is selected.
+## The constellation's effect at its CURRENT tier, one line led by the
+## effect's name: "Cooldown Reduction ▶ Art ×0.1" (author, 2026-11-04). The
+## whole ladder, every tier, moved to the slot buttons' tooltips
+## (_tier_effects_tooltip()). Only meaningful for constellations with a
+## tiered bonus_levels Dictionary (every BUILT_IN one has it); player/patron-
+## authored constellations that fall back to a flat bonus_value have no
+## tiers, so the label is hidden for those, as it is before any slot is
+## selected.
 func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
         bonus_desc: String, current_state: String, solved: bool) -> void:
     if not _info_tier_effects:
@@ -1119,24 +1160,41 @@ func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
         # bonus_desc itself (what the effect IS) is withheld too, not just
         # the per-tier amounts. Only the fact that a tiered bonus exists
         # at all is shown.
-        _info_tier_effects.text = "[font_size=13]Effects by Tier:[/font_size]\n[color=#%s]??? (puzzle unsolved)[/color]" \
-            % Color(0.45, 0.42, 0.55).to_html(false)
+        _info_tier_effects.text = "[color=#%s]%s[/color]" \
+            % [Color(0.45, 0.42, 0.55).to_html(false), UNSOLVED_EFFECT_TEXT]
         return
+    var current_row: String = ""
+    for row in _tier_rows(def, bonus_key):
+        if row[0] == current_state:
+            # One space after the tier name here; the tooltip's ladder keeps
+            # two, which lines its rows up.
+            current_row = String(row[1]).replace("  ", " ")
+    var hi_color: Color = TIER_COLORS.get(current_state, Color.WHITE)
+    var text: String = "[color=#%s][b]%s ▶ %s[/b][/color]" \
+        % [hi_color.to_html(false), bonus_desc, current_row]
+    # The Phial: what its rate and cap add up to right now goes under the
+    # current tier (InfoBonusLabel, which says the same, is hidden in the scene).
+    if bonus_key == "spark_bank_capacity" and _cd and _gc:
+        text += "\n[font_size=13]Banks +%s at the next Expansion (%s Uonites)[/font_size]" \
+            % [_cd.get_phial_spark_bank_amount().to_display_string(), _gc.uonite.to_display_string()]
+    _info_tier_effects.text = text
+
+
+const UNSOLVED_EFFECT_TEXT: String = "??? (puzzle unsolved)"
+
+
+## The constellation's bonus at each tier, in TIER_ORDER, as
+## [tier, "Stars  ×0.5"] pairs. Feeds both the panel's current-tier line and
+## the slot tooltips' full ladder, so the two never disagree.
+func _tier_rows(def: Dictionary, bonus_key: String) -> Array:
     var bonus_levels:  Dictionary = _coerce_dict(def.get("bonus_levels"), {})
     var default_bonus: float      = _coerce_float(def.get("bonus_value"), 1.0)
-    # The other tiers run horizontally in one row; the constellation's
-    # CURRENT tier is pulled out of that row and shown alone on the line
-    # below, still bold/arrow/tier-colored like before -- just no longer
-    # inline with the others, so it reads as "here — of these" rather than
-    # one more item in the same list.
-    var row_parts:    Array  = []
-    var current_line: String = ""
     var is_multiplier: bool = _bonus_is_multiplier(bonus_key)
-    var is_phial_cap: bool  = (bonus_key == "spark_bank_capacity")
+    var rows: Array = []
     for tier in TIER_ORDER:
         var tier_name: String = TIER_DISPLAY_NAMES.get(tier, tier)
         var row_text:  String
-        if is_phial_cap:
+        if bonus_key == "spark_bank_capacity":
             # The Phial: rate and cap, not static bonus_levels numbers --
             # see _phial_tier_text().
             row_text = "%s  %s" % [tier_name, _phial_tier_text(def, tier)]
@@ -1145,21 +1203,35 @@ func _refresh_tier_effects_display(def: Dictionary, bonus_key: String,
                 if bonus_levels.has(tier) else default_bonus
             row_text = ("%s  ×%s" % [tier_name, str(val)]) if is_multiplier \
                 else ("%s  +%s" % [tier_name, _fmt_bonus_val(val)])
-        if tier == current_state:
-            var hi_color: Color = TIER_COLORS.get(tier, Color.WHITE)
-            current_line = "[color=#%s][b]▶ %s[/b][/color]" % [hi_color.to_html(false), row_text]
-        else:
-            var dim_color: Color = TIER_COLORS.get(tier, Color.WHITE).darkened(0.35)
-            row_parts.append("[color=#%s]%s[/color]" % [dim_color.to_html(false), row_text])
-    # The Phial's rate-and-cap rows are too long to share a line, and what
-    # they add up to right now goes under the current tier (InfoBonusLabel,
-    # which says the same, is hidden in the scene).
-    var row_sep: String = "\n" if is_phial_cap else "    "
-    if is_phial_cap and _cd and _gc:
-        current_line += "\n[font_size=13]Banks +%s at the next Expansion (%s Uonites)[/font_size]" \
-            % [_cd.get_phial_spark_bank_amount().to_display_string(), _gc.uonite.to_display_string()]
-    _info_tier_effects.text = "[font_size=13]%s — Effects by Tier:[/font_size]\n%s\n%s" \
-        % [bonus_desc, row_sep.join(row_parts), current_line]
+        rows.append([tier, row_text])
+    return rows
+
+
+## A slot button's tooltip: the constellation's effect at every tier, the
+## current one marked (author, 2026-11-04: moved here off the panel). An
+## unsolved puzzle withholds it exactly as the panel does: "??? (puzzle
+## unsolved)" once The Archon is solved, nothing before.
+func _tier_effects_tooltip(id: int) -> String:
+    if not _cd:
+        return ""
+    var def: Dictionary = _cd.get_constellation_def(id)
+    var bonus_key: String = _coerce_string(def.get("bonus_key"), "")
+    if def.is_empty() or not def.has("bonus_levels") or bonus_key == "":
+        return ""
+    if not _is_solved(id):
+        return ("Effects by Tier: " + UNSOLVED_EFFECT_TEXT) \
+            if _unsolved_bonus_placeholders_revealed() else ""
+    var bonus_desc: String = BONUS_DESCRIPTIONS.get(
+        bonus_key, bonus_key.capitalize().replace("_", " "))
+    var state: String = _cd.get_visual_state(id)
+    var lines: Array = ["%s — Effects by Tier" % bonus_desc]
+    for row in _tier_rows(def, bonus_key):
+        lines.append(("▶ %s" if row[0] == state else "    %s") % row[1])
+    return "\n".join(lines)
+
+
+func _is_solved(id: int) -> bool:
+    return _gc != null and _gc._assignment_int("constellation_%d_solve_count" % id, 0) > 0
 
 
 func _coerce_int(val, default: int) -> int:

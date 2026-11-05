@@ -138,13 +138,18 @@ func run() -> void:
 	gc.assignments["constellation_%d_solve_count" % PHIAL_ID] = 1
 	p._selected_slot = PHIAL_ID
 	p._refresh_info_panel()
-	var ladder: String = p._info_tier_effects.get_parsed_text()
+	# Since 2026-11-04 the panel shows the current tier (Art here) and the
+	# full ladder is the slot button's tooltip.
+	var ladder: String = p._tier_effects_tooltip(PHIAL_ID)
+	var line: String = p._info_tier_effects.get_parsed_text()
 	var art_cap: String = gc.get_effective_storage_cap().to_display_string()
-	ok(ladder.contains("Stars  1 per Uonite") and ladder.contains("Lines  5 per Uonite"),
-		"ladder shows the Stars and Lines rates")
-	ok(ladder.contains("Art  25 per Uonite, max %s" % art_cap), "ladder shows Art's rate and cap (%s)" % art_cap)
-	ok(ladder.contains("Banks +825 at the next Expansion (33 Uonites)"),
-		"ladder shows what the bank pays now, not the cap")
+	ok(ladder.contains("Stars  1/Uonite") and ladder.contains("Lines  5/Uonite"),
+		"the tooltip ladder shows the Stars and Lines rates")
+	ok(ladder.contains("Art  25/Uonite, max %s" % art_cap), "the tooltip ladder shows Art's rate and cap (%s)" % art_cap)
+	ok(line.contains("Spark Bank ▶ Art 25/Uonite, max %s" % art_cap) and not line.contains("Stars"),
+		"the panel line shows Art's rate and cap alone")
+	ok(line.contains("Banks +825 at the next Expansion (33 Uonites)"),
+		"the panel line shows what the bank pays now, not the cap")
 	p.queue_free()
 
 	# Restore live state.

@@ -187,6 +187,8 @@ func _setup_constellation_popout() -> void:
     _constellation_panel = find_child("ConstellationPanel", true, false)
     if _constellation_panel:
         _constellation_popout.constellation_selected.connect(_constellation_panel.on_constellation_selected)
+        # The slideout's Study button, twin of the box's (2026-11-04).
+        _constellation_popout.set_study_panel(_constellation_panel)
     _constellation_popout.constellation_selected.connect(_puzzle_pipeline.select)
     _study_overlay = get_parent().get_node_or_null("ConstellationStudyOverlay")
     if _study_overlay and _study_overlay.has_signal("reset_requested"):

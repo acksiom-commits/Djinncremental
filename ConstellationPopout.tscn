@@ -371,6 +371,14 @@ text = "Each Sigil's Runes fit on the inscription board."
 horizontal_alignment = 1
 autowrap_mode = 3
 
+[node name="StudyConstellationButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/RunesVBox" unique_id=1188400120]
+visible = false
+custom_minimum_size = Vector2(0, 75)
+layout_mode = 2
+tooltip_text = "Study the chosen constellation's puzzle"
+text = "STUDY
+CONSTELLATION"
+
 [node name="InscribeRunesButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/RunesVBox" unique_id=1188400108]
 custom_minimum_size = Vector2(0, 75)
 layout_mode = 2

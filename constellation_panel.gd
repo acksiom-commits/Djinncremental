@@ -161,9 +161,39 @@ func on_constellation_selected(constellation_id: int) -> void:
 
 
 func _on_study_pressed() -> void:
-    var overlay := get_tree().root.find_child("ConstellationStudyOverlay", true, false)
+    open_study()
+
+
+## Opens the Study puzzle for the constellation in the box. The one handler
+## for both Study buttons: this panel's, and its twin in the Constellation
+## slideout (constellation_popout.gd), whose choice sets _active_id.
+func open_study() -> void:
+    var overlay := _get_study_overlay()
     if overlay and overlay.has_method("show_for_constellation"):
         overlay.show_for_constellation(_active_id)
+
+
+## The constellation in the box, which Study opens.
+func active_constellation() -> int:
+    return _active_id
+
+
+## Whether Study Constellation has been revealed (reveal_study_button()).
+## The slideout's Study button reads this, so both show together.
+func is_study_revealed() -> bool:
+    return not _study_btn.disabled
+
+
+func is_study_open() -> bool:
+    var overlay := _get_study_overlay()
+    return overlay != null and overlay.visible
+
+
+var _study_overlay: Node = null
+func _get_study_overlay() -> Node:
+    if not is_instance_valid(_study_overlay):
+        _study_overlay = get_tree().root.find_child("ConstellationStudyOverlay", true, false)
+    return _study_overlay
 
 
 ## Reveals the Study Constellation button, hidden by default until the

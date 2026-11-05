@@ -60,7 +60,8 @@ func run() -> void:
 	var b: Array = _block(p)
 	ok(p._info_vbox.visible, "precondition: the info panel is showing for The Spark")
 	ok(not b[0] and not p._info_tier_effects.visible and not p._info_tier_effects_sep.visible,
-		"Archon unsolved: The Spark shows no 'Effects by Tier' block, line or separator")
+		"Archon unsolved: The Spark shows no effect line or separator")
+	ok(p._tier_effects_tooltip(1) == "", "Archon unsolved: The Spark's slot has no Effects by Tier tooltip")
 
 	# The Archon itself, unsolved.
 	p._selected_slot = 0
@@ -70,12 +71,20 @@ func run() -> void:
 	# Solve The Archon once: its real ladder shows, and The Spark's placeholder returns.
 	gc.assignments[ARCHON_KEY] = 1
 	b = _block(p)
-	ok(b[0] and str(b[1]).contains("Effects by Tier") and not str(b[1]).contains("???"),
-		"Archon solved: its own block shows its real ladder")
+	# Since 2026-11-04 the panel shows only the current tier, led by the
+	# effect's name ("Archon Title Slots ▶ Dark +1"); the ladder is the tooltip.
+	ok(b[0] and str(b[1]).contains("Bonus Volitions ▶ Dark +1") and not str(b[1]).contains("???") \
+			and not str(b[1]).contains("Effects by Tier"),
+		"Archon solved: its own line shows its effect at the current tier (%s)" % str(b[1]))
+	var tip0: String = p._tier_effects_tooltip(0)
+	ok(tip0.contains("Effects by Tier") and tip0.count("\n") == 4 and not tip0.contains("???"),
+		"Archon solved: its slot's tooltip lists all four tiers")
 	p._selected_slot = 1
 	b = _block(p)
-	ok(b[0] and str(b[1]).contains("Effects by Tier:") and str(b[1]).contains("??? (puzzle unsolved)"),
-		"Archon solved: The Spark shows 'Effects by Tier:' and '??? (puzzle unsolved)' again")
+	ok(b[0] and str(b[1]).contains("??? (puzzle unsolved)"),
+		"Archon solved: The Spark's line shows '??? (puzzle unsolved)' again")
+	ok(p._tier_effects_tooltip(1) == "Effects by Tier: ??? (puzzle unsolved)",
+		"Archon solved: The Spark's slot tooltip says the same")
 
 	# A solved constellation is never hidden by the gate, even with the
 	# Archon count at 0 (a hand-edited save, or any future ordering).
@@ -84,6 +93,17 @@ func run() -> void:
 	b = _block(p)
 	ok(b[0] and not str(b[1]).contains("???"),
 		"a solved Spark shows its real ladder whatever the Archon's count")
+
+	# Art-tier crossings show as their line alone, with no "Art-Tier
+	# Achievements:" heading (author, 2026-11-04).
+	var saved_crossings = gc.constellation_art_tier_crossings.duplicate()
+	gc.constellation_art_tier_crossings[1] = 2
+	_block(p)
+	var art: String = str(p._info_art_achievement.text)
+	ok(p._info_art_achievement.visible and art.contains("2 full-tier crossings") \
+			and not art.contains("Art-Tier Achievements"),
+		"art crossings show as one line, no heading (%s)" % art)
+	gc.constellation_art_tier_crossings = saved_crossings
 
 	gc.assignments = saved_assign
 	cd.unlocked = saved_unlocked

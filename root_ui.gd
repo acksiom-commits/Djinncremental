@@ -411,6 +411,8 @@ func _ready() -> void:
             _constellation_popout.constellation_selected.connect(_cp.on_constellation_selected)
             _constellation_popout.constellation_selected.connect(_on_constellation_selected_logic_puzzle)
             _constellation_popout.panel_first_opened.connect(_on_constellation_first_opened)
+            # The slideout's Study button, twin of the box's (2026-11-04).
+            _constellation_popout.set_study_panel(_cp)
         # The Rune fitting board sits on the CanvasLayer over everything,
         # including the slideout (z 100) whose Runes column opens it.
         var rune_board: Control = _RuneFittingPopout.new()
