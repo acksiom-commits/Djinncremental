@@ -50,12 +50,15 @@ func _check_page(scene: String) -> void:
 	await process_frame
 	ok(not btn.visible, "hidden while the box's Study button is unrevealed")
 	cp.reveal_study_button()
+	pop._selected_slot = 2
 	await process_frame
-	ok(btn.visible, "shown once it is revealed")
+	ok(btn.visible, "shown once it is revealed (with a constellation chosen)")
 	# With it shown, the panel keeps its height: the column must not outgrow it
 	# and push the panel's bottom edge down (it did by 5 px at 75 px tall).
 	pop._selected_slot = 2
 	pop._refresh_info_panel()
+	await process_frame
+	await process_frame
 	await process_frame
 	await process_frame
 	ok(is_equal_approx(pop._panel.size.y, pop.PANEL_HEIGHT),
@@ -72,12 +75,19 @@ func _check_page(scene: String) -> void:
 			break
 	# The choice is set directly: a slot click also builds that puzzle, which
 	# is slow and not what this checks. The button's own send is real, below.
+	# With none chosen, the column shows only its title and selector grid
+	# (author, 2026-11-05): Study, the Info section and the allocation block
+	# (Sparks counter, Vol/Foci, feed modes, multipliers, Redistribute) hide.
+	var alloc: Control = pop.get_node(pop.ALLOCATION_BASE_PATH)
 	pop._selected_slot = -1
 	await process_frame
-	ok(btn.disabled, "disabled with no constellation chosen")
+	ok(not btn.visible and btn.disabled, "hidden and disabled with no constellation chosen")
+	ok(not alloc.visible and not pop._info_vbox.visible, "and so are the allocation block and the Info section")
+	ok(pop._slot_grid.visible and pop._title_label.visible, "while the title and selector grid stay")
+	ok(is_equal_approx(pop._panel.size.y, pop.PANEL_HEIGHT), "the panel keeps its height (%.0f)" % pop._panel.size.y)
 	pop._selected_slot = pick
 	await process_frame
-	ok(not btn.disabled, "enabled once one is chosen (%d)" % pick)
+	ok(btn.visible and not btn.disabled and alloc.visible, "all back once one is chosen (%d)" % pick)
 
 	# The box can lag behind the slideout's choice; the button sends the
 	# slideout's first. That send builds the puzzle (slow), and the code is the

@@ -194,6 +194,7 @@ const INFO_BASE_PATH:       String = PANEL_BASE_PATH + "/ConstellationInfoVBox"
 @onready var _vol_value  : Label   = get_node(ALLOCATION_BASE_PATH + "/FociVolHBox/VolValueLabel")
 @onready var _vol_plus   : Button  = get_node(ALLOCATION_BASE_PATH + "/FociVolHBox/VolPlusButton")
 @onready var _feed_hbox  : HBoxContainer = get_node(ALLOCATION_BASE_PATH + "/FeedHBox")
+@onready var _alloc_vbox : VBoxContainer = get_node(ALLOCATION_BASE_PATH)
 ## Manual spark endowment. Deliberately NOT part of _feed_buttons: those
 ## two are mutually-exclusive feed MODES, this is an action, and folding it
 ## into that array would make _refresh_feed_buttons treat it as a third
@@ -253,6 +254,7 @@ func _ready() -> void:
     _vol_plus.pressed.connect(_on_vol_plus)
     _octant_spin.value_changed.connect(_on_octant_changed)
     _octant_spin.visible = _octant_gating_enabled
+    _add_study_spacer()
     _connect_feed_buttons()
     _redistribute_btn.pressed.connect(_on_redistribute_pressed)
     _spark_counter_label.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -433,8 +435,24 @@ func _on_study_pressed() -> void:
     _study_panel.open_study()
 
 
+## An expanding gap just above Study, so the button sits at the bottom of the
+## Constellation column, level with Inscribe Runes, however short the Info
+## section is (the Runes column does the same with its expanding info box).
+## Without it Study rode up under a short Info section, e.g. with only the
+## first constellations unlocked.
+func _add_study_spacer() -> void:
+    var col: Node = _study_btn.get_parent()
+    var gap := Control.new()
+    gap.name = "StudySpacer"
+    gap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    col.add_child(gap)
+    col.move_child(gap, _study_btn.get_index())
+
+
 func _refresh_study_button() -> void:
-    _study_btn.visible = _study_panel != null and _study_panel.is_study_revealed()
+    # Hidden, not just disabled, with no constellation chosen (2026-11-05).
+    _study_btn.visible = _study_panel != null and _study_panel.is_study_revealed() and _selected_slot >= 0
     _study_btn.disabled = _selected_slot < 0
 
 
@@ -661,6 +679,12 @@ func _on_slot_pressed(id: int) -> void:
 func _refresh_allocation_display() -> void:
     if not _gc:
         return
+    # With no constellation chosen the column shows only its title and the
+    # selector grid: the Sparks counter, Vol/Foci, feed modes, multipliers
+    # and Redistribute all hide (author, 2026-11-05), like the Info section
+    # (_refresh_info_panel()) and Study (_refresh_study_button()). The panel
+    # keeps its fixed height, so nothing else moves.
+    _alloc_vbox.visible = _selected_slot >= 0
     if _selected_slot < 0:
         if _foci_value: _foci_value.text = "-"
         if _vol_value:  _vol_value.text  = "-"
