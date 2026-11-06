@@ -3,8 +3,9 @@ extends PanelContainer
 ## Primordial (journal_popout.gd set_commands_view(); SysDoc §7.3). It first
 ## sat in the Constellation box; the author moved it here, 2026-11-05.
 ##
-##   header   Run/Pause (GameContext.kaleb_running) and "+ Command", the
-##            palette (kaleb_commands.gd)
+##   header   Run/Pause (GameContext.kaleb_running), Restart (back to bar 1,
+##            GameContext.kaleb_restart()) and "+ Command", the palette
+##            (kaleb_commands.gd)
 ##   list     one row per bar, top to bottom: its number (drag handle), On/Off
 ##            (its Focus switching its workers), its name (drag handle), its
 ##            own settings, and × to remove it (returning its workers and
@@ -47,6 +48,7 @@ var gc: Node = null
 var gd: Node = null
 
 var _run_btn: Button
+var _restart_btn: Button
 var _add_btn: MenuButton
 var _list: VBoxContainer
 var _scroll: ScrollContainer
@@ -81,6 +83,10 @@ func _ready() -> void:
     _run_btn.custom_minimum_size = Vector2(60, 0)
     _run_btn.pressed.connect(_on_run_pressed)
     head.add_child(_run_btn)
+    _restart_btn = _small_button("Restart")
+    _restart_btn.tooltip_text = "Send Kaleb back to bar 1 (running or paused stays as it is)"
+    _restart_btn.pressed.connect(gc.kaleb_restart)
+    head.add_child(_restart_btn)
     var title := _label("Kaleb's Commands", TEXT_DIM)
     title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -247,6 +253,7 @@ func _row_style(col: Color) -> StyleBoxFlat:
 func _refresh() -> void:
     _run_btn.text = "Pause" if gc.kaleb_running else "Run"
     _run_btn.disabled = gc.kaleb_stack.is_empty()
+    _restart_btn.disabled = gc.kaleb_index == 0 and gc.kaleb_repeat_done == 0
     for i in _rows.size():
         var r: Dictionary = _rows[i]
         var bar: Dictionary = r["bar"]
@@ -425,23 +432,4 @@ func _option(bar: Dictionary, key: String, keys: Array, width: float) -> OptionB
 
 ## A lock key or count key as the player reads it.
 func _display_name(key: String) -> String:
-    match key:
-        "<", ">=": return key
-        "sparks": return "Sparks"
-        "monad": return "Monads (unlocked)"
-        "tetrad": return "Tetrads (unlocked)"
-        "monad_solid": return "Solid Monads"
-        "monad_liquid": return "Liquid Monads"
-        "monad_gas": return "Gas Monads"
-        "cat_fundament": return "Fundaments"
-        "cat_element": return "Elements"
-        "cat_symmetric": return "Symmetrics"
-        "cat_medial": return "Medials"
-        "iota_uonite", "iota_grains": return "Iota"
-        "mote_uonite", "mote_grains": return "Mote"
-    if gd and gd.RESOURCES.has(key):
-        return String(gd.RESOURCES[key]["name"])
-    if gd and gd.TETRADS.has(key):
-        var shown: String = String(gd.TETRADS[key].get("display", ""))
-        return shown if shown != "" else key.capitalize()
-    return key.capitalize()
+    return KC.display_name(key, gd)

@@ -132,6 +132,22 @@ func run() -> void:
 	view._run_btn.pressed.emit()
 	ok(not gc.kaleb_running, "Pause stops him")
 
+	print("\n=== Restart sends him back to bar 1 ===")
+	gc.kaleb_index = 2
+	gc.kaleb_repeat_done = 1
+	await process_frame
+	ok(not view._restart_btn.disabled, "Restart is live while he's past bar 1")
+	view._restart_btn.pressed.emit()
+	await process_frame
+	ok(gc.kaleb_index == 0 and gc.kaleb_repeat_done == 0 and not gc.kaleb_running,
+		"Restart puts him on bar 1 with nothing done, still paused")
+	ok(view._restart_btn.disabled, "and greys out at bar 1")
+	gc.kaleb_index = 1
+	gc.kaleb_running = true
+	view._restart_btn.pressed.emit()
+	ok(gc.kaleb_index == 0 and gc.kaleb_running, "while running, Restart keeps him running from bar 1")
+	gc.kaleb_running = false
+
 	print("\n=== it fits the Journal ===")
 	var panel: Control = journal._panel
 	var panel_before: Vector2 = panel.size

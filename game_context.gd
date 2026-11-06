@@ -1174,6 +1174,15 @@ func kaleb_move_bar(from: int, to: int) -> void:
         kaleb_index = kaleb_stack.find(current)
 
 
+## Sends Kaleb back to bar 1 with nothing of it done (the Commands tab's
+## Restart; author, 2026-11-05). Running or paused stays as it was. Needed
+## because Run resumes at the bar he paused on, which can skip the stack's
+## setup bars (its Purity Locks, say) until it loops round.
+func kaleb_restart() -> void:
+    kaleb_index = 0
+    kaleb_repeat_done = 0
+
+
 func _load_kaleb_stack(data: Dictionary) -> void:
     kaleb_stack.clear()
     var raw = data.get("kaleb_stack", [])

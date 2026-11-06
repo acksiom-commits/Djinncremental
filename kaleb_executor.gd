@@ -68,7 +68,18 @@ func step() -> void:
                 var timer: String = String(def.get("timer", ""))
                 if timer != "" and now() < float(_timer_ready.get(timer, 0.0)):
                     return
+                # A press at full storage that changes nothing (Compress,
+                # say) would loop forever: pause and say so instead (author,
+                # 2026-11-05). Summon is exempt: Sparks take no storage, so
+                # it works at full storage. Room freed by a press shows as a
+                # changed total, so a Particle or Tetrad press still goes on.
+                var full_before: bool = _storage_full()
+                var stored_before: BigNum = gc.get_storage_total()
                 ui.kaleb_press(def["handler"], gc.kaleb_bar_workers(bar))
+                if full_before and String(bar.get("cmd", "")) != "summon_spark" \
+                        and gc.get_storage_total().equals(stored_before):
+                    _pause(bar, "storage is full")
+                    return
                 if timer != "":
                     _timer_ready[timer] = now() + _timer_interval(timer)
                 gc.kaleb_repeat_done += 1
@@ -76,7 +87,11 @@ func step() -> void:
                     _advance()
                 return
             "lock", "unlock":
-                _set_lock(String(bar.get("target", "")), def["kind"] == "lock")
+                var want: bool = def["kind"] == "lock"
+                var why: String = _set_lock(String(bar.get("target", "")), want)
+                if why != "":
+                    _pause(bar, why)
+                    return
                 _advance()
             "if":
                 if KalebCommands.test(gc, bar):
@@ -94,14 +109,44 @@ func _advance() -> void:
 
 
 ## Puts the Purity Lock on `key` into the wanted state, through the same
-## calls a click makes (they assign and free the lock's Volition). A lock
-## that can't be had (no Volition free, locks not unlocked) is left as is.
-func _set_lock(key: String, want: bool) -> void:
+## calls a click makes (they assign and free the lock's Volition). Returns ""
+## when the lock ends up as wanted, else why it couldn't (no Volition free,
+## locks not unlocked, no target): the caller pauses Kaleb on it (author,
+## 2026-11-05: a lock that silently failed let his stack fill storage with
+## the wrong Monads and Tetrads).
+func _set_lock(key: String, want: bool) -> String:
     if key == "" or not gc.locks.has(key):
-        return
+        return "it has no target"
     if bool(gc.locks.get(key, false)) == want:
-        return
+        return ""
+    if not gc.purity_locks_unlocked:
+        return "Purity Locks aren't unlocked yet"
     if key.begins_with("cat_"):
         gc.toggle_category_lock(key)
     else:
         gc.toggle_lock(key)
+    if bool(gc.locks.get(key, false)) == want:
+        return ""
+    return "no Volition is free for the %s lock" % KalebCommands.display_name(key, _gd())
+
+
+func _storage_full() -> bool:
+    return gc.get_storage_total().is_greater_or_equal(gc.get_effective_storage_cap())
+
+
+func _gd() -> Node:
+    return get_node_or_null("/root/GameData")
+
+
+## Stops the stack where it is (the same bar runs again on Run) and tells the
+## player which bar and why, in the notice line like other milestones.
+func _pause(bar: Dictionary, why: String) -> void:
+    gc.kaleb_running = false
+    var def: Dictionary = KalebCommands.COMMANDS.get(String(bar.get("cmd", "")), {})
+    var what: String = String(def.get("name", bar.get("cmd", "")))
+    if String(def.get("kind", "")) in ["lock", "unlock"] and String(bar.get("target", "")) != "":
+        what += " " + KalebCommands.display_name(String(bar["target"]), _gd())
+    var adm: Node = ui.get("archon_dialogue_manager") if ui else null
+    if adm:
+        adm.enqueue_notification("Kaleb paused at bar %d (%s): %s." % [gc.kaleb_index + 1, what, why])
+        adm.try_show_next_notification()

@@ -42,6 +42,31 @@ const COMMANDS := {
 const COMPARISONS: Array[String] = ["<", ">="]
 
 
+## A lock key or count key as the player reads it (the stack view's menus and
+## Kaleb's pause notices). `gd` is GameData, for resource and Tetrad names.
+static func display_name(key: String, gd: Node = null) -> String:
+    match key:
+        "<", ">=": return key
+        "sparks": return "Sparks"
+        "monad": return "Monads (unlocked)"
+        "tetrad": return "Tetrads (unlocked)"
+        "monad_solid": return "Solid Monads"
+        "monad_liquid": return "Liquid Monads"
+        "monad_gas": return "Gas Monads"
+        "cat_fundament": return "Fundaments"
+        "cat_element": return "Elements"
+        "cat_symmetric": return "Symmetrics"
+        "cat_medial": return "Medials"
+        "iota_uonite", "iota_grains": return "Iota"
+        "mote_uonite", "mote_grains": return "Mote"
+    if gd and gd.RESOURCES.has(key):
+        return String(gd.RESOURCES[key]["name"])
+    if gd and gd.TETRADS.has(key):
+        var shown: String = String(gd.TETRADS[key].get("display", ""))
+        return shown if shown != "" else key.capitalize()
+    return key.capitalize()
+
+
 ## A new bar of `cmd` with its defaults.
 static func make_bar(cmd: String, repeat: int = 1) -> Dictionary:
     return {"cmd": cmd, "repeat": maxi(1, repeat), "on": true,

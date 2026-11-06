@@ -9,9 +9,11 @@ extends "res://dev_tests/test_base.gd"
 # cooldown finish at once (white-box) so the run takes frames, not minutes.
 #
 # Also: every bar holds a Focus and every working bar a Uonite; a bar can't be
-# added with none free; the player's presses do nothing while the stack runs;
+# added with none free; the player's clicks go through while the stack runs;
 # the Fundament-first draw always has a Fundament and respects locks; the
-# stack saves and loads; the Oscillation keeps Persistent Grains only.
+# stack saves and loads; Kaleb pauses with a notice on a Lock bar with no
+# Volition free or a press that makes nothing at full storage; the
+# Oscillation keeps Persistent Grains only.
 
 const KC = preload("res://kaleb_commands.gd")
 const COOLDOWN_BARS := ["SparksCooldownBar", "MonadCooldownBar", "TetradCooldownBar",
@@ -132,12 +134,16 @@ func run() -> void:
 	ok(not gc.kaleb_add_bar(_bar("monad_compress")), "no bar goes in with no Focus free")
 	gc.archon_foci += 20
 
-	print("\n=== while it runs, only Kaleb presses ===")
+	print("\n=== while it runs, the player's clicks go through too ===")
+	# Author, 2026-11-05: at first only Kaleb could press while his stack
+	# ran; reversed when clicking Particles couldn't make room at full storage.
 	gc.kaleb_running = true
 	var s_before: BigNum = gc.sparks.copy()
+	ui._get_cooldown_bar("MonadCooldownBar")._is_ready = true
 	ui._on_monad_compress_pressed()
-	ui._on_summon_spark_pressed()
-	ok(gc.sparks.equals(s_before) and gc.get_monad_total().is_zero(), "the player's presses do nothing")
+	ok(not gc.get_monad_total().is_zero(), "the player's Compress click makes a Monad while Kaleb runs")
+	for k in gc.monad: gc.monad[k] = BigNum.zero()
+	gc.sparks = s_before
 
 	print("\n=== Kaleb runs the stack ===")
 	var frames: int = 0
@@ -283,6 +289,67 @@ func run() -> void:
 				if gc.kaleb_stack[i][key] != before[i][key] or typeof(gc.kaleb_stack[i][key]) != typeof(before[i][key]):
 					same = false
 	ok(same, "after a JSON round trip the stack is the same, with ints still ints")
+
+	print("\n=== Kaleb pauses with a notice when he can't carry out a bar ===")
+	# Author, 2026-11-05: a Lock bar with no Volition free failed silently,
+	# his stack filled storage with mixed Monads and random Tetrads, and he
+	# then looped Compress / If forever at full storage.
+	var said := func(text: String) -> bool:
+		for n in adm.notification_queue:
+			if String(n).contains(text):
+				return true
+		return adm._label != null and String(adm._label.text).contains(text)
+	for k in gc.locks: gc.locks[k] = false
+	gc.volition_slots = [{"category": "volumitions", "target": "", "children": []}]
+	gc.kaleb_stack = []
+	gc.uonite = gc.get_total_uonites_assigned().add(BigNum.from_int(10))
+	gc.archon_foci = gc.get_total_foci_assigned() + 10
+	ok(gc.kaleb_add_bar(_bar("lock", 1, {"target": "monad_liquid"})) and gc.kaleb_add_bar(_bar("monad_compress", 3)),
+		"a two-bar stack goes in: Lock Liquid Monads, Compress Monad x3")
+	gc.kaleb_index = 0
+	gc.kaleb_repeat_done = 0
+	gc.kaleb_running = true
+	kaleb.step()
+	ok(not gc.kaleb_running and gc.kaleb_index == 0, "a Lock bar with no Volition free pauses him at that bar")
+	ok(said.call("Kaleb paused at bar 1 (Lock Liquid Monads): no Volition is free for the Liquid Monads lock"),
+		"and the notice says which bar and why")
+	gc.volition_slots = [{"category": "", "target": "", "children": []}]
+	gc.kaleb_running = true
+	kaleb.step()
+	ok(gc.locks.get("monad_liquid", false) and gc.kaleb_index == 1 and gc.kaleb_running,
+		"with a Volition free, Run carries on from the same bar and the lock takes")
+
+	gc.storage_cap = BigNum.from_int(1)
+	gc.monad["solid"] = BigNum.from_int(5000)
+	var solid_before: int = gc.monad["solid"].to_int()
+	ui._get_cooldown_bar("MonadCooldownBar")._is_ready = true
+	kaleb.step()
+	ok(not gc.kaleb_running and gc.kaleb_index == 1 and gc.monad["solid"].to_int() == solid_before,
+		"a Compress press at full storage that makes nothing pauses him")
+	ok(said.call("Kaleb paused at bar 2 (Compress Monad): storage is full"), "and says storage is full")
+
+	gc.kaleb_stack = []
+	gc.kaleb_add_bar(_bar("summon_spark"))
+	gc.kaleb_index = 0
+	gc.kaleb_repeat_done = 0
+	kaleb._timer_ready = {}
+	var sp_before: BigNum = gc.sparks.copy()
+	gc.kaleb_running = true
+	kaleb.step()
+	ok(gc.kaleb_running and gc.sparks.is_greater_than(sp_before), "Summon at full storage still works and doesn't pause him")
+
+	gc.kaleb_stack = []
+	gc.kaleb_add_bar(_bar("persistent_particle"))
+	gc.kaleb_index = 0
+	gc.kaleb_repeat_done = 0
+	for k in gc.tetrad: gc.tetrad[k] = BigNum.zero()
+	gc.tetrad["adaemant"] = BigNum.from_int(8)
+	var pp_before: int = gc.persistent_particle.to_int()
+	ui._get_cooldown_bar("ParticleCooldownBar")._is_ready = true
+	kaleb.step()
+	ok(gc.kaleb_running and gc.persistent_particle.to_int() > pp_before,
+		"a press that frees room at full storage (Persistent Particle) goes on without a pause")
+	gc.kaleb_running = false
 
 	scene.queue_free()
 	await process_frame

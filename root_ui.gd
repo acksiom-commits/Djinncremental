@@ -2428,7 +2428,6 @@ func _fmt_recipe(op_key: String) -> String:
 # ==================================================
 func _on_summon_spark_pressed() -> void:
     if _is_tutorial_blocking(): return
-    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar("SparksCooldownBar")
     if bar and not bar.is_ready():
@@ -2449,7 +2448,6 @@ func _on_summon_spark_pressed() -> void:
 
 func _on_monad_compress_pressed() -> void:
     if _is_tutorial_blocking(): return
-    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar("MonadCooldownBar")
     if bar and not bar.is_ready():
@@ -2468,7 +2466,6 @@ func _on_monad_compress_pressed() -> void:
 
 func _on_tetrad_assemble_pressed() -> void:
     if _is_tutorial_blocking(): return
-    if _kaleb_has_the_buttons(): return
     if not _tetrad_assembly_ready: return
     if not production_manager: return
     var bar = _get_cooldown_bar("TetradCooldownBar")
@@ -2503,7 +2500,6 @@ func _on_tetrad_assemble_pressed() -> void:
 
 func _on_iota_assemble_pressed() -> void:
     if _is_tutorial_blocking(): return
-    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar("IotaCooldownBar")
     if bar and not bar.is_ready():
@@ -2521,7 +2517,6 @@ func _on_iota_assemble_pressed() -> void:
 
 func _on_mote_compress_pressed() -> void:
     if _is_tutorial_blocking(): return
-    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar("MoteCooldownBar")
     if bar and not bar.is_ready():
@@ -2539,7 +2534,6 @@ func _on_mote_compress_pressed() -> void:
 
 func _on_particle_compress_pressed() -> void:
     if _is_tutorial_blocking(): return
-    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar("ParticleCooldownBar")
     if bar and not bar.is_ready():
@@ -2558,15 +2552,13 @@ func _on_particle_compress_pressed() -> void:
 # ==================================================
 # KALEB'S COMMAND STACK (SysDoc §7.3)
 # ==================================================
-## True while Kaleb's stack runs and the press isn't his: then only Kaleb
-## presses the production buttons (author, 2026-11-05); the player stops the
-## stack to work by hand.
+## True only during one of Kaleb's presses (kaleb_press()), so his workers
+## multiply it (_get_click_multiplier()). The player's own clicks go through
+## while his stack runs, sharing the same cooldowns (author, 2026-11-05,
+## reversing the earlier Kaleb-only rule: clicking Particles to make room at
+## full storage has to work).
 var _kaleb_pressing: bool = false
 var _kaleb: Node = null
-
-func _kaleb_has_the_buttons() -> bool:
-    return game_context != null and game_context.kaleb_running and not _kaleb_pressing
-
 
 ## Kaleb presses a button: runs the same handler a click runs
 ## (kaleb_executor.gd checks the cooldown first). `uonites` is the bar's
@@ -2615,7 +2607,6 @@ func _on_persistent_grain_pressed() -> void:
 
 func _press_persistent(fn: String, bar_name: String) -> void:
     if _is_tutorial_blocking(): return
-    if _kaleb_has_the_buttons(): return
     if not production_manager: return
     var bar = _get_cooldown_bar(bar_name) if bar_name != "" else null
     if bar and not bar.is_ready():
