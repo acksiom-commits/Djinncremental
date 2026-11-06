@@ -2860,7 +2860,7 @@ func _spawn_spark_effect() -> void:
 # ==================================================
 func _on_row_clicked(resource_key: String) -> void:
     if not game_context: return
-    game_context.toggle_lock(resource_key)
+    game_context.toggle_lock(_row_stock_key(resource_key))
 
 
 func _setup_resource_rows() -> void:
@@ -2991,8 +2991,44 @@ func _process(delta: float) -> void:
 
 ## A resource row's label, with the Parent-lock sweep when its purity lock is
 ## held by a Parent Volition (see _lock_sweep_if_parent()).
-func _set_row_label(row: Node, text: String) -> void:
-    row.set_label(_lock_sweep_if_parent(text, String(row.resource_key)))
+func _set_row_label(row: Node, text: String, lock_key: String = "") -> void:
+    row.set_label(_lock_sweep_if_parent(text, lock_key if lock_key != "" else String(row.resource_key)))
+
+
+## Will/Form switch: on Form the Particle, Iota and Mote rows count the Grain
+## branch (Iota and Mote become iota_grains/mote_grains; both branches share
+## one Particle stock), with the Persistent stock beside it, "· P n"; the
+## Grain row (shown only on Form) gets its Persistent Grains the same way
+## (author, 2026-11-05: "Both, side by side"). On Will the rows are unchanged.
+## A row's lock follows the stock it counts, for its colour, its sweep and a
+## click (_on_row_clicked()).
+const _FORM_ROW_STOCK := {"iota_uonite": "iota_grains", "mote_uonite": "mote_grains"}
+const _FORM_ROW_PERSISTENT := {"particle": "persistent_particle", "iota_uonite": "persistent_iota",
+    "mote_uonite": "persistent_mote", "grain": "persistent_grain"}
+
+
+func _is_form() -> bool:
+    return game_context != null and not game_context.will_form_switch_is_will
+
+
+## The stock a resource row counts (and locks) under the Will/Form switch.
+func _row_stock_key(row_key: String) -> String:
+    return String(_FORM_ROW_STOCK.get(row_key, row_key)) if _is_form() else row_key
+
+
+func _set_chain_row(row: Node, label: String) -> void:
+    var row_key: String = String(row.resource_key)
+    var key: String = _row_stock_key(row_key)
+    var locked: bool = game_context.is_locked(key)
+    var created: bool = _ever_created(key)
+    var text: String = "%s: %s" % [label, _fmt(game_context.get(key))]
+    if _is_form() and _FORM_ROW_PERSISTENT.has(row_key):
+        var p_key: String = _FORM_ROW_PERSISTENT[row_key]
+        text += " · P %s" % _fmt(game_context.get(p_key))
+        created = created or _ever_created(p_key)
+    _set_row_label(row, "[color=%s]%s%s[/color]" % [
+        "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
+        text, " 🔒" if locked else ""], key)
 
 
 ## Purity locks all draw gold; the one holding a PARENT Volition also gets a
@@ -3048,33 +3084,13 @@ func _update_counters() -> void:
                     _fmt(game_context.monad["gas"]),
                     " 🔒" if locked else ""])
             "particle":
-                var locked   = game_context.is_locked("particle")
-                var created  = _ever_created("particle")
-                _set_row_label(row, "[color=%s]Particle: %s%s[/color]" % [
-                    "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
-                    _fmt(game_context.particle),
-                    " 🔒" if locked else ""])
+                _set_chain_row(row, "Particle")
             "iota_uonite":
-                var locked   = game_context.is_locked("iota_uonite")
-                var created  = _ever_created("iota_uonite")
-                _set_row_label(row, "[color=%s]Iota: %s%s[/color]" % [
-                    "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
-                    _fmt(game_context.iota_uonite),
-                    " 🔒" if locked else ""])
+                _set_chain_row(row, "Iota")
             "mote_uonite":
-                var locked   = game_context.is_locked("mote_uonite")
-                var created  = _ever_created("mote_uonite")
-                _set_row_label(row, "[color=%s]Mote: %s%s[/color]" % [
-                    "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
-                    _fmt(game_context.mote_uonite),
-                    " 🔒" if locked else ""])
+                _set_chain_row(row, "Mote")
             "grain":
-                var locked   = game_context.is_locked("grain")
-                var created  = _ever_created("grain")
-                _set_row_label(row, "[color=%s]Grain: %s%s[/color]" % [
-                    "#ffdd77" if locked else ("#ffffff" if created else "#444444"),
-                    _fmt(game_context.grain),
-                    " 🔒" if locked else ""])
+                _set_chain_row(row, "Grain")
         if _uonite_icosa and game_context.ui_unlocks.get("uonite_creation", false):
             # Purely cosmetic construction-cycle display -- driven by the
             # RAW mote_uonite stockpile wrapping every 20, NOT by
