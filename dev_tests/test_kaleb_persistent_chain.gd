@@ -218,6 +218,45 @@ func run() -> void:
 	gc.archon_foci = gc.get_total_foci_assigned() + 1
 	var ib: Dictionary = _bar("if")
 	ok(gc.kaleb_add_bar(ib) and gc.kaleb_bar_workers(ib) == 0, "an If bar needs just its one Focus")
+	# A Summon Spark bar's workers multiply its summons the same way, as the
+	# wheel's Spark automation is multiplied by its Uonites and Foci.
+	gc.kaleb_stack = []
+	gc.kaleb_index = 0
+	gc.kaleb_repeat_done = 0
+	gc.uonite = gc.get_total_uonites_assigned().add(BigNum.from_int(3))
+	gc.archon_foci = gc.get_total_foci_assigned() + 1
+	var sb: Dictionary = _bar("summon_spark", 1)
+	gc.kaleb_add_bar(sb)
+	gc.kaleb_change_bar_workers(sb, 1)
+	gc.kaleb_change_bar_workers(sb, 1)
+	# Measured on the summoned-Sparks total: the balance is ~1e6 here, where a
+	# BigNum difference of 3 can come back as 2.999… and floor to 2.
+	var s0: float = gc.totals_created["sparks_summoned"].to_float()
+	kaleb.clock_override = 1000.0
+	kaleb._timer_ready.clear()
+	sb["repeat"] = 99
+	gc.kaleb_running = true
+	kaleb.step()
+	var per_summon: int = int(1.0 * pm.get_sparks_multiplier()) if pm.get_sparks_multiplier() > 1.0 else 1
+	var summoned: int = roundi(gc.totals_created["sparks_summoned"].to_float() - s0)
+	ok(gc.kaleb_bar_workers(sb) == 3 and summoned == 3 * click_m * per_summon,
+		"a Summon Spark bar with 3 workers summoned %d Sparks in one press (3 x click %d x %d a summon)" % [summoned, click_m, per_summon])
+	# Summon Spark has no cooldown bar, but Kaleb's presses wait the wheel's
+	# 1-second Spark timer (author, 2026-11-05).
+	var spark_timer: float = float(pm.get_timer_intervals()["sparks_summon"])
+	var steps_waited := 0
+	for n in 30:
+		kaleb.step()
+		steps_waited += 1
+	var after_wait: int = roundi(gc.totals_created["sparks_summoned"].to_float() - s0)
+	kaleb.clock_override = 1000.0 + spark_timer
+	kaleb.step()
+	var after_timer: int = roundi(gc.totals_created["sparks_summoned"].to_float() - s0)
+	gc.kaleb_running = false
+	kaleb.clock_override = -1.0
+	ok(after_wait == summoned and after_timer == 2 * summoned,
+		"his next Summon waits the %.1f s Spark timer (%d more steps: no summon; then one: +%d)" % [
+			spark_timer, steps_waited, after_timer - after_wait])
 	gc.kaleb_stack = saved_stack
 	gc.kaleb_stack.append(cb)
 	gc.kaleb_stack.append(fb)   # so the save round trip below carries a Focus-worker bar

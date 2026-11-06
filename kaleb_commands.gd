@@ -16,8 +16,12 @@ extends RefCounted
 ## workers, Uonites or, when none is free, Foci (GameContext.kaleb_bar_workers).
 
 const COMMANDS := {
+    # The Summon Spark button has no cooldown bar (a player may click it as
+    # fast as they like), so Kaleb's presses wait the wheel's Spark timer
+    # instead ("timer", production_manager.get_timer_intervals(); author,
+    # 2026-11-05): a Summon worker then makes what a wheel worker makes.
     "summon_spark":        {"name": "Summon Spark",      "kind": "press",
-        "handler": "_on_summon_spark_pressed",    "cooldown": "SparksCooldownBar"},
+        "handler": "_on_summon_spark_pressed",    "cooldown": "", "timer": "sparks_summon"},
     "monad_compress":      {"name": "Compress Monad",    "kind": "press",
         "handler": "_on_monad_compress_pressed",  "cooldown": "MonadCooldownBar"},
     "tetrad_assemble":     {"name": "Assemble Tetrad",   "kind": "press",

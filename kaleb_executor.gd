@@ -16,6 +16,26 @@ const MAX_INSTANT_STEPS: int = 64
 var ui: Node = null
 var gc: Node = null
 
+## When each command timer (KalebCommands "timer") is next ready, in now()'s
+## seconds. Kaleb's own: the player's clicks don't touch it.
+var _timer_ready: Dictionary = {}
+## Tests and the timing simulation set this to run Kaleb on their own clock;
+## negative means the real clock.
+var clock_override: float = -1.0
+
+
+func now() -> float:
+    return clock_override if clock_override >= 0.0 else Time.get_ticks_msec() / 1000.0
+
+
+## The timer's length: the same production timer the wheel's automation
+## uses for that operation, Hourglass included.
+func _timer_interval(timer: String) -> float:
+    var pm: Node = get_node_or_null("/root/ProductionManager")
+    if pm == null:
+        return 1.0
+    return float(pm.get_timer_intervals().get(timer, 1.0))
+
 
 func setup(root_ui: Node, game_context: Node) -> void:
     ui = root_ui
@@ -44,7 +64,13 @@ func step() -> void:
                 var cd: Node = ui._get_cooldown_bar(def["cooldown"]) if def["cooldown"] != "" else null
                 if cd and not cd.is_ready():
                     return   # wait for the button
+                # A command with a timer of its own (no cooldown bar) waits it.
+                var timer: String = String(def.get("timer", ""))
+                if timer != "" and now() < float(_timer_ready.get(timer, 0.0)):
+                    return
                 ui.kaleb_press(def["handler"], gc.kaleb_bar_workers(bar))
+                if timer != "":
+                    _timer_ready[timer] = now() + _timer_interval(timer)
                 gc.kaleb_repeat_done += 1
                 if gc.kaleb_repeat_done >= int(bar.get("repeat", 1)):
                     _advance()
