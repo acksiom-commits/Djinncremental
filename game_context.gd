@@ -603,8 +603,13 @@ func grains_created_total() -> BigNum:
 func claim_grain_milestone_foci() -> int:
     var total: BigNum = grains_created_total()
     var owed: int = 0
-    # 10^n as a BigNum, whose exponent counts powers of 1,000, not 10.
-    while total.is_greater_or_equal(BigNum.from_me(pow(10.0, float(next_grain_foci_exp % 3)), next_grain_foci_exp / 3)):
+    # 10^n as a BigNum, whose exponent counts powers of 1,000, not 10:
+    # 10^(n mod 3) x 1000^(n div 3). The floor division is meant.
+    while true:
+        @warning_ignore("integer_division")
+        var thousands: int = next_grain_foci_exp / 3
+        if total.is_less_than(BigNum.from_me(pow(10.0, float(next_grain_foci_exp % 3)), thousands)):
+            break
         owed += 1
         next_grain_foci_exp += 2
     return owed
