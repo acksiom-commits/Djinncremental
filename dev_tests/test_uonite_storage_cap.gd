@@ -82,5 +82,23 @@ func run() -> void:
 	ok(gc.uonite.to_int() == 1,
 		"automated path adds nothing more once the storage cap is already full (got %d)" % gc.uonite.to_int())
 
+	print("\n=== at the cap, Create Uonite still Oscillates, keeping the Motes (author, 2026-11-06) ===")
+	# The save that found it: storage_cap 987 -> cap 33, 33 held, 87 Motes.
+	gc.storage_cap        = BigNum.from_int(987)
+	gc.uonite             = BigNum.from_int(33)
+	gc.uonites_this_cycle = 0
+	gc.mote_uonite        = BigNum.from_int(87)
+	gc.sparks             = BigNum.from_int(100000)
+	ok(not pm.manual_create_uonite(), "at the cap (33 of 33) no Uonite is made")
+	ok(pm.oscillate_at_uonite_cap(), "but the press is told to Oscillate")
+	ok(gc.uonite.to_int() == 33 and gc.mote_uonite.to_int() == 87 and gc.sparks.to_int() == 100000,
+		"spending nothing: still 33 Uonites, 87 Motes, the same Sparks")
+	gc.mote_uonite = BigNum.from_int(19)
+	ok(not pm.oscillate_at_uonite_cap(), "with less than a Uonite's 20 Motes it doesn't")
+	gc.mote_uonite = BigNum.from_int(87)
+	gc.uonite      = BigNum.from_int(32)
+	ok(not pm.oscillate_at_uonite_cap(), "below the cap the ordinary path applies instead (it makes the Uonite)")
+	ok(pm.manual_create_uonite() and gc.uonite.to_int() == 33, "and it does: 32 -> 33")
+
 	print("\nALL PASS (%d failures)" % fails if fails == 0 else "\nFAILURES (%d failures)" % fails)
 	finish()

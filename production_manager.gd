@@ -1919,6 +1919,20 @@ func manual_create_uonite() -> bool:
     return true
 
 
+## Create Uonite at the Uonite cap (author, 2026-11-06: "Just trigger the
+## Oscillation"): with a Uonite's worth of Motes banked but no room under
+## get_uonite_storage_cap(), the press still Oscillates, making no Uonite and
+## spending NO Motes or Sparks -- the Motes are to become Phlogiston fuel for
+## Quintessence later, and spending them would reduce that. Without it the
+## cap was a dead end: only an Expansion (The Satchel's ×1.05) raises it,
+## and an Expansion needed a Uonite made. Returns whether to Oscillate; the
+## caller (root_ui.gd) plays the Oscillation, as for a made Uonite.
+func oscillate_at_uonite_cap() -> bool:
+    if gc.get_uonite_storage_cap() - gc.uonite.to_int() > 0:
+        return false   # room for a Uonite: manual_create_uonite() makes one
+    return gc.mote_uonite.is_greater_or_equal(BigNum.from_int(_recipe_cost("uonite_assemble", "mote_uonite")))
+
+
 # ==================================================
 # SINGLE-UNIT ASSEMBLY HELPERS (used by manual actions)
 # ==================================================

@@ -2642,7 +2642,10 @@ func _on_create_uonite_pressed() -> void:
     # see the "Peak white" callback in that function. "Create Uonite" and
     # "Expand" are the same action, not two related ones.
     var any_success: bool = production_manager.manual_create_uonite()
-    if any_success:
+    # At the Uonite cap the press still Oscillates, making no Uonite and
+    # keeping the Motes (author, 2026-11-06; production_manager.gd
+    # oscillate_at_uonite_cap()).
+    if any_success or production_manager.oscillate_at_uonite_cap():
         _play_expansion_animation()
 
 
