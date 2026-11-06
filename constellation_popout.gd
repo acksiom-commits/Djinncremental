@@ -557,7 +557,10 @@ func _build_slots() -> void:
 func _make_slot_button(id: int) -> Button:
     var slot := Button.new()
     slot.name                = "Slot%d" % id
-    slot.custom_minimum_size = Vector2(80, 56)
+    # 52 tall, not 56: with 5+ constellations the grid wraps to a second row,
+    # and at 56 the column then outgrew the panel's fixed 465 px by 4 px, so
+    # the panel stretched and its bottom no longer met the tab's (2026-11-06).
+    slot.custom_minimum_size = Vector2(80, 52)
     slot.add_theme_font_size_override("font_size", 11)
     slot.mouse_filter        = Control.MOUSE_FILTER_STOP
     slot.text                = _get_slot_label(id)
