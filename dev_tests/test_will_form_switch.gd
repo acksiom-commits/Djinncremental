@@ -127,6 +127,36 @@ func run() -> void:
 	ok(new_btn != null, "WillFormSwitchButton exists in RootUI.tscn")
 	ok(new_btn != null and new_btn.find_child("WillFormSwitchInstance", false, false) != null,
 		"WillFormSwitchButton contains the WillFormSwitchInstance overlay")
+
+	print("\n=== loading a save left on Form redraws every Will/Form display ===")
+	# Reported 2026-11-05: the page is built before the save is read, and the
+	# load set the side without announcing it, so a Form save opened showing
+	# the Uonite cluster, a lit WILL box and the Will mini-icons.
+	await process_frame
+	await process_frame
+	gc.will_form_switch_is_will = true
+	gc.emit_signal("will_form_switch_changed", true)
+	await root.get_tree().create_timer(0.5).timeout
+	var data: Dictionary = gc.get_save_data()
+	data["will_form_switch_is_will"] = false
+	gc.load_save_data(data)
+	await root.get_tree().create_timer(0.5).timeout
+	var sw = new_btn.find_child("WillFormSwitchInstance", false, false)
+	ok(not gc.will_form_switch_is_will, "the save loaded on Form")
+	ok(root_ui.find_child("CreateGrainButton", true, false).visible
+			and not root_ui.find_child("CreateUoniteButton", true, false).visible,
+		"the Grain cluster shows and the Uonite one is hidden")
+	ok(is_equal_approx(sw.form_box.get_theme_stylebox("panel").bg_color.r, sw._form_style_lit.bg_color.r),
+		"the FORM box is lit")
+	var icons: Array = root_ui.find_child("ParticleCompressButton", true, false).find_children("*", "Control", false, false) \
+		.filter(func(n): return n.get("side") != null)
+	var right_shown: bool = false
+	var left_hidden: bool = false
+	for ic in icons:
+		if ic.side == "right": right_shown = is_equal_approx(ic.scale.x, 1.0)
+		if ic.side == "left": left_hidden = is_equal_approx(ic.scale.x, 0.0)
+	ok(icons.size() == 2 and right_shown and left_hidden,
+		"the Particle button's Grain mini-icon shows and its Uonite one is hidden (%d icons)" % icons.size())
 	root_ui.queue_free()
 
 	if fails == 0:

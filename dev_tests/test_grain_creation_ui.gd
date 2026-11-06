@@ -127,6 +127,36 @@ func run() -> void:
 	ok(label_text.findn("Grain") != -1 and label_text != "",
 		"the row shows a real, non-empty 'Grain: ...' label after an update pass (got '%s')" % label_text)
 
+	print("\n=== the button reads Create / GRAIN, like Create / UONITE ===")
+	var grain_btn_label: Node = create_grain_btn.find_child("ButtonLabelInstance", false, false)
+	ok(grain_btn_label != null and String(grain_btn_label.top_label.text).contains("Create")
+			and String(grain_btn_label.bottom_label.text).contains("GRAIN"),
+		"CreateGrainButton's label says Create / GRAIN (got '%s' / '%s')" % [
+			grain_btn_label.top_label.text if grain_btn_label else "", grain_btn_label.bottom_label.text if grain_btn_label else ""])
+
+	print("\n=== the lattice fills with Persistent Motes, 4 to a Grain (author, 2026-11-05) ===")
+	var saved_unlock: bool = gc.ui_unlocks.get("grain_creation", false)
+	var saved_pm: BigNum = gc.persistent_mote
+	var saved_mg: BigNum = gc.mote_grains
+	gc.ui_unlocks["grain_creation"] = true
+	gc.mote_grains = BigNum.zero()
+	gc.persistent_mote = BigNum.from_int(3)
+	for _i in 6:
+		root_ui._update_counters()
+	ok(grain_tetra.current_motes == 3, "3 Persistent Motes show 3 of the lattice's 4 (got %d)" % grain_tetra.current_motes)
+	gc.persistent_mote = BigNum.from_int(4)
+	for _i in 6:
+		root_ui._update_counters()
+	ok(grain_tetra.current_motes == 0, "the 4th completes the lattice and it starts over (got %d)" % grain_tetra.current_motes)
+	gc.persistent_mote = BigNum.zero()
+	gc.mote_grains = BigNum.from_int(3)
+	for _i in 6:
+		root_ui._update_counters()
+	ok(grain_tetra.current_motes == 0, "plain mote_grains don't fill it (got %d)" % grain_tetra.current_motes)
+	gc.ui_unlocks["grain_creation"] = saved_unlock
+	gc.persistent_mote = saved_pm
+	gc.mote_grains = saved_mg
+
 	scene_root.queue_free()
 
 	if fails == 0:

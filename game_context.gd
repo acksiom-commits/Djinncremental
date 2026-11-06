@@ -2181,6 +2181,11 @@ func load_save_data(data: Dictionary) -> void:
     purity_locks_unlocked   = _coerce_bool(data.get("purity_locks_unlocked"), false)
     _load_kaleb_stack(data)
     will_form_switch_is_will = _coerce_bool(data.get("will_form_switch_is_will"), true)
+    # The page is built before the save is read (root_ui.gd defers its load),
+    # so its Will/Form displays were drawn for the default, Will: announce
+    # the loaded side, or a save left on Form opened with the Uonite cluster,
+    # a lit WILL box and the Will mini-icons until the switch was pressed.
+    emit_signal("will_form_switch_changed", will_form_switch_is_will)
     grains_this_cycle       = _coerce_int(data.get("grains_this_cycle"), 0)
     motes_this_cycle        = _coerce_int(data.get("motes_this_cycle"), 0)
     uonites_this_cycle      = _coerce_int(data.get("uonites_this_cycle"), 0)

@@ -60,6 +60,7 @@ const BUTTON_LABELS = {
     "TetradAssembleButton":   ["Assemble",    "TETRAD"],
     "GrainAssembleButton":    ["Assemble",    "GRAIN"],
     "CreateUoniteButton":     ["Create",      "UONITE"],
+    "CreateGrainButton":      ["Create",      "GRAIN"],
 }
 
 

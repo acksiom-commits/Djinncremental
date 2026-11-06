@@ -3148,12 +3148,19 @@ func _update_counters() -> void:
             # Grain-branch counterpart of the _uonite_icosa block above --
             # same cosmetic wrap-every-N-Motes reveal, but N is
             # GRAIN_MOTES_PER_UNIT (4), matching grain_tetrahedron.gd's own
-            # 4-face host solid, not the icosahedron's 20. No storage_display
+            # 4-face host solid, not the icosahedron's 20. It counts Kaleb's
+            # PERSISTENT Motes (author, 2026-11-05: "Fill it with Persistent
+            # Motes"), 4 to a Persistent Grain like 4 mote_grains to a plain
+            # one, so making a Persistent Grain leaves the remainder alone.
+            # (mote_grains is made by nothing yet: routing Form's Iota/Mote
+            # buttons to the Grain branch is unbuilt, and the author wants it
+            # for the buttons only, not the wheel.) No storage_display
             # sparkle-icon spawn on completion (spawn_completed_uonite_icon()
             # is Uonite-specific; a Grain equivalent is out of scope here --
             # infrastructure only, per the user's own 2026-10-01 scope call).
-            var g_chunks: BigNum    = game_context.mote_grains.div_int_floor(game_context.GRAIN_MOTES_PER_UNIT)
-            var g_remainder: BigNum = game_context.mote_grains.sub(g_chunks.mul_int(game_context.GRAIN_MOTES_PER_UNIT))
+            var g_motes: BigNum     = game_context.persistent_mote
+            var g_chunks: BigNum    = g_motes.div_int_floor(game_context.GRAIN_MOTES_PER_UNIT)
+            var g_remainder: BigNum = g_motes.sub(g_chunks.mul_int(game_context.GRAIN_MOTES_PER_UNIT))
             var g_target: int       = g_remainder.to_int()
 
             var g_display_changed := false

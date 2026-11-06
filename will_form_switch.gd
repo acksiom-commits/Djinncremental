@@ -87,6 +87,16 @@ func _ready() -> void:
     if parent is BaseButton:
         parent.pressed.connect(_on_parent_pressed)
 
+    # Redraw whenever the side changes from anywhere, not only this button:
+    # loading a save sets it too (game_context.gd load_save_data()).
+    var gc = get_node_or_null("/root/GameContext")
+    if gc and not gc.will_form_switch_changed.is_connected(_on_switch_changed):
+        gc.will_form_switch_changed.connect(_on_switch_changed)
+
+    _refresh()
+
+
+func _on_switch_changed(_is_will: bool) -> void:
     _refresh()
 
 
