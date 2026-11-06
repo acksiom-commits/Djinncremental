@@ -50,6 +50,15 @@ func run() -> void:
 	var kaleb: Node = ui._kaleb
 	kaleb.set_process(false)   # the test steps him
 	ui._tetrad_assembly_ready = true
+	# A tutorial dialogue blocks every press, Kaleb's too, and the loaded save
+	# can set one off as the page starts (First Grain, say, which any Grain
+	# made sets off since 2026-11-05): click through it, as the player would.
+	var adm = ui.archon_dialogue_manager
+	for _i in 200:
+		if adm.current_index < 0:
+			break
+		adm.advance_dialogue()
+	ok(not ui._is_tutorial_blocking(), "no dialogue is blocking the buttons")
 
 	# A clean slate: plenty of Sparks and room, no material, free Volitions
 	# for Kaleb's locks, and Uonites and Foci for his bars.

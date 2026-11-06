@@ -216,6 +216,9 @@ var watermarks: Dictionary = {
 
 # 
 var next_expansion_foci_exp: int = 0   # next power: 10^0=1, 10^2=100, 10^4=10000...
+## The same 1/100/10,000 ladder for Grains made (claim_grain_milestone_foci()),
+## starting at 10^2: the 1st Grain is paid by the First Grain milestone.
+var next_grain_foci_exp: int = 2
 
 # Geometric milestone tracking — next threshold index per resource type
 # Index 1 = 5th, 2 = 25th, 3 = 125th, etc. First creation handled separately.
@@ -585,6 +588,28 @@ func claim_uonite_fibonacci_foci() -> int:
 ## ever lowers. +1 Focus at the 2nd, 3rd, 5th, 8th, 13th, 21st, ... Oscillation;
 ## the 1st is already paid by the Expansion milestone (root_ui.gd,
 ## next_expansion_foci_exp), so, like the Uonite ladder, this starts at 2.
+## Grains made in all, plain (Create Grain) and Persistent (Kaleb) together
+## (author, 2026-11-05: "Plain + Persistent combined"). Lifetime totals, so
+## an Oscillation doesn't lower it.
+func grains_created_total() -> BigNum:
+    return totals_created.get("grain", BigNum.zero()).add(totals_created.get("persistent_grain", BigNum.zero()))
+
+
+## +1 Focus at the 100th, 10,000th, 1,000,000th, ... Grain made, the ladder
+## the Oscillations pay on (next_expansion_foci_exp; author, 2026-11-05). The
+## 1st Grain is paid by the First Grain milestone (root_ui.gd), so this starts
+## at 100. Returns the Foci now owed (more than 1 only when a save crossed
+## several rungs at once) and moves the ladder past them.
+func claim_grain_milestone_foci() -> int:
+    var total: BigNum = grains_created_total()
+    var owed: int = 0
+    # 10^n as a BigNum, whose exponent counts powers of 1,000, not 10.
+    while total.is_greater_or_equal(BigNum.from_me(pow(10.0, float(next_grain_foci_exp % 3)), next_grain_foci_exp / 3)):
+        owed += 1
+        next_grain_foci_exp += 2
+    return owed
+
+
 func claim_oscillation_fibonacci_foci() -> int:
     var owed: int = fibonacci_foci_for_total(expansions) - oscillation_fibonacci_foci_granted
     if owed <= 0:
@@ -1905,6 +1930,7 @@ func get_save_data() -> Dictionary:
     data["oscillation_fibonacci_foci_granted"] = oscillation_fibonacci_foci_granted
     data["expansions"]            = expansions
     data["next_expansion_foci_exp"] = next_expansion_foci_exp
+    data["next_grain_foci_exp"] = next_grain_foci_exp
     data["purity_locks_unlocked"] = purity_locks_unlocked
     data["will_form_switch_is_will"] = will_form_switch_is_will
     data["kaleb_stack"]       = kaleb_stack.duplicate(true)
@@ -2178,6 +2204,7 @@ func load_save_data(data: Dictionary) -> void:
     oscillation_fibonacci_foci_granted = maxi(0, _coerce_int(data.get("oscillation_fibonacci_foci_granted"), 0))
     expansions               =_coerce_int(data.get("expansions"), 0)
     next_expansion_foci_exp = _coerce_int(data.get("next_expansion_foci_exp"), 0)
+    next_grain_foci_exp = maxi(2, _coerce_int(data.get("next_grain_foci_exp"), 2))
     purity_locks_unlocked   = _coerce_bool(data.get("purity_locks_unlocked"), false)
     _load_kaleb_stack(data)
     will_form_switch_is_will = _coerce_bool(data.get("will_form_switch_is_will"), true)

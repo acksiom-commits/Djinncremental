@@ -787,6 +787,23 @@ func _check_uonite_fibonacci_foci() -> void:
         archon_dialogue_manager.try_show_next_notification()
 
 
+## +1 Focus at the 100th, 10,000th, ... Grain made, plain and Persistent
+## together: the Oscillations' 1/100/10,000 ladder (author, 2026-11-05). The
+## 1st Grain is the First Grain milestone's. Bookkeeping in
+## game_context.claim_grain_milestone_foci(); this pays it and says so.
+func _check_grain_milestone_foci() -> void:
+    if not game_context:
+        return
+    var owed: int = game_context.claim_grain_milestone_foci()
+    if owed <= 0:
+        return
+    _grant_foci(owed)
+    if archon_dialogue_manager:
+        archon_dialogue_manager.enqueue_notification("%s Grains made: +%d %s." % [
+            game_context.grains_created_total().to_display_string(), owed, "Focus" if owed == 1 else "Foci"])
+        archon_dialogue_manager.try_show_next_notification()
+
+
 ## Bonus Foci at Fibonacci counts of Oscillations (2, 3, 5, 8, 13, ...), the
 ## same ladder as the Uonite one. The first Oscillation is paid by the
 ## Expansion milestone in _do_prestige_reset(), so this starts at 2.
@@ -1382,7 +1399,7 @@ func _sync_trigger_flags_from_loaded_state() -> void:
     _first_mote_dialogue_triggered = archon_dialogue_manager.first_mote_dialogue_done
     if _first_mote_dialogue_triggered:
         _on_first_mote_dialogue_complete()
-    _first_grain_triggered    = uonite_ever_made or not game_context.totals_created.get("grain",    BigNum.zero()).is_zero()
+    _first_grain_triggered    = uonite_ever_made or not game_context.grains_created_total().is_zero()
     _first_grain_dialogue_triggered = archon_dialogue_manager.first_grain_dialogue_done
     _first_uonite_triggered   = uonite_ever_made
     _nineteenth_mote_triggered = archon_dialogue_manager.nineteenth_mote_done
@@ -1575,16 +1592,19 @@ func _build_simple_triggers() -> void:
                 _grant_foci()
                 archon_dialogue_manager.enqueue_first_mote_dialogue(),
         },
+        # First Grain: either kind, plain or Persistent, since the Grain
+        # Focus ladder counts both and leaves the 1st Grain to this
+        # (author, 2026-11-05; _check_grain_milestone_foci()).
         {
             "guard": "_first_grain_triggered",
-            "condition": func(): return not game_context.grain.is_zero(),
+            "condition": func(): return not game_context.grains_created_total().is_zero(),
             "effect": func():
                 archon_dialogue_manager.enqueue_notification("First Grain: +1 Focus.")
                 archon_dialogue_manager.try_show_next_notification(),
         },
         {
             "guard": "_first_grain_dialogue_triggered",
-            "condition": func(): return not game_context.grain.is_zero(),
+            "condition": func(): return not game_context.grains_created_total().is_zero(),
             "effect": func():
                 _grant_foci()
                 archon_dialogue_manager.enqueue_first_grain_dialogue(),
@@ -2963,6 +2983,7 @@ func _process(delta: float) -> void:
     _run_simple_triggers()
     _check_uonite_fibonacci_foci()
     _check_oscillation_fibonacci_foci()
+    _check_grain_milestone_foci()
     _check_click_vol_display()
     _check_constellation_identity_reveals()
     _check_totals_milestones()
