@@ -105,6 +105,20 @@ func run() -> void:
 		"art crossings show as one line, no heading (%s)" % art)
 	gc.constellation_art_tier_crossings = saved_crossings
 
+	# The Satchel's Art line names its permanent storage bump too (author,
+	# 2026-11-06): "Storage Increase ▶ Art  ×3.0, ×1.05 P"; its other tiers are unchanged.
+	var satchel: Dictionary = cd.get_constellation_def(5)
+	var srows: Array = p._tier_rows(satchel, String(satchel.get("bonus_key", "")))
+	var by_tier: Dictionary = {}
+	for r in srows:
+		by_tier[r[0]] = r[1]
+	ok(String(satchel.get("name", "")) == "The Satchel" and String(by_tier.get("art", "")) == "Art  ×3.0, ×1.05 P",
+		"The Satchel's Art line reads 'Art  ×3.0, ×1.05 P' (got '%s')" % by_tier.get("art", ""))
+	ok(p.BONUS_DESCRIPTIONS.get("storage_multiplier", "") == "Storage Increase",
+		"its effect is named 'Storage Increase', so the panel line reads 'Storage Increase ▶ Art  ×3.0, ×1.05 P'")
+	ok(String(by_tier.get("lines", "")) == "Lines  ×3.0" and String(by_tier.get("stars", "")) == "Stars  ×2.0",
+		"and its other tiers are unchanged (%s / %s)" % [by_tier.get("stars", ""), by_tier.get("lines", "")])
+
 	gc.assignments = saved_assign
 	cd.unlocked = saved_unlocked
 	p.queue_free()

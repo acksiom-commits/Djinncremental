@@ -976,6 +976,11 @@ const BUILT_IN = [
         # permanent bump only survives past the Expansion that grants it;
         # this multiplier reverts the instant Satchel drops out of art tier.
         "bonus_levels": {"stars": 2.0, "lines": 3.0, "art": 3.0},
+        # Text added after a tier's value on its "Effects by Tier" line
+        # (constellation_popout.gd _tier_rows()): Art also names the
+        # permanent ×1.05 base-storage bump above, "P" for Permanent
+        # (author, 2026-11-06: "Storage Increase ▶ Art ×3.0, ×1.05 P").
+        "tier_text_extra": {"art": ", ×1.05 P"},
         "spark_cap":      28657,
         # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
         # DEV (2026-09-17): Korean-flavored name_theme, second per-

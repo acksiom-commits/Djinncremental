@@ -64,6 +64,7 @@ const BONUS_DESCRIPTIONS: Dictionary = {
     "archon_foci_bonus":    "Archon Foci Bonus",
     "purity_lock_slots":    "Purity Lock Slots",
     "spark_bank_capacity":  "Spark Bank",
+    "storage_multiplier":   "Storage Increase",   # The Satchel (author, 2026-11-06)
 }
 
 ## Every genuinely multiplicative bonus_key in constellation_data.gd's
@@ -1229,6 +1230,8 @@ func _tier_rows(def: Dictionary, bonus_key: String) -> Array:
                 if bonus_levels.has(tier) else default_bonus
             row_text = ("%s  ×%s" % [tier_name, str(val)]) if is_multiplier \
                 else ("%s  +%s" % [tier_name, _fmt_bonus_val(val)])
+        # A constellation's own extra words for a tier (The Satchel's Art).
+        row_text += _coerce_string(_coerce_dict(def.get("tier_text_extra"), {}).get(tier), "")
         rows.append([tier, row_text])
     return rows
 
