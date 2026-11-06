@@ -148,6 +148,73 @@ func run() -> void:
 	ok(gc.kaleb_index == 0 and gc.kaleb_running, "while running, Restart keeps him running from bar 1")
 	gc.kaleb_running = false
 
+	print("\n=== Stack slots: save the stack, load it back (author, 2026-11-06) ===")
+	gc.kaleb_saved_stacks = [[], [], []]
+	gc.archon_foci = gc.get_total_foci_assigned() + 10
+	await process_frame
+	var n_bars: int = gc.kaleb_stack.size()
+	ok(view._load_btn.disabled, "Load is off while the chosen slot is empty")
+	view._slot_btns[1].pressed.emit()
+	view._save_btn.pressed.emit()
+	await process_frame
+	var saved: Array = gc.kaleb_saved_stacks[1]
+	ok(saved.size() == n_bars and not is_same(saved[0], gc.kaleb_stack[0]),
+		"Save copies the %d-bar stack into Slot 2 (a copy, not the live bars)" % n_bars)
+	ok(view._slot_status.text == "Slot 2 · %d bars" % n_bars, "the row says so (%s)" % view._slot_status.text)
+	var f_held: int = gc.kaleb_foci_held()
+	gc.kaleb_remove_bar(0)
+	view._load_btn.pressed.emit()
+	await process_frame
+	ok(gc.kaleb_stack.size() == n_bars - 1 and view._load_btn.text == "Replace?",
+		"Load over a live stack asks first ('Replace?') and changes nothing yet")
+	gc.kaleb_running = true
+	view._load_btn.pressed.emit()
+	await process_frame
+	ok(gc.kaleb_stack.size() == n_bars and not gc.kaleb_running and gc.kaleb_index == 0,
+		"a second press loads Slot 2's %d bars, paused at bar 1" % n_bars)
+	ok(not is_same(gc.kaleb_stack[0], gc.kaleb_saved_stacks[1][0]) and gc.kaleb_foci_held() == f_held,
+		"the live stack is its own copy, holding the same Foci as before (%d)" % gc.kaleb_foci_held())
+	view._save_btn.pressed.emit()
+	await process_frame
+	ok(view._save_btn.text == "Overwrite?", "Save over a saved stack asks first ('Overwrite?')")
+	view._slot_btns[0].pressed.emit()
+	await process_frame
+	ok(view._save_btn.text == "Save", "picking another slot cancels the question")
+
+	print("\n=== loading deals workers afresh, and refuses what it can't hold ===")
+	var big: Array = []
+	for i in 30:
+		big.append(KC.make_bar("monad_compress"))
+	big[0]["uonites"] = 0
+	big[0]["foci_workers"] = 4
+	gc.kaleb_saved_stacks[2] = big
+	var live_before: Array = gc.kaleb_stack
+	view._slot_btns[2].pressed.emit()
+	view._load_btn.pressed.emit()
+	view._load_btn.pressed.emit()
+	await process_frame
+	ok(is_same(gc.kaleb_stack, live_before) and String(view._footer.text).contains("Slot 3 needs 30 Foci and 33 workers"),
+		"a stack bigger than the free pool is refused and the stack kept (%s)" % view._footer.text)
+	var small: Array = [KC.make_bar("monad_compress"), KC.make_bar("tetrad_assemble")]
+	small[0]["uonites"] = 0
+	small[0]["foci_workers"] = 3
+	gc.kaleb_saved_stacks[2] = small
+	var u_av: int = gc._free_uonites() + gc.kaleb_uonites_held()
+	view._load_btn.pressed.emit()
+	view._load_btn.pressed.emit()
+	await process_frame
+	ok(gc.kaleb_stack.size() == 2 and gc.kaleb_bar_workers(gc.kaleb_stack[0]) == 3
+			and gc.kaleb_bar_uonites(gc.kaleb_stack[0]) == mini(3, u_av),
+		"a loaded bar keeps its 3 workers, Uonites first (%dU+%dF, %d Uonites to hand)" % [
+			gc.kaleb_bar_uonites(gc.kaleb_stack[0]), gc.kaleb_bar_focus_workers(gc.kaleb_stack[0]), u_av])
+
+	print("\n=== saved stacks live in the game save ===")
+	var data = JSON.parse_string(JSON.stringify(gc.get_save_data()))
+	gc.kaleb_saved_stacks = [[], [], []]
+	gc.load_save_data(data)
+	ok((gc.kaleb_saved_stacks[1] as Array).size() == n_bars and typeof(gc.kaleb_saved_stacks[1][0]["repeat"]) == TYPE_INT,
+		"Slot 2 comes back from a JSON save with %d bars, numbers still ints" % n_bars)
+
 	print("\n=== it fits the Journal ===")
 	var panel: Control = journal._panel
 	var panel_before: Vector2 = panel.size

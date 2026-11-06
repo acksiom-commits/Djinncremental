@@ -6,6 +6,8 @@ extends PanelContainer
 ##   header   Run/Pause (GameContext.kaleb_running), Restart (back to bar 1,
 ##            GameContext.kaleb_restart()) and "+ Command", the palette
 ##            (kaleb_commands.gd)
+##   slots    Stack 1 2 3, the chosen slot's bar count, Save and Load: saved
+##            stacks to swap in and out (GameContext.kaleb_saved_stacks)
 ##   list     one row per bar, top to bottom: its number (drag handle), On/Off
 ##            (its Focus switching its workers), its name (drag handle), its
 ##            own settings, and × to remove it (returning its workers and
@@ -49,6 +51,14 @@ var gd: Node = null
 
 var _run_btn: Button
 var _restart_btn: Button
+# Stack slots row (_build_slot_row())
+var _slot_btns: Array = []
+var _slot_status: Label
+var _save_btn: Button
+var _load_btn: Button
+var _stack_slot: int = 0          # the chosen slot, 0-based
+var _confirming: String = ""      # "save" or "load" while its button asks
+var _confirm_until: float = 0.0
 var _add_btn: MenuButton
 var _list: VBoxContainer
 var _scroll: ScrollContainer
@@ -102,6 +112,7 @@ func _ready() -> void:
         pop.add_item(KC.COMMANDS[PALETTE[i]]["name"], i)
     pop.id_pressed.connect(_on_add_chosen)
     head.add_child(_add_btn)
+    col.add_child(_build_slot_row())
 
     _scroll = ScrollContainer.new()
     _scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -254,6 +265,7 @@ func _refresh() -> void:
     _run_btn.text = "Pause" if gc.kaleb_running else "Run"
     _run_btn.disabled = gc.kaleb_stack.is_empty()
     _restart_btn.disabled = gc.kaleb_index == 0 and gc.kaleb_repeat_done == 0
+    _refresh_slot_row()
     for i in _rows.size():
         var r: Dictionary = _rows[i]
         var bar: Dictionary = r["bar"]
@@ -301,6 +313,95 @@ func _on_add_chosen(id: int) -> void:
             bar["value"] = 4
     if not gc.kaleb_add_bar(bar):
         _say("No free %s for a new bar" % ("Focus" if cmd == "if" else "Uonite or Focus"))
+
+
+# ==================================================
+# STACK SLOTS: save the stack to a slot, load it back (author, 2026-11-06;
+# modelled on the Settings panel's save slots: pick a slot, then Save or Load)
+# ==================================================
+func _build_slot_row() -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 2)
+    row.add_child(_label("Stack", TEXT_DIM))
+    for i in gc.kaleb_saved_stacks.size():
+        var b := _small_button("%d" % (i + 1))
+        b.toggle_mode = true
+        b.custom_minimum_size = Vector2(26, 0)
+        b.add_theme_color_override("font_pressed_color", GOLD)
+        b.pressed.connect(_select_stack_slot.bind(i))
+        row.add_child(b)
+        _slot_btns.append(b)
+    _slot_status = _label("", TEXT_DIM)
+    _slot_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _slot_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _slot_status.clip_text = true
+    row.add_child(_slot_status)
+    _save_btn = _small_button("Save")
+    _save_btn.custom_minimum_size = Vector2(76, 0)
+    _save_btn.pressed.connect(_on_stack_save)
+    row.add_child(_save_btn)
+    _load_btn = _small_button("Load")
+    _load_btn.custom_minimum_size = Vector2(76, 0)
+    _load_btn.pressed.connect(_on_stack_load)
+    row.add_child(_load_btn)
+    return row
+
+
+func _select_stack_slot(i: int) -> void:
+    _stack_slot = i
+    _confirming = ""
+
+
+## Save over a saved stack, or Load over a live one, asks once on the button
+## itself ("Overwrite?" / "Replace?"), and a second press does it, so the
+## player stays in the tab; picking a slot or 3 s passing cancels.
+func _on_stack_save() -> void:
+    var saved: Array = gc.kaleb_saved_stacks[_stack_slot]
+    if gc.kaleb_stack.is_empty():
+        _say("No bars to save")
+        return
+    if not saved.is_empty() and _confirming != "save":
+        _ask("save")
+        return
+    gc.kaleb_save_stack_to(_stack_slot)
+    _confirming = ""
+    _say("Saved %d bars to Slot %d" % [gc.kaleb_stack.size(), _stack_slot + 1])
+
+
+func _on_stack_load() -> void:
+    if (gc.kaleb_saved_stacks[_stack_slot] as Array).is_empty():
+        _say("Slot %d is empty" % (_stack_slot + 1))
+        return
+    if not gc.kaleb_stack.is_empty() and _confirming != "load":
+        _ask("load")
+        return
+    _confirming = ""
+    var why: String = gc.kaleb_load_stack_from(_stack_slot)
+    _say(why if why != "" else "Loaded Slot %d: %d bars, paused at bar 1" % [_stack_slot + 1, gc.kaleb_stack.size()])
+
+
+func _ask(what: String) -> void:
+    _confirming = what
+    _confirm_until = Time.get_ticks_msec() / 1000.0 + 3.0
+
+
+func _refresh_slot_row() -> void:
+    if _confirming != "" and Time.get_ticks_msec() / 1000.0 > _confirm_until:
+        _confirming = ""
+    for i in _slot_btns.size():
+        (_slot_btns[i] as Button).set_pressed_no_signal(i == _stack_slot)
+        var n: int = (gc.kaleb_saved_stacks[i] as Array).size()
+        (_slot_btns[i] as Button).tooltip_text = "Stack slot %d: %s" % [i + 1, ("%d bars" % n) if n > 0 else "empty"]
+    var bars: int = (gc.kaleb_saved_stacks[_stack_slot] as Array).size()
+    _slot_status.text = ("Slot %d · %d bars" % [_stack_slot + 1, bars]) if bars > 0 else ("Slot %d · Empty" % (_stack_slot + 1))
+    _save_btn.text = "Overwrite?" if _confirming == "save" else "Save"
+    _load_btn.text = "Replace?" if _confirming == "load" else "Load"
+    _save_btn.add_theme_color_override("font_color", GOLD if _confirming == "save" else TEXT)
+    _load_btn.add_theme_color_override("font_color", GOLD if _confirming == "load" else TEXT)
+    _save_btn.tooltip_text = "Save this stack to Slot %d" % (_stack_slot + 1)
+    _load_btn.tooltip_text = "Replace this stack with Slot %d's (paused at bar 1)" % (_stack_slot + 1)
+    _save_btn.disabled = gc.kaleb_stack.is_empty()
+    _load_btn.disabled = bars == 0
 
 
 func _say(text: String) -> void:

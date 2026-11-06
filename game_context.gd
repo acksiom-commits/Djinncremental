@@ -1188,31 +1188,86 @@ func kaleb_restart() -> void:
     kaleb_repeat_done = 0
 
 
-func _load_kaleb_stack(data: Dictionary) -> void:
-    kaleb_stack.clear()
-    var raw = data.get("kaleb_stack", [])
-    if raw is Array:
-        for b in raw:
-            if not (b is Dictionary) or not b.has("cmd"):
-                continue
-            # JSON numbers come back as floats; the executor wants ints.
-            kaleb_stack.append({
-                "cmd":    String(b.get("cmd", "")),
-                "repeat": maxi(1, _coerce_int(b.get("repeat"), 1)),
-                "on":     _coerce_bool(b.get("on"), true),
-                "target": String(b.get("target", "")),
-                "res":    String(b.get("res", "")),
-                "cmp":    String(b.get("cmp", "<")),
-                "value":  _coerce_int(b.get("value"), 0),
-                "goto":   _coerce_int(b.get("goto"), 0),
-                "uonites": maxi(0, _coerce_int(b.get("uonites"), 1)),
-                "foci_workers": maxi(0, _coerce_int(b.get("foci_workers"), 0)),
-            })
-    # A working bar always holds at least one worker (a save from before
-    # Focus workers, or a hand-edited one, may say neither).
-    for bar in kaleb_stack:
+## Saved command stacks, the Commands tab's Stack slots (author, 2026-11-06):
+## each slot a copy of a stack's bars, or empty. Saving copies; it holds no
+## Uonites or Foci. Loading puts a copy in the live stack, workers and all.
+const KALEB_STACK_SLOTS: int = 3
+var kaleb_saved_stacks: Array = [[], [], []]
+
+
+## Copies the live stack into saved slot `slot` (0-based), over what was there.
+func kaleb_save_stack_to(slot: int) -> void:
+    if slot < 0 or slot >= KALEB_STACK_SLOTS:
+        return
+    kaleb_saved_stacks[slot] = kaleb_stack.duplicate(true)
+
+
+## Replaces the live stack with a copy of saved slot `slot` (0-based). Returns
+## "" when it did, else why not, leaving the live stack as it was. The new
+## stack is paused at bar 1. Its bars keep their worker COUNTS, but who works
+## is dealt afresh from what the live stack holds plus what is free: every
+## bar's On/Off Focus, then Uonites to workers bar by bar, then Foci standing
+## in for the rest (the same order + uses).
+func kaleb_load_stack_from(slot: int) -> String:
+    if slot < 0 or slot >= KALEB_STACK_SLOTS or (kaleb_saved_stacks[slot] as Array).is_empty():
+        return "Slot %d is empty" % (slot + 1)
+    var bars: Array = (kaleb_saved_stacks[slot] as Array).duplicate(true)
+    var uonites_av: int = _free_uonites() + kaleb_uonites_held()
+    var foci_av: int = _free_foci() + kaleb_foci_held()
+    var workers: int = 0
+    for bar in bars:
+        workers += kaleb_bar_workers(bar)
+    if bars.size() + maxi(0, workers - uonites_av) > foci_av:
+        return "Slot %d needs %d Foci and %d workers; %d Foci and %d Uonites are free for it" % [
+            slot + 1, bars.size(), workers, foci_av, uonites_av]
+    var u_left: int = uonites_av
+    for bar in bars:
+        var w: int = kaleb_bar_workers(bar)
+        var u: int = mini(u_left, w)
+        bar["uonites"] = u
+        bar["foci_workers"] = w - u
+        u_left -= u
+    kaleb_stack = bars
+    kaleb_running = false
+    kaleb_restart()
+    return ""
+
+
+## A saved stack's bars made safe to run: JSON numbers come back as floats
+## (the executor wants ints), unknown entries are dropped, and a working bar
+## always holds at least one worker (a save from before Focus workers, or a
+## hand-edited one, may say neither).
+func _coerce_kaleb_bars(raw) -> Array:
+    var bars: Array = []
+    if not (raw is Array):
+        return bars
+    for b in raw:
+        if not (b is Dictionary) or not b.has("cmd"):
+            continue
+        var bar: Dictionary = {
+            "cmd":    String(b.get("cmd", "")),
+            "repeat": maxi(1, _coerce_int(b.get("repeat"), 1)),
+            "on":     _coerce_bool(b.get("on"), true),
+            "target": String(b.get("target", "")),
+            "res":    String(b.get("res", "")),
+            "cmp":    String(b.get("cmp", "<")),
+            "value":  _coerce_int(b.get("value"), 0),
+            "goto":   _coerce_int(b.get("goto"), 0),
+            "uonites": maxi(0, _coerce_int(b.get("uonites"), 1)),
+            "foci_workers": maxi(0, _coerce_int(b.get("foci_workers"), 0)),
+        }
         if bar["cmd"] != "if" and bar["uonites"] + bar["foci_workers"] < 1:
             bar["uonites"] = 1
+        bars.append(bar)
+    return bars
+
+
+func _load_kaleb_stack(data: Dictionary) -> void:
+    kaleb_stack = _coerce_kaleb_bars(data.get("kaleb_stack", []))
+    kaleb_saved_stacks = []
+    var raw_saved = data.get("kaleb_saved_stacks", [])
+    for i in KALEB_STACK_SLOTS:
+        kaleb_saved_stacks.append(_coerce_kaleb_bars(raw_saved[i]) if raw_saved is Array and i < raw_saved.size() else [])
     kaleb_running = _coerce_bool(data.get("kaleb_running"), false)
     kaleb_index = clampi(_coerce_int(data.get("kaleb_index"), 0), 0, maxi(0, kaleb_stack.size() - 1))
     kaleb_repeat_done = maxi(0, _coerce_int(data.get("kaleb_repeat_done"), 0))
@@ -1948,6 +2003,7 @@ func get_save_data() -> Dictionary:
     data["purity_locks_unlocked"] = purity_locks_unlocked
     data["will_form_switch_is_will"] = will_form_switch_is_will
     data["kaleb_stack"]       = kaleb_stack.duplicate(true)
+    data["kaleb_saved_stacks"] = kaleb_saved_stacks.duplicate(true)
     data["kaleb_running"]     = kaleb_running
     data["kaleb_index"]       = kaleb_index
     data["kaleb_repeat_done"] = kaleb_repeat_done
