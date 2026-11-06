@@ -2641,9 +2641,8 @@ func _on_create_grain_pressed() -> void:
     # Unlike Create Uonite above, this does NOT trigger an Expansion -- by
     # the user's own explicit design call (2026-10-01), Grain is a separate
     # accumulator with no per-cycle limiter and no prestige tie-in at all;
-    # the storage cap (game_context.get_grain_storage_cap()) is its only
-    # ceiling. manual_create_grain() already independently caps the batch
-    # at that headroom, so a click past the cap is just a no-op.
+    # nor a cap of its own (author, 2026-11-05): only ordinary storage, which
+    # creating a Grain only ever frees.
     production_manager.manual_create_grain()
 
 
@@ -3152,10 +3151,9 @@ func _update_counters() -> void:
             if g_display_changed or _grain_tetra.current_motes != _grain_mote_display:
                 _grain_tetra.current_motes = _grain_mote_display
         if _grain_strip_bar and game_context.ui_unlocks.get("grain_creation", false):
-            # Real progress toward the storage-derived Grain cap -- see
-            # game_context.get_grain_progress(). No per-cycle component
-            # (unlike Uonite's get_uonite_cycle_progress()): the storage cap
-            # is the only ceiling here.
+            # Motes banked toward the next Grain, full once Create Grain can
+            # make one -- see game_context.get_grain_progress(). Grains have
+            # no cap of their own (author, 2026-11-05).
             var g_progress: Vector2i = game_context.get_grain_progress()
             _grain_strip_bar.max_value = g_progress.y
             _grain_strip_bar.value     = g_progress.x

@@ -6,7 +6,7 @@ extends "res://dev_tests/test_base.gd"
 # this does NOT test live production flow through Iota/Mote recipes, only
 # that the UI wiring itself -- node structure, visibility toggling, button
 # connection, tooltip/counter registration -- is correct. The underlying
-# math (get_grain_storage_cap/get_grain_progress/manual_create_grain) is
+# math (get_grain_progress/manual_create_grain) is
 # covered separately in test_grain_storage_cap.gd.
 #
 # What must hold:

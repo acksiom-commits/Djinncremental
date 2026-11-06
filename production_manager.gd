@@ -1747,8 +1747,8 @@ func manual_persistent_mote_assemble() -> bool:
 
 
 ## Persistent Grain: 4 Persistent Motes + 16 Persistent Particles + 64 plain
-## Monads + 25 Sparks, within the Grain storage cap (plain and Persistent
-## Grains share it). Survives the Oscillation.
+## Monads + 25 Sparks. No cap of its own: 1 unit of ordinary storage, like a
+## plain Grain (author, 2026-11-05). Survives the Oscillation.
 func manual_persistent_grain_assemble() -> bool:
     var pm_cost:     int = _recipe_cost("persistent_grain_assemble", "persistent_mote")
     var pp_cost:     int = _recipe_cost("persistent_grain_assemble", "persistent_particle")
@@ -1759,7 +1759,6 @@ func manual_persistent_grain_assemble() -> bool:
     if gc.persistent_particle.is_less_than(BigNum.from_int(pp_cost)): return false
     if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)): return false
     if gc.get_monad_unlocked_total().is_less_than(BigNum.from_int(monad_cost)): return false
-    if gc.grain.add(gc.persistent_grain).to_int() >= gc.get_grain_storage_cap(): return false
     if not _draw_monads(monad_cost): return false
     gc.persistent_mote = gc.persistent_mote.sub(BigNum.from_int(pm_cost))
     gc.persistent_particle = gc.persistent_particle.sub(BigNum.from_int(pp_cost))
@@ -1773,12 +1772,14 @@ func manual_persistent_grain_assemble() -> bool:
 ## manual_create_uonite() below -- but deliberately NOT a copy of its
 ## Expansion-triggering, Fibonacci-cycle-capped shape. Per the user's own
 ## explicit design call: creating a Grain never triggers an Expansion reset
-## and has no per-cycle limiter at all -- the storage cap
-## (gc.get_grain_storage_cap()) is the ONLY ceiling, since Grain is meant to
-## eventually be produced in massive, uncapped-per-cycle quantities. Still a
-## real batch conversion (not the old single-unit manual_grain_assemble()
-## above, which +1's per click) -- converts as many Grains as mote_grains,
-## sparks, particle, monad, AND storage headroom all allow at once.
+## and has no per-cycle limiter at all, since Grain is meant to eventually be
+## produced in massive quantities. Nor does it have a cap of its own (author,
+## 2026-11-05: "Ordinary storage only"; the Sparks-cost cap copied from
+## Uonites, an unrequested analogy, was removed): a Grain is 1 unit of
+## ordinary storage, and making one consumes 84 units of inputs, so it only
+## ever frees room. Still a real batch conversion (not the old single-unit
+## manual_grain_assemble() above, which +1's per click) -- converts as many
+## Grains as mote_grains, sparks, particle and monad all allow at once.
 ##
 ## grain_assemble costs FOUR inputs (sparks, monad, particle, mote_grains),
 ## unlike uonite_assemble's two (mote_uonite, sparks) -- every one of them
@@ -1793,15 +1794,13 @@ func manual_create_grain() -> bool:
     if gc.sparks.is_less_than(BigNum.from_int(sparks_cost)):    return false
     if gc.particle.is_less_than(BigNum.from_int(particle_cost)): return false
     if gc.get_monad_unlocked_total().is_less_than(BigNum.from_int(monad_cost)): return false
-    var storage_headroom: int = gc.get_grain_storage_cap() - gc.grain.to_int()
-    if storage_headroom <= 0: return false
 
     var possible_by_mote:     int = gc.mote_grains.div_int_floor(mote_cost).to_int()
     var possible_by_sparks:   int = gc.sparks.div_int_floor(sparks_cost).to_int()
     var possible_by_particle: int = gc.particle.div_int_floor(particle_cost).to_int()
     var possible_by_monad:    int = gc.get_monad_unlocked_total().div_int_floor(monad_cost).to_int()
     var count: int = mini(possible_by_mote,
-        mini(possible_by_sparks, mini(possible_by_particle, mini(possible_by_monad, storage_headroom))))
+        mini(possible_by_sparks, mini(possible_by_particle, possible_by_monad)))
     if count <= 0: return false
 
     if not _draw_monads(monad_cost * count): return false

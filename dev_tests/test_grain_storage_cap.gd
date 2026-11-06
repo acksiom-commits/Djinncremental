@@ -1,13 +1,12 @@
 extends "res://dev_tests/test_base.gd"
-# Storage-derived Grain stockpile cap + batch Create-Grain action
-# (2026-10-01) -- the Grain-branch counterpart of
-# test_uonite_storage_cap.gd, but deliberately testing a DIFFERENT shape:
-# per the user's own explicit design call, Grain has NO per-cycle limiter
-# at all (no Fibonacci cap, no Expansion trigger) -- the storage cap
-# (storage_cap^2 / GRAIN_SPARKS_COST) is the ONLY ceiling on how many can
-# ever be held. grain_assemble also costs FOUR inputs (sparks, monad,
-# particle, mote_grains), unlike uonite_assemble's two, so
-# manual_create_grain() needs all four checked as independent bottlenecks.
+# Grains have NO cap of their own, and the batch Create-Grain action.
+# (File name kept from when it tested a Grain cap: that cap, storage_cap^2
+# / 16,825, was copied 2026-10-01 from the author's Uonite-only rule, never
+# requested; removed 2026-11-05, the author ruling "Ordinary storage only".)
+# Per the author's design, Grain also has NO per-cycle limiter at all (no
+# Fibonacci cap, no Expansion trigger). grain_assemble costs FOUR inputs
+# (sparks, monad, particle, mote_grains), so manual_create_grain() needs all
+# four checked as independent bottlenecks, and they are its only limits.
 #
 # Uses bare .new() GameContext/ProductionManager instances (not the live
 # autoloads), same pattern as test_uonite_storage_cap.gd.
@@ -19,10 +18,6 @@ func ok(c: bool, s: String) -> void:
 	else:
 		print("  FAIL  ", s)
 		fails += 1
-
-
-func _expected_cap(storage_cap: int) -> int:
-	return (storage_cap * storage_cap) / 16825  # GRAIN_SPARKS_COST, integer floor division
 
 
 func _fresh_gc_pm() -> Array:
@@ -38,43 +33,33 @@ func run() -> void:
 	var gc = setup[0]
 	var pm = setup[1]
 
-	print("=== get_grain_storage_cap() formula ===")
-	for sc in [987, 100, 1000, 1]:
-		gc.storage_cap = BigNum.from_int(sc)
-		var got: int = gc.get_grain_storage_cap()
-		var want: int = _expected_cap(sc)
-		ok(got == want, "storage_cap=%d -> cap=%d (want %d)" % [sc, got, want])
+	print("=== no Grain cap exists ===")
+	ok(not gc.has_method("get_grain_storage_cap"), "game_context has no get_grain_storage_cap()")
 
-	print("\n=== get_grain_progress(): counted in Motes, no per-cycle component ===")
-	gc.storage_cap = BigNum.from_int(987)
-	var cap_grains: int = gc.get_grain_storage_cap()
-	ok(cap_grains > 0, "sanity: storage cap is nonzero at storage_cap=987 (got %d)" % cap_grains)
+	print("\n=== get_grain_progress(): Motes toward the next Grain ===")
 	gc.grain = BigNum.zero()
 	gc.mote_grains = BigNum.from_int(2)
 	var p0: Vector2i = gc.get_grain_progress()
-	ok(p0.y == cap_grains * 4, "cap in Motes is the Grain cap times GRAIN_MOTES_PER_UNIT (4) (got %d, want %d)" % [p0.y, cap_grains * 4])
-	ok(p0.x == 2, "current reads the raw mote_grains stockpile directly (got %d)" % p0.x)
-
-	gc.grain = BigNum.from_int(cap_grains)  # fully maxed out
+	ok(p0 == Vector2i(2, 4), "2 Motes banked reads 2/4 (got %d/%d)" % [p0.x, p0.y])
+	gc.mote_grains = BigNum.from_int(9)
 	var p1: Vector2i = gc.get_grain_progress()
-	ok(p1.y == 1 and p1.x == 0, "once the storage cap is fully reached, the bar reports maxed-out (0/1), not a dangling Mote count (got %d/%d)" % [p1.x, p1.y])
+	ok(p1 == Vector2i(4, 4), "9 Motes banked reads full, 4/4: Create Grain can make one (got %d/%d)" % [p1.x, p1.y])
+	gc.grain = BigNum.from_int(100000)
+	ok(gc.get_grain_progress() == Vector2i(4, 4), "however many Grains are held, the bar still only counts Motes")
 
-	print("\n=== manual_create_grain() enforces the storage cap independently of resource stock ===")
-	gc.storage_cap = BigNum.from_int(150)   # cap = floor(22500/16825) = 1
-	ok(gc.get_grain_storage_cap() == 1, "test setup: storage cap is exactly 1 (got %d)" % gc.get_grain_storage_cap())
+	print("\n=== manual_create_grain() is limited only by its inputs, even at a tiny storage cap ===")
+	# At storage_cap 150 the old copied cap allowed exactly 1 Grain.
+	gc.storage_cap = BigNum.from_int(150)
 	gc.grain       = BigNum.zero()
-	gc.mote_grains = BigNum.from_int(1000)
+	gc.mote_grains = BigNum.from_int(40)        # inputs for 10 Grains
 	gc.sparks      = BigNum.from_int(100000)
 	gc.particle    = BigNum.from_int(100000)
 	gc.monad["solid"] = BigNum.from_int(100000)
-
 	var first: bool = pm.manual_create_grain()
-	ok(first, "first manual_create_grain() succeeds")
-	ok(gc.grain.to_int() == 1, "exactly 1 Grain created, capped by storage not by resource stock (got %d)" % gc.grain.to_int())
-
+	ok(first and gc.grain.to_int() == 10,
+		"one click converts all 10 Grains' worth of Motes, storage cap 150 or not (got %d)" % gc.grain.to_int())
 	var second: bool = pm.manual_create_grain()
-	ok(not second, "second call refused -- storage cap reached (1/1), even with ample resources left")
-	ok(gc.grain.to_int() == 1, "stockpile still exactly 1 after the refused call")
+	ok(not second and gc.grain.to_int() == 10, "then it stops only because the Motes ran out")
 
 	print("\n=== manual_create_grain() NEVER triggers an Expansion or touches cycle state ===")
 	# Per the user's explicit design call: Grain is a separate accumulator,

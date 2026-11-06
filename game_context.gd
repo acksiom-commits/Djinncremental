@@ -933,6 +933,10 @@ const UONITE_SPARKS_COST: int = 28801
 
 
 func get_uonite_storage_cap() -> int:
+    # THE AUTHOR'S RULE, FOR UONITES ONLY (specified 2026-09-20; restated
+    # 2026-11-05: "the UONITES CAP is the number of Sparks that it took to
+    # build them... Not any other resource. Just Uonites."). Do not reuse
+    # this Sparks-cost sizing for any other resource without asking.
     # One Uonite's footprint in storage units is UONITE_SPARKS_COST /
     # storage_cap, so the number that fit is storage_cap / footprint =
     # storage_cap^2 / UONITE_SPARKS_COST. Uses the raw, permanently-
@@ -942,49 +946,29 @@ func get_uonite_storage_cap() -> int:
     return storage_cap.mul(storage_cap).div_int_floor(UONITE_SPARKS_COST).to_int()
 
 
-# Total cumulative Sparks cost of one Grain (Monad 5 -> Tetrad 21 ->
-# Particle 85 -> Iota_grains 514 -> Mote_grains 3,780 -> Grain 16,825), per
-# the grain_assemble/mote_assemble_grains/... recipe chain in game_data.gd.
-# Same derivation method as UONITE_SPARKS_COST above (verified against its
-# documented chain before reusing it here); Mote_grains' 3,780 also matches
-# the independently-verified figure in planned_archai_purity_tier_taxonomy
-# memory notes (2026-09-02).
-const GRAIN_SPARKS_COST: int = 16825
+# GRAINS HAVE NO CAP OF THEIR OWN (author, 2026-11-05: "Ordinary storage
+# only"). A Grain, plain or Persistent, is 1 unit of ordinary storage like
+# everything else (get_storage_total()). Making one consumes far more than
+# 1 unit of inputs, so creating Grains only ever frees storage. The
+# Sparks-cost cap above is the author's rule for Uonites only; a copy of it
+# for Grains (get_grain_storage_cap(), storage_cap² ÷ 16,825, added
+# 2026-10-01 by analogy, never requested) was removed 2026-11-05.
 
 # grain_assemble's own mote_grains input cost (game_data.gd) -- 4, NOT the
-# 20 Uonite uses. Documented as its own constant (not re-read from
-# GameData.RECIPES here) because get_uonite_storage_cap() above sets the
-# precedent of a hardcoded, chain-derived constant rather than a live
-# cross-autoload read; if grain_assemble's recipe ever changes this needs
-# updating alongside it, same as GRAIN_SPARKS_COST would.
+# 20 Uonite uses. If grain_assemble's recipe changes, this changes with it.
 const GRAIN_MOTES_PER_UNIT: int = 4
 
 
-## Will/Form switch (2026-10-01): same storage-footprint technique as
-## get_uonite_storage_cap(), just substituting Grain's own chain cost.
-func get_grain_storage_cap() -> int:
-    return storage_cap.mul(storage_cap).div_int_floor(GRAIN_SPARKS_COST).to_int()
-
-
-## Progress toward the storage-derived Grain cap, counted in Motes
-## (GRAIN_MOTES_PER_UNIT = 1 Grain) for the Create-Grain strip bar.
-## Returns Vector2i(current, cap).
+## The Create-Grain strip bar: Motes banked toward the next Grain, full once
+## Create Grain can make one (author ruled 2026-11-05 that Grains have no cap
+## of their own, so the bar no longer fills toward one). Returns
+## Vector2i(current, GRAIN_MOTES_PER_UNIT).
 ##
-## Deliberately NOT get_uonite_cycle_progress()'s shape: per the user's own
-## explicit design call (2026-10-01), creating a Grain does not trigger an
-## Expansion/prestige reset and has no per-cycle Fibonacci limiter -- the
-## storage cap is the ONLY ceiling, so there is no "this cycle" concept to
-## track here, just the raw mote_grains stockpile against that one ceiling.
+## Creating a Grain does not trigger an Expansion/prestige reset and has no
+## per-cycle limiter (the author's design, 2026-10-01).
 func get_grain_progress() -> Vector2i:
-    var storage_headroom: int = maxi(0, get_grain_storage_cap() - grain.to_int())
-    if storage_headroom <= 0:
-        # Nothing more fits at all -- an empty (not degenerate max_value=0)
-        # bar communicates "maxed out" better than a raw Mote count that
-        # can never actually complete into a Grain.
-        return Vector2i(0, 1)
-    var cap_motes: int = storage_headroom * GRAIN_MOTES_PER_UNIT
-    var current: int = mini(mote_grains.to_int(), cap_motes)
-    return Vector2i(current, cap_motes)
+    var current: int = mini(mote_grains.to_int(), GRAIN_MOTES_PER_UNIT)
+    return Vector2i(current, GRAIN_MOTES_PER_UNIT)
 
 
 ## Progress toward whichever Uonite cap is actually binding THIS cycle,
