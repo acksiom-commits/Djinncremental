@@ -73,6 +73,11 @@ func step() -> void:
                 # 2026-11-05). Summon is exempt: Sparks take no storage, so
                 # it works at full storage. Room freed by a press shows as a
                 # changed total, so a Particle or Tetrad press still goes on.
+                # The crew does the pressing (author, 2026-11-06): with none,
+                # a press would make nothing, so pause and say so.
+                if gc.kaleb_bar_workers(bar) < 1:
+                    _pause(bar, "Kaleb has no crew (set one in the Commands header)")
+                    return
                 var full_before: bool = _storage_full()
                 var stored_before: BigNum = gc.get_storage_total()
                 ui.kaleb_press(def["handler"], gc.kaleb_bar_workers(bar))

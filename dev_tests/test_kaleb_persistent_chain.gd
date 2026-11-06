@@ -76,6 +76,8 @@ func run() -> void:
 		gc.volition_slots.append({"category": "", "target": "",
 			"children": [{"category": "", "target": ""}, {"category": "", "target": ""}]})
 	gc.kaleb_stack = []
+	gc.kaleb_crew_uonites = 0
+	gc.kaleb_crew_foci = 0
 	gc.kaleb_running = false
 	gc.kaleb_index = 0
 	gc.kaleb_repeat_done = 0
@@ -128,8 +130,10 @@ func run() -> void:
 	var ifs: int = 3
 	ok(added == stack.size(), "all %d bars went in (%d added)" % [stack.size(), added])
 	ok(gc.get_total_foci_assigned() - f0 == stack.size(), "every bar holds a Focus (%d)" % (gc.get_total_foci_assigned() - f0))
-	ok(gc.get_total_uonites_assigned().to_int() - u0 == stack.size() - ifs,
-		"every bar but the %d If-thens holds a Uonite (%d)" % [ifs, gc.get_total_uonites_assigned().to_int() - u0])
+	ok(gc.get_total_uonites_assigned().to_int() == u0,
+		"the bars hold no workers of their own: the %d working bars share the crew" % (stack.size() - ifs))
+	ok(gc.kaleb_change_crew(1) and gc.get_total_uonites_assigned().to_int() == u0 + 1 and gc.kaleb_crew_size() == 1,
+		"a crew of 1 holds one Uonite, whatever the number of bars")
 	gc.archon_foci = gc.get_total_foci_assigned()
 	ok(not gc.kaleb_add_bar(_bar("monad_compress")), "no bar goes in with no Focus free")
 	gc.archon_foci += 20
@@ -187,27 +191,34 @@ func run() -> void:
 	ok(judged > 100 and with_f == judged, "%d of %d draws were 4 Tetrads with a Fundament" % [with_f, judged])
 	ok(used_locked == 0, "none used a locked Fundament (%d did)" % used_locked)
 
-	print("\n=== a bar's workers multiply each press; Foci stand in for missing Uonites ===")
-	# One Compress bar, alone; the multiplier a click gets, times its workers.
+	print("\n=== the crew: one set of workers Kaleb takes from bar to bar (author, 2026-11-06) ===")
+	# Uonites first, Foci standing in; each bar uses its own count of the crew,
+	# capped at the crew's size; a press makes that many times a click.
 	var saved_stack: Array = gc.kaleb_stack
 	gc.kaleb_stack = []
+	gc.kaleb_crew_uonites = 0
+	gc.kaleb_crew_foci = 0
 	gc.kaleb_index = 0
 	gc.kaleb_repeat_done = 0
 	gc.uonite = gc.get_total_uonites_assigned().add(BigNum.from_int(4))
 	gc.archon_foci = gc.get_total_foci_assigned() + 3
 	var cb: Dictionary = _bar("monad_compress", 1)
-	ok(gc.kaleb_add_bar(cb) and gc.kaleb_bar_uonites(cb) == 1 and gc.kaleb_bar_focus_workers(cb) == 0,
-		"a Compress bar goes in with a Uonite worker while one is free")
+	ok(gc.kaleb_add_bar(cb) and gc.kaleb_bar_count(cb) == 1 and gc.kaleb_bar_workers(cb) == 0,
+		"a Compress bar goes in on its On/Off Focus alone, asking for 1 of a crew of 0")
 	var u_held0: int = gc.kaleb_uonites_held()
 	var f_held0: int = gc.kaleb_foci_held()
-	for n in 3:
-		gc.kaleb_change_bar_workers(cb, 1)
-	ok(gc.kaleb_bar_uonites(cb) == 4 and gc.kaleb_bar_focus_workers(cb) == 0 and gc.kaleb_uonites_held() == u_held0 + 3,
-		"+ takes free Uonites first (4 Uonites)")
-	ok(gc.kaleb_change_bar_workers(cb, 1) and gc.kaleb_bar_focus_workers(cb) == 1 and gc.kaleb_foci_held() == f_held0 + 1,
-		"with no Uonite free, + takes a spare Focus instead (4U+1F)")
+	for n in 4:
+		gc.kaleb_change_crew(1)
+	ok(gc.kaleb_crew_uonites == 4 and gc.kaleb_crew_foci == 0 and gc.kaleb_uonites_held() == u_held0 + 4,
+		"crew + takes free Uonites first (4U)")
+	ok(gc.kaleb_change_crew(1) and gc.kaleb_crew_foci == 1 and gc.kaleb_foci_held() == f_held0 + 1,
+		"with no Uonite free, crew + takes a spare Focus instead (4U+1F)")
 	gc.archon_foci = gc.get_total_foci_assigned()
-	ok(not gc.kaleb_change_bar_workers(cb, 1), "with neither free, + is refused")
+	ok(not gc.kaleb_change_crew(1), "with neither free, crew + is refused")
+	for n in 6:
+		gc.kaleb_change_bar_workers(cb, 1)
+	ok(gc.kaleb_bar_count(cb) == 5 and not gc.kaleb_change_bar_workers(cb, 1),
+		"a bar's + uses more of the crew, up to its 5, at no cost")
 	var click_m: int = gc.get_click_multiplier()
 	var m0: int = gc.get_monad_total().to_int()
 	gc.kaleb_running = true
@@ -215,21 +226,26 @@ func run() -> void:
 	kaleb.step()
 	gc.kaleb_running = false
 	var made: int = gc.get_monad_total().to_int() - m0
-	ok(made == 5 * click_m, "one press with 5 workers made %d Monads (5 x click multiplier %d)" % [made, click_m])
+	ok(made == 5 * click_m, "one press with 5 of the crew made %d Monads (5 x click multiplier %d)" % [made, click_m])
 	ok(ui._get_click_multiplier() == click_m, "and the player's own clicks are not multiplied (%d)" % ui._get_click_multiplier())
-	gc.kaleb_change_bar_workers(cb, -1)
-	ok(gc.kaleb_bar_focus_workers(cb) == 0 and gc.kaleb_bar_uonites(cb) == 4, "− gives the Focus back first")
-	for n in 6:
-		gc.kaleb_change_bar_workers(cb, -1)
-	ok(gc.kaleb_bar_workers(cb) == 1 and gc.kaleb_uonites_held() == u_held0, "then the Uonites, never below 1 worker")
-	# A new bar with no Uonite free goes in on two Foci (its On/Off and a worker).
-	gc.uonite = gc.get_total_uonites_assigned()
-	gc.archon_foci = gc.get_total_foci_assigned() + 1
-	ok(not gc.kaleb_add_bar(_bar("tetrad_assemble")), "no Uonite and one Focus free: a working bar can't go in")
-	gc.archon_foci += 1
+	gc.archon_foci = gc.get_total_foci_assigned() + 2
 	var fb: Dictionary = _bar("tetrad_assemble")
-	ok(gc.kaleb_add_bar(fb) and gc.kaleb_bar_uonites(fb) == 0 and gc.kaleb_bar_focus_workers(fb) == 1,
-		"with two Foci free it goes in on a Focus worker")
+	ok(gc.kaleb_add_bar(fb) and gc.kaleb_uonites_held() == u_held0 + 4 and gc.kaleb_foci_held() == f_held0 + 2,
+		"a second working bar shares the crew: only its On/Off Focus is added")
+	gc.kaleb_change_crew(-1)
+	ok(gc.kaleb_crew_foci == 0 and gc.kaleb_crew_uonites == 4 and gc.kaleb_bar_count(cb) == 4,
+		"crew − gives the Focus back first, and a bar asking for more is lowered to the crew (4)")
+	for n in 6:
+		gc.kaleb_change_crew(-1)
+	ok(gc.kaleb_crew_size() == 0 and gc.kaleb_uonites_held() == u_held0 and gc.kaleb_bar_count(cb) == 1,
+		"then the Uonites, down to no crew; bars still ask for 1")
+	gc.kaleb_index = 0
+	gc.kaleb_running = true
+	ui._get_cooldown_bar("MonadCooldownBar")._is_ready = true
+	var m1: int = gc.get_monad_total().to_int()
+	kaleb.step()
+	ok(not gc.kaleb_running and gc.get_monad_total().to_int() == m1,
+		"with no crew, a press bar pauses Kaleb instead of pressing")
 	gc.archon_foci = gc.get_total_foci_assigned() + 1
 	var ib: Dictionary = _bar("if")
 	ok(gc.kaleb_add_bar(ib) and gc.kaleb_bar_workers(ib) == 0, "an If bar needs just its one Focus")
@@ -240,6 +256,8 @@ func run() -> void:
 	gc.kaleb_repeat_done = 0
 	gc.uonite = gc.get_total_uonites_assigned().add(BigNum.from_int(3))
 	gc.archon_foci = gc.get_total_foci_assigned() + 1
+	for n in 3:
+		gc.kaleb_change_crew(1)
 	var sb: Dictionary = _bar("summon_spark", 1)
 	gc.kaleb_add_bar(sb)
 	gc.kaleb_change_bar_workers(sb, 1)
@@ -255,7 +273,7 @@ func run() -> void:
 	var per_summon: int = int(1.0 * pm.get_sparks_multiplier()) if pm.get_sparks_multiplier() > 1.0 else 1
 	var summoned: int = roundi(gc.totals_created["sparks_summoned"].to_float() - s0)
 	ok(gc.kaleb_bar_workers(sb) == 3 and summoned == 3 * click_m * per_summon,
-		"a Summon Spark bar with 3 workers summoned %d Sparks in one press (3 x click %d x %d a summon)" % [summoned, click_m, per_summon])
+		"a Summon Spark bar using 3 of the crew summoned %d Sparks in one press (3 x click %d x %d a summon)" % [summoned, click_m, per_summon])
 	# Summon Spark has no cooldown bar, but Kaleb's presses wait the wheel's
 	# 1-second Spark timer (author, 2026-11-05).
 	var spark_timer: float = float(pm.get_timer_intervals()["sparks_summon"])
@@ -274,21 +292,43 @@ func run() -> void:
 			spark_timer, steps_waited, after_timer - after_wait])
 	gc.kaleb_stack = saved_stack
 	gc.kaleb_stack.append(cb)
-	gc.kaleb_stack.append(fb)   # so the save round trip below carries a Focus-worker bar
+	gc.kaleb_stack.append(fb)
 
 	print("\n=== the stack saves and loads ===")
 	var data: Dictionary = gc.get_save_data()
 	var json_round = JSON.parse_string(JSON.stringify(data))
 	var before: Array = gc.kaleb_stack.duplicate(true)
+	var crew_before: Vector2i = Vector2i(gc.kaleb_crew_uonites, gc.kaleb_crew_foci)
 	gc.kaleb_stack = []
+	gc.kaleb_crew_uonites = 0
+	gc.kaleb_crew_foci = 0
 	gc._load_kaleb_stack(json_round)
 	var same: bool = gc.kaleb_stack.size() == before.size()
 	if same:
 		for i in before.size():
-			for key in ["cmd", "repeat", "on", "target", "res", "cmp", "value", "goto", "uonites", "foci_workers"]:
+			for key in ["cmd", "repeat", "on", "target", "res", "cmp", "value", "goto"]:
 				if gc.kaleb_stack[i][key] != before[i][key] or typeof(gc.kaleb_stack[i][key]) != typeof(before[i][key]):
 					same = false
+			if gc.kaleb_bar_count(gc.kaleb_stack[i]) != gc.kaleb_bar_count(before[i]):
+				same = false
 	ok(same, "after a JSON round trip the stack is the same, with ints still ints")
+	ok(Vector2i(gc.kaleb_crew_uonites, gc.kaleb_crew_foci) == crew_before,
+		"and so is the crew (%dU+%dF)" % [crew_before.x, crew_before.y])
+
+	print("\n=== a save from before the crew: bars held their own workers ===")
+	var old_save: Dictionary = {"kaleb_stack": [
+		{"cmd": "monad_compress", "repeat": 3, "uonites": 6, "foci_workers": 0},
+		{"cmd": "if", "res": "monad_solid", "value": 4, "goto": 0},
+		{"cmd": "tetrad_assemble", "repeat": 2, "uonites": 2, "foci_workers": 5},
+		{"cmd": "persistent_iota", "uonites": 0, "foci_workers": 6}]}
+	gc._load_kaleb_stack(old_save)
+	ok(gc.kaleb_bar_count(gc.kaleb_stack[0]) == 6 and gc.kaleb_bar_count(gc.kaleb_stack[2]) == 7
+			and gc.kaleb_bar_count(gc.kaleb_stack[3]) == 6,
+		"each bar's own workers become its count (6, 7, 6)")
+	ok(gc.kaleb_crew_uonites == 7 and gc.kaleb_crew_foci == 0,
+		"the crew is the largest count, 7, from the 8 Uonites they held: it runs as before (%dU+%dF)" % [
+			gc.kaleb_crew_uonites, gc.kaleb_crew_foci])
+	gc._load_kaleb_stack(json_round)
 
 	print("\n=== Kaleb pauses with a notice when he can't carry out a bar ===")
 	# Author, 2026-11-05: a Lock bar with no Volition free failed silently,

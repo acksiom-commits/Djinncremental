@@ -52,14 +52,22 @@ const CHAIN_SAVE_KEYS: Array[String] = [
 #   on      bool    its Focus has its Uonite switched On
 #   target  String  lock/unlock: the lock key
 #   res, cmp, value, goto   if-then: "if res cmp value, go to bar goto"
-#   uonites, foci_workers   working bars: its workers, Uonites and the Foci
-#                   standing in for them (at least 1 in all); each press
-#                   makes that many times what a click makes
-# Every bar holds its On/Off Focus, and every working bar its workers, for
-# as long as it is in the stack, On or Off (get_total_*_assigned() count
-# them). Saved;
-# survives the Oscillation, like the Uonites it holds.
+#   workers int     working bars: how many of the CREW it uses (1..crew
+#                   size); each press makes that many times what a click
+#                   makes. Older saves said uonites + foci_workers per bar.
+# Every bar holds its On/Off Focus for as long as it is in the stack, On or
+# Off. The workers are ONE shared crew (author, 2026-11-06): Kaleb takes the
+# crew from bar to bar instead of each bar holding its own, so the stack
+# holds the crew plus a Focus a bar (get_total_*_assigned() count them). The
+# player sets the crew's size in the Commands header. Saved; survives the
+# Oscillation, like the Uonites it holds.
+# PLANNED (author, 2026-11-06): at 125 Foci, when the third Volition shows
+# up, a Volition assigned to the stack will switch ONE Focus from bar to bar
+# in place of every bar's own On/Off Focus.
 var kaleb_stack: Array = []
+## The crew: Uonites first, then Foci standing in (kaleb_change_crew()).
+var kaleb_crew_uonites: int = 0
+var kaleb_crew_foci: int = 0
 var kaleb_running: bool = false
 var kaleb_index: int = 0
 var kaleb_repeat_done: int = 0
@@ -1047,48 +1055,40 @@ func get_total_foci_assigned() -> int:
 
 
 # ===================== KALEB'S COMMAND STACK =======================
-# A working bar's WORKERS do its work, and each press makes as many times
-# what a click makes. A worker is a Uonite or, when no Uonite is free, a
-# spare Focus (author, 2026-11-05: Uonites serve only the Allocation wheel's
-# purposes, of which the stack is a new part; Foci serve everything except
-# Volition-limited automation). Every bar also holds one Focus of its own,
-# its On/Off switch. If bars have no workers.
+# WORKERS do a working bar's work, and each press makes as many times what a
+# click makes. A worker is a Uonite or, when no Uonite is free, a spare Focus
+# (author, 2026-11-05: Uonites serve only the Allocation wheel's purposes, of
+# which the stack is a new part; Foci serve everything except Volition-
+# limited automation). They are one CREW Kaleb takes from bar to bar (author,
+# 2026-11-06), not a set per bar; each bar says how many of the crew it uses.
+# Every bar also holds one Focus of its own, its On/Off switch. If bars have
+# no workers.
 
-## Foci held: each bar's On/Off Focus, plus its Focus workers.
+## Foci held: each bar's On/Off Focus, plus the crew's Foci.
 func kaleb_foci_held() -> int:
-    var n := 0
-    for bar in kaleb_stack:
-        n += 1 + kaleb_bar_focus_workers(bar)
-    return n
+    return kaleb_stack.size() + kaleb_crew_foci
 
 
+## Uonites held: the crew's.
 func kaleb_uonites_held() -> int:
-    var n := 0
-    for bar in kaleb_stack:
-        n += kaleb_bar_uonites(bar)
-    return n
+    return kaleb_crew_uonites
 
 
-## The Uonite workers a bar holds (none for an If bar).
-static func kaleb_bar_uonites(bar: Dictionary) -> int:
+func kaleb_crew_size() -> int:
+    return kaleb_crew_uonites + kaleb_crew_foci
+
+
+## How many of the crew a working bar asks for (at least 1); 0 for an If bar.
+static func kaleb_bar_count(bar: Dictionary) -> int:
     if String(bar.get("cmd", "")) == "if":
         return 0
-    return maxi(0, int(bar.get("uonites", 1)))
+    return maxi(1, int(bar.get("workers", 1)))
 
 
-## The Focus workers a bar holds, standing in for Uonites (none for an If bar).
-static func kaleb_bar_focus_workers(bar: Dictionary) -> int:
-    if String(bar.get("cmd", "")) == "if":
-        return 0
-    return maxi(0, int(bar.get("foci_workers", 0)))
-
-
-## A working bar's workers, Uonites and Foci together (at least 1); what each
-## of its presses is multiplied by. 0 for an If bar.
-static func kaleb_bar_workers(bar: Dictionary) -> int:
-    if String(bar.get("cmd", "")) == "if":
-        return 0
-    return maxi(1, kaleb_bar_uonites(bar) + kaleb_bar_focus_workers(bar))
+## The workers a working bar presses with: its count, but no more than the
+## crew has. 0 for an If bar, or with no crew (Kaleb then pauses).
+func kaleb_bar_workers(bar: Dictionary) -> int:
+    return mini(kaleb_bar_count(bar), kaleb_crew_size())
 
 
 func _free_uonites() -> int:
@@ -1100,45 +1100,52 @@ func _free_foci() -> int:
     return maxi(0, archon_foci - get_total_foci_assigned())
 
 
-## Gives bar `bar` one more worker (delta 1: a free Uonite, else a free Focus)
-## or takes one back (-1: a Focus worker first, Foci being the more widely
-## useful, then a Uonite; never below 1 worker). Returns whether it changed.
-func kaleb_change_bar_workers(bar: Dictionary, delta: int) -> bool:
-    if String(bar.get("cmd", "")) == "if":
-        return false
+## Grows the crew by one (delta 1: a free Uonite, else a free Focus) or
+## shrinks it (-1: a Focus first, Foci being the more widely useful, then a
+## Uonite; not below 0). A bar asking for more than the crew now has is
+## lowered to the crew's size ("bars limited to it", author 2026-11-06).
+## Returns whether it changed.
+func kaleb_change_crew(delta: int) -> bool:
     if delta < 0:
-        if kaleb_bar_workers(bar) <= 1:
+        if kaleb_crew_size() <= 0:
             return false
-        if kaleb_bar_focus_workers(bar) > 0:
-            bar["foci_workers"] = kaleb_bar_focus_workers(bar) - 1
+        if kaleb_crew_foci > 0:
+            kaleb_crew_foci -= 1
         else:
-            bar["uonites"] = kaleb_bar_uonites(bar) - 1
+            kaleb_crew_uonites -= 1
+        var cap: int = maxi(1, kaleb_crew_size())
+        for bar in kaleb_stack:
+            if String(bar.get("cmd", "")) != "if" and kaleb_bar_count(bar) > cap:
+                bar["workers"] = cap
         return true
     if _free_uonites() >= 1:
-        bar["uonites"] = kaleb_bar_uonites(bar) + 1
+        kaleb_crew_uonites += 1
         return true
     if _free_foci() >= 1:
-        bar["foci_workers"] = kaleb_bar_focus_workers(bar) + 1
+        kaleb_crew_foci += 1
         return true
     return false
 
 
-## Adds `bar` at `at` (or the end), if its On/Off Focus is free and, for a
-## working bar, a worker: a free Uonite, else a second free Focus. Returns
-## whether it was added.
+## Changes how many of the crew bar `bar` uses, between 1 and the crew's
+## size. Costs nothing: the crew is already held. Returns whether it changed.
+func kaleb_change_bar_workers(bar: Dictionary, delta: int) -> bool:
+    if String(bar.get("cmd", "")) == "if":
+        return false
+    var n: int = clampi(kaleb_bar_count(bar) + delta, 1, maxi(1, kaleb_crew_size()))
+    if n == kaleb_bar_count(bar):
+        return false
+    bar["workers"] = n
+    return true
+
+
+## Adds `bar` at `at` (or the end), if its On/Off Focus is free. A working bar
+## starts using 1 of the crew. Returns whether it was added.
 func kaleb_add_bar(bar: Dictionary, at: int = -1) -> bool:
-    var free_f: int = _free_foci()
-    if free_f < 1:
+    if _free_foci() < 1:
         return false
     if String(bar.get("cmd", "")) != "if":
-        bar["uonites"] = 0
-        bar["foci_workers"] = 0
-        if _free_uonites() >= 1:
-            bar["uonites"] = 1
-        elif free_f >= 2:
-            bar["foci_workers"] = 1
-        else:
-            return false
+        bar["workers"] = maxi(1, int(bar.get("workers", 1)))
     if at < 0 or at > kaleb_stack.size():
         kaleb_stack.append(bar)
     else:
@@ -1189,45 +1196,47 @@ func kaleb_restart() -> void:
 
 
 ## Saved command stacks, the Commands tab's Stack slots (author, 2026-11-06):
-## each slot a copy of a stack's bars, or empty. Saving copies; it holds no
-## Uonites or Foci. Loading puts a copy in the live stack, workers and all.
+## each slot {"bars": a copy of a stack's bars, "crew": its crew size}, or
+## empty bars. Saving copies and holds no Uonites or Foci; loading puts a
+## copy in the live stack and staffs its crew.
 const KALEB_STACK_SLOTS: int = 3
-var kaleb_saved_stacks: Array = [[], [], []]
+var kaleb_saved_stacks: Array = [{"bars": [], "crew": 0}, {"bars": [], "crew": 0}, {"bars": [], "crew": 0}]
 
 
-## Copies the live stack into saved slot `slot` (0-based), over what was there.
+## The bars saved in slot `slot` (0-based); empty if none.
+func kaleb_saved_bars(slot: int) -> Array:
+    if slot < 0 or slot >= kaleb_saved_stacks.size():
+        return []
+    return kaleb_saved_stacks[slot].get("bars", [])
+
+
+## Copies the live stack and its crew size into saved slot `slot` (0-based),
+## over what was there.
 func kaleb_save_stack_to(slot: int) -> void:
     if slot < 0 or slot >= KALEB_STACK_SLOTS:
         return
-    kaleb_saved_stacks[slot] = kaleb_stack.duplicate(true)
+    kaleb_saved_stacks[slot] = {"bars": kaleb_stack.duplicate(true), "crew": kaleb_crew_size()}
 
 
-## Replaces the live stack with a copy of saved slot `slot` (0-based). Returns
-## "" when it did, else why not, leaving the live stack as it was. The new
-## stack is paused at bar 1. Its bars keep their worker COUNTS, but who works
-## is dealt afresh from what the live stack holds plus what is free: every
-## bar's On/Off Focus, then Uonites to workers bar by bar, then Foci standing
-## in for the rest (the same order + uses).
+## Replaces the live stack with a copy of saved slot `slot` (0-based), with
+## the crew size it was saved with. Returns "" when it did, else why not,
+## leaving the live stack as it was. The new stack is paused at bar 1. Its
+## crew is staffed afresh from what the live stack holds plus what is free:
+## every bar's On/Off Focus, then the crew, Uonites first, then Foci.
 func kaleb_load_stack_from(slot: int) -> String:
-    if slot < 0 or slot >= KALEB_STACK_SLOTS or (kaleb_saved_stacks[slot] as Array).is_empty():
+    var saved: Array = kaleb_saved_bars(slot)
+    if saved.is_empty():
         return "Slot %d is empty" % (slot + 1)
-    var bars: Array = (kaleb_saved_stacks[slot] as Array).duplicate(true)
+    var bars: Array = saved.duplicate(true)
+    var crew: int = maxi(0, int(kaleb_saved_stacks[slot].get("crew", 0)))
     var uonites_av: int = _free_uonites() + kaleb_uonites_held()
     var foci_av: int = _free_foci() + kaleb_foci_held()
-    var workers: int = 0
-    for bar in bars:
-        workers += kaleb_bar_workers(bar)
-    if bars.size() + maxi(0, workers - uonites_av) > foci_av:
-        return "Slot %d needs %d Foci and %d workers; %d Foci and %d Uonites are free for it" % [
-            slot + 1, bars.size(), workers, foci_av, uonites_av]
-    var u_left: int = uonites_av
-    for bar in bars:
-        var w: int = kaleb_bar_workers(bar)
-        var u: int = mini(u_left, w)
-        bar["uonites"] = u
-        bar["foci_workers"] = w - u
-        u_left -= u
+    if bars.size() + maxi(0, crew - uonites_av) > foci_av:
+        return "Slot %d needs %d Foci and a crew of %d; %d Foci and %d Uonites are free for it" % [
+            slot + 1, bars.size(), crew, foci_av, uonites_av]
     kaleb_stack = bars
+    kaleb_crew_uonites = mini(crew, uonites_av)
+    kaleb_crew_foci = crew - kaleb_crew_uonites
     kaleb_running = false
     kaleb_restart()
     return ""
@@ -1235,8 +1244,9 @@ func kaleb_load_stack_from(slot: int) -> String:
 
 ## A saved stack's bars made safe to run: JSON numbers come back as floats
 ## (the executor wants ints), unknown entries are dropped, and a working bar
-## always holds at least one worker (a save from before Focus workers, or a
-## hand-edited one, may say neither).
+## asks for at least one worker. A bar from before the shared crew
+## (2026-11-06) held its own uonites + foci_workers: that sum becomes its
+## count.
 func _coerce_kaleb_bars(raw) -> Array:
     var bars: Array = []
     if not (raw is Array):
@@ -1253,21 +1263,57 @@ func _coerce_kaleb_bars(raw) -> Array:
             "cmp":    String(b.get("cmp", "<")),
             "value":  _coerce_int(b.get("value"), 0),
             "goto":   _coerce_int(b.get("goto"), 0),
-            "uonites": maxi(0, _coerce_int(b.get("uonites"), 1)),
-            "foci_workers": maxi(0, _coerce_int(b.get("foci_workers"), 0)),
         }
-        if bar["cmd"] != "if" and bar["uonites"] + bar["foci_workers"] < 1:
-            bar["uonites"] = 1
+        if bar["cmd"] != "if":
+            var n: int = _coerce_int(b.get("workers"), -1)
+            if n < 0:
+                n = maxi(0, _coerce_int(b.get("uonites"), 1)) + maxi(0, _coerce_int(b.get("foci_workers"), 0))
+            bar["workers"] = maxi(1, n)
         bars.append(bar)
     return bars
 
 
+## The largest count among `bars`: the crew a pre-crew stack gets, so it runs
+## exactly as it did.
+static func _largest_bar_count(bars: Array) -> int:
+    var most: int = 0
+    for bar in bars:
+        most = maxi(most, kaleb_bar_count(bar))
+    return most
+
+
 func _load_kaleb_stack(data: Dictionary) -> void:
-    kaleb_stack = _coerce_kaleb_bars(data.get("kaleb_stack", []))
+    var raw_stack = data.get("kaleb_stack", [])
+    kaleb_stack = _coerce_kaleb_bars(raw_stack)
+    if data.has("kaleb_crew_uonites") or data.has("kaleb_crew_foci"):
+        kaleb_crew_uonites = maxi(0, _coerce_int(data.get("kaleb_crew_uonites"), 0))
+        kaleb_crew_foci = maxi(0, _coerce_int(data.get("kaleb_crew_foci"), 0))
+    else:
+        # A save from before the crew: its bars held their own workers. The
+        # crew becomes the largest bar's count, drawn from the Uonites they
+        # held first, so the stack runs as it did and holds far less.
+        var held_u: int = 0
+        if raw_stack is Array:
+            for b in raw_stack:
+                if b is Dictionary and String(b.get("cmd", "")) != "if":
+                    held_u += maxi(0, _coerce_int(b.get("uonites"), 0))
+        var crew: int = _largest_bar_count(kaleb_stack)
+        kaleb_crew_uonites = mini(crew, held_u)
+        kaleb_crew_foci = crew - kaleb_crew_uonites
     kaleb_saved_stacks = []
     var raw_saved = data.get("kaleb_saved_stacks", [])
     for i in KALEB_STACK_SLOTS:
-        kaleb_saved_stacks.append(_coerce_kaleb_bars(raw_saved[i]) if raw_saved is Array and i < raw_saved.size() else [])
+        var entry = raw_saved[i] if raw_saved is Array and i < raw_saved.size() else null
+        var bars: Array
+        var crew: int
+        if entry is Dictionary:
+            bars = _coerce_kaleb_bars(entry.get("bars", []))
+            crew = maxi(0, _coerce_int(entry.get("crew"), _largest_bar_count(bars)))
+        else:
+            # Slots saved before the crew were a bare list of bars.
+            bars = _coerce_kaleb_bars(entry)
+            crew = _largest_bar_count(bars)
+        kaleb_saved_stacks.append({"bars": bars, "crew": crew})
     kaleb_running = _coerce_bool(data.get("kaleb_running"), false)
     kaleb_index = clampi(_coerce_int(data.get("kaleb_index"), 0), 0, maxi(0, kaleb_stack.size() - 1))
     kaleb_repeat_done = maxi(0, _coerce_int(data.get("kaleb_repeat_done"), 0))
@@ -2004,6 +2050,8 @@ func get_save_data() -> Dictionary:
     data["will_form_switch_is_will"] = will_form_switch_is_will
     data["kaleb_stack"]       = kaleb_stack.duplicate(true)
     data["kaleb_saved_stacks"] = kaleb_saved_stacks.duplicate(true)
+    data["kaleb_crew_uonites"] = kaleb_crew_uonites
+    data["kaleb_crew_foci"]    = kaleb_crew_foci
     data["kaleb_running"]     = kaleb_running
     data["kaleb_index"]       = kaleb_index
     data["kaleb_repeat_done"] = kaleb_repeat_done

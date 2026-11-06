@@ -12,8 +12,8 @@ extends RefCounted
 ##   lock / unlock   switch the Purity Lock on `target` (a lock key, e.g.
 ##           "monad_liquid", "adaemant", "cat_medial"). Instant.
 ##   if      "if res cmp value, go to bar goto": a count check. Instant.
-## Every bar holds a Focus (its On/Off); every bar but If-then also holds its
-## workers, Uonites or, when none is free, Foci (GameContext.kaleb_bar_workers).
+## Every bar holds a Focus (its On/Off); every bar but If-then says how many
+## of the stack's shared crew it uses (GameContext.kaleb_bar_workers).
 
 const COMMANDS := {
     # The Summon Spark button has no cooldown bar (a player may click it as
@@ -71,7 +71,7 @@ static func display_name(key: String, gd: Node = null) -> String:
 static func make_bar(cmd: String, repeat: int = 1) -> Dictionary:
     return {"cmd": cmd, "repeat": maxi(1, repeat), "on": true,
         "target": "", "res": "", "cmp": "<", "value": 0, "goto": 0,
-        "uonites": 1, "foci_workers": 0}
+        "workers": 1}
 
 
 ## The count an If-then bar reads for `key`: Sparks, a Monad type

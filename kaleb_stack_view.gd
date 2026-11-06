@@ -6,7 +6,7 @@ extends PanelContainer
 ##   header   Run/Pause (GameContext.kaleb_running), Restart (back to bar 1,
 ##            GameContext.kaleb_restart()) and "+ Command", the palette
 ##            (kaleb_commands.gd)
-##   slots    Stack 1 2 3, the chosen slot's bar count, Save and Load: saved
+##   slots    the chosen slot's bar count, Stack 1 2 3, Save and Load: saved
 ##            stacks to swap in and out (GameContext.kaleb_saved_stacks)
 ##   list     one row per bar, top to bottom: its number (drag handle), On/Off
 ##            (its Focus switching its workers), its name (drag handle), its
@@ -51,6 +51,7 @@ var gd: Node = null
 
 var _run_btn: Button
 var _restart_btn: Button
+var _crew_lbl: Label
 # Stack slots row (_build_slot_row())
 var _slot_btns: Array = []
 var _slot_status: Label
@@ -97,10 +98,32 @@ func _ready() -> void:
     _restart_btn.tooltip_text = "Send Kaleb back to bar 1 (running or paused stays as it is)"
     _restart_btn.pressed.connect(gc.kaleb_restart)
     head.add_child(_restart_btn)
-    var title := _label("Kaleb's Commands", TEXT_DIM)
-    title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    head.add_child(title)
+    # No title: the Journal's tab already says Commands, and the Crew control
+    # needs the room (2026-11-06).
+    var gap := Control.new()
+    gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    head.add_child(gap)
+    # The crew (author, 2026-11-06): one set of workers Kaleb takes from bar
+    # to bar. + takes a free Uonite, else a free Focus; − gives a Focus back
+    # first. Hold-repeat, like the wheel's Uonite buttons.
+    head.add_child(_label("Crew", TEXT_DIM))
+    var crew_minus := _small_button("−")
+    crew_minus.custom_minimum_size = Vector2(20, 0)
+    crew_minus.tooltip_text = "Shrink the crew (a Focus goes back first, then a Uonite)"
+    _hold.connect_button(crew_minus, func() -> void: gc.kaleb_change_crew(-1))
+    head.add_child(crew_minus)
+    _crew_lbl = _label("", UONITE)
+    _crew_lbl.custom_minimum_size = Vector2(56, 0)
+    _crew_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    head.add_child(_crew_lbl)
+    var crew_plus := _small_button("+")
+    crew_plus.custom_minimum_size = Vector2(20, 0)
+    crew_plus.tooltip_text = "Grow the crew: a free Uonite, or a Focus when none is free"
+    _hold.connect_button(crew_plus, func() -> void:
+        if not gc.kaleb_change_crew(1):
+            _say("No free Uonite or Focus for the crew"))
+    head.add_child(crew_plus)
     _add_btn = MenuButton.new()
     _add_btn.text = "+ Command"
     _add_btn.flat = false
@@ -207,22 +230,23 @@ func _build_row(i: int) -> Dictionary:
     match String(def.get("kind", "")):
         "press":
             name_lbl.text = String(def.get("name", bar["cmd"]))
-            # Its Uonites: each one more multiplies what a press makes.
+            # How many of the crew it uses: each one more multiplies what a
+            # press makes. Free to change; the crew is already held.
             var minus := _small_button("−")
             minus.custom_minimum_size = Vector2(20, 0)
-            minus.tooltip_text = "Take a worker back (a Focus first, then a Uonite)"
+            minus.tooltip_text = "Use one fewer of the crew"
             _hold.connect_button(minus, func() -> void: gc.kaleb_change_bar_workers(bar, -1))
             row.add_child(minus)
             u_lbl = _label("", UONITE)
-            u_lbl.custom_minimum_size = Vector2(52, 0)
+            u_lbl.custom_minimum_size = Vector2(34, 0)
             u_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
             row.add_child(u_lbl)
             var plus := _small_button("+")
             plus.custom_minimum_size = Vector2(20, 0)
-            plus.tooltip_text = "Give it another worker: a Uonite, or a Focus when none is free"
+            plus.tooltip_text = "Use one more of the crew (up to its size; grow the crew in the header)"
             _hold.connect_button(plus, func() -> void:
                 if not gc.kaleb_change_bar_workers(bar, 1):
-                    _say("No free Uonite or Focus"))
+                    _say("It already uses the whole crew of %d" % gc.kaleb_crew_size()))
             row.add_child(plus)
             progress.text = "×"
             row.add_child(progress)
@@ -240,7 +264,7 @@ func _build_row(i: int) -> Dictionary:
 
     var del := _small_button("×")
     del.custom_minimum_size = Vector2(20, 0)
-    del.tooltip_text = "Remove (returns its Uonite and Focus)"
+    del.tooltip_text = "Remove (returns its On/Off Focus)"
     del.pressed.connect(func() -> void:
         gc.kaleb_remove_bar(_index_of(bar)))
     row.add_child(del)
@@ -266,6 +290,12 @@ func _refresh() -> void:
     _run_btn.disabled = gc.kaleb_stack.is_empty()
     _restart_btn.disabled = gc.kaleb_index == 0 and gc.kaleb_repeat_done == 0
     _refresh_slot_row()
+    var cu: int = gc.kaleb_crew_uonites
+    var cf: int = gc.kaleb_crew_foci
+    _crew_lbl.text = ("%dU" % cu) if cf == 0 else (("%dF" % cf) if cu == 0 else "%dU+%dF" % [cu, cf])
+    _crew_lbl.add_theme_color_override("font_color", UONITE if cu + cf > 0 else TEXT_DIM)
+    _crew_lbl.tooltip_text = "Kaleb's crew: %d Uonite%s and %d Focus worker%s, taken from bar to bar" % [
+        cu, "" if cu == 1 else "s", cf, "" if cf == 1 else "s"]
     for i in _rows.size():
         var r: Dictionary = _rows[i]
         var bar: Dictionary = r["bar"]
@@ -275,12 +305,12 @@ func _refresh() -> void:
         (r["num"] as Label).text = ("▶" if current and gc.kaleb_running else "%d" % (i + 1))
         (r["name"] as Label).add_theme_color_override("font_color", TEXT if bool(bar["on"]) else TEXT_DIM)
         if r["uonites"]:
-            var u: int = gc.kaleb_bar_uonites(bar)
-            var f: int = gc.kaleb_bar_focus_workers(bar)
+            var n: int = gc.kaleb_bar_workers(bar)
             var wl: Label = r["uonites"]
-            wl.text = ("%dU" % u) if f == 0 else (("%dF" % f) if u == 0 else "%dU+%dF" % [u, f])
-            wl.tooltip_text = "%d Uonite%s and %d Focus worker%s: each press makes %d times as much" % [
-                u, "" if u == 1 else "s", f, "" if f == 1 else "s", u + f]
+            wl.text = "%d" % n
+            wl.add_theme_color_override("font_color", UONITE if n > 0 else TEXT_DIM)
+            wl.tooltip_text = "Uses %d of the crew's %d: each press makes %d times as much" % [
+                n, gc.kaleb_crew_size(), n]
         # A press bar's "×N" reads "k/N" while Kaleb is on it.
         var prog: Label = r["progress"]
         if KC.COMMANDS.get(String(bar["cmd"]), {}).get("kind", "") == "press":
@@ -312,16 +342,24 @@ func _on_add_chosen(id: int) -> void:
             bar["res"] = "persistent_particle"
             bar["value"] = 4
     if not gc.kaleb_add_bar(bar):
-        _say("No free %s for a new bar" % ("Focus" if cmd == "if" else "Uonite or Focus"))
+        _say("No free Focus for a new bar")
 
 
 # ==================================================
 # STACK SLOTS: save the stack to a slot, load it back (author, 2026-11-06;
 # modelled on the Settings panel's save slots: pick a slot, then Save or Load)
 # ==================================================
+## Left to right: the chosen slot's bar count, "Stack 1 2 3", Save, Load
+## (author, 2026-11-06: the count and the slot buttons swapped places, so
+## the slot buttons sit next to the Save and Load they feed).
 func _build_slot_row() -> HBoxContainer:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 2)
+    _slot_status = _label("", TEXT_DIM)
+    _slot_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _slot_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _slot_status.clip_text = true
+    row.add_child(_slot_status)
     row.add_child(_label("Stack", TEXT_DIM))
     for i in gc.kaleb_saved_stacks.size():
         var b := _small_button("%d" % (i + 1))
@@ -331,11 +369,6 @@ func _build_slot_row() -> HBoxContainer:
         b.pressed.connect(_select_stack_slot.bind(i))
         row.add_child(b)
         _slot_btns.append(b)
-    _slot_status = _label("", TEXT_DIM)
-    _slot_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    _slot_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    _slot_status.clip_text = true
-    row.add_child(_slot_status)
     _save_btn = _small_button("Save")
     _save_btn.custom_minimum_size = Vector2(76, 0)
     _save_btn.pressed.connect(_on_stack_save)
@@ -356,7 +389,7 @@ func _select_stack_slot(i: int) -> void:
 ## itself ("Overwrite?" / "Replace?"), and a second press does it, so the
 ## player stays in the tab; picking a slot or 3 s passing cancels.
 func _on_stack_save() -> void:
-    var saved: Array = gc.kaleb_saved_stacks[_stack_slot]
+    var saved: Array = gc.kaleb_saved_bars(_stack_slot)
     if gc.kaleb_stack.is_empty():
         _say("No bars to save")
         return
@@ -369,7 +402,7 @@ func _on_stack_save() -> void:
 
 
 func _on_stack_load() -> void:
-    if (gc.kaleb_saved_stacks[_stack_slot] as Array).is_empty():
+    if gc.kaleb_saved_bars(_stack_slot).is_empty():
         _say("Slot %d is empty" % (_stack_slot + 1))
         return
     if not gc.kaleb_stack.is_empty() and _confirming != "load":
@@ -390,9 +423,9 @@ func _refresh_slot_row() -> void:
         _confirming = ""
     for i in _slot_btns.size():
         (_slot_btns[i] as Button).set_pressed_no_signal(i == _stack_slot)
-        var n: int = (gc.kaleb_saved_stacks[i] as Array).size()
+        var n: int = gc.kaleb_saved_bars(i).size()
         (_slot_btns[i] as Button).tooltip_text = "Stack slot %d: %s" % [i + 1, ("%d bars" % n) if n > 0 else "empty"]
-    var bars: int = (gc.kaleb_saved_stacks[_stack_slot] as Array).size()
+    var bars: int = gc.kaleb_saved_bars(_stack_slot).size()
     _slot_status.text = ("Slot %d · %d bars" % [_stack_slot + 1, bars]) if bars > 0 else ("Slot %d · Empty" % (_stack_slot + 1))
     _save_btn.text = "Overwrite?" if _confirming == "save" else "Save"
     _load_btn.text = "Replace?" if _confirming == "load" else "Load"
