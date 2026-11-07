@@ -288,52 +288,52 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Both"
 
-[node name="MultiRedistributeHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox" unique_id=1600000021]
+[node name="MultiSupplyHBox" type="HBoxContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox" unique_id=1600000021]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="MultiGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox" unique_id=1758693413]
+[node name="MultiGrid" type="GridContainer" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiSupplyHBox" unique_id=1758693413]
 custom_minimum_size = Vector2(0, 75)
 layout_mode = 2
 size_flags_horizontal = 3
 columns = 2
 
-[node name="10XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=967275612]
+[node name="10XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiSupplyHBox/MultiGrid" unique_id=967275612]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "10X"
 
-[node name="CSTMButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=783236587]
+[node name="CSTMButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiSupplyHBox/MultiGrid" unique_id=783236587]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "CSTM"
 
-[node name="ALLButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=806143499]
+[node name="ALLButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiSupplyHBox/MultiGrid" unique_id=806143499]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "ALL"
 
-[node name="CLEARButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=1204857312]
+[node name="CLEARButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiSupplyHBox/MultiGrid" unique_id=1204857312]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "CLEAR"
 
-[node name="100XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox/MultiGrid" unique_id=1920818803]
+[node name="100XButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiSupplyHBox/MultiGrid" unique_id=1920818803]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "100X"
 
-[node name="RedistributeButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiRedistributeHBox" unique_id=1600000020]
+[node name="SupplyButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox/ConstellationAllocationVBox/MultiSupplyHBox" unique_id=1600000020]
 custom_minimum_size = Vector2(0, 75)
 layout_mode = 2
 size_flags_horizontal = 3
-text = "REDISTRIBUTE
+text = "SUPPLY
 SPARKS"
 
 [node name="StudyConstellationButton" type="Button" parent="ConstellationSelectorPanel/SelectorMargin/SelectorColumns/SelectorVBox" unique_id=1188400120]

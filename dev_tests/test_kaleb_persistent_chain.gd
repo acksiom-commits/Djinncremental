@@ -391,6 +391,79 @@ func run() -> void:
 		"a press that frees room at full storage (Persistent Particle) goes on without a pause")
 	gc.kaleb_running = false
 
+	print("\n=== Constellation bars: Supply Sparks, Endow, Ignore (author, 2026-11-06) ===")
+	var cdata = root.get_node("/root/ConstellationData")
+	var saved_unlocked: Array = cdata.unlocked.duplicate()
+	if not cdata.unlocked.has(0):
+		cdata.unlocked.append(0)
+	var cap0: float = cdata.get_spark_cap(0)
+	gc.constellation_spark_totals["0"] = 0.0
+	gc.assignments["constellation_0_volitions"] = 0
+	gc.assignments["constellation_0_bonus_volitions"] = 0
+	gc.sparks = BigNum.from_int(1000000)
+	gc.storage_cap = BigNum.from_int(1000000)
+	gc.kaleb_stack = []
+	gc.kaleb_crew_uonites = 0
+	gc.kaleb_crew_foci = 0
+	gc.uonite = gc.get_total_uonites_assigned().add(BigNum.from_int(3))
+	gc.archon_foci = gc.get_total_foci_assigned() + 10
+	for n in 3:
+		gc.kaleb_change_crew(1)
+	var eb: Dictionary = _bar("supply_sparks", 5, {"target": "0"})
+	gc.kaleb_add_bar(eb)
+	eb["workers"] = 4
+	gc.kaleb_index = 0
+	gc.kaleb_repeat_done = 0
+	kaleb.clock_override = 5000.0
+	kaleb._timer_ready.clear()
+	gc.kaleb_running = true
+	kaleb.step()
+	ok(not gc.kaleb_running and is_zero_approx(float(gc.constellation_spark_totals["0"])),
+		"with no Volition on the Constellation, Kaleb pauses instead of endowing (as its automatic feeding needs one)")
+	ok(said.call("no Volition is on"), "and says so")
+	gc.assignments["constellation_0_volitions"] = 1
+	gc.kaleb_running = true
+	kaleb.step()
+	ok(not gc.kaleb_running and is_zero_approx(float(gc.constellation_spark_totals["0"])) and gc.kaleb_bar_workers(eb) == 0,
+		"with a crew of 3 Uonites and no Foci, it pauses too: only Foci work in Constellations")
+	gc.kaleb_change_crew(1)
+	gc.kaleb_change_crew(1)
+	ok(gc.kaleb_crew_uonites == 3 and gc.kaleb_crew_foci == 2 and gc.kaleb_bar_workers(eb) == 2,
+		"with 3U+2F the bar asking for 4 works with the 2 Foci only")
+	var click_m2: int = gc.get_click_multiplier()
+	var sp0: BigNum = gc.sparks.copy()
+	gc.kaleb_running = true
+	kaleb.step()
+	var moved: float = float(gc.constellation_spark_totals["0"])
+	ok(roundi(moved) == 2 * click_m2 and roundi(sp0.sub(gc.sparks).to_float()) == 2 * click_m2,
+		"one press moves click multiplier x 2 Foci = %d Sparks into it, from the pool (%d)" % [2 * click_m2, roundi(moved)])
+	kaleb.step()
+	ok(is_equal_approx(float(gc.constellation_spark_totals["0"]), moved), "the next press waits the 1 s timer")
+	kaleb.clock_override = 5000.0 + KC.SUPPLY_INTERVAL
+	kaleb.step()
+	ok(roundi(float(gc.constellation_spark_totals["0"])) == 4 * click_m2, "then presses again")
+	gc.constellation_spark_totals["0"] = cap0 - 1.0
+	kaleb.clock_override = 5000.0 + 2.0 * KC.SUPPLY_INTERVAL
+	kaleb.step()
+	ok(is_equal_approx(float(gc.constellation_spark_totals["0"]), cap0), "no further than its cap (%.0f)" % cap0)
+	gc.kaleb_running = false
+	kaleb.clock_override = -1.0
+
+	gc.kaleb_stack = []
+	gc.kaleb_add_bar(_bar("feed_endow", 1, {"target": "0"}))
+	gc.kaleb_add_bar(_bar("if", 1, {"res": "sparks", "cmp": "<", "value": 0, "goto": 0}))
+	gc.assignments["constellation_0_feed_mode"] = 0
+	gc.kaleb_index = 0
+	gc.kaleb_running = true
+	kaleb.step()
+	ok(gc._assignment_int("constellation_0_feed_mode", -1) == 1, "an Endow bar switches its Constellation's automatic feeding to Endow")
+	gc.kaleb_stack[0]["cmd"] = "feed_ignore"
+	gc.kaleb_index = 0
+	kaleb.step()
+	ok(gc._assignment_int("constellation_0_feed_mode", -1) == 0, "an Ignore bar switches it back to Ignore")
+	gc.kaleb_running = false
+	cdata.unlocked = saved_unlocked
+
 	scene.queue_free()
 	await process_frame
 	await process_frame

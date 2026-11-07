@@ -364,7 +364,7 @@ func get_constellation_art_tier_bonus(constellation_id: int) -> float:
 
 ## Edge-triggered: fires at most once per art-tier episode. Called from
 ## every site that adds to constellation_spark_totals (automated drain AND
-## manual endowment) so neither path can miss a crossing or double-count one.
+## Supply) so neither path can miss a crossing or double-count one.
 func _check_art_tier_crossing(constellation_id: int) -> void:
     var cd: Node = get_node_or_null("/root/ConstellationData")
     if not cd or cd.get_visual_state(constellation_id) != "art":
@@ -1086,9 +1086,13 @@ static func kaleb_bar_count(bar: Dictionary) -> int:
 
 
 ## The workers a working bar presses with: its count, but no more than the
-## crew has. 0 for an If bar, or with no crew (Kaleb then pauses).
+## crew has. 0 for an If bar, or with no crew (Kaleb then pauses). A
+## Supply Sparks bar counts only the crew's FOCI: "Only Foci work in
+## Constellations" (author, 2026-11-06), Uonites being for the Allocation
+## wheel's purposes only.
 func kaleb_bar_workers(bar: Dictionary) -> int:
-    return mini(kaleb_bar_count(bar), kaleb_crew_size())
+    var crew: int = kaleb_crew_foci if String(bar.get("cmd", "")) == "supply_sparks" else kaleb_crew_size()
+    return mini(kaleb_bar_count(bar), crew)
 
 
 func _free_uonites() -> int:
@@ -1100,12 +1104,59 @@ func _free_foci() -> int:
     return maxi(0, archon_foci - get_total_foci_assigned())
 
 
+# ----- Stack slots (author, 2026-11-06) -----
+# Each of the Commands tab's Stack slots is its own stack. The LIVE slot's
+# stack is kaleb_stack with the crew above: the one Kaleb runs (or has
+# paused), and the only one that holds Uonites and Foci. The others are
+# plans kept in kaleb_slot_stacks, {"bars", "crew": planned size}, holding
+# nothing; editing them is free. Pressing Run on one makes it live
+# (kaleb_run_slot()), stopping the old one. Each slot also has a saved BASE
+# (kaleb_saved_stacks) that Save and Load copy to and from, "to return to a
+# base stack after experimentation". `slot` -1 in the calls below means the
+# live slot.
+var kaleb_live_slot: int = 0
+var kaleb_slot_stacks: Array = [{"bars": [], "crew": 0}, {"bars": [], "crew": 0}, {"bars": [], "crew": 0}]
+
+
+func kaleb_is_live(slot: int) -> bool:
+    return slot < 0 or slot == kaleb_live_slot
+
+
+## The bars of stack slot `slot` (the live stack itself for the live slot).
+func kaleb_bars(slot: int = -1) -> Array:
+    if kaleb_is_live(slot):
+        return kaleb_stack
+    return kaleb_slot_stacks[slot]["bars"]
+
+
+## A slot's crew size: the live crew, or a plan's size.
+func kaleb_slot_crew(slot: int = -1) -> int:
+    if kaleb_is_live(slot):
+        return kaleb_crew_size()
+    return maxi(0, int(kaleb_slot_stacks[slot].get("crew", 0)))
+
+
+## Lowers any bar in `bars` asking for more than `cap` workers.
+static func _cap_bar_counts(bars: Array, cap: int) -> void:
+    for bar in bars:
+        if String(bar.get("cmd", "")) != "if" and kaleb_bar_count(bar) > maxi(1, cap):
+            bar["workers"] = maxi(1, cap)
+
+
 ## Grows the crew by one (delta 1: a free Uonite, else a free Focus) or
 ## shrinks it (-1: a Focus first, Foci being the more widely useful, then a
 ## Uonite; not below 0). A bar asking for more than the crew now has is
-## lowered to the crew's size ("bars limited to it", author 2026-11-06).
-## Returns whether it changed.
-func kaleb_change_crew(delta: int) -> bool:
+## lowered to the crew's size ("bars limited to it", author 2026-11-06). A
+## slot that isn't live only plans its crew's size: nothing is taken until
+## it runs. Returns whether it changed.
+func kaleb_change_crew(delta: int, slot: int = -1) -> bool:
+    if not kaleb_is_live(slot):
+        var planned: int = kaleb_slot_crew(slot)
+        if planned + delta < 0:
+            return false
+        kaleb_slot_stacks[slot]["crew"] = planned + delta
+        _cap_bar_counts(kaleb_bars(slot), planned + delta)
+        return true
     if delta < 0:
         if kaleb_crew_size() <= 0:
             return false
@@ -1113,10 +1164,7 @@ func kaleb_change_crew(delta: int) -> bool:
             kaleb_crew_foci -= 1
         else:
             kaleb_crew_uonites -= 1
-        var cap: int = maxi(1, kaleb_crew_size())
-        for bar in kaleb_stack:
-            if String(bar.get("cmd", "")) != "if" and kaleb_bar_count(bar) > cap:
-                bar["workers"] = cap
+        _cap_bar_counts(kaleb_stack, kaleb_crew_size())
         return true
     if _free_uonites() >= 1:
         kaleb_crew_uonites += 1
@@ -1128,38 +1176,45 @@ func kaleb_change_crew(delta: int) -> bool:
 
 
 ## Changes how many of the crew bar `bar` uses, between 1 and the crew's
-## size. Costs nothing: the crew is already held. Returns whether it changed.
-func kaleb_change_bar_workers(bar: Dictionary, delta: int) -> bool:
+## size (its slot's). Costs nothing: the crew is already held, or planned.
+## Returns whether it changed.
+func kaleb_change_bar_workers(bar: Dictionary, delta: int, slot: int = -1) -> bool:
     if String(bar.get("cmd", "")) == "if":
         return false
-    var n: int = clampi(kaleb_bar_count(bar) + delta, 1, maxi(1, kaleb_crew_size()))
+    var n: int = clampi(kaleb_bar_count(bar) + delta, 1, maxi(1, kaleb_slot_crew(slot)))
     if n == kaleb_bar_count(bar):
         return false
     bar["workers"] = n
     return true
 
 
-## Adds `bar` at `at` (or the end), if its On/Off Focus is free. A working bar
-## starts using 1 of the crew. Returns whether it was added.
-func kaleb_add_bar(bar: Dictionary, at: int = -1) -> bool:
-    if _free_foci() < 1:
+## Adds `bar` at `at` (or the end). On the live stack it needs its On/Off
+## Focus free; a slot that isn't live holds nothing, so it always goes in.
+## A working bar starts using 1 of the crew. Returns whether it was added.
+func kaleb_add_bar(bar: Dictionary, at: int = -1, slot: int = -1) -> bool:
+    var live: bool = kaleb_is_live(slot)
+    if live and _free_foci() < 1:
         return false
     if String(bar.get("cmd", "")) != "if":
         bar["workers"] = maxi(1, int(bar.get("workers", 1)))
-    if at < 0 or at > kaleb_stack.size():
-        kaleb_stack.append(bar)
+    var bars: Array = kaleb_bars(slot)
+    if at < 0 or at > bars.size():
+        bars.append(bar)
     else:
-        kaleb_stack.insert(at, bar)
-        if at <= kaleb_index and kaleb_stack.size() > 1:
+        bars.insert(at, bar)
+        if live and at <= kaleb_index and bars.size() > 1:
             kaleb_index += 1
     return true
 
 
-## Removes bar `i`, returning its Focus and Uonite.
-func kaleb_remove_bar(i: int) -> void:
-    if i < 0 or i >= kaleb_stack.size():
+## Removes bar `i` (on the live stack, returning its On/Off Focus).
+func kaleb_remove_bar(i: int, slot: int = -1) -> void:
+    var bars: Array = kaleb_bars(slot)
+    if i < 0 or i >= bars.size():
         return
-    kaleb_stack.remove_at(i)
+    bars.remove_at(i)
+    if not kaleb_is_live(slot):
+        return
     if kaleb_stack.is_empty():
         kaleb_index = 0
         kaleb_repeat_done = 0
@@ -1171,19 +1226,52 @@ func kaleb_remove_bar(i: int) -> void:
 
 
 ## Moves bar `from` to slot `to` (drag and drop onto the stack's slot grid).
-## The bar Kaleb is on stays the one he is on.
-func kaleb_move_bar(from: int, to: int) -> void:
-    if from < 0 or from >= kaleb_stack.size():
+## On the live stack, the bar Kaleb is on stays the one he is on.
+func kaleb_move_bar(from: int, to: int, slot: int = -1) -> void:
+    var bars: Array = kaleb_bars(slot)
+    if from < 0 or from >= bars.size():
         return
-    to = clampi(to, 0, kaleb_stack.size() - 1)
+    to = clampi(to, 0, bars.size() - 1)
     if from == to:
         return
-    var current = kaleb_stack[kaleb_index] if kaleb_index < kaleb_stack.size() else null
-    var bar = kaleb_stack[from]
-    kaleb_stack.remove_at(from)
-    kaleb_stack.insert(to, bar)
+    var live: bool = kaleb_is_live(slot)
+    var current = kaleb_stack[kaleb_index] if live and kaleb_index < kaleb_stack.size() else null
+    var bar = bars[from]
+    bars.remove_at(from)
+    bars.insert(to, bar)
     if current != null:
         kaleb_index = kaleb_stack.find(current)
+
+
+## Makes stack slot `slot` the live one and runs it (Run on a slot that isn't
+## live; author, 2026-11-06: "Only clicking Run on the new slot's display
+## changes that; it makes the previous stack stop running and activates the
+## new one"). The old live stack stops and goes back to being a plan,
+## returning its On/Off Foci and crew; the new one takes a Focus a bar and
+## its planned crew, Uonites first, then Foci, and starts at bar 1. Returns
+## "" when it did, else why not, changing nothing.
+func kaleb_run_slot(slot: int) -> String:
+    if kaleb_is_live(slot):
+        kaleb_running = true
+        return ""
+    var bars: Array = kaleb_bars(slot)
+    if bars.is_empty():
+        return "Slot %d has no commands" % (slot + 1)
+    var crew: int = kaleb_slot_crew(slot)
+    var uonites_av: int = _free_uonites() + kaleb_uonites_held()
+    var foci_av: int = _free_foci() + kaleb_foci_held()
+    if bars.size() + maxi(0, crew - uonites_av) > foci_av:
+        return "Slot %d needs %d Foci and a crew of %d; %d Foci and %d Uonites are free for it" % [
+            slot + 1, bars.size(), crew, foci_av, uonites_av]
+    kaleb_slot_stacks[kaleb_live_slot] = {"bars": kaleb_stack, "crew": kaleb_crew_size()}
+    kaleb_stack = bars
+    kaleb_slot_stacks[slot] = {"bars": [], "crew": 0}   # its truth is kaleb_stack now
+    kaleb_crew_uonites = mini(crew, uonites_av)
+    kaleb_crew_foci = crew - kaleb_crew_uonites
+    kaleb_live_slot = slot
+    kaleb_restart()
+    kaleb_running = true
+    return ""
 
 
 ## Sends Kaleb back to bar 1 with nothing of it done (the Commands tab's
@@ -1195,40 +1283,42 @@ func kaleb_restart() -> void:
     kaleb_repeat_done = 0
 
 
-## Saved command stacks, the Commands tab's Stack slots (author, 2026-11-06):
-## each slot {"bars": a copy of a stack's bars, "crew": its crew size}, or
-## empty bars. Saving copies and holds no Uonites or Foci; loading puts a
-## copy in the live stack and staffs its crew.
+## Each Stack slot's saved BASE (author, 2026-11-06): {"bars": a copy of the
+## slot's stack, "crew": its crew size}, or empty bars. Save copies the
+## slot's stack in; Load copies it back out, to return to the base after
+## experimenting. A base holds no Uonites or Foci.
 const KALEB_STACK_SLOTS: int = 3
 var kaleb_saved_stacks: Array = [{"bars": [], "crew": 0}, {"bars": [], "crew": 0}, {"bars": [], "crew": 0}]
 
 
-## The bars saved in slot `slot` (0-based); empty if none.
+## The bars of slot `slot`'s saved base (0-based); empty if none.
 func kaleb_saved_bars(slot: int) -> Array:
     if slot < 0 or slot >= kaleb_saved_stacks.size():
         return []
     return kaleb_saved_stacks[slot].get("bars", [])
 
 
-## Copies the live stack and its crew size into saved slot `slot` (0-based),
-## over what was there.
+## Copies slot `slot`'s stack and crew size into its base, over what was there.
 func kaleb_save_stack_to(slot: int) -> void:
     if slot < 0 or slot >= KALEB_STACK_SLOTS:
         return
-    kaleb_saved_stacks[slot] = {"bars": kaleb_stack.duplicate(true), "crew": kaleb_crew_size()}
+    kaleb_saved_stacks[slot] = {"bars": kaleb_bars(slot).duplicate(true), "crew": kaleb_slot_crew(slot)}
 
 
-## Replaces the live stack with a copy of saved slot `slot` (0-based), with
-## the crew size it was saved with. Returns "" when it did, else why not,
-## leaving the live stack as it was. The new stack is paused at bar 1. Its
-## crew is staffed afresh from what the live stack holds plus what is free:
-## every bar's On/Off Focus, then the crew, Uonites first, then Foci.
+## Puts a copy of slot `slot`'s base back as its stack. Returns "" when it
+## did, else why not, leaving the stack as it was. A slot that isn't live just
+## takes the copy and its planned crew. The live slot's crew is staffed afresh
+## from what the live stack holds plus what is free (every bar's On/Off
+## Focus, then the crew, Uonites first, then Foci), and is paused at bar 1.
 func kaleb_load_stack_from(slot: int) -> String:
     var saved: Array = kaleb_saved_bars(slot)
     if saved.is_empty():
-        return "Slot %d is empty" % (slot + 1)
+        return "Slot %d has no saved base" % (slot + 1)
     var bars: Array = saved.duplicate(true)
     var crew: int = maxi(0, int(kaleb_saved_stacks[slot].get("crew", 0)))
+    if not kaleb_is_live(slot):
+        kaleb_slot_stacks[slot] = {"bars": bars, "crew": crew}
+        return ""
     var uonites_av: int = _free_uonites() + kaleb_uonites_held()
     var foci_av: int = _free_foci() + kaleb_foci_held()
     if bars.size() + maxi(0, crew - uonites_av) > foci_av:
@@ -1314,6 +1404,19 @@ func _load_kaleb_stack(data: Dictionary) -> void:
             bars = _coerce_kaleb_bars(entry)
             crew = _largest_bar_count(bars)
         kaleb_saved_stacks.append({"bars": bars, "crew": crew})
+    # The other slots' stacks (plans) and which slot is live; a save from
+    # before slots had stacks of their own has its stack live in slot 1.
+    kaleb_live_slot = clampi(_coerce_int(data.get("kaleb_live_slot"), 0), 0, KALEB_STACK_SLOTS - 1)
+    kaleb_slot_stacks = []
+    var raw_slots = data.get("kaleb_slot_stacks", [])
+    for i in KALEB_STACK_SLOTS:
+        var entry = raw_slots[i] if raw_slots is Array and i < raw_slots.size() else null
+        if i == kaleb_live_slot or not (entry is Dictionary):
+            kaleb_slot_stacks.append({"bars": [], "crew": 0})
+            continue
+        var plan_bars: Array = _coerce_kaleb_bars(entry.get("bars", []))
+        kaleb_slot_stacks.append({"bars": plan_bars,
+            "crew": maxi(0, _coerce_int(entry.get("crew"), _largest_bar_count(plan_bars)))})
     kaleb_running = _coerce_bool(data.get("kaleb_running"), false)
     kaleb_index = clampi(_coerce_int(data.get("kaleb_index"), 0), 0, maxi(0, kaleb_stack.size() - 1))
     kaleb_repeat_done = maxi(0, _coerce_int(data.get("kaleb_repeat_done"), 0))
@@ -1786,14 +1889,15 @@ func get_click_multiplier() -> int:
     return int(float(base) * tier_mult)
 
 
-## MANUAL spark endowment — the Constellation slideout's REDISTRIBUTE
-## button. Pushes Sparks from the player's pool into one Constellation on
-## demand, instead of waiting for the auto-feed tick.
+## SUPPLY: the Constellation slideout's SUPPLY SPARKS button, the player's
+## manual transfer. Pushes Sparks from the player's reserve into one
+## Constellation on demand. Not ENDOW, which is the automatic feeding by the
+## Volitions and Foci assigned to a Constellation (author, 2026-11-06).
 ##
 ## Scales with the Volumitions click multiplier and NOT with the slideout's
 ## 10X/100X/CSTM/ALL multi-selector: those select how many *automation
 ## resources* (Foci, Volitions, eventually high-tier Uonites) a +/- press
-## assigns, which is a different axis entirely. Endowment is a click
+## assigns, which is a different axis entirely. Supply is a click
 ## action, so it follows the click stat.
 ##
 ## Deliberately independent of feed_mode. IGNORE only suppresses the
@@ -1813,7 +1917,7 @@ func get_click_multiplier() -> int:
 ##
 ## The old form was framed as "one auto-tick's worth, times the click
 ## multiplier", which sounds reasonable and is the wrong axis: it makes a
-## heavily-assigned Constellation redistribute in huge steps and an
+## heavily-assigned Constellation supply in huge steps and an
 ## unassigned one in single Sparks, so the button's feel tracked automation
 ## investment rather than click investment. It also needed a floor of 1 to
 ## stop an unassigned Constellation moving nothing at all — a floor that is
@@ -1822,12 +1926,20 @@ func get_click_multiplier() -> int:
 ##
 ## Returns how much was actually moved, so the caller can tell a real
 ## transfer from a no-op (capped, or out of Sparks) without re-deriving it.
-func endow_constellation_sparks_manual(constellation_id: int) -> float:
-    if sparks.is_zero():
+func supply_constellation_sparks_manual(constellation_id: int) -> float:
+    return supply_constellation_sparks(constellation_id, get_click_multiplier())
+
+
+## Pushes up to `amount` Sparks from the pool into a Constellation, no further
+## than its cap. The Supply Sparks button sends the click multiplier;
+## Kaleb's Supply Sparks bar sends that × the crew's Foci on it
+## (kaleb_executor.gd). Returns how much moved.
+func supply_constellation_sparks(constellation_id: int, amount: int) -> float:
+    if sparks.is_zero() or amount <= 0:
         return 0.0
     var key: String = str(constellation_id)
     var current: float = constellation_spark_totals.get(key, 0.0)
-    var want: BigNum = BigNum.from_int(get_click_multiplier())
+    var want: BigNum = BigNum.from_int(amount)
 
     var cd: Node = get_node_or_null("/root/ConstellationData")
     if cd:
@@ -2052,6 +2164,8 @@ func get_save_data() -> Dictionary:
     data["kaleb_saved_stacks"] = kaleb_saved_stacks.duplicate(true)
     data["kaleb_crew_uonites"] = kaleb_crew_uonites
     data["kaleb_crew_foci"]    = kaleb_crew_foci
+    data["kaleb_live_slot"]    = kaleb_live_slot
+    data["kaleb_slot_stacks"]  = kaleb_slot_stacks.duplicate(true)
     data["kaleb_running"]     = kaleb_running
     data["kaleb_index"]       = kaleb_index
     data["kaleb_repeat_done"] = kaleb_repeat_done

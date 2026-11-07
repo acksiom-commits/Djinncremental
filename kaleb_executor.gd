@@ -98,6 +98,34 @@ func step() -> void:
                     _pause(bar, why)
                     return
                 _advance()
+            "supply":
+                # Supply Sparks into one Constellation (author,
+                # 2026-11-06): once a second; click multiplier × the crew's
+                # Foci on the bar; only with a Volition on it, like its
+                # automatic feeding. A press that moves nothing (capped, or
+                # no Sparks) still counts, as for the other presses.
+                var id: int = _constellation_target(bar)
+                var why: String = _supply_blocker(id, bar)
+                if why != "":
+                    _pause(bar, why)
+                    return
+                if now() < float(_timer_ready.get("supply", 0.0)):
+                    return
+                gc.supply_constellation_sparks(id, gc.get_click_multiplier() * gc.kaleb_bar_workers(bar))
+                _timer_ready["supply"] = now() + KalebCommands.SUPPLY_INTERVAL
+                gc.kaleb_repeat_done += 1
+                if gc.kaleb_repeat_done >= int(bar.get("repeat", 1)):
+                    _advance()
+                return
+            "feed":
+                # Switch a Constellation's automatic feeding (Endow / Ignore),
+                # as its slideout buttons do. Instant.
+                var id: int = _constellation_target(bar)
+                if id < 0:
+                    _pause(bar, "it has no Constellation chosen")
+                    return
+                gc.assignments["constellation_%d_feed_mode" % id] = int(def.get("mode", 0))
+                _advance()
             "if":
                 if KalebCommands.test(gc, bar):
                     gc.kaleb_index = clampi(int(bar.get("goto", 0)), 0, gc.kaleb_stack.size() - 1)
@@ -111,6 +139,30 @@ func step() -> void:
 func _advance() -> void:
     gc.kaleb_repeat_done = 0
     gc.kaleb_index = (gc.kaleb_index + 1) % gc.kaleb_stack.size()
+
+
+## The Constellation id a Constellation bar names, or -1 if none / not
+## unlocked.
+func _constellation_target(bar: Dictionary) -> int:
+    var t: String = String(bar.get("target", ""))
+    if not t.is_valid_int():
+        return -1
+    var cdata: Node = get_node_or_null("/root/ConstellationData")
+    var id: int = t.to_int()
+    if cdata and not cdata.unlocked.has(id):
+        return -1
+    return id
+
+
+## Why Kaleb can't Supply Sparks for this bar, or "".
+func _supply_blocker(id: int, bar: Dictionary) -> String:
+    if id < 0:
+        return "it has no unlocked Constellation chosen"
+    if not gc.has_volition_for_constellation(id):
+        return "no Volition is on %s" % KalebCommands.constellation_name(id, gc, get_node_or_null("/root/ConstellationData"))
+    if gc.kaleb_bar_workers(bar) < 1:
+        return "only Foci work in Constellations, and the crew has none"
+    return ""
 
 
 ## Puts the Purity Lock on `key` into the wanted state, through the same
@@ -151,6 +203,8 @@ func _pause(bar: Dictionary, why: String) -> void:
     var what: String = String(def.get("name", bar.get("cmd", "")))
     if String(def.get("kind", "")) in ["lock", "unlock"] and String(bar.get("target", "")) != "":
         what += " " + KalebCommands.display_name(String(bar["target"]), _gd())
+    elif String(def.get("kind", "")) in ["supply", "feed"] and String(bar.get("target", "")).is_valid_int():
+        what += ", " + KalebCommands.constellation_name(String(bar["target"]).to_int(), gc, get_node_or_null("/root/ConstellationData"))
     var adm: Node = ui.get("archon_dialogue_manager") if ui else null
     if adm:
         adm.enqueue_notification("Kaleb paused at bar %d (%s): %s." % [gc.kaleb_index + 1, what, why])

@@ -1,5 +1,5 @@
 extends "res://dev_tests/test_base.gd"
-# REDISTRIBUTE moves the CLICK multiplier's worth of Sparks, and nothing
+# SUPPLY SPARKS (was REDISTRIBUTE; this file was test_manual_endowment.gd) moves the CLICK multiplier's worth of Sparks, and nothing
 # else scales it.
 #
 # The user's spec, given when the button was built: "subject to the
@@ -54,8 +54,8 @@ func run() -> void:
 	ok(points == 7, "precondition: assigned points is 7 (got %d)" % points)
 	ok(click != points, "precondition: the two differ, so the test can tell them apart")
 
-	var moved: float = gc.endow_constellation_sparks_manual(0)
-	print("  redistribute moved %s" % str(moved))
+	var moved: float = gc.supply_constellation_sparks_manual(0)
+	print("  supply moved %s" % str(moved))
 	ok(is_equal_approx(moved, float(click)),
 		"one press moves the CLICK multiplier (%d), not points*click (%d) nor points (%d) — got %s"
 			% [click, points * click, points, str(moved)])
@@ -73,16 +73,16 @@ func run() -> void:
 	gc.assignments["constellation_1_foci"] = 0
 	gc.assignments["constellation_1_volitions"] = 0
 	gc.assignments["constellation_1_bonus_volitions"] = 0
-	var moved1: float = gc.endow_constellation_sparks_manual(1)
+	var moved1: float = gc.supply_constellation_sparks_manual(1)
 	print("  unassigned constellation moved %s (points %d)" % [str(moved1), gc.get_constellation_points(1)])
 	ok(gc.get_constellation_points(1) == 0, "precondition: constellation 1 has nothing assigned")
 	ok(is_equal_approx(moved1, float(click)),
-		"a constellation with NO assignment still redistributes the full click amount (got %s)"
+		"a constellation with NO assignment still supplies the full click amount (got %s)"
 			% str(moved1))
 
 	# Out of Sparks is a no-op, not a negative pool.
 	gc.sparks = BigNum.from_int(0)
-	ok(gc.endow_constellation_sparks_manual(0) == 0.0,
+	ok(gc.supply_constellation_sparks_manual(0) == 0.0,
 		"no Sparks means no transfer")
 
 	if fails == 0:

@@ -77,7 +77,7 @@ func _check_page(scene: String) -> void:
 	# is slow and not what this checks. The button's own send is real, below.
 	# With none chosen, the column shows only its title and selector grid
 	# (author, 2026-11-05): Study, the Info section and the allocation block
-	# (Sparks counter, Vol/Foci, feed modes, multipliers, Redistribute) hide.
+	# (Sparks counter, Vol/Foci, feed modes, multipliers, Supply Sparks) hide.
 	var alloc: Control = pop.get_node(pop.ALLOCATION_BASE_PATH)
 	pop._selected_slot = -1
 	await process_frame

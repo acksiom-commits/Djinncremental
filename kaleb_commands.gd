@@ -12,8 +12,15 @@ extends RefCounted
 ##   lock / unlock   switch the Purity Lock on `target` (a lock key, e.g.
 ##           "monad_liquid", "adaemant", "cat_medial"). Instant.
 ##   if      "if res cmp value, go to bar goto": a count check. Instant.
-## Every bar holds a Focus (its On/Off); every bar but If-then says how many
-## of the stack's shared crew it uses (GameContext.kaleb_bar_workers).
+##   supply  Supply Sparks into the Constellation `target` (its id, as
+##           a String): the slideout's button, click multiplier × the crew's
+##           FOCI on the bar (only Foci work in Constellations), up to its
+##           cap; once a second; needs a Volition on that Constellation, like
+##           its automatic feeding (author, 2026-11-06).
+##   feed    switch the Constellation `target`'s automatic feeding to Endow
+##           (feed_endow) or Ignore (feed_ignore). Instant.
+## Every bar holds a Focus (its On/Off); press and supply bars say how many
+## of the stack's shared crew they use (GameContext.kaleb_bar_workers).
 
 const COMMANDS := {
     # The Summon Spark button has no cooldown bar (a player may click it as
@@ -37,7 +44,33 @@ const COMMANDS := {
     "lock":                {"name": "Lock",   "kind": "lock"},
     "unlock":              {"name": "Unlock", "kind": "unlock"},
     "if":                  {"name": "If",     "kind": "if"},
+    # Constellations (author, 2026-11-06).
+    "supply_sparks":        {"name": "Supply Sparks", "kind": "supply", "timer": "supply"},
+    "feed_endow":          {"name": "Endow",  "kind": "feed", "mode": 1},
+    "feed_ignore":         {"name": "Ignore", "kind": "feed", "mode": 0},
 }
+
+## Kaleb's Supply Sparks presses, one a second (author, 2026-11-06).
+const SUPPLY_INTERVAL: float = 1.0
+
+
+## A Constellation as the stack shows it: "KALEB The Archon", or UNKNOWN
+## while its identity is still hidden (the same rule as the slideout).
+static func constellation_name(id: int, gc: Node, cd: Node, short: bool = false) -> String:
+    if cd == null:
+        return "Constellation %d" % id
+    var hidden: bool = true
+    if gc:
+        hidden = not gc.ui_unlocks.get("kaleb_identity_revealed", false) if id == 0 \
+            else not bool(gc.constellation_identity_revealed.get(id, false))
+    if hidden:
+        return "UNKNOWN (%d)" % (id + 1)
+    var def: Dictionary = cd.get_constellation_def(id)
+    var designation: String = String(def.get("designation", ""))
+    var name: String = String(def.get("name", "Constellation %d" % id))
+    if short and designation != "":
+        return designation.to_upper()   # "ALZIRO": for a narrow menu
+    return ("%s %s" % [designation.to_upper(), name]) if designation != "" else name
 
 const COMPARISONS: Array[String] = ["<", ">="]
 
