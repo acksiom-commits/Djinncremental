@@ -196,6 +196,22 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tooltip"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 5.0
+bg_color = Color(0.17, 0.14, 0.26, 0.97)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 0.92, 0.7, 0.85)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [resource]
 default_font_size = 18
 Button/colors/font_color = Color(0.92, 0.92, 0.95, 1)
@@ -241,3 +257,7 @@ SpinBox/colors/font_color = Color(0.92, 0.92, 0.95, 1)
 SpinBox/constants/minimum_grab_thickness = 28
 SpinBox/font_sizes/font_size = 18
 SpinBox/styles/normal = SubResource("StyleBoxFlat_nu1jw")
+TooltipLabel/colors/font_color = Color(1, 0.98, 0.93, 1)
+TooltipLabel/colors/font_shadow_color = Color(0, 0, 0, 0.6)
+TooltipLabel/font_sizes/font_size = 22
+TooltipPanel/styles/panel = SubResource("StyleBoxFlat_tooltip")
