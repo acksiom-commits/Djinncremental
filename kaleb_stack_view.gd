@@ -258,7 +258,7 @@ func _build_row(i: int) -> Dictionary:
         "supply":
             # Supply Sparks into one Constellation; only the crew's Foci
             # work on it (author, 2026-11-06).
-            row.add_child(_constellation_option(bar, 96, true))
+            row.add_child(_constellation_option(bar, 130))
             u_lbl = _add_worker_controls(row, bar)
             progress.text = "×"
             row.add_child(progress)
@@ -312,9 +312,7 @@ func _add_worker_controls(row: HBoxContainer, bar: Dictionary) -> Label:
 
 ## The unlocked Constellations, for an Endow / Ignore / Supply bar's
 ## target (its id, kept as a String like a Lock bar's key).
-## `short` shows designations only ("ALZIRO"), for a row with little room;
-## the tooltip always has the full name.
-func _constellation_option(bar: Dictionary, width: float, short: bool = false) -> OptionButton:
+func _constellation_option(bar: Dictionary, width: float) -> OptionButton:
     var cd: Node = get_node_or_null("/root/ConstellationData")
     var ids: Array = cd.unlocked.duplicate() if cd else []
     ids.sort()
@@ -322,10 +320,10 @@ func _constellation_option(bar: Dictionary, width: float, short: bool = false) -
     var labels: Array = []
     for id in ids:
         keys.append(str(id))
-        labels.append(KC.constellation_name(int(id), gc, cd, short))
+        labels.append(KC.constellation_name(int(id), gc, cd))
     if keys.is_empty():
         keys = ["0"]
-        labels = [KC.constellation_name(0, gc, cd, short)]
+        labels = [KC.constellation_name(0, gc, cd)]
     var o := _option(bar, "target", keys, width, labels)
     var name_now := func() -> String: return KC.constellation_name(String(bar["target"]).to_int(), gc, cd)
     o.tooltip_text = name_now.call()

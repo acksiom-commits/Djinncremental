@@ -54,9 +54,9 @@ const COMMANDS := {
 const SUPPLY_INTERVAL: float = 1.0
 
 
-## A Constellation as the stack shows it: "KALEB The Archon", or UNKNOWN
+## A Constellation as the stack shows it: its title, "The Archon", or UNKNOWN
 ## while its identity is still hidden (the same rule as the slideout).
-static func constellation_name(id: int, gc: Node, cd: Node, short: bool = false) -> String:
+static func constellation_name(id: int, gc: Node, cd: Node) -> String:
     if cd == null:
         return "Constellation %d" % id
     var hidden: bool = true
@@ -65,12 +65,9 @@ static func constellation_name(id: int, gc: Node, cd: Node, short: bool = false)
             else not bool(gc.constellation_identity_revealed.get(id, false))
     if hidden:
         return "UNKNOWN (%d)" % (id + 1)
-    var def: Dictionary = cd.get_constellation_def(id)
-    var designation: String = String(def.get("designation", ""))
-    var name: String = String(def.get("name", "Constellation %d" % id))
-    if short and designation != "":
-        return designation.to_upper()   # "ALZIRO": for a narrow menu
-    return ("%s %s" % [designation.to_upper(), name]) if designation != "" else name
+    # The title only, "The Hourglass", not the designation ("DRASIN"):
+    # author, 2026-11-06.
+    return String(cd.get_constellation_def(id).get("name", "Constellation %d" % id))
 
 const COMPARISONS: Array[String] = ["<", ">="]
 
