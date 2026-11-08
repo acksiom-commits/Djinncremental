@@ -517,6 +517,11 @@ func _slot_defs() -> Array:
             if c is Dictionary and c.get("approved", false) \
                     and _cd.unlocked.has(_coerce_int(c.get("id"), -1)):
                 defs.append(c)
+        # In id order: BUILT_IN is no longer ascending by id since the Spark and
+        # Archon swapped (constellation_data.gd v0.4.0), and this list is the
+        # order of the selector buttons.
+        defs.sort_custom(func(a, b) -> bool:
+            return _coerce_int(a.get("id"), 0) < _coerce_int(b.get("id"), 0))
     return defs
 
 

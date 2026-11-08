@@ -39,6 +39,11 @@ func run() -> void:
 	var s0 = p._slot_grid.get_node_or_null("Slot0")
 	var s1 = p._slot_grid.get_node_or_null("Slot1")
 	ok(s0 != null and s1 != null, "slot buttons exist (%s, %s)" % [str(s0 != null), str(s1 != null)])
+	# The selector lists them in id order: the Spark (id 0) first, the Archon
+	# (id 1) second, though BUILT_IN lists the Archon's entry first since the
+	# v0.4.0 swap.
+	ok(s0 != null and s1 != null and s0.get_index() < s1.get_index(),
+		"the Spark's button (Slot0) comes before the Archon's (Slot1) in the selector")
 	if s0 == null or s1 == null:
 		finish()
 		return
