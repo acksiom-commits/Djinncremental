@@ -122,20 +122,26 @@ func _check_popout() -> void:
 	# Star colours come from the constellation's Beginner puzzle (the Archon's
 	# has 10 stars; Hard has 15). The live cache is put back afterwards.
 	var cd: Node = root.get_node("/root/ConstellationData")
-	var saved: Dictionary = cd.get_puzzle_cache(0)
-	var tri: Dictionary = pop._entries[0]["rune"]
-	cd.set_puzzle_cache(0, {"star_colors": [3, 2, 0, 1, 1, 1, 1, 1, 1, 1]})
+	var saved: Dictionary = cd.get_puzzle_cache(1)
+	# The Archon's Triangle: entries run in id order, and the Spark (id 0) now
+	# comes first, so find it by name rather than by position.
+	var ti: int = 0
+	for i in pop._entries.size():
+		if str(pop._entries[i]["rune"]["name"]) == "Triangle":
+			ti = i
+	var tri: Dictionary = pop._entries[ti]["rune"]
+	cd.set_puzzle_cache(1, {"star_colors": [3, 2, 0, 1, 1, 1, 1, 1, 1, 1]})
 	pop.open()
-	ok(pop._entries[0]["star_colors"] == {0: 3, 1: 2, 2: 0},
-		"%s's stars take the Beginner puzzle's colours on open (%s)" % [tri["name"], str(pop._entries[0]["star_colors"])])
-	cd.set_puzzle_cache(0, {"star_colors": [3, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]})
-	ok(pop.rune_star_colors(0, tri).values().all(func(v): return v == Board.NO_COLOUR),
+	ok(pop._entries[ti]["star_colors"] == {0: 3, 1: 2, 2: 0},
+		"%s's stars take the Beginner puzzle's colours on open (%s)" % [tri["name"], str(pop._entries[ti]["star_colors"])])
+	cd.set_puzzle_cache(1, {"star_colors": [3, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]})
+	ok(pop.rune_star_colors(1, tri).values().all(func(v): return v == Board.NO_COLOUR),
 		"a Hard puzzle's colours are not used: its stars aren't the Rune's")
-	cd.clear_puzzle_cache(0)
-	ok(pop.rune_star_colors(0, tri).values().all(func(v): return v == Board.NO_COLOUR),
+	cd.clear_puzzle_cache(1)
+	ok(pop.rune_star_colors(1, tri).values().all(func(v): return v == Board.NO_COLOUR),
 		"with no puzzle the stars have no colour")
 	if not saved.is_empty():
-		cd.set_puzzle_cache(0, saved)
+		cd.set_puzzle_cache(1, saved)
 	pop.close()
 	pop.queue_free()
 	await process_frame

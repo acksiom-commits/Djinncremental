@@ -99,17 +99,17 @@ func run() -> void:
 	var cd = load("res://constellation_data.gd").new()
 	var gc = load("res://game_context.gd").new()
 	cd._game_context = gc
-	gc.constellation_difficulty[1] = "easy"   # The Spark: repeat counts 0..3, so every kind can occur
+	gc.constellation_difficulty[0] = "easy"   # The Spark: repeat counts 0..3, so every kind can occur
 	cd.player_seed = 11
-	var def: Dictionary = cd.get_constellation_def(1)
+	var def: Dictionary = cd.get_constellation_def(0)
 	var scn: int = int(def["star_count"])
 	var eng = load("res://click_sequence_puzzle_engine.gd").new()
-	eng.set_constellation(1, cd, gc)
-	var sq: Array = eng.get_correct_star_sequence(1)
+	eng.set_constellation(0, cd, gc)
+	var sq: Array = eng.get_correct_star_sequence(0)
 	var g = PuzzleScript.new()
 	g.difficulty = "easy"
-	g.setup(scn, def["line_pairs"], sq, 11, 1, def.get("name_theme", {}),
-		cd.get_note_assignment(1), cd.get_note_freqs(1), null)
+	g.setup(scn, def["line_pairs"], sq, 11, 0, def.get("name_theme", {}),
+		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
 	g._build_record_array()
 	g._build_matrix()
 	var present: Array = _present(g)
@@ -254,8 +254,8 @@ func run() -> void:
 	print("\n=== a real end-to-end generated puzzle still ships ===")
 	var g2 = PuzzleScript.new()
 	g2.difficulty = "easy"
-	g2.setup(scn, def["line_pairs"], sq, 11, 1, def.get("name_theme", {}),
-		cd.get_note_assignment(1), cd.get_note_freqs(1), null)
+	g2.setup(scn, def["line_pairs"], sq, 11, 0, def.get("name_theme", {}),
+		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
 	await g2.generate_clues_forms()
 	ok(g2.gate_passed and not g2.chosen_form_clues.is_empty(),
 		"a real Spark Beginner puzzle ships (gate_passed=%s, %d clues)" % [g2.gate_passed, g2.chosen_form_clues.size()])

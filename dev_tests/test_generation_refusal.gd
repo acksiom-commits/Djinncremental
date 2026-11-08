@@ -90,15 +90,17 @@ func run() -> void:
 	host._cd = cd
 	host._gc = gc
 	host._constellation_id = 0
-	var saved_reveal = gc.ui_unlocks.get("kaleb_identity_revealed", false)
-	gc.ui_unlocks["kaleb_identity_revealed"] = true
+	# Constellation 0 is the Spark since v0.4.0, so it is its generic
+	# reveal flag that must be set (Kaleb's is the Archon's, id 1).
+	var saved_reveal = gc.constellation_identity_revealed.get(0, false)
+	gc.constellation_identity_revealed[0] = true
 	cd.puzzle_generation_failed[0] = true
 	host._update_header()
 	ok(host._title_label.text.contains("not ready"), "empty cache after a refusal: the title says the puzzle is not ready (\"%s\")" % host._title_label.text)
 	cd.puzzle_generation_failed.erase(0)
 	host._update_header()
 	ok(not host._title_label.text.contains("not ready"), "no refusal recorded: no such message")
-	gc.ui_unlocks["kaleb_identity_revealed"] = saved_reveal
+	gc.constellation_identity_revealed[0] = saved_reveal
 
 	if fails == 0:
 		print("ALL PASS (0 failures)")

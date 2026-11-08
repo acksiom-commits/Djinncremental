@@ -69,7 +69,7 @@ func run() -> void:
 	# id_b would otherwise read as still-hidden and load 0 stars regardless
 	# of the save's real data. Mark both revealed directly.
 	for cid in [id_a, id_b]:
-		if cid == 0:
+		if cid == cd.ARCHON_ID:
 			host._gc.ui_unlocks["kaleb_identity_revealed"] = true
 		else:
 			host._gc.constellation_identity_revealed[cid] = true

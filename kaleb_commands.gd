@@ -86,7 +86,7 @@ static func constellation_name(id: int, gc: Node, cd: Node) -> String:
         return "Constellation %d" % id
     var hidden: bool = true
     if gc:
-        hidden = not gc.ui_unlocks.get("kaleb_identity_revealed", false) if id == 0 \
+        hidden = not gc.ui_unlocks.get("kaleb_identity_revealed", false) if id == cd.ARCHON_ID \
             else not bool(gc.constellation_identity_revealed.get(id, false))
     if hidden:
         return "UNKNOWN (%d)" % (id + 1)

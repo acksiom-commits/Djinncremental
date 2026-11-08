@@ -42,23 +42,23 @@ func run() -> void:
 	var cd = load("res://constellation_data.gd").new()
 	var gc = load("res://game_context.gd").new()
 	cd._game_context = gc
-	gc.constellation_difficulty[0] = "easy"
+	gc.constellation_difficulty[1] = "easy"
 
 	print("=== Archon easy mode: known repeat distribution, across seeds ===")
 	var expected_sorted: Array = [0, 0, 0, 0, 0, 0, 1, 1, 1, 2]
 	for seed in [1, 2, 3, 42, 999]:
 		cd.player_seed = seed
-		var def: Dictionary = cd.get_constellation_def(0)
+		var def: Dictionary = cd.get_constellation_def(1)
 		var scn: int = int(def["star_count"])
 		# The REAL melody-derived sequence, not an identity placeholder --
 		# repeat_count is meaningless without the actual repeat structure.
 		var overlay_engine = load("res://click_sequence_puzzle_engine.gd").new()
-		overlay_engine.set_constellation(0, cd, gc)
-		var sq: Array = overlay_engine.get_correct_star_sequence(0)
+		overlay_engine.set_constellation(1, cd, gc)
+		var sq: Array = overlay_engine.get_correct_star_sequence(1)
 		var g = PuzzleScript.new()
 		g.difficulty = "easy"
-		g.setup(scn, def["line_pairs"], sq, seed, 0, def.get("name_theme", {}),
-			cd.get_note_assignment(0), cd.get_note_freqs(0), null)
+		g.setup(scn, def["line_pairs"], sq, seed, 1, def.get("name_theme", {}),
+			cd.get_note_assignment(1), cd.get_note_freqs(1), null)
 		ok(g.repeat_count.size() == 10, "seed %d: repeat_count sized to star_count (got %d)" % [seed, g.repeat_count.size()])
 		var sorted_counts: Array = g.repeat_count.duplicate()
 		sorted_counts.sort()
@@ -98,15 +98,15 @@ func run() -> void:
 
 	print("\n=== save/load round-trip ===")
 	cd.player_seed = 11
-	var def4: Dictionary = cd.get_constellation_def(0)
+	var def4: Dictionary = cd.get_constellation_def(1)
 	var scn4: int = int(def4["star_count"])
 	var overlay_engine4 = load("res://click_sequence_puzzle_engine.gd").new()
-	overlay_engine4.set_constellation(0, cd, gc)
-	var sq4: Array = overlay_engine4.get_correct_star_sequence(0)
+	overlay_engine4.set_constellation(1, cd, gc)
+	var sq4: Array = overlay_engine4.get_correct_star_sequence(1)
 	var g4 = PuzzleScript.new()
 	g4.difficulty = "easy"
-	g4.setup(scn4, def4["line_pairs"], sq4, 11, 0, def4.get("name_theme", {}),
-		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
+	g4.setup(scn4, def4["line_pairs"], sq4, 11, 1, def4.get("name_theme", {}),
+		cd.get_note_assignment(1), cd.get_note_freqs(1), null)
 	# validate_cache_dict requires generation_complete=true (a real solved
 	# puzzle), not just a bare setup() -- run the actual generator.
 	await g4.generate_clues_forms()

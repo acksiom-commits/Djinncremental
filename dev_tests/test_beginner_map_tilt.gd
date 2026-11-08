@@ -93,7 +93,7 @@ func run() -> void:
 	ok(cd.sky_tilt_seed == 11, "and it comes back from a save")
 
 	print("\n=== The Spark's shape ===")
-	var spark: Array = cd.get_constellation_def(1)["fixed_star_positions"]
+	var spark: Array = cd.get_constellation_def(cd.FIRST_ID)["fixed_star_positions"]   # the Spark is id 0 since v0.4.0
 	var hub := Vector2(spark[0][0], spark[0][1])
 	var angles: Dictionary = {}
 	for tip in [3, 4, 5, 6]:
@@ -110,12 +110,12 @@ func run() -> void:
 	ok(bulb >= neck * 4.0, "its ends stand at least 4x its neck (%.3f vs %.3f)" % [bulb, neck])
 
 	print("\n=== Hard keeps its own leveling ===")
-	gc.constellation_difficulty[1] = "hard"
+	gc.constellation_difficulty[cd.FIRST_ID] = "hard"
 	cd._star_positions_cache.clear()
-	var hard: Dictionary = cd.get_constellation_def(1)
+	var hard: Dictionary = cd.get_constellation_def(cd.FIRST_ID)
 	ok(not hard.has("authored_upright"), "Hard is not marked for the Beginner pose")
-	var basis: Basis = cd.get_canonical_display_basis(1)
-	var pos: Array = cd.get_star_positions(1)
+	var basis: Basis = cd.get_canonical_display_basis(cd.FIRST_ID)
+	var pos: Array = cd.get_star_positions(cd.FIRST_ID)
 	var a0: Vector3 = basis.inverse() * (pos[0] as Vector3)
 	var a8: Vector3 = basis.inverse() * (pos[8] as Vector3)
 	ok(absf(a0.y - a8.y) < 0.0005, "The Spark's Hard spine still lies level (drop %.5f)" % absf(a0.y - a8.y))

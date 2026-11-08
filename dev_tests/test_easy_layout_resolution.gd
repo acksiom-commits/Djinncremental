@@ -1,7 +1,7 @@
 extends "res://dev_tests/test_base.gd"
 # "Easy" redefined (2026-09-28, per user direction) to mean a genuinely smaller,
 # separately-authored star layout, not just a different clue mix over the same
-# stars. The Archon (id 0) is the first constellation with one: 15 stars -> 10
+# stars. The Archon (id 1 since v0.4.0) is the first constellation with one: 15 stars -> 10
 # (its own distinct-note count), reusing the Djinn's vessel_layouts pattern
 # (get_constellation_def resolves onto the SAME top-level keys every consumer
 # already reads) with GameContext.get_constellation_difficulty() as the
@@ -22,7 +22,7 @@ extends "res://dev_tests/test_base.gd"
 #    independently.
 #  - The easy layout's own shape: exactly 10 stars, 12 edges, every position on
 #    the unit sphere, matching what was authored.
-#  - get_note_assignment(0) under easy gives a full 0..9 permutation with NO
+#  - get_note_assignment(1) under easy gives a full 0..9 permutation with NO
 #    repeats, across several seeds -- the entire point of the reduction.
 #  - A REAL end-to-end generation succeeds at the reduced size, and hard mode
 #    is unaffected by the feature existing at all.
@@ -44,25 +44,25 @@ func run() -> void:
 	var cd = load("res://constellation_data.gd").new()
 	var gc = load("res://game_context.gd").new()
 
-	print("=== no GameContext: constellation 0 is completely unaffected ===")
+	print("=== no GameContext: constellation 1 (the Archon) is completely unaffected ===")
 	ok(cd._game_context == null, "sanity: a bare ConstellationData has no GameContext (matches every other test/probe)")
-	var untouched: Dictionary = cd.get_constellation_def(0)
+	var untouched: Dictionary = cd.get_constellation_def(1)
 	ok(int(untouched["star_count"]) == 15, "star_count is still 15 with nothing to ask about difficulty (got %d)" % int(untouched["star_count"]))
 	ok((untouched["fixed_star_positions"] as Array).size() == 15, "still 15 authored positions")
 
 	print("\n=== with a real GameContext ===")
 	cd._game_context = gc
-	ok(gc.get_constellation_difficulty(0) == "easy", "GameContext defaults constellation 0 to easy (its own documented default)")
-	var default_def: Dictionary = cd.get_constellation_def(0)
+	ok(gc.get_constellation_difficulty(1) == "easy", "GameContext defaults constellation 1 to easy (its own documented default)")
+	var default_def: Dictionary = cd.get_constellation_def(1)
 	ok(int(default_def["star_count"]) == 10, "so with no override at all, the reduced layout is what a real player sees by default (got %d)" % int(default_def["star_count"]))
 
-	gc.constellation_difficulty[0] = "hard"
-	var hard_def: Dictionary = cd.get_constellation_def(0)
+	gc.constellation_difficulty[1] = "hard"
+	var hard_def: Dictionary = cd.get_constellation_def(1)
 	ok(int(hard_def["star_count"]) == 15 and (hard_def["fixed_star_positions"] as Array).size() == 15,
 		"explicit hard: unchanged, 15 stars (got %d)" % int(hard_def["star_count"]))
 
-	gc.constellation_difficulty[0] = "easy"
-	var easy_def: Dictionary = cd.get_constellation_def(0)
+	gc.constellation_difficulty[1] = "easy"
+	var easy_def: Dictionary = cd.get_constellation_def(1)
 	var positions: Array = easy_def["fixed_star_positions"]
 	var line_pairs: Array = easy_def["line_pairs"]
 	ok(int(easy_def["star_count"]) == 10, "explicit easy: 10 stars (got %d)" % int(easy_def["star_count"]))
@@ -82,8 +82,8 @@ func run() -> void:
 	for seed in [1, 2, 3, 42, 999, 123456]:
 		gc.constellation_difficulty.clear()
 		cd.player_seed = seed
-		var notes: Array = cd.get_note_assignment(0)
-		var freqs: Array = cd.get_note_freqs(0)
+		var notes: Array = cd.get_note_assignment(1)
+		var freqs: Array = cd.get_note_freqs(1)
 		trials += 1
 		var distinct: Dictionary = {}
 		for n in notes:
@@ -95,31 +95,31 @@ func run() -> void:
 	ok(bad_trials == 0, "every seed gives exactly 10 distinct notes for 10 stars, never a repeat (%d bad of %d)" % [bad_trials, trials])
 
 	print("\n=== a real end-to-end generation at the reduced size ===")
-	gc.constellation_difficulty[0] = "easy"
+	gc.constellation_difficulty[1] = "easy"
 	cd.player_seed = 11
-	var gen_def: Dictionary = cd.get_constellation_def(0)
+	var gen_def: Dictionary = cd.get_constellation_def(1)
 	var scn: int = int(gen_def["star_count"])
 	var g = PuzzleScript.new()
 	var sq: Array = []
 	for i in range(scn):
 		sq.append(i)
 	g.difficulty = "easy"
-	g.setup(scn, gen_def["line_pairs"], sq, 11, 0, gen_def.get("name_theme", {}),
-		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
+	g.setup(scn, gen_def["line_pairs"], sq, 11, 1, gen_def.get("name_theme", {}),
+		cd.get_note_assignment(1), cd.get_note_freqs(1), null)
 	await g.generate_clues_forms()
 	ok(g.star_count == 10, "the generator actually ran at 10 stars (got %d)" % g.star_count)
 	ok(g.gate_passed and not g.chosen_form_clues.is_empty(),
 		"a real easy-mode puzzle ships (gate_passed=%s, %d clues)" % [g.gate_passed, g.chosen_form_clues.size()])
 
 	print("\n=== hard mode is unaffected by the feature existing ===")
-	gc.constellation_difficulty[0] = "hard"
-	var hard_gen_def: Dictionary = cd.get_constellation_def(0)
+	gc.constellation_difficulty[1] = "hard"
+	var hard_gen_def: Dictionary = cd.get_constellation_def(1)
 	var g2 = PuzzleScript.new()
 	var sq2: Array = []
 	for i in range(15):
 		sq2.append(i)
-	g2.setup(15, hard_gen_def["line_pairs"], sq2, 11, 0, hard_gen_def.get("name_theme", {}),
-		cd.get_note_assignment(0), cd.get_note_freqs(0), null)
+	g2.setup(15, hard_gen_def["line_pairs"], sq2, 11, 1, hard_gen_def.get("name_theme", {}),
+		cd.get_note_assignment(1), cd.get_note_freqs(1), null)
 	await g2.generate_clues_forms()
 	ok(g2.star_count == 15, "hard mode still runs at the original 15 stars (got %d)" % g2.star_count)
 	ok(g2.gate_passed and not g2.chosen_form_clues.is_empty(),

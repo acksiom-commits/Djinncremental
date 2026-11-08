@@ -981,7 +981,7 @@ func _on_all_tetrads_complete() -> void:
         
         
 func _on_first_prestige_complete() -> void:
-    _start_puzzle_generation(1)  # pre-generate Spark (id 1)
+    _start_puzzle_generation(1)  # pre-generate the second constellation (id 1, the Archon since v0.4.0)
 
 
 func _on_second_prestige_complete() -> void:
@@ -1670,7 +1670,7 @@ func _build_simple_triggers() -> void:
             "guard": "_tier1_archon_complete_triggered",
             "condition": func():
                 var cd := get_node_or_null("/root/ConstellationData")
-                return cd != null and cd.get_sparks_invested(0) >= cd.SPARKS_TIER_STARS,
+                return cd != null and cd.get_sparks_invested(cd.ARCHON_ID) >= cd.SPARKS_TIER_STARS,
             "effect": func(): archon_dialogue_manager.enqueue_tier1_archon_complete(),
         },
         {
@@ -1940,7 +1940,7 @@ func _check_totals_milestones() -> void:
 
 
 ## Default identity-reveal check for every unlocked constellation except
-## Kaleb (id 0, who keeps his own tier1_archon_complete trigger in
+## Kaleb (the Archon, ARCHON_ID, who keeps his own tier1_archon_complete trigger in
 ## _simple_triggers -- see the guard skip below). Loops cd.unlocked rather
 ## than a fixed id list so this keeps working for constellations that don't
 ## exist yet, matching archon_dialogue_manager.gd's
@@ -1986,8 +1986,8 @@ func _check_constellation_identity_reveals() -> void:
         return
     for raw_id in cd.unlocked:
         var cid: int = int(raw_id)
-        if cid == 0:
-            continue
+        if cid == cd.ARCHON_ID:
+            continue   # Kaleb's own reveal, tier1_archon_complete
         if archon_dialogue_manager.constellation_identity_reveal_done.get(cid, false):
             continue
         if cd.get_sparks_invested(cid) < cd.SPARKS_TIER_STARS:

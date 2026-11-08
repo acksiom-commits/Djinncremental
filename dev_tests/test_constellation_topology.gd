@@ -37,9 +37,10 @@ extends "res://dev_tests/test_base.gd"
 ## new keys; the VALUES describe the same shapes as before, just under
 ## whichever id that constellation holds now.
 const BASELINE := {
-	0: [4, 48, 15, 15],    # The Archon    — 3 isolated triangles + a 6-cycle
-	1: [1, 240, 16, 21],   # The Spark     — fully connected; a center oval was
+	0: [1, 240, 16, 21],   # The Spark     — fully connected; a center oval was
 	                       # added 2026-09-16 alongside the original spine/spokes
+	                       # (id 0 since v0.4.0, swapped with the Archon)
+	1: [4, 48, 15, 15],    # The Archon    — 3 isolated triangles + a 6-cycle
 	2: [1, 156, 13, 14],   # The Hourglass — fully connected
 	3: [5, 182, 18, 14],   # The Bellows   — 4 isolated singles + one body
 	4: [1, 182, 14, 14],   # The Phial     — fully connected; REDESIGNED 2026-09-27

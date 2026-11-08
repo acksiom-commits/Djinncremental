@@ -621,7 +621,7 @@ func _refresh_slots() -> void:
 func _constellation_identity_hidden(constellation_id: int) -> bool:
     if not _gc:
         return true
-    if constellation_id == 0:
+    if constellation_id == _cd.ARCHON_ID:
         return not _gc.ui_unlocks.get("kaleb_identity_revealed", false)
     return not bool(_gc.constellation_identity_revealed.get(constellation_id, false))
 

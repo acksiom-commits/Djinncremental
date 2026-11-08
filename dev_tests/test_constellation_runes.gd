@@ -10,8 +10,8 @@ extends "res://dev_tests/test_base.gd"
 #
 # The Bellows has none.
 
-const ARCHON: int = 0
-const SPARK: int = 1
+const ARCHON: int = 1   # swapped with the Spark at v0.4.0
+const SPARK: int = 0
 const HOURGLASS: int = 2
 const PHIAL: int = 4
 const SATCHEL: int = 5

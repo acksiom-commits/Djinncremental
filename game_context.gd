@@ -431,7 +431,7 @@ var ui_unlocks: Dictionary = {
     "manifold":         false,
     "atelier_carousel": false,
     "firmament_viewer": false,
-    # Constellation Popout: Constellation 0's name reads UNKNOWN until the
+    # Constellation Popout: the Archon's name (ARCHON_ID) reads UNKNOWN until the
     # Tier 1 Archon reveal dialogue ("it's a little me!") has actually been
     # read to completion -- set by root_ui.gd's
     # _on_tier1_archon_complete_complete(), NOT by the dialogue's own
@@ -441,7 +441,7 @@ var ui_unlocks: Dictionary = {
 }
 
 # Same idea as "kaleb_identity_revealed" above, generalized to every OTHER
-# constellation (id != 0) -- keyed by constellation_id (int), set true only
+# constellation (id != ConstellationData.ARCHON_ID) -- keyed by constellation_id (int), set true only
 # by root_ui.gd's _on_constellation_identity_reveal_complete(id), which
 # fires on archon_dialogue_manager's constellation_identity_reveal_sequence_
 # complete signal (actually read to completion), never at enqueue time.

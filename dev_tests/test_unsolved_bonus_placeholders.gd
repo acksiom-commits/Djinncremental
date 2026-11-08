@@ -11,9 +11,13 @@ extends "res://dev_tests/test_base.gd"
 # Judged on constellation 1 (The Spark) unsolved, across the Archon gate, and
 # on constellation 0 itself before and after its first solve.
 
+# NOTE (v0.4.0, 2026-11-07): the gate is the FIRST constellation (id 0), which is
+# now The Spark; the constellation judged against it (id 1) is now The Archon.
+# The messages below still say "Archon" for the gate and "Spark" for the
+# subject, as they did before the swap: read them as first and second.
 const PopoutScene = preload("res://ConstellationPopout.tscn")
-const ARCHON_KEY := "constellation_0_solve_count"
-const SPARK_KEY := "constellation_1_solve_count"
+const FIRST_KEY := "constellation_0_solve_count"
+const SECOND_KEY := "constellation_1_solve_count"
 
 var fails: int = 0
 
@@ -54,8 +58,8 @@ func run() -> void:
 	ok(p._slot_grid.visible, "precondition: the slot grid is showing")
 
 	# The Spark, unsolved, while The Archon has never been solved.
-	gc.assignments[ARCHON_KEY] = 0
-	gc.assignments[SPARK_KEY] = 0
+	gc.assignments[FIRST_KEY] = 0
+	gc.assignments[SECOND_KEY] = 0
 	p._selected_slot = 1
 	var b: Array = _block(p)
 	ok(p._info_vbox.visible, "precondition: the info panel is showing for The Spark")
@@ -69,11 +73,11 @@ func run() -> void:
 	ok(not p._info_tier_effects.visible, "The Archon's own panel hides the block before its first solve")
 
 	# Solve The Archon once: its real ladder shows, and The Spark's placeholder returns.
-	gc.assignments[ARCHON_KEY] = 1
+	gc.assignments[FIRST_KEY] = 1
 	b = _block(p)
 	# Since 2026-11-04 the panel shows only the current tier, led by the
 	# effect's name ("Archon Title Slots ▶ Dark +1"); the ladder is the tooltip.
-	ok(b[0] and str(b[1]).contains("Bonus Volitions ▶ Dark +1") and not str(b[1]).contains("???") \
+	ok(b[0] and str(b[1]).contains("Sparks Multiplier ▶ Dark ×1.0") and not str(b[1]).contains("???") \
 			and not str(b[1]).contains("Effects by Tier"),
 		"Archon solved: its own line shows its effect at the current tier (%s)" % str(b[1]))
 	var tip0: String = p._tier_effects_tooltip(0)
@@ -88,8 +92,8 @@ func run() -> void:
 
 	# A solved constellation is never hidden by the gate, even with the
 	# Archon count at 0 (a hand-edited save, or any future ordering).
-	gc.assignments[ARCHON_KEY] = 0
-	gc.assignments[SPARK_KEY] = 1
+	gc.assignments[FIRST_KEY] = 0
+	gc.assignments[SECOND_KEY] = 1
 	b = _block(p)
 	ok(b[0] and not str(b[1]).contains("???"),
 		"a solved Spark shows its real ladder whatever the Archon's count")

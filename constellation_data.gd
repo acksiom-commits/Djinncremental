@@ -1,5 +1,16 @@
 extends Node
-# ================= CONSTELLATION DATA v0.3.8 =================
+# ================= CONSTELLATION DATA v0.4.0 =================
+# v0.4.0: Swapped The Spark and The Archon (author, 2026-11-07): the Spark is
+#         now the first constellation (id 0, octant 0, "first_prestige"), the
+#         Archon the second (id 1, octant 1, "second_prestige"). Names,
+#         geometry, puzzle and bonus data stayed with their own constellation.
+#         The early-flow hooks that meant "the first constellation" (reveal,
+#         first puzzle, Volition tutorial, Study reveal) stay on id 0; what is
+#         the Archon's own (child-Volition bonus, Kaleb's identity reveal, his
+#         tier-1 dialogue) follows him to ARCHON_ID. A save from before this
+#         keeps its old ids' meaning only by starting fresh (as v0.3.6 did).
+#         The Djinn (id 6) is also changing from boosting Endowment to
+#         enhancing automation (see its entry).
 # v0.3.8: Swapped The Phial and The Satchel in the progression order AND
 #         their numeric identities, per user direction — The Phial now
 #         unlocks at "achievement:fifth_prestige"/id 4/octant 4, The
@@ -112,7 +123,9 @@ extends Node
 #   "purity_lock_slots"       — extra purity lock slots
 #   "cooldown_multiplier"     — tiered cooldown reduction via bonus_levels
 #   "endowment_multiplier"    — reduces Constellation Endowment bottleneck
-#                                (data placeholder; not yet read by ProductionManager)
+#                                (RETIRED 2026-11-07: no constellation uses it now)
+#   "kaleb_automation"        — the Djinn's placeholder: enables Kaleb's command
+#                                stack (author, 2026-11-07; nothing reads it yet)
 #   "spark_bank_capacity"     — banks a capped pool of Sparks across expansions
 #                                for later use endowing constellations
 #                                (data placeholder; not yet read by ProductionManager)
@@ -156,9 +169,21 @@ const OCTANTS = [
 ]
  
  
+# The two ids the game's early flow names. FIRST_ID is the first constellation
+# (the starting one: revealed after the first Expansion, the first puzzle, the
+# first Volition tutorial, the Study reveal); ARCHON_ID is Kaleb's own, with
+# the child-Volition bonus and his identity reveal. They were 0 = Archon and
+# 1 = Spark until v0.4.0.
+const FIRST_ID: int = 0
+const ARCHON_ID: int = 1
+const ARCHON_OCTANT: int = 1
+
 # ==================================================
-# BUILT-IN CONSTELLATION DEFINITIONS (IDs 1-16)
+# BUILT-IN CONSTELLATION DEFINITIONS (IDs 0-6)
 # ==================================================
+# NOTE: the entries below are NOT in ascending id order since v0.4.0 (the
+# Archon's block, id 1, sits above the Spark's, id 0); every lookup is by
+# the "id" field, never by position.
 # ── DEV SIZING CONSTRAINT ───────────────────────────────────────────────────
 # Panel display area: 353 x 175 px (aspect ~2.017 : 1)
 # fixed_star_positions are unit-sphere Vector3 [x, y, z] where z ≈ sqrt(1-x²-y²)
@@ -174,12 +199,12 @@ const BUILT_IN = [
 # CONSTELLATION 1-1: KALEB, THE ARCHON
 # ==================================================
     {
-        "id": 0,
+        "id": 1,
         "name": "The Archon",
         "designation": "KALEB",
-        "octant": 0,
+        "octant": 1,
         "star_count": 15,
-        "unlock": "achievement:first_prestige",
+        "unlock": "achievement:second_prestige",
         "bonus_key": "bonus_volitions",
         "bonus_value": 1.0,
         "mechanic_key": "unlock_archon_titles",
@@ -351,12 +376,12 @@ const BUILT_IN = [
 # ==================================================
 
     {
-        "id": 1,
+        "id": 0,
         "name": "The Spark",
         "designation": "ALZIRO",
-        "octant": 1,
+        "octant": 0,
         "star_count": 16,
-        "unlock": "achievement:second_prestige",
+        "unlock": "achievement:first_prestige",
         "bonus_key": "sparks_multiplier",
         "bonus_value": 1.0,
         "mechanic_key": "",
@@ -1120,11 +1145,17 @@ const BUILT_IN = [
         "octant": 6,
         "star_count": 17,
         "unlock": "achievement:seventh_prestige",
-        "bonus_key": "endowment_multiplier",
+        # PLACEHOLDER (author, 2026-11-07): the Djinn now enhances AUTOMATION,
+        # not Constellation Endowment (replacing the 2026-10-21 "preserve
+        # material through Oscillations" ability too). For now it stands for
+        # enabling Kaleb's command stack, and for letting his Volitions be
+        # moved around outside the player's basic Volition constraints. The
+        # exact narrative mechanic isn't decided, so there are no tier values
+        # and nothing reads the key yet; the stack is still dev-unlocked.
+        "bonus_key": "kaleb_automation",
         "bonus_value": 1.0,
-        "mechanic_key": "",
+        "mechanic_key": "unlock_kaleb_stack",
         "snap_horiz_stars": [1, 2],
-        "bonus_levels": {"stars": 1.5, "lines": 2.0, "art": 3.0},
         "spark_cap":      28657,
         # "line_threshold": 0.3819,   # OLD fraction structure (28,657 / 75,025) — superseded by SPARKS_TIER_LINES
 
@@ -2026,10 +2057,12 @@ func on_achievement(key: String) -> void:
         var condition: String = c.get("unlock", "")
         if condition == "achievement:" + key:
             _unlock_constellation(c["id"])
+    # The first Volition tutorial unlocks the SECOND constellation early
+    # (id 1: the Archon since v0.4.0, the Spark before).
     if key == "archon_volition_constellation":
-        _unlock_constellation(1)  # Unlock The Spark (id 1)
+        _unlock_constellation(ARCHON_ID)
     if key == "no_archon_volition_constellation":
-        _unlock_constellation(1)  # Unlock The Spark (id 1)
+        _unlock_constellation(ARCHON_ID)
     _check_chain_unlocks()
  
  
@@ -2356,12 +2389,11 @@ func get_phial_spark_bank_amount() -> BigNum:
 
 func get_bonus_volition_grant() -> int:
     # Returns 0/1/2/4 Bonus Volitions per Normal Volition, sourced from the
-    # Archon (id 0) — bonus_volitions is permanently exclusive to the Archon
-    # by design, so this reads it directly rather than scanning all octants.
-    # Requires: Archon active in its octant, solved, AND self-activated
-    # (a Normal Volition assigned to the Archon itself).
-    const ARCHON_ID: int = 0
-    if active_per_octant[0] != ARCHON_ID:
+    # Archon (ARCHON_ID) — bonus_volitions is permanently exclusive to the
+    # Archon by design, so this reads it directly rather than scanning all
+    # octants. Requires: Archon active in its octant, solved, AND
+    # self-activated (a Normal Volition assigned to the Archon itself).
+    if active_per_octant[ARCHON_OCTANT] != ARCHON_ID:
         return 0
     var def: Dictionary = get_constellation_def(ARCHON_ID)
     if not def.has("bonus_levels"):
@@ -2640,7 +2672,7 @@ func load_save_data(data: Dictionary) -> void:
             if id >= 0:
                 _unlock_constellation(id)
     else:
-        _unlock_constellation(0)
+        _unlock_constellation(FIRST_ID)
     _rebuild_active_mechanics()
 
     var _raw_cache = data.get("puzzle_cache")

@@ -74,7 +74,7 @@ func _rep(g, star: int) -> bool:
 func run() -> void:
 	var re_one := RegEx.create_from_string(RE_ONE)
 	var puzzles: Array = [
-		["c1 beginner", _beginner_puzzle(1, 11)],
+		["c0 beginner", _beginner_puzzle(0, 11)],   # the Spark, id 0 since v0.4.0
 		["c3 hard", _hard_puzzle(3, 11)],
 		["c4 hard", _hard_puzzle(4, 11)],
 	]

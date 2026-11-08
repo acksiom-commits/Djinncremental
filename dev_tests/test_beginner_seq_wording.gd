@@ -104,8 +104,8 @@ func _any_repeats(g, stars: Array) -> bool:
 
 
 func run() -> void:
-	var g = _beginner_puzzle(0, 11)
-	var h = _hard_puzzle(0, 11)
+	var g = _beginner_puzzle(1, 11)   # The Archon is id 1 since v0.4.0
+	var h = _hard_puzzle(1, 11)
 
 	print("=== the repeat switch ===")
 	ok(g._melody_repeats(), "The Archon Beginner (%d notes, %d stars) is a repeating melody" % [g.melody_star_sequence.size(), g.star_count])
