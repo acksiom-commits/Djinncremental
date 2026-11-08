@@ -437,13 +437,8 @@ func _update_multi_button_states() -> void:
 func _is_resource_wheel_locked(key: String) -> bool:
     if not game_context:
         return true
-    if key == "sparks":
-        return false
-    if not game_context.ui_unlocks.get("wheel_full_access", false):
-        return true
-    if EVER_PRODUCED_GATED_RESOURCES.has(key):
-        return game_context.totals_created.get(key, BigNum.zero()).is_zero()
-    return false
+    # One implementation, shared with Kaleb's Assign bar.
+    return game_context.is_wheel_resource_locked(key)
 
 
 # ==================================================

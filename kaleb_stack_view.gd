@@ -43,13 +43,13 @@ const LIVE := Color(0.55, 1.0, 0.6)       # the live (running/paused) slot
 ## The Uonite − and + repeat while held, like the wheel's Uonite buttons.
 var _hold = preload("res://hold_repeat.gd").new()
 ## The palette's order.
-const PALETTE: Array[String] = ["summon_spark", "monad_compress", "tetrad_assemble",
+const PALETTE: Array[String] = ["summon_spark", "monad_compress", "tetrad_assemble", "create_uonite",
     "persistent_particle", "persistent_iota", "persistent_mote", "persistent_grain",
-    "lock", "unlock", "if", "supply_sparks", "feed_endow", "feed_ignore"]
+    "lock", "unlock", "if", "assign", "supply_sparks", "feed_endow", "feed_ignore"]
 ## What an If bar can count, in its menu's order.
 const IF_KEYS: Array[String] = ["sparks", "monad", "tetrad", "monad_solid", "monad_liquid", "monad_gas",
     "adaemant", "aquae", "aethyr", "earth", "water", "air", "mud", "dust", "cloud",
-    "silt", "sand", "haze", "mist", "ooze", "foam", "particle",
+    "silt", "sand", "haze", "mist", "ooze", "foam", "particle", "mote_uonite", "uonite",
     "persistent_particle", "persistent_iota", "persistent_mote", "persistent_grain"]
 
 var gc: Node = null
@@ -251,7 +251,8 @@ func _build_row(i: int) -> Dictionary:
     match String(def.get("kind", "")):
         "press":
             name_lbl.text = String(def.get("name", bar["cmd"]))
-            u_lbl = _add_worker_controls(row, bar)
+            if not bool(def.get("crewless", false)):
+                u_lbl = _add_worker_controls(row, bar)
             progress.text = "×"
             row.add_child(progress)
             row.add_child(_num_edit(bar, "repeat", 1, 999, 0, 48))
@@ -263,6 +264,19 @@ func _build_row(i: int) -> Dictionary:
             progress.text = "×"
             row.add_child(progress)
             row.add_child(_num_edit(bar, "repeat", 1, 999, 0, 48))
+        "assign":
+            # Sets the Uonites or Foci on one wheel resource (author,
+            # 2026-11-07); a value past what is free takes what is free.
+            var wkeys: Array = KC.ASSIGN_OPS.keys()
+            var wlabels: Array = []
+            for k in wkeys:
+                wlabels.append(KC.ASSIGN_NAMES[k])
+            row.add_child(_option(bar, "res", KC.ASSIGN_POOLS, 80, ["Uonites", "Foci"]))
+            row.add_child(_label("→", TEXT_DIM))
+            row.add_child(_option(bar, "target", wkeys, 90, wlabels))
+            var amt := _num_edit(bar, "value", 0, 99999, 0, 52)
+            amt.tooltip_text = "How many sit on it. More than are free takes all that are free."
+            row.add_child(amt)
         "feed":
             row.add_child(_constellation_option(bar, 200))
         "lock", "unlock":

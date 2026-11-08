@@ -33,6 +33,13 @@ const COMMANDS := {
         "handler": "_on_monad_compress_pressed",  "cooldown": "MonadCooldownBar"},
     "tetrad_assemble":     {"name": "Assemble Tetrad",   "kind": "press",
         "handler": "_on_tetrad_assemble_pressed", "cooldown": "TetradCooldownBar"},
+    # Create Uonite (author, 2026-11-07): the same button, so it also
+    # Oscillates (a made Uonite, or the cap's bare Oscillation). It makes a
+    # whole batch by itself, so the crew does not work it ("crewless"), and it
+    # waits out the Oscillation's animation. This is what lets a stack run
+    # the Expansions unattended.
+    "create_uonite":       {"name": "Create Uonite",     "kind": "press",
+        "handler": "_on_create_uonite_pressed",   "cooldown": "", "crewless": true},
     "persistent_particle": {"name": "Assemble Persistent Particle", "kind": "press",
         "handler": "_on_persistent_particle_pressed", "cooldown": "ParticleCooldownBar"},
     "persistent_iota":     {"name": "Assemble Persistent Iota",     "kind": "press",
@@ -46,9 +53,27 @@ const COMMANDS := {
     "if":                  {"name": "If",     "kind": "if"},
     # Constellations (author, 2026-11-06).
     "supply_sparks":        {"name": "Supply Sparks", "kind": "supply", "timer": "supply"},
+    # Allocation Wheel (author, 2026-11-07): sets how many Uonites or Foci
+    # sit on one wheel resource. Instant.
+    "assign":              {"name": "Assign", "kind": "assign"},
     "feed_endow":          {"name": "Endow",  "kind": "feed", "mode": 1},
     "feed_ignore":         {"name": "Ignore", "kind": "feed", "mode": 0},
 }
+
+## The wheel resources an Assign bar can fill, in the wheel's order, with the
+## wheel's operation each one is (the keys of allocation_wheel_control.gd's
+## RESOURCE_OPERATIONS, less the inert Uonite slot) and what the menu calls them.
+const ASSIGN_OPS := {
+    "sparks": "sparks_summon", "monad": "monad_compress", "tetrad": "tetrad_assemble",
+    "particle": "particle_assemble", "iota_uonite": "iota_assemble_uonite",
+    "mote_uonite": "mote_assemble_uonite", "grain": "grain_assemble",
+}
+const ASSIGN_NAMES := {
+    "sparks": "Sparks", "monad": "Monads", "tetrad": "Tetrads", "particle": "Particles",
+    "iota_uonite": "Iota", "mote_uonite": "Mote", "grain": "Grains",
+}
+## Pools an Assign bar moves (never Volitions: author, 2026-10-26).
+const ASSIGN_POOLS: Array[String] = ["uonites", "foci"]
 
 ## Kaleb's Supply Sparks presses, one a second (author, 2026-11-06).
 const SUPPLY_INTERVAL: float = 1.0
@@ -121,7 +146,7 @@ static func read_count(gc: Node, key: String) -> int:
     if gc.tetrad.has(key):
         return gc.tetrad[key].to_int()
     match key:
-        "sparks", "particle", "iota_grains", "mote_grains", "grain", "uonite", \
+        "sparks", "particle", "iota_grains", "mote_grains", "mote_uonite", "grain", "uonite", \
                 "persistent_particle", "persistent_iota", "persistent_mote", "persistent_grain":
             return gc.get_resource(key).to_int()
     return 0

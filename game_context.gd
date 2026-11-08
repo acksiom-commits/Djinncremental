@@ -1104,6 +1104,24 @@ func _free_foci() -> int:
     return maxi(0, archon_foci - get_total_foci_assigned())
 
 
+## Wheel resources whose assignment needs the resource to have been made once
+## (they share one panel-level reveal flag, which comes too early for them).
+const WHEEL_EVER_PRODUCED_GATED: Array[String] = ["particle", "iota_uonite", "mote_uonite", "grain"]
+
+## Whether the Allocation Wheel won't take assignments for `key` yet. The one
+## implementation: the wheel's own buttons and Kaleb's Assign bar both ask.
+## Sparks is always assignable; the rest need wheel_full_access (all three
+## Monad types made), and the four chain resources having been produced.
+func is_wheel_resource_locked(key: String) -> bool:
+    if key == "sparks":
+        return false
+    if not ui_unlocks.get("wheel_full_access", false):
+        return true
+    if WHEEL_EVER_PRODUCED_GATED.has(key):
+        return totals_created.get(key, BigNum.zero()).is_zero()
+    return false
+
+
 # ----- Stack slots (author, 2026-11-06) -----
 # Each of the Commands tab's Stack slots is its own stack. The LIVE slot's
 # stack is kaleb_stack with the crew above: the one Kaleb runs (or has

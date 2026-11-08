@@ -75,13 +75,18 @@ func step() -> void:
                 # changed total, so a Particle or Tetrad press still goes on.
                 # The crew does the pressing (author, 2026-11-06): with none,
                 # a press would make nothing, so pause and say so.
-                if gc.kaleb_bar_workers(bar) < 1:
+                # Create Uonite is crewless: it needs no crew, and waits out
+                # the Oscillation it starts (the button ignores a press then).
+                var crewless: bool = bool(def.get("crewless", false))
+                if crewless and ui._expansion_anim_active:
+                    return
+                if not crewless and gc.kaleb_bar_workers(bar) < 1:
                     _pause(bar, "Kaleb has no crew (set one in the Commands header)")
                     return
                 var full_before: bool = _storage_full()
                 var stored_before: BigNum = gc.get_storage_total()
-                ui.kaleb_press(def["handler"], gc.kaleb_bar_workers(bar))
-                if full_before and String(bar.get("cmd", "")) != "summon_spark" \
+                ui.kaleb_press(def["handler"], 1 if crewless else gc.kaleb_bar_workers(bar))
+                if full_before and not crewless and String(bar.get("cmd", "")) != "summon_spark" \
                         and gc.get_storage_total().equals(stored_before):
                     _pause(bar, "storage is full")
                     return
@@ -117,6 +122,12 @@ func step() -> void:
                 if gc.kaleb_repeat_done >= int(bar.get("repeat", 1)):
                     _advance()
                 return
+            "assign":
+                var why: String = _assign(bar)
+                if why != "":
+                    _pause(bar, why)
+                    return
+                _advance()
             "feed":
                 # Switch a Constellation's automatic feeding (Endow / Ignore),
                 # as its slideout buttons do. Instant.
@@ -162,6 +173,41 @@ func _supply_blocker(id: int, bar: Dictionary) -> String:
         return "no Volition is on %s" % KalebCommands.constellation_name(id, gc, get_node_or_null("/root/ConstellationData"))
     if gc.kaleb_bar_workers(bar) < 1:
         return "only Foci work in Constellations, and the crew has none"
+    return ""
+
+
+## An Assign bar (author, 2026-11-07): sets the Uonites or Foci on one wheel
+## resource to the bar's value, the way the wheel's + and − do (it writes the
+## same assignment key and tells the production manager), but never taking
+## more than are free: asking for more than there is takes what is free, so a
+## large value means "all free". Returns "" when done, else why not (the
+## caller pauses Kaleb on it).
+func _assign(bar: Dictionary) -> String:
+    var rkey: String = String(bar.get("target", ""))
+    var pool: String = String(bar.get("res", ""))
+    if not KalebCommands.ASSIGN_OPS.has(rkey):
+        return "it has no wheel resource chosen"
+    if not KalebCommands.ASSIGN_POOLS.has(pool):
+        return "it has no Uonites or Foci chosen"
+    if gc.is_wheel_resource_locked(rkey):
+        return "the Allocation Wheel can't take %s yet" % KalebCommands.ASSIGN_NAMES[rkey]
+    var akey: String = "%s_%s" % [KalebCommands.ASSIGN_OPS[rkey], pool]
+    var want: int = maxi(0, int(bar.get("value", 0)))
+    var new_value
+    if pool == "uonites":
+        var raw = gc.assignments.get(akey, BigNum.zero())
+        var current: int = raw.to_int() if raw is BigNum else 0
+        var assigned: BigNum = gc.get_total_uonites_assigned()
+        var free: int = gc.uonite.sub(assigned).to_int() if gc.uonite.is_greater_or_equal(assigned) else 0
+        new_value = BigNum.from_int(mini(want, current + free))
+    else:
+        var current: int = gc._assignment_int(akey, 0)
+        var free: int = maxi(0, gc.archon_foci - gc.get_total_foci_assigned())
+        new_value = mini(want, current + free)
+    gc.assignments[akey] = new_value
+    var pm: Node = ui.get("production_manager") if ui else null
+    if pm and pm.has_method("update_assignment"):
+        pm.update_assignment(akey, new_value)
     return ""
 
 
