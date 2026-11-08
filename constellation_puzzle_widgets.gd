@@ -2517,13 +2517,24 @@ var _seq_checker_scroll: Dictionary = {}
 
 
 func _track_checker_scroll(scroll: ScrollContainer, key) -> void:
-    scroll.get_h_scroll_bar().value_changed.connect(func(v: float): _seq_checker_scroll[key] = int(v))
+    scroll.get_h_scroll_bar().value_changed.connect(func(v: float) -> void:
+        # A strip on its way out is resized and loses its place as the
+        # rebuilt row replaces it. Every click frees the old row and builds the
+        # new one in the same frame, so that dying strip, still tracked, was
+        # writing 0 over the position the new strip had just been given: the
+        # next rebuild then started at the left (the first deselection kept
+        # the position and the second threw it back, 2026-11-07).
+        if not is_instance_valid(scroll) or scroll.is_queued_for_deletion() \
+                or not scroll.is_inside_tree():
+            return
+        _seq_checker_scroll[key] = int(v))
 
 
 ## Runs after the rebuilt row has been laid out (a ScrollContainer clamps
 ## scroll_horizontal to its content width, which is 0 until then). Tracking
 ## starts only AFTER the restore, so the initial 0 can never overwrite the
-## remembered position.
+## remembered position. The restored position is written back to the memory
+## too, in case the strip this one replaced overwrote it on its way out.
 func _restore_checker_scroll(scroll: ScrollContainer, key, value: int) -> void:
     if not is_instance_valid(scroll) or not scroll.is_inside_tree():
         return
@@ -2531,6 +2542,7 @@ func _restore_checker_scroll(scroll: ScrollContainer, key, value: int) -> void:
     if not is_instance_valid(scroll):
         return
     scroll.scroll_horizontal = value
+    _seq_checker_scroll[key] = scroll.scroll_horizontal
     _track_checker_scroll(scroll, key)
 
 

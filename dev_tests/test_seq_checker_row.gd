@@ -708,6 +708,55 @@ func run() -> void:
 			scrollb = c2
 	ok(scrollb.scroll_horizontal == moved, "the rebuilt strip is back at %d (got %d)" % [moved, scrollb.scroll_horizontal])
 
+	# Deselecting a note hides its button, so the strip also gets NARROWER. The
+	# real rebuild frees the old row and builds the new one IN THE SAME FRAME
+	# (_populate_markers_panel), with the old strip still alive and tracked.
+	# The first deselection kept the strip scrolled to the right and the second
+	# threw it back to the left (reported 2026-11-07). Twelve stars, so the
+	# strip still scrolls after three of them are ruled out.
+	var host6 = await _make_host()
+	var d6 = host6._deduction
+	var w6 = host6._widgets
+	host6._star_count = 12
+	d6._load_match_records([])
+	var rec_s: int = d6._get_or_create_match_record_for_name("Pyrios")
+	w6._seq_checker_loaded = true
+	w6._seq_checker_mode = true
+	var holder6 := Control.new()
+	holder6.size = Vector2(300, 40)
+	host6.add_child(holder6)
+	var cur_row: Control = w6._make_sequence_range_row_for_record(rec_s, Color.WHITE)
+	cur_row.size = Vector2(60, 30)
+	holder6.add_child(cur_row)
+	await process_frame
+	await process_frame
+	var edits: Array = [LineEdit.new(), LineEdit.new(), LineEdit.new()]
+	for cs0 in cur_row.get_children():
+		if cs0 is ScrollContainer:
+			cs0.scroll_horizontal = 99999
+	await process_frame
+	for n_click in [1, 2, 3]:
+		w6._on_seq_checker_toggle(rec_s, 13 - n_click, edits[0], edits[1], edits[2])
+		cur_row.queue_free()
+		var next_row: Control = w6._make_sequence_range_row_for_record(rec_s, Color.WHITE)
+		next_row.size = Vector2(60, 30)
+		holder6.add_child(next_row)
+		# What the real layout does to the dying row: it is resized and its strip
+		# loses its place, scrolling back to 0 and telling anyone tracking it.
+		for old_sc in cur_row.get_children():
+			if old_sc is ScrollContainer:
+				old_sc.scroll_horizontal = 0
+		for _f in 4:
+			await process_frame
+		var nscroll: ScrollContainer = null
+		for cs in next_row.get_children():
+			if cs is ScrollContainer:
+				nscroll = cs
+		var hbar: HScrollBar = nscroll.get_h_scroll_bar()
+		var reach: float = hbar.max_value - hbar.page
+		ok(reach > 0.0 and hbar.value >= reach - 1.0, "deselection %d: the strip stays scrolled all the way right (at %.0f of %.0f)" % [n_click, hbar.value, reach])
+		cur_row = next_row
+
 	print("\n=== UNDO on the checker row ===")
 	var host5 = await _make_host()
 	var d5 = host5._deduction
