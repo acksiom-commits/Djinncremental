@@ -2579,14 +2579,19 @@ func _setup_kaleb() -> void:
     _kaleb.name = "KalebExecutor"
     _kaleb.setup(self, game_context)
     add_child(_kaleb)
-    # The stack shows in the Journal slideout's Commands tab (Primordial only;
-    # author, 2026-11-05: moved from the Constellation box).
-    var journal: Node = find_child("JournalPopout", true, false)
-    if journal and journal.has_method("set_commands_view"):
+    # The stack shares the Allocation Wheel's slot, one shown at a time, each
+    # with a button to the other (Primordial only; author, 2026-11-07: moved
+    # from the Journal's Commands tab, which was itself moved from the
+    # Constellation box on 2026-11-05).
+    var wheel: Control = find_child("AllocationWheelControl", true, false)
+    if wheel:
         var view: Control = preload("res://kaleb_stack_view.gd").new()
         view.name = "KalebStackView"
         view.setup(game_context)
-        journal.set_commands_view(view)
+        var display: Node = preload("res://kaleb_display.gd").new()
+        display.name = "KalebDisplay"
+        display.setup(game_context, wheel, view)
+        add_child(display)
 
 
 ## The Persistent chain's presses. They share the Particle, Iota and Mote

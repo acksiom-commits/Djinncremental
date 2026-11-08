@@ -1,10 +1,12 @@
 extends "res://dev_tests/test_base.gd"
-# Kaleb's command stack in the Journal's Commands tab (SysDoc §7.3; moved from
-# the Constellation box by the author, 2026-11-05): Primordial's Journal has
-# it in place of Placeholder, Firmament's doesn't, and the box's button is
-# Study Constellation again; the palette adds bars; each row's On/Off, number
-# fields, menus and × change the bar; drag and drop moves a bar to the slot
-# it is dropped on; Run/Pause runs Kaleb; the view fits the Journal panel.
+# Kaleb's command stack shares the Allocation Wheel's slot (SysDoc §7.3; moved
+# from the Journal's Commands tab by the author, 2026-11-07, which was moved
+# from the Constellation box on 2026-11-05): the page opens on the wheel, each
+# carries a button to the other, nothing below moves, Firmament has neither,
+# and the box's button is Study Constellation; the palette adds bars; each
+# row's On/Off, number fields, menus and × change the bar; drag and drop moves
+# a bar to the slot it is dropped on; Run/Pause runs Kaleb; the view fits the
+# wheel's 375x450 slot.
 
 const KC = preload("res://kaleb_commands.gd")
 
@@ -39,6 +41,8 @@ func run() -> void:
 	var btn: Button = cp._study_btn
 	var journal = scene.find_child("JournalPopout", true, false)
 	var view = scene.find_child("KalebStackView", true, false)
+	var display = scene.find_child("KalebDisplay", true, false)
+	var wheel = scene.find_child("AllocationWheelControl", true, false)
 	gc.kaleb_stack = []
 	gc.kaleb_crew_uonites = 0
 	gc.kaleb_crew_foci = 0
@@ -48,26 +52,50 @@ func run() -> void:
 	gc.archon_foci = gc.get_total_foci_assigned() + 10
 
 	print("=== where it lives ===")
-	ok(view != null and journal.is_ancestor_of(view) and not cp.is_ancestor_of(view),
-		"the stack view is in the Journal, not the Constellation box")
-	ok(journal._placeholder_tab.text == "Commands", "the Journal's sixth tab reads Commands")
+	ok(view != null and display != null and wheel != null and view.get_parent() == wheel.get_parent()
+			and not journal.is_ancestor_of(view) and not cp.is_ancestor_of(view),
+		"the stack view shares the wheel's slot, not the Journal or the Constellation box")
+	ok(journal._placeholder_tab.text == "Placeholder", "the Journal's sixth tab is a Placeholder again")
 	ok(btn.text == "Study Constellation" and not cp.has_method("enable_kaleb_switch"),
 		"the box's button is Study Constellation again")
-	ok(not view.visible, "the stack is hidden while another tab is open")
-	journal._placeholder_tab.pressed.emit()
+	ok(wheel.visible and not view.visible and not display.is_showing_stack(), "the page opens on the wheel")
+	var holder: Control = wheel.get_parent()
+	await process_frame
+	var holder_h: float = holder.size.y
+	var cp_y: float = cp.global_position.y
+	var to_stack: Button = null
+	for c in wheel.get_children():
+		if c is Button and c.text.begins_with("Stack"):
+			to_stack = c
+	ok(to_stack != null, "the wheel carries a Stack button")
+	to_stack.pressed.emit()
 	await process_frame
 	await process_frame
-	ok(view.visible and not journal._placeholder_scroll.visible, "the Commands tab shows the stack, not Coming soon")
-	journal._ref_tab.pressed.emit()
-	ok(not view.visible, "and another tab hides it")
-	journal._placeholder_tab.pressed.emit()
+	ok(view.visible and not wheel.visible and display.is_showing_stack(), "which shows the stack in place of the wheel")
+	ok(is_equal_approx(holder.size.y, holder_h) and is_equal_approx(cp.global_position.y, cp_y),
+		"and nothing below moves (the Constellation box stays put)")
+	var to_wheel: Button = null
+	for c in view.find_children("*", "Button", true, false):
+		if c.text == "Wheel":
+			to_wheel = c
+	ok(to_wheel != null, "the stack carries a Wheel button")
+	to_wheel.pressed.emit()
+	ok(wheel.visible and not view.visible, "which brings the wheel back")
+	gc.kaleb_running = true
+	await process_frame
+	await process_frame
+	ok(to_stack.text == "Stack ▶", "while Kaleb runs, the wheel's button says so")
+	gc.kaleb_running = false
+	display.show_stack(true)
+	await process_frame
 	await process_frame
 	var firm = load("res://FirmamentUI.tscn").instantiate()
 	root.add_child(firm)
 	await process_frame
 	var fj = firm.find_child("JournalPopout", true, false)
-	ok(fj._placeholder_tab.text == "Placeholder" and firm.find_child("KalebStackView", true, false) == null,
-		"Firmament's Journal keeps its Placeholder tab")
+	ok(fj._placeholder_tab.text == "Placeholder" and firm.find_child("KalebStackView", true, false) == null
+			and firm.find_child("KalebDisplay", true, false) == null,
+		"Firmament has neither the stack nor the switch")
 	firm.queue_free()
 	await process_frame
 
@@ -264,19 +292,19 @@ func run() -> void:
 	gc.load_save_data(data)
 	gc.kaleb_running = false
 
-	print("\n=== it fits the Journal ===")
-	var panel: Control = journal._panel
-	var panel_before: Vector2 = panel.size
+	print("\n=== it fits the wheel's slot ===")
+	gc.archon_foci = gc.get_total_foci_assigned() + 40
 	for i in 8:
 		view._on_add_chosen(view.PALETTE.find("if"))
-	view._on_add_chosen(view.PALETTE.find("persistent_particle"))
-	view._on_add_chosen(view.PALETTE.find("lock"))
+	# Every kind of row, since the widest one sets the width.
+	for cmd in view.PALETTE:
+		view._on_add_chosen(view.PALETTE.find(cmd))
 	await process_frame
 	await process_frame
-	var pr: Rect2 = panel.get_global_rect()
 	var vr: Rect2 = view.get_global_rect()
-	ok(panel.size == panel_before and pr.grow(0.5).encloses(vr),
-		"with %d bars the view stays inside the %.0fx%.0f Journal panel (view %s)" % [gc.kaleb_stack.size(), pr.size.x, pr.size.y, str(vr.size)])
+	var need: Vector2 = view.get_combined_minimum_size()
+	ok(need.x <= 375.0 and need.y <= 450.0 and vr.size.x <= 375.5 and vr.size.y <= 450.5,
+		"with %d bars the view needs %s and fills %s: no more than the wheel's 375x450 slot" % [gc.kaleb_stack.size(), str(need), str(vr.size)])
 
 	scene.queue_free()
 	await process_frame

@@ -78,6 +78,10 @@ var _note: String = ""         # a message for the footer
 var _note_until: float = 0.0
 
 
+## The header's Wheel button was pressed: show the Allocation Wheel again.
+signal wheel_requested
+
+
 func setup(game_context: Node) -> void:
     gc = game_context
 
@@ -97,8 +101,14 @@ func _ready() -> void:
 
     var head := HBoxContainer.new()
     col.add_child(head)
+    # Back to the Allocation Wheel (kaleb_display.gd): the stack shares the
+    # wheel's slot, and each carries a button to the other (author, 2026-11-07).
+    var wheel_btn := _small_button("Wheel")
+    wheel_btn.tooltip_text = "Show the Allocation Wheel in place of the stack"
+    wheel_btn.pressed.connect(func() -> void: wheel_requested.emit())
+    head.add_child(wheel_btn)
     _run_btn = _small_button("Run")
-    _run_btn.custom_minimum_size = Vector2(60, 0)
+    _run_btn.custom_minimum_size = Vector2(50, 0)
     _run_btn.pressed.connect(_on_run_pressed)
     head.add_child(_run_btn)
     _restart_btn = _small_button("Restart")
@@ -114,14 +124,17 @@ func _ready() -> void:
     # The crew (author, 2026-11-06): one set of workers Kaleb takes from bar
     # to bar. + takes a free Uonite, else a free Focus; − gives a Focus back
     # first. Hold-repeat, like the wheel's Uonite buttons.
-    head.add_child(_label("Crew", TEXT_DIM))
+    # No "Crew" caption (2026-11-07): the stack shares the wheel's 375 px
+    # slot and the header needs the room; the count's tooltip names it.
     var crew_minus := _small_button("−")
     crew_minus.custom_minimum_size = Vector2(20, 0)
     crew_minus.tooltip_text = "Shrink the crew (a Focus goes back first, then a Uonite)"
     _hold.connect_button(crew_minus, func() -> void: gc.kaleb_change_crew(-1, _stack_slot))
     head.add_child(crew_minus)
     _crew_lbl = _label("", UONITE)
-    _crew_lbl.custom_minimum_size = Vector2(56, 0)
+    _crew_lbl.custom_minimum_size = Vector2(48, 0)
+    _crew_lbl.mouse_filter = Control.MOUSE_FILTER_PASS
+    _crew_lbl.tooltip_text = "Crew: the Uonites (U) and Foci (F) Kaleb takes from bar to bar"
     _crew_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     head.add_child(_crew_lbl)
     var crew_plus := _small_button("+")
@@ -259,7 +272,7 @@ func _build_row(i: int) -> Dictionary:
         "supply":
             # Supply Sparks into one Constellation; only the crew's Foci
             # work on it (author, 2026-11-06).
-            row.add_child(_constellation_option(bar, 130))
+            row.add_child(_constellation_option(bar, 108))
             u_lbl = _add_worker_controls(row, bar)
             progress.text = "×"
             row.add_child(progress)
@@ -282,9 +295,9 @@ func _build_row(i: int) -> Dictionary:
         "lock", "unlock":
             row.add_child(_option(bar, "target", gc.locks.keys(), 170))
         "if":
-            row.add_child(_option(bar, "res", IF_KEYS, 160))
-            row.add_child(_option(bar, "cmp", KC.COMPARISONS, 50))
-            row.add_child(_num_edit(bar, "value", 0, 99999, 0, 60))
+            row.add_child(_option(bar, "res", IF_KEYS, 100))
+            row.add_child(_option(bar, "cmp", KC.COMPARISONS, 42))
+            row.add_child(_num_edit(bar, "value", 0, 99999, 0, 44))
             row.add_child(_label("→#", TEXT_DIM))
             var goto := _num_edit(bar, "goto", 1, 999, -1, 40)
             goto.tooltip_text = "If true, go to this bar"
