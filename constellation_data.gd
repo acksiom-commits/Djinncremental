@@ -392,7 +392,7 @@ const BUILT_IN = [
         # flavored prefix/mid/suffix pools, replacing constellation_star_namer.gd's
         # shared Greek DEFAULT_THEME for The Spark specifically. Regenerates
         # every star name for this constellation (generate_names() is seeded
-        # by constellation_id only); any cached puzzle for id 1 needs a
+        # by constellation_id only); any cached puzzle for id 0 (the Spark since v0.4.0) needs a
         # RESET (Study Overlay's own reset flow) to pick the new names up.
         "name_theme": {
             "prefixes": ["Vlad", "Svet", "Yaro", "Rad", "Mir", "Bog", "Rost",
@@ -937,7 +937,7 @@ const BUILT_IN = [
             0.5, 0.5, 0.625, 0.625, 0.25, 0.25,
         ],
         # See TODO above -- no distinct response melody specified, so this
-        # mirrors The Spark's (id 1) "echo the distinct notes" pattern.
+        # mirrors The Spark's (id 0) "echo the distinct notes" pattern.
         "response_freqs": [880.00, 830.61, 987.77, 739.99, 659.25, 554.37],
 
         # Beginner-mode outline (2026-10-01, user-drawn): a tail into a hub,

@@ -1249,7 +1249,7 @@ func _on_game_loaded(offline_seconds: float) -> void:
     # themselves, which is what made it look like it wasn't "propagating"
     # across a quit/reload.
     _update_click_vol_label()
-    # Bootstrap Archon puzzle (id 0) if not cached, version mismatch, or player seed changed.
+    # Bootstrap the first constellation's puzzle (id 0, the Spark since v0.4.0) if not cached, version mismatch, or player seed changed.
     var cd_boot = get_node_or_null("/root/ConstellationData")
     if cd_boot:
         var cached_boot: Dictionary = cd_boot.get_puzzle_cache(0)

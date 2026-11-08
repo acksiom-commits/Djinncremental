@@ -1,7 +1,7 @@
 extends Control
 # ========== SPARK CONSTELLATION BADGE v1.2 ==========
 # Displays the Kaleb (archon_face) mini-icon on the Sparks
-# genbar row when The Spark constellation (id 1) is active
+# genbar row when The Spark constellation (FIRST_ID, id 0 since v0.4.0) is active
 # in its octant AND has at least one Volition assigned.
 # v1.2: _process() polling disabled until game_loaded fires,
 #       preventing the default active_per_octant=[-1...] from
@@ -44,13 +44,13 @@ func _is_active() -> bool:
     # Cast each element to int before comparison.
     var found := false
     for v in (active_arr as Array):
-        if int(v) == 1:
+        if int(v) == cd.FIRST_ID:
             found = true
             break
     if not found:
         return false
     return gc.has_method("has_volition_for_constellation") \
-        and gc.has_volition_for_constellation(1)
+        and gc.has_volition_for_constellation(cd.FIRST_ID)
 
 
 func _refresh_visibility() -> void:

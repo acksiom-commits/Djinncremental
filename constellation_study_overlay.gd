@@ -1075,7 +1075,7 @@ const SELECTED_CLUE_PLACEHOLDER := "Select a clue below to pin it here."
 ## True while a constellation's identity is still hidden from the player --
 ## see constellation_popout.gd's own _constellation_identity_hidden() for
 ## the full reasoning (both check the same flags: Kaleb's own
-## game_context.ui_unlocks["kaleb_identity_revealed"] for id 0, or
+## game_context.ui_unlocks["kaleb_identity_revealed"] for the Archon (ARCHON_ID), or
 ## game_context.constellation_identity_revealed[id] for every other
 ## constellation -- both set only once their reveal dialogue has actually
 ## been read to completion, not merely enqueued).

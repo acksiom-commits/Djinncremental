@@ -1167,7 +1167,7 @@ func enqueue_seventh_prestige() -> void:
 
 
 ## The default identity-reveal dialogue for every constellation EXCEPT
-## Kaleb (id 0, who keeps his own bespoke tier1_archon_complete reveal --
+## Kaleb (the Archon, ARCHON_ID, who keeps his own bespoke tier1_archon_complete reveal --
 ## see the constellation_identity_reveal_done doc comment above). Fires
 ## once per constellation_id, keyed dynamically rather than through a
 ## named X_done var/signal per id, since this needs to keep working for
