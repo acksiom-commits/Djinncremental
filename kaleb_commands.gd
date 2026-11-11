@@ -22,6 +22,9 @@ extends RefCounted
 ##   volition  Move Volition: up to `value` Constellation Volitions from
 ##           `res` to `target` ("free" or an id), only with The Djinn at
 ##           Tier 1 or above. Instant.
+##   cfoci   Constellation Foci: sets the Foci on Constellation `target` to
+##           `value` (no more than are free), only with The Djinn at Tier 1
+##           or above. Instant.
 ## Every bar holds a Focus (its On/Off); press and supply bars say how many
 ## of the stack's shared crew they use (GameContext.kaleb_bar_workers).
 
@@ -66,6 +69,11 @@ const COMMANDS := {
     # many), only while the Djinn is at Tier 1 or above. Instant. The
     # 2026-11-05 "Keep them by hand" ruling holds below that tier.
     "move_volition":       {"name": "Move Volition", "kind": "volition"},
+    # Also the Djinn's (author, 2026-11-10): SETS the Foci on one
+    # Constellation (`target`, an id) to `value`, as the popout's Foci + and
+    # − do, never taking more than are free. Foci only: Uonites never serve
+    # Constellations. Only while the Djinn is at Tier 1 or above. Instant.
+    "constellation_foci":  {"name": "Constellation Foci", "kind": "cfoci"},
 }
 
 ## The wheel resources an Assign bar can fill, in the wheel's order, with the

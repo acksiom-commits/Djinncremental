@@ -141,6 +141,39 @@ func run() -> void:
 	_run_one(gc, kaleb)
 	ok(not gc.kaleb_running, "a Constellation that isn't unlocked: he pauses")
 
+	print("=== Constellation Foci (the Djinn's too) ===")
+	ok(KC.COMMANDS.has("constellation_foci") and KC.COMMANDS["constellation_foci"]["kind"] == "cfoci", "Constellation Foci is in the palette")
+	ok(FileAccess.get_file_as_string("res://kaleb_stack_view.gd").contains("\"constellation_foci\""), "and in the + Command menu")
+	var fkey: String = "constellation_0_foci"
+	gc.assignments[fkey] = 0
+	gc.archon_foci = gc.get_total_foci_assigned() + 6
+	var vols_before: int = gc.get_total_volitions_assigned()
+	gc.kaleb_stack[0] = KC.make_bar("constellation_foci")
+	gc.kaleb_stack[0]["target"] = "0"
+	gc.kaleb_stack[0]["value"] = 4
+	_run_one(gc, kaleb)
+	ok(gc.kaleb_running and gc._assignment_int(fkey, -1) == 4, "4 Foci on the Spark (%d)" % gc._assignment_int(fkey, -1))
+	_run_one(gc, kaleb)
+	ok(gc._assignment_int(fkey, -1) == 4 and gc.archon_foci - gc.get_total_foci_assigned() == 2,
+		"running it again changes nothing: it sets, it doesn't add")
+	gc.kaleb_stack[0]["value"] = 1
+	_run_one(gc, kaleb)
+	ok(gc._assignment_int(fkey, -1) == 1 and gc.archon_foci - gc.get_total_foci_assigned() == 5, "a lower value gives Foci back")
+	gc.kaleb_stack[0]["value"] = 99999
+	_run_one(gc, kaleb)
+	ok(gc._assignment_int(fkey, -1) == 6 and gc.archon_foci == gc.get_total_foci_assigned(),
+		"a huge value takes every free Focus, none beyond (6)")
+	ok(gc.get_total_volitions_assigned() == vols_before, "no Volition was touched")
+	gc.kaleb_stack[0]["target"] = "13"
+	_run_one(gc, kaleb)
+	ok(not gc.kaleb_running, "a Constellation that isn't unlocked: he pauses")
+	gc.kaleb_stack[0]["target"] = "0"
+	gc.kaleb_stack[0]["value"] = 0
+	gc.constellation_spark_totals[str(cd.DJINN_ID)] = 0.0
+	_run_one(gc, kaleb)
+	ok(not gc.kaleb_running and gc._assignment_int(fkey, -1) == 6, "the Djinn dark: he pauses and the Foci stay")
+	gc.constellation_spark_totals[str(cd.DJINN_ID)] = cd.SPARKS_TIER_STARS
+
 	print("=== only Constellation Volitions ===")
 	var cats: Array = []
 	for s in gc.volition_slots:

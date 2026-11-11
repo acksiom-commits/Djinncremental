@@ -137,6 +137,12 @@ func step() -> void:
                     return
                 gc.assignments["constellation_%d_feed_mode" % id] = int(def.get("mode", 0))
                 _advance()
+            "cfoci":
+                var why: String = _constellation_foci(bar)
+                if why != "":
+                    _pause(bar, why)
+                    return
+                _advance()
             "volition":
                 var why: String = _move_volition(bar)
                 if why != "":
@@ -222,7 +228,7 @@ func _assign(bar: Dictionary) -> String:
 ## Oscillation and must be endowed back up). Returns "" when done, else why.
 func _move_volition(bar: Dictionary) -> String:
     var cdata: Node = get_node_or_null("/root/ConstellationData")
-    if cdata == null or cdata.get_visual_state(cdata.DJINN_ID) == "dark":
+    if not _djinn_at_tier1(cdata):
         return "Kaleb moves Volitions only while The Djinn is at Tier 1"
     var from: String = String(bar.get("res", ""))
     var to: String = String(bar.get("target", ""))
@@ -232,6 +238,30 @@ func _move_volition(bar: Dictionary) -> String:
         if not String(e).is_valid_int() or not cdata.unlocked.has(String(e).to_int()):
             return "it has no unlocked Constellation chosen"
     return gc.kaleb_move_volition(from, to, int(bar.get("value", 1)))
+
+
+## The Djinn's meta-effect gate (author, 2026-11-10): The Djinn at Tier 1
+## (stars) or above.
+func _djinn_at_tier1(cdata: Node) -> bool:
+    return cdata != null and cdata.get_visual_state(cdata.DJINN_ID) != "dark"
+
+
+## A Constellation Foci bar (author, 2026-11-10, the Djinn's): SETS the Foci
+## on one Constellation to the bar's value, writing the key the popout's
+## Foci + and − write, never taking more than are free (so 99999 is "all
+## free"); a lower value gives Foci back. Returns "" when done, else why.
+func _constellation_foci(bar: Dictionary) -> String:
+    var cdata: Node = get_node_or_null("/root/ConstellationData")
+    if not _djinn_at_tier1(cdata):
+        return "Kaleb moves Constellation Foci only while The Djinn is at Tier 1"
+    var id: int = _constellation_target(bar)
+    if id < 0:
+        return "it has no unlocked Constellation chosen"
+    var key: String = "constellation_%d_foci" % id
+    var current: int = gc._assignment_int(key, 0)
+    var free: int = maxi(0, gc.archon_foci - gc.get_total_foci_assigned())
+    gc.assignments[key] = mini(maxi(0, int(bar.get("value", 0))), current + free)
+    return ""
 
 
 ## Puts the Purity Lock on `key` into the wanted state, through the same
@@ -278,7 +308,7 @@ func _pause(bar: Dictionary, why: String) -> void:
         for e in [String(bar.get("res", "")), String(bar.get("target", ""))]:
             ends.append("Free" if e == "free" else (KalebCommands.constellation_name(e.to_int(), gc, cdn) if e.is_valid_int() else "?"))
         what += ", %s → %s" % ends
-    elif String(def.get("kind", "")) in ["supply", "feed"] and String(bar.get("target", "")).is_valid_int():
+    elif String(def.get("kind", "")) in ["supply", "feed", "cfoci"] and String(bar.get("target", "")).is_valid_int():
         what += ", " + KalebCommands.constellation_name(String(bar["target"]).to_int(), gc, get_node_or_null("/root/ConstellationData"))
     var adm: Node = ui.get("archon_dialogue_manager") if ui else null
     if adm:

@@ -45,7 +45,7 @@ var _hold = preload("res://hold_repeat.gd").new()
 ## The palette's order.
 const PALETTE: Array[String] = ["summon_spark", "monad_compress", "tetrad_assemble", "create_uonite",
     "persistent_particle", "persistent_iota", "persistent_mote", "persistent_grain",
-    "lock", "unlock", "if", "assign", "supply_sparks", "feed_endow", "feed_ignore", "move_volition"]
+    "lock", "unlock", "if", "assign", "supply_sparks", "feed_endow", "feed_ignore", "move_volition", "constellation_foci"]
 ## What an If bar can count, in its menu's order.
 const IF_KEYS: Array[String] = ["sparks", "monad", "tetrad", "monad_solid", "monad_liquid", "monad_gas",
     "adaemant", "aquae", "aethyr", "earth", "water", "air", "mud", "dust", "cloud",
@@ -292,6 +292,14 @@ func _build_row(i: int) -> Dictionary:
             row.add_child(amt)
         "feed":
             row.add_child(_constellation_option(bar, 200))
+        "cfoci":
+            # Sets one Constellation's Foci (author, 2026-11-10, the
+            # Djinn's); works only while The Djinn is at Tier 1 or above.
+            name_lbl.tooltip_text = "Works only while The Djinn is at Tier 1 or above. Drag to move this command"
+            row.add_child(_constellation_option(bar, 146))
+            var fc := _num_edit(bar, "value", 0, 99999, 0, 52)
+            fc.tooltip_text = "How many Foci sit on it. More than are free takes all that are free."
+            row.add_child(fc)
         "volition":
             # Move Volition (author, 2026-11-10): the Djinn's first effect,
             # working only while The Djinn is at Tier 1 or above.
@@ -474,7 +482,7 @@ func _on_add_chosen(id: int) -> void:
         "if":
             bar["res"] = "persistent_particle"
             bar["value"] = 4
-        "supply_sparks", "feed_endow", "feed_ignore":
+        "supply_sparks", "feed_endow", "feed_ignore", "constellation_foci":
             var cd: Node = get_node_or_null("/root/ConstellationData")
             var ids: Array = cd.unlocked.duplicate() if cd else []
             ids.sort()
