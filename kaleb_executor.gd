@@ -137,6 +137,12 @@ func step() -> void:
                     return
                 gc.assignments["constellation_%d_feed_mode" % id] = int(def.get("mode", 0))
                 _advance()
+            "volition":
+                var why: String = _move_volition(bar)
+                if why != "":
+                    _pause(bar, why)
+                    return
+                _advance()
             "if":
                 if KalebCommands.test(gc, bar):
                     gc.kaleb_index = clampi(int(bar.get("goto", 0)), 0, gc.kaleb_stack.size() - 1)
@@ -211,6 +217,23 @@ func _assign(bar: Dictionary) -> String:
     return ""
 
 
+## A Move Volition bar (author, 2026-11-10): the Djinn's first effect, so
+## only while The Djinn is at Tier 1 or above (it goes dark again at each
+## Oscillation and must be endowed back up). Returns "" when done, else why.
+func _move_volition(bar: Dictionary) -> String:
+    var cdata: Node = get_node_or_null("/root/ConstellationData")
+    if cdata == null or cdata.get_visual_state(cdata.DJINN_ID) == "dark":
+        return "Kaleb moves Volitions only while The Djinn is at Tier 1"
+    var from: String = String(bar.get("res", ""))
+    var to: String = String(bar.get("target", ""))
+    for e in [from, to]:
+        if e == "free":
+            continue
+        if not String(e).is_valid_int() or not cdata.unlocked.has(String(e).to_int()):
+            return "it has no unlocked Constellation chosen"
+    return gc.kaleb_move_volition(from, to, int(bar.get("value", 1)))
+
+
 ## Puts the Purity Lock on `key` into the wanted state, through the same
 ## calls a click makes (they assign and free the lock's Volition). Returns ""
 ## when the lock ends up as wanted, else why it couldn't (no Volition free,
@@ -249,6 +272,12 @@ func _pause(bar: Dictionary, why: String) -> void:
     var what: String = String(def.get("name", bar.get("cmd", "")))
     if String(def.get("kind", "")) in ["lock", "unlock"] and String(bar.get("target", "")) != "":
         what += " " + KalebCommands.display_name(String(bar["target"]), _gd())
+    elif String(def.get("kind", "")) == "volition":
+        var cdn: Node = get_node_or_null("/root/ConstellationData")
+        var ends: Array[String] = []
+        for e in [String(bar.get("res", "")), String(bar.get("target", ""))]:
+            ends.append("Free" if e == "free" else (KalebCommands.constellation_name(e.to_int(), gc, cdn) if e.is_valid_int() else "?"))
+        what += ", %s → %s" % ends
     elif String(def.get("kind", "")) in ["supply", "feed"] and String(bar.get("target", "")).is_valid_int():
         what += ", " + KalebCommands.constellation_name(String(bar["target"]).to_int(), gc, get_node_or_null("/root/ConstellationData"))
     var adm: Node = ui.get("archon_dialogue_manager") if ui else null

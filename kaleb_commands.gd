@@ -19,6 +19,9 @@ extends RefCounted
 ##           its automatic feeding (author, 2026-11-06).
 ##   feed    switch the Constellation `target`'s automatic feeding to Endow
 ##           (feed_endow) or Ignore (feed_ignore). Instant.
+##   volition  Move Volition: up to `value` Constellation Volitions from
+##           `res` to `target` ("free" or an id), only with The Djinn at
+##           Tier 1 or above. Instant.
 ## Every bar holds a Focus (its On/Off); press and supply bars say how many
 ## of the stack's shared crew they use (GameContext.kaleb_bar_workers).
 
@@ -58,6 +61,11 @@ const COMMANDS := {
     "assign":              {"name": "Assign", "kind": "assign"},
     "feed_endow":          {"name": "Endow",  "kind": "feed", "mode": 1},
     "feed_ignore":         {"name": "Ignore", "kind": "feed", "mode": 0},
+    # The Djinn's first effect (author, 2026-11-10): moves Constellation
+    # Volitions (`res` from, `target` to: "free" or an id; `value` how
+    # many), only while the Djinn is at Tier 1 or above. Instant. The
+    # 2026-11-05 "Keep them by hand" ruling holds below that tier.
+    "move_volition":       {"name": "Move Volition", "kind": "volition"},
 }
 
 ## The wheel resources an Assign bar can fill, in the wheel's order, with the

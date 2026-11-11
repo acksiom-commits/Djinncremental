@@ -1301,6 +1301,59 @@ func kaleb_restart() -> void:
     kaleb_repeat_done = 0
 
 
+## Kaleb's Move Volition bar (author, 2026-11-10: the Djinn's first effect,
+## unlocked at its Tier 1; kaleb_executor.gd checks that). Moves up to `count`
+## Constellation Volitions from `from` to `to`, each "free" or a
+## Constellation id as a String. Child Volitions move before parents, as the
+## popout's − takes them. A parent moving between two Constellations is
+## re-pointed in place, so the child Volitions it carries stay where they
+## are. Returns "" when at least one moved, else why none could.
+func kaleb_move_volition(from: String, to: String, count: int) -> String:
+    if from == to:
+        return "it moves a Volition to where it already is"
+    var moved: int = 0
+    var why: String = ""
+    for _n in maxi(1, count):
+        why = _kaleb_move_one_volition(from, to)
+        if why != "":
+            break
+        moved += 1
+    return "" if moved > 0 else why
+
+
+func _kaleb_move_one_volition(from: String, to: String) -> String:
+    if from == "free":
+        var idx: int = get_first_free_parent_index()
+        if idx >= 0:
+            assign_parent_volition(idx, "constellation", to.to_int())
+            return ""
+        if assign_next_child_in_category("constellation", to.to_int()):
+            return ""
+        return "no Volition is free"
+    var src: int = from.to_int()
+    if to == "free":
+        if unassign_last_child_with_target("constellation", src):
+            return ""
+        var pidx: int = get_first_parent_index_with_target("constellation", src)
+        if pidx < 0:
+            return "no Volition is on the Constellation it moves from"
+        unassign_parent_volition(pidx)
+        return ""
+    var dst: int = to.to_int()
+    if unassign_last_child_with_target("constellation", src):
+        # The child just freed is a constellation-category child, so this
+        # always finds a place.
+        assign_next_child_in_category("constellation", dst)
+        return ""
+    var pidx2: int = get_first_parent_index_with_target("constellation", src)
+    if pidx2 < 0:
+        return "no Volition is on the Constellation it moves from"
+    volition_slots[pidx2]["target"] = dst
+    _rebuild_volition_assignments()
+    emit_signal("volition_slots_changed")
+    return ""
+
+
 ## Each Stack slot's saved BASE (author, 2026-11-06): {"bars": a copy of the
 ## slot's stack, "crew": its crew size}, or empty bars. Save copies the
 ## slot's stack in; Load copies it back out, to return to the base after

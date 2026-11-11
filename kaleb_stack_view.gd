@@ -45,7 +45,7 @@ var _hold = preload("res://hold_repeat.gd").new()
 ## The palette's order.
 const PALETTE: Array[String] = ["summon_spark", "monad_compress", "tetrad_assemble", "create_uonite",
     "persistent_particle", "persistent_iota", "persistent_mote", "persistent_grain",
-    "lock", "unlock", "if", "assign", "supply_sparks", "feed_endow", "feed_ignore"]
+    "lock", "unlock", "if", "assign", "supply_sparks", "feed_endow", "feed_ignore", "move_volition"]
 ## What an If bar can count, in its menu's order.
 const IF_KEYS: Array[String] = ["sparks", "monad", "tetrad", "monad_solid", "monad_liquid", "monad_gas",
     "adaemant", "aquae", "aethyr", "earth", "water", "air", "mud", "dust", "cloud",
@@ -292,6 +292,20 @@ func _build_row(i: int) -> Dictionary:
             row.add_child(amt)
         "feed":
             row.add_child(_constellation_option(bar, 200))
+        "volition":
+            # Move Volition (author, 2026-11-10): the Djinn's first effect,
+            # working only while The Djinn is at Tier 1 or above.
+            name_lbl.tooltip_text = "Works only while The Djinn is at Tier 1 or above. Drag to move this command"
+            var from_o := _constellation_option(bar, 80, "res", true)
+            from_o.tooltip_text = "Move from (Free: an unplaced Volition)"
+            row.add_child(from_o)
+            row.add_child(_label("→", TEXT_DIM))
+            var to_o := _constellation_option(bar, 90, "target", true)
+            to_o.tooltip_text = "Move to (Free: take it off)"
+            row.add_child(to_o)
+            var cnt := _num_edit(bar, "value", 1, 99, 0, 52)
+            cnt.tooltip_text = "How many Volitions; fewer move if fewer are there"
+            row.add_child(cnt)
         "lock", "unlock":
             row.add_child(_option(bar, "target", gc.locks.keys(), 170))
         "if":
@@ -338,21 +352,28 @@ func _add_worker_controls(row: HBoxContainer, bar: Dictionary) -> Label:
 
 
 ## The unlocked Constellations, for an Endow / Ignore / Supply bar's
-## target (its id, kept as a String like a Lock bar's key).
-func _constellation_option(bar: Dictionary, width: float) -> OptionButton:
+## target (its id, kept as a String like a Lock bar's key). `with_free`
+## puts "Free" first (key "free"), for a Move Volition bar's ends.
+func _constellation_option(bar: Dictionary, width: float, key: String = "target", with_free: bool = false) -> OptionButton:
     var cd: Node = get_node_or_null("/root/ConstellationData")
     var ids: Array = cd.unlocked.duplicate() if cd else []
     ids.sort()
     var keys: Array = []
     var labels: Array = []
+    if with_free:
+        keys.append("free")
+        labels.append("Free")
     for id in ids:
         keys.append(str(id))
         labels.append(KC.constellation_name(int(id), gc, cd))
     if keys.is_empty():
         keys = ["0"]
         labels = [KC.constellation_name(0, gc, cd)]
-    var o := _option(bar, "target", keys, width, labels)
-    var name_now := func() -> String: return KC.constellation_name(String(bar["target"]).to_int(), gc, cd)
+    var o := _option(bar, key, keys, width, labels)
+    var name_now := func() -> String:
+        if String(bar[key]) == "free":
+            return "Free"
+        return KC.constellation_name(String(bar[key]).to_int(), gc, cd)
     o.tooltip_text = name_now.call()
     o.item_selected.connect(func(_j: int) -> void: o.tooltip_text = name_now.call())
     return o
@@ -458,6 +479,13 @@ func _on_add_chosen(id: int) -> void:
             var ids: Array = cd.unlocked.duplicate() if cd else []
             ids.sort()
             bar["target"] = str(ids[0]) if not ids.is_empty() else "0"
+        "move_volition":
+            var cd: Node = get_node_or_null("/root/ConstellationData")
+            var ids: Array = cd.unlocked.duplicate() if cd else []
+            ids.sort()
+            bar["res"] = "free"
+            bar["target"] = str(ids[0]) if not ids.is_empty() else "0"
+            bar["value"] = 1
     if not gc.kaleb_add_bar(bar, -1, _stack_slot):
         _say("No free Focus for a new bar")
 
