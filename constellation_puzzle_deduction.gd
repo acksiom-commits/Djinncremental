@@ -5626,6 +5626,24 @@ func _record_descriptor_state(record_idx: int, cat: int, star: int) -> int:
         ConstellationLogicPuzzle.Category.SEQUENCE:
             if star >= _host._sequence_rank_solution.size():
                 return 0
+            # FIRST NOTES HIDDEN (2026-11-13): the board keeps no positions, so
+            # the position test below never matched and no entry was ever "the
+            # star that fires 15th note". The clue's own number names the note
+            # (_label_note_for_star), and one star fires on each note, so the
+            # entry holding that note IS the star; an entry whose star is marked
+            # as not firing there is not. Reported: clue 15's "not 1 hop from
+            # Eosoon" never reached note 15's entry, which left Kerais and
+            # Selaion both open and stalled the whole board.
+            if _notes_hidden():
+                var t_label: int = _label_note_for_star(star)
+                if t_label <= 0:
+                    return 0
+                if _notes_on_star_of(record_idx).has(t_label):
+                    return 1
+                for j in _records_sharing_star(record_idx):
+                    if (_match_records[int(j)].get("seq_note_blocks", []) as Array).has(t_label):
+                        return 2
+                return 0
             var pos: int = int(_host._sequence_rank_solution[star]) + 1
             # Deliberately the stored-plus-derived set, NOT
             # _effective_seq_candidates: the latter calls
