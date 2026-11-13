@@ -454,6 +454,12 @@ func _refresh() -> void:
     if Time.get_ticks_msec() / 1000.0 < _note_until:
         _footer.text = _note
         _footer.add_theme_color_override("font_color", GOLD)
+    elif not gc.kaleb_djinn_ready():
+        # The whole stack waits for The Djinn's Tier 1 (author, 2026-11-10).
+        var cdn: Node = get_node_or_null("/root/ConstellationData")
+        _footer.text = "Kaleb waits for %s to reach Tier 1" % (
+            KC.constellation_name(cdn.DJINN_ID, gc, cdn) if cdn else "The Djinn")
+        _footer.add_theme_color_override("font_color", GOLD)
     else:
         _footer.text = "Persistent  Particle %s · Iota %s · Mote %s · Grain %s" % [
             gc.persistent_particle.to_display_string(), gc.persistent_iota.to_display_string(),

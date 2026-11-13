@@ -33,6 +33,11 @@ func run() -> void:
 	await process_frame
 	var ui = scene.find_child("RootUI", true, false)
 	var kaleb: Node = ui._kaleb
+	# The whole stack waits for The Djinn's Tier 1 (author, 2026-11-10).
+	var _cdj = root.get_node("/root/ConstellationData")
+	if not _cdj.unlocked.has(_cdj.DJINN_ID):
+		_cdj.unlocked.append(_cdj.DJINN_ID)
+	gc.constellation_spark_totals[str(_cdj.DJINN_ID)] = _cdj.SPARKS_TIER_STARS
 	kaleb.set_process(false)   # the test steps him
 	var adm = ui.archon_dialogue_manager
 	for _i in 200:

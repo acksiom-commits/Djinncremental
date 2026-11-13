@@ -68,4 +68,6 @@ func _process(_delta: float) -> void:
     if gc == null or _wheel_btn == null or not wheel.visible:
         return
     var running: bool = bool(gc.kaleb_running)
-    _wheel_btn.text = "Stack ▶" if running else "Stack"
+    # Running but waiting for The Djinn's Tier 1 (author, 2026-11-10): no ▶,
+    # since nothing is being done yet.
+    _wheel_btn.text = "Stack ▶" if running and gc.kaleb_djinn_ready() else "Stack"

@@ -1301,6 +1301,16 @@ func kaleb_restart() -> void:
     kaleb_repeat_done = 0
 
 
+## The Djinn's gate on the whole stack (author, 2026-11-10: "the stack
+## shouldn't operate until after the Djinn reaches Tier 1"): The Djinn at
+## Tier 1 (stars) or above. Below it a running stack WAITS (stays running,
+## does nothing) rather than pausing, so after an Oscillation, when The Djinn
+## is dark again, Kaleb starts by himself once it is endowed back to Tier 1.
+func kaleb_djinn_ready() -> bool:
+    var cd = get_node_or_null("/root/ConstellationData")
+    return cd != null and cd.get_visual_state(cd.DJINN_ID) != "dark"
+
+
 ## Kaleb's Move Volition bar (author, 2026-11-10: the Djinn's first effect,
 ## unlocked at its Tier 1; kaleb_executor.gd checks that). Moves up to `count`
 ## Constellation Volitions from `from` to `to`, each "free" or a

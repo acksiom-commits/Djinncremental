@@ -176,8 +176,8 @@ const OCTANTS = [
 # 1 = Spark until v0.4.0.
 const FIRST_ID: int = 0
 const ARCHON_ID: int = 1
-# The Djinn: at Tier 1 (stars) Kaleb's Move Volition bar works (author,
-# 2026-11-10, its first effect; kaleb_executor.gd).
+# The Djinn: Kaleb's stack waits for its Tier 1 (stars) (author, 2026-11-10;
+# GameContext.kaleb_djinn_ready()).
 const DJINN_ID: int = 6
 const ARCHON_OCTANT: int = 1
 
@@ -1155,8 +1155,9 @@ const BUILT_IN = [
         # moved around outside the player's basic Volition constraints. The
         # exact narrative mechanic isn't decided, so there are no tier values
         # and nothing reads the key yet; the stack is still dev-unlocked.
-        # FIRST EFFECT (author, 2026-11-10): at Tier 1 (stars) Kaleb's Move
-        # Volition bar works (DJINN_ID; kaleb_executor.gd _move_volition()).
+        # BUILT (author, 2026-11-10): Kaleb's whole stack waits for this
+        # constellation's Tier 1 (stars; GameContext.kaleb_djinn_ready()), and
+        # its Move Volition and Constellation Foci bars are the Djinn's.
         "bonus_key": "kaleb_automation",
         "bonus_value": 1.0,
         "mechanic_key": "unlock_kaleb_stack",

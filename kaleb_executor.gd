@@ -50,6 +50,10 @@ func _process(_delta: float) -> void:
 func step() -> void:
     if gc == null or ui == null or not gc.kaleb_running or gc.kaleb_stack.is_empty():
         return
+    # The stack waits for The Djinn's Tier 1 (author, 2026-11-10), still
+    # running, so it starts by itself once The Djinn gets there.
+    if not gc.kaleb_djinn_ready():
+        return
     for _i in MAX_INSTANT_STEPS:
         if gc.kaleb_index < 0 or gc.kaleb_index >= gc.kaleb_stack.size():
             gc.kaleb_index = 0
@@ -223,13 +227,11 @@ func _assign(bar: Dictionary) -> String:
     return ""
 
 
-## A Move Volition bar (author, 2026-11-10): the Djinn's first effect, so
-## only while The Djinn is at Tier 1 or above (it goes dark again at each
-## Oscillation and must be endowed back up). Returns "" when done, else why.
+## A Move Volition bar (author, 2026-11-10): the Djinn's first effect. The
+## Djinn's Tier 1 gate is on the whole stack (step()). Returns "" when done,
+## else why.
 func _move_volition(bar: Dictionary) -> String:
     var cdata: Node = get_node_or_null("/root/ConstellationData")
-    if not _djinn_at_tier1(cdata):
-        return "Kaleb moves Volitions only while The Djinn is at Tier 1"
     var from: String = String(bar.get("res", ""))
     var to: String = String(bar.get("target", ""))
     for e in [from, to]:
@@ -240,20 +242,12 @@ func _move_volition(bar: Dictionary) -> String:
     return gc.kaleb_move_volition(from, to, int(bar.get("value", 1)))
 
 
-## The Djinn's meta-effect gate (author, 2026-11-10): The Djinn at Tier 1
-## (stars) or above.
-func _djinn_at_tier1(cdata: Node) -> bool:
-    return cdata != null and cdata.get_visual_state(cdata.DJINN_ID) != "dark"
-
-
 ## A Constellation Foci bar (author, 2026-11-10, the Djinn's): SETS the Foci
 ## on one Constellation to the bar's value, writing the key the popout's
 ## Foci + and − write, never taking more than are free (so 99999 is "all
 ## free"); a lower value gives Foci back. Returns "" when done, else why.
+## (The Djinn's Tier 1 gate is on the whole stack, in step().)
 func _constellation_foci(bar: Dictionary) -> String:
-    var cdata: Node = get_node_or_null("/root/ConstellationData")
-    if not _djinn_at_tier1(cdata):
-        return "Kaleb moves Constellation Foci only while The Djinn is at Tier 1"
     var id: int = _constellation_target(bar)
     if id < 0:
         return "it has no unlocked Constellation chosen"

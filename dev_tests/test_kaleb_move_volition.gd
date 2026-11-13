@@ -92,13 +92,14 @@ func run() -> void:
 	ok(gc.get_volitions_free() == 3 and gc.get_free_children_count() == 0,
 		"3 free Volitions, no children (%d, %d)" % [gc.get_volitions_free(), gc.get_free_children_count()])
 
-	print("=== below the Djinn's Tier 1 nothing moves ===")
+	print("=== below the Djinn's Tier 1 the whole stack waits ===")
+	ok(not gc.kaleb_djinn_ready(), "the Djinn dark: not ready")
 	_run_one(gc, kaleb)
-	ok(not gc.kaleb_running and gc.kaleb_index == 0 and _on(gc, cd.DJINN_ID) == 0,
-		"the Djinn dark: he pauses on the bar and moves nothing")
+	ok(gc.kaleb_running and gc.kaleb_index == 0 and _on(gc, cd.DJINN_ID) == 0,
+		"the Djinn dark: he stays running, on bar 1, and moves nothing")
 	gc.constellation_spark_totals[str(cd.DJINN_ID)] = cd.SPARKS_TIER_STARS - 1.0
 	_run_one(gc, kaleb)
-	ok(not gc.kaleb_running and _on(gc, cd.DJINN_ID) == 0, "one Spark short of Tier 1: still nothing")
+	ok(gc.kaleb_running and gc.kaleb_index == 0 and _on(gc, cd.DJINN_ID) == 0, "one Spark short of Tier 1: still waiting")
 
 	print("=== at the Djinn's Tier 1 ===")
 	gc.constellation_spark_totals[str(cd.DJINN_ID)] = cd.SPARKS_TIER_STARS
@@ -171,8 +172,10 @@ func run() -> void:
 	gc.kaleb_stack[0]["value"] = 0
 	gc.constellation_spark_totals[str(cd.DJINN_ID)] = 0.0
 	_run_one(gc, kaleb)
-	ok(not gc.kaleb_running and gc._assignment_int(fkey, -1) == 6, "the Djinn dark: he pauses and the Foci stay")
+	ok(gc.kaleb_running and gc._assignment_int(fkey, -1) == 6, "the Djinn dark: he waits and the Foci stay")
 	gc.constellation_spark_totals[str(cd.DJINN_ID)] = cd.SPARKS_TIER_STARS
+	_run_one(gc, kaleb)
+	ok(gc.kaleb_running and gc._assignment_int(fkey, -1) == 0, "back at Tier 1 he goes on by himself (sets 0)")
 
 	print("=== only Constellation Volitions ===")
 	var cats: Array = []
