@@ -5783,17 +5783,85 @@ func _cell_was_stated(cell: Dictionary, terms: Array) -> bool:
 ## entry included even while it is unnamed: that is where the player marked
 ## the star's notes in its popup before any name was tied to it, and the popup
 ## moves to the named entry once one is (_find_match_record_by_star_idx). Just
-## this record when its star is not known. Callers read only the entries' own
-## note marks (melody_ticks / seq_note_blocks), never a ground-truth tier.
+## this record when neither its star nor its name is known. Callers read only
+## the entries' own note marks (melody_ticks / seq_note_blocks), never a
+## ground-truth tier.
+##
+## ONE STAR IS ALSO ONE NAME (2026-11-13). Entries are tied together by the map
+## star they sit on OR by the name they are confirmed as, whichever is known:
+## Name is alldiff, so two entries confirming one name are one star, located or
+## not. Reported: the player linked notes 7 and 11 on the Staff, every other
+## name was ruled off that entry so the staff labelled both notes Eosoon, and
+## Eosoon's Sort row still showed both notes open, because neither entry's map
+## star was known yet (measured on the save's undo history: 37 of 75 states).
+## The links chain (a row on star 3 named Eosoon joins every other Eosoon entry
+## and every other star-3 entry), so the groups are built once, whole.
 func _records_sharing_star(record_idx: int) -> Array:
-    var out: Array = [record_idx]
-    var s: int = _effective_star_idx(record_idx)
-    if s < 0:
-        return out
-    for i in _match_records.size():
-        if i != record_idx and _effective_star_idx(i) == s:
-            out.append(i)
-    return out
+    if record_idx < 0 or record_idx >= _match_records.size():
+        return [record_idx]
+    if _star_group_cache.is_empty():
+        _build_star_groups()
+    return _star_group_cache.get(record_idx, [record_idx])
+
+
+## record -> every record of its group (itself first), for _records_sharing_star.
+## Cleared with the deduction caches.
+var _star_group_cache: Dictionary = {}
+
+
+func _build_star_groups() -> void:
+    var n: int = _match_records.size()
+    var parent: Array = []
+    for i in n:
+        parent.append(i)
+    var by_key: Dictionary = {}
+    for i in n:
+        var keys: Array = []
+        var s: int = _effective_star_idx(i)
+        if s >= 0:
+            keys.append("S:%d" % s)
+        var nm: String = _name_confirmed_for_grouping(i)
+        if nm != "":
+            keys.append("N:" + nm)
+        for k in keys:
+            if by_key.has(k):
+                var a: int = _group_root(parent, i)
+                var b: int = _group_root(parent, int(by_key[k]))
+                if a != b:
+                    parent[maxi(a, b)] = mini(a, b)
+            else:
+                by_key[k] = i
+    var members: Dictionary = {}
+    for i in n:
+        (members.get_or_add(_group_root(parent, i), []) as Array).append(i)
+    for i in n:
+        var grp: Array = [i]
+        for j in (members[_group_root(parent, i)] as Array):
+            if int(j) != i:
+                grp.append(int(j))
+        _star_group_cache[i] = grp
+
+
+func _group_root(parent: Array, i: int) -> int:
+    while int(parent[i]) != i:
+        parent[i] = parent[int(parent[i])]
+        i = int(parent[i])
+    return i
+
+
+## The name a record is confirmed as, by the player or by deduction, or "".
+## Reads the record's own name and its name states (input, then derived) and
+## NOT _effective_name_state, whose full-row check calls back into
+## _records_sharing_star. A name left last standing reaches the derived layer
+## through _settle_singleton_for_axis, so nothing the staff shows is missed.
+func _name_confirmed_for_grouping(record_idx: int) -> String:
+    var own: String = str(_match_records[record_idx].get("name", ""))
+    if own != "":
+        return own
+    for n in _host._star_names:
+        if _record_effective_state(record_idx, "name_states", "protected_staff_names", str(n)) == 1:
+            return str(n)
+    return ""
 
 
 ## Every note the board has this record's star firing on, sorted: the union
@@ -6466,6 +6534,7 @@ func _clear_deduction_caches(keep_proven_distinct: bool = false) -> void:
 func _clear_deduction_caches_all() -> void:
     _coverage_cache.clear()
     _notes_on_star_cache.clear()
+    _star_group_cache.clear()
     _star_positions_cache.clear()
     _star_values_cache.clear()
     _confirmer_clique_cache.clear()
